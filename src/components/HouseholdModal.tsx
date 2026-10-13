@@ -1,0 +1,187 @@
+'use client';
+
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck } from 'lucide-react';
+
+interface HouseholdModalProps {
+  person: any;
+  householdMembers: any[];
+  onClose: () => void;
+  onOpenDelivery: (person: any) => void;
+}
+
+export default function HouseholdModal({
+  person,
+  householdMembers,
+  onClose,
+  onOpenDelivery
+}: HouseholdModalProps) {
+  const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
+  const isPartial = person.teslimat_durumu === 'EKSIK';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200">
+              <Users className="w-4 h-4 text-amber-700" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">Vatandaş & Hane Detayı</h3>
+              <p className="text-xs text-slate-500">Kişi ve adres inceleme kartı</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-lg text-sm"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Primary Person Card - Light Mode */}
+        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 mb-4 space-y-3 shadow-xs">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h4 className="text-lg font-black text-slate-900 leading-tight">{person.ad_soyad}</h4>
+              <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200 inline-block mt-1">
+                TC: {person.tc_no}
+              </span>
+            </div>
+            <div className="shrink-0">
+              {isComplete ? (
+                <span className="badge badge-delivered">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Tam ({person.torba_sayisi} Torba)
+                </span>
+              ) : isPartial ? (
+                <span className="badge badge-pending">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Eksik: {person.torba_sayisi}/{person.hedef_torba || 34}
+                </span>
+              ) : (
+                <span className="badge badge-pending">
+                  <Clock className="w-3.5 h-3.5" />
+                  Bekliyor ({person.hedef_torba || 34})
+                </span>
+              )}
+            </div>
+          </div>
+
+          {person.telefon && (
+            <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">
+              <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+              <a href={`tel:${person.telefon}`} className="text-emerald-700 hover:underline font-mono font-bold">
+                {person.telefon}
+              </a>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-slate-200 text-xs space-y-1">
+            <div className="flex items-center gap-1.5 text-slate-600 font-medium">
+              <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="font-bold text-slate-900">{person.mahalle}</span>
+              {person.hane_no && (
+                <span className="bg-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-700">
+                  Hane No: {person.hane_no}
+                </span>
+              )}
+            </div>
+            <p className="text-slate-800 bg-white p-3 rounded-xl border border-slate-200 leading-relaxed font-semibold">
+              {person.acik_adres}
+            </p>
+          </div>
+
+          {isComplete && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-0.5">
+              <p className="font-bold">✓ {person.torba_sayisi || 34} Torba Tamamlandı</p>
+              <p className="text-[11px] text-emerald-700 font-medium">
+                Teslim Alan: {person.teslim_alan || person.ad_soyad} • Personel: {person.teslim_eden_personel || '-'}
+              </p>
+              {person.teslimat_tarihi && (
+                <p className="text-[11px] text-slate-500">Tarih: {person.teslimat_tarihi}</p>
+              )}
+            </div>
+          )}
+
+          {!isComplete && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenDelivery(person);
+              }}
+              className="btn-primary w-full mt-2 font-bold"
+            >
+              <PackageCheck className="w-4 h-4 text-white" />
+              {isPartial ? `Kalan ${person.kalan_torba} Torbayı Tamamla` : 'Kömür Teslimatı Yap'}
+            </button>
+          )}
+        </div>
+
+        {/* HOUSEHOLD RELATIVES SECTION - Light Mode */}
+        <div className="household-box">
+          <div className="flex items-center justify-between mb-2">
+            <h5 className="text-xs font-black uppercase tracking-wider text-purple-900 flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-purple-700" />
+              Aynı Adreste / Hanede Kayıtlı Olanlar
+            </h5>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-200 text-purple-900 border border-purple-300">
+              {householdMembers.length} Kişi
+            </span>
+          </div>
+
+          {householdMembers.length === 0 ? (
+            <div className="text-xs text-slate-600 bg-white p-3 rounded-xl border border-purple-200 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Bu adreste sistemde kayıtlı başka bir hak sahibi bulunmamaktadır. (Tek Kayıt)</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[11px] text-purple-900 font-semibold leading-tight">
+                ⚠️ Dikkat: Aynı hanede kayıtlı birden fazla vatandaş tespit edildi!
+              </p>
+              {householdMembers.map((member) => (
+                <div
+                  key={member.id}
+                  className="p-3 rounded-xl bg-white border border-purple-200 flex items-center justify-between gap-2 shadow-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-extrabold text-slate-900 truncate">{member.ad_soyad}</p>
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="font-mono font-bold text-purple-800">TC: {member.tc_no}</span>
+                      {member.telefon && <span>• {member.telefon}</span>}
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {member.teslimat_durumu === 'TAMAMLANDI' || member.teslimat_durumu === 'TESLIM_EDILDI' ? (
+                      <span className="badge badge-delivered text-[11px] py-0.5 px-2">
+                        Teslim Edildi
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          onClose();
+                          onOpenDelivery(member);
+                        }}
+                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-xs transition-all active:scale-95"
+                      >
+                        Teslim Et
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="pt-4">
+          <button onClick={onClose} className="btn-secondary w-full">
+            Kapat
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

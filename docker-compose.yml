@@ -1,0 +1,14 @@
+services:
+  komur-app:
+    build: .
+    container_name: komur-dagitim-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persistent SQLite database storage on the host server
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
