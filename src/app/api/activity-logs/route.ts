@@ -1,18 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, recordActivityLog, getSeedActivityLogs } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { buildTurkishSearchFilter } from '@/lib/normalizer';
 
 // GET /api/activity-logs - Query user activity/audit logs
 export async function GET(request: NextRequest) {
   try {
     const { activityLogs } = await getDbCollections();
-
-    // Auto-seed initial activity logs if collection is currently empty
-    const currentTotal = await activityLogs.countDocuments();
-    if (currentTotal === 0) {
-      const nowStr = new Date().toLocaleString('tr-TR');
-      await activityLogs.insertMany(getSeedActivityLogs(nowStr));
-    }
 
     const searchParams = request.nextUrl.searchParams;
 

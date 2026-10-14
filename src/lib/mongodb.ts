@@ -1,5 +1,28 @@
 import { MongoClient, Db, ObjectId, ServerApiVersion } from 'mongodb';
 import { normalizeAddress } from './normalizer';
+import {
+  encryptBeneficiary,
+  decryptBeneficiary,
+  encryptDeliveryHistory,
+  decryptDeliveryHistory,
+  encryptImportLog,
+  decryptImportLog,
+  encryptActivityLog,
+  decryptActivityLog,
+  encryptUser,
+  decryptUser,
+  encryptTruck,
+  decryptTruck,
+  encryptShift,
+  decryptShift,
+  encryptField,
+  decryptField,
+  hashBlindIndex,
+  hashTc,
+  hashHane,
+  hashAddress,
+  isEncrypted,
+} from './crypto';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'komur_db';
@@ -110,6 +133,40 @@ export function mapDoc<T = any>(doc: any): T {
   } else if (mapped.id) {
     mapped.id = String(mapped.id);
   }
+
+  // Askeri Düzey AES-256-GCM Şifreli Alanları Belleğe Alırken Şeffafça Deşifre Et (Transparent Decryption)
+  // MongoDB Atlas'ta veriler anlamsız rastgele hex olarak durur, yetkili uygulama kodunda şeffafça okunur.
+  const piiFields = [
+    'tc_no',
+    'ad_soyad',
+    'telefon',
+    'telefon2',
+    'acik_adres',
+    'hane_no',
+    'norm_adres',
+    'sokak',
+    'teslim_alan',
+    'teslimat_notu',
+    'uyari_notu',
+    'notlar',
+    'iptal_nedeni',
+    'hata_nedeni',
+    'detay',
+    'hedef_kisi',
+    'hedef_tc',
+    'sifre',
+    'sofor_adi',
+    'plaka',
+    'irsaliye_no',
+    'personel_adi',
+  ];
+
+  for (const field of piiFields) {
+    if (typeof mapped[field] === 'string' && isEncrypted(mapped[field])) {
+      mapped[field] = decryptField(mapped[field]);
+    }
+  }
+
   // If beneficiary document and missing sira_no
   if (mapped.tc_no && !mapped.sira_no) {
     mapped.sira_no = String(mapped.mahalle_sira || mapped.id || '1');
@@ -395,22 +452,25 @@ async function initializeIndexesAndSeed(db: Db) {
 
   try {
     await Promise.allSettled([
-      beneficiaries.createIndex({ tc_no: 1 }, { unique: true }),
+      // Askeri Düzey AES-256-GCM ve Kör Dizin (Blind Index - HMAC-SHA256) İndeksleri
+      beneficiaries.createIndex({ tc_hash: 1 }, { unique: true, sparse: true }),
+      beneficiaries.createIndex({ hane_hash: 1 }, { sparse: true }),
+      beneficiaries.createIndex({ adres_hash: 1 }, { sparse: true }),
       beneficiaries.createIndex({ mahalle: 1 }),
-      beneficiaries.createIndex({ norm_adres: 1 }),
       beneficiaries.createIndex({ teslimat_durumu: 1 }),
 
       users.createIndex({ username: 1 }, { unique: true }),
       users.createIndex({ rol: 1 }),
 
       history.createIndex({ gun_tarihi: -1 }),
-      history.createIndex({ tc_no: 1 }),
+      history.createIndex({ tc_hash: 1 }, { sparse: true }),
       history.createIndex({ islem_tipi: 1 }),
 
       trucks.createIndex({ tarih: -1 }),
       trucks.createIndex({ tir_sirasi: -1 }),
 
       logs.createIndex({ batch_id: 1 }),
+      logs.createIndex({ tc_hash: 1 }, { sparse: true }),
       logs.createIndex({ tarih: -1 }),
 
       settings.createIndex({ key: 1 }, { unique: true }),
@@ -420,6 +480,7 @@ async function initializeIndexesAndSeed(db: Db) {
       shifts.createIndex({ durum: 1 }),
 
       activityLogs.createIndex({ tarih_iso: -1 }),
+      activityLogs.createIndex({ hedef_tc_hash: 1 }, { sparse: true }),
       activityLogs.createIndex({ islem_tipi: 1 }),
       activityLogs.createIndex({ kullanici_adi: 1 }),
       activityLogs.createIndex({ gun_tarihi: -1 }),
@@ -434,541 +495,71 @@ async function initializeIndexesAndSeed(db: Db) {
     await settings.insertOne({ key: 'varsayilan_hedef_torba', value: '34' });
   }
 
-  // 2. Seed Users
+  // 2. Initial Admin User if none exists (AES-256-GCM encrypted)
   const userCount = await users.countDocuments();
   if (userCount === 0) {
     const nowStr = new Date().toLocaleString('tr-TR');
-    await users.insertMany([
-      { id: '1', username: 'admin', ad_soyad: 'Sistem Yöneticisi', rol: 'ADMIN', sifre: '1234', telefon: '05551112233', aktif: 1, created_at: nowStr },
-      { id: '2', username: 'murat', ad_soyad: 'Murat Dağıtım', rol: 'PERSONEL', sifre: '1234', telefon: '05321112233', aktif: 1, created_at: nowStr },
-      { id: '3', username: 'ahmet', ad_soyad: 'Ahmet Saha', rol: 'PERSONEL', sifre: '1234', telefon: '05442223344', aktif: 1, created_at: nowStr },
-      { id: '4', username: 'kemal', ad_soyad: 'Kemal Taş', rol: 'PERSONEL', sifre: '1234', telefon: '05334445566', aktif: 1, created_at: nowStr },
-    ]);
+    await users.insertOne(encryptUser({
+      id: '1',
+      username: 'admin',
+      ad_soyad: 'Sistem Yöneticisi',
+      rol: 'ADMIN',
+      sifre: '784512Gg.',
+      telefon: '05551112233',
+      aktif: 1,
+      created_at: nowStr,
+    }));
   }
 
-  // 3. Seed Beneficiaries
-  const benCount = await beneficiaries.countDocuments();
-  if (benCount === 0) {
-    const nowStr = new Date().toLocaleString('tr-TR');
-    await beneficiaries.insertMany(getSeedBeneficiaries(nowStr));
-    await history.insertMany(getSeedHistory());
-    await trucks.insertMany(getSeedTrucks(nowStr));
-    await shifts.insertMany(getSeedShifts(nowStr));
-  }
-
-  // 4. Seed Activity Logs if empty
-  const actCount = await activityLogs.countDocuments();
-  if (actCount === 0) {
-    const nowStr = new Date().toLocaleString('tr-TR');
-    await activityLogs.insertMany(getSeedActivityLogs(nowStr));
-  }
+  // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler ve kişisel verileri AES-256-GCM ile şifrele
+  await migrateAndEncryptExistingData(db);
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
   const nowStr = new Date().toLocaleString('tr-TR');
   store.system_settings = [{ key: 'varsayilan_hedef_torba', value: '34' }];
   store.users = [
-    { id: '1', username: 'admin', ad_soyad: 'Sistem Yöneticisi', rol: 'ADMIN', sifre: '1234', telefon: '05551112233', aktif: 1, created_at: nowStr },
-    { id: '2', username: 'murat', ad_soyad: 'Murat Dağıtım', rol: 'PERSONEL', sifre: '1234', telefon: '05321112233', aktif: 1, created_at: nowStr },
-    { id: '3', username: 'ahmet', ad_soyad: 'Ahmet Saha', rol: 'PERSONEL', sifre: '1234', telefon: '05442223344', aktif: 1, created_at: nowStr },
-    { id: '4', username: 'kemal', ad_soyad: 'Kemal Taş', rol: 'PERSONEL', sifre: '1234', telefon: '05334445566', aktif: 1, created_at: nowStr },
-  ];
-  store.beneficiaries = getSeedBeneficiaries(nowStr);
-  store.delivery_history = getSeedHistory();
-  store.truck_deliveries = getSeedTrucks(nowStr);
-  store.work_shifts = getSeedShifts(nowStr);
-  store.activity_logs = getSeedActivityLogs(nowStr);
-  store.import_logs = [
-    {
+    encryptUser({
       id: '1',
-      batch_id: 'BATCH-DEMO-01',
-      satir_no: 4,
-      tc_no: '12345678904',
-      ad_soyad: 'Fatma Yılmaz',
-      telefon: '05332223344',
-      mahalle: 'Cumhuriyet Mah.',
-      acik_adres: 'Karanfil Sokak No: 14 Daire: 2',
-      hane_no: '101',
-      hata_nedeni: 'Aynı Hanede Zaten Kayıt Var: Ahmet Yılmaz (TC: 12345678902)',
-      durum: 'MUKERRER_HANE',
-      tarih: nowStr
-    }
+      username: 'admin',
+      ad_soyad: 'Sistem Yöneticisi',
+      rol: 'ADMIN',
+      sifre: '784512Gg.',
+      telefon: '05551112233',
+      aktif: 1,
+      created_at: nowStr,
+    }),
   ];
+  store.beneficiaries = [];
+  store.delivery_history = [];
+  store.truck_deliveries = [];
+  store.work_shifts = [];
+  store.activity_logs = [];
+  store.import_logs = [];
 }
 
-function getSeedBeneficiaries(nowStr: string) {
-  const seeds = [
-    {
-      id: '1',
-      tc_no: '12345678902',
-      ad_soyad: 'Ahmet Yılmaz',
-      telefon: '05321112233',
-      telefon2: '05449998877',
-      mahalle: 'Cumhuriyet Mah.',
-      acik_adres: 'Karanfil Sokak No: 14 Daire: 2',
-      hane_no: '101',
-      norm_adres: normalizeAddress('Cumhuriyet Mah.', 'Karanfil Sokak No: 14 Daire: 2', '101'),
-      hedef_torba: 34,
-      teslimat_durumu: 'TAMAMLANDI',
-      teslimat_tarihi: '2026-10-12 11:30:00',
-      teslim_alan: 'Ahmet Yılmaz (Kendisi)',
-      torba_sayisi: 34,
-      teslim_eden_personel: 'Murat Dağıtım',
-      teslimat_notu: 'Tam teslimat yapıldı, 34 torba kömürlüğe istiflendi.',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '2',
-      tc_no: '12345678904',
-      ad_soyad: 'Fatma Yılmaz',
-      telefon: '05332223344',
-      telefon2: '',
-      mahalle: 'Cumhuriyet Mah.',
-      yerlesim_tipi: 'MAHALLE',
-      sokak: 'Karanfil Sok.',
-      kapi_no: 2,
-      acik_adres: 'Karanfil Sokak No: 2 Daire: 1',
-      hane_no: '101',
-      norm_adres: normalizeAddress('Cumhuriyet Mah.', 'Karanfil Sokak No: 2 Daire: 1', '101'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: 'Ahmet Yılmaz ile aynı ailede',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '3',
-      tc_no: '23456789014',
-      ad_soyad: 'Mehmet Demir',
-      telefon: '05443334455',
-      telefon2: '05051234567',
-      mahalle: 'İstiklal Mah.',
-      yerlesim_tipi: 'MAHALLE',
-      sokak: 'Atatürk Cad.',
-      kapi_no: 28,
-      acik_adres: 'Atatürk Caddesi No: 28 Daire: 1',
-      hane_no: '102',
-      norm_adres: normalizeAddress('İstiklal Mah.', 'Atatürk Caddesi No: 28 Daire: 1', '102'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: null,
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '4',
-      tc_no: '23456789016',
-      ad_soyad: 'Ayşe Demir',
-      telefon: '05454445566',
-      mahalle: 'İstiklal Mah.',
-      yerlesim_tipi: 'MAHALLE',
-      sokak: 'Atatürk Cad.',
-      kapi_no: 28,
-      acik_adres: 'Atatürk Caddesi No: 28 Daire: 1',
-      hane_no: '102',
-      norm_adres: normalizeAddress('İstiklal Mah.', 'Atatürk Caddesi No: 28 Daire: 1', '102'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: 'Mehmet Demir ile aynı hanede kayıtlı',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '5',
-      tc_no: '34567890126',
-      ad_soyad: 'Mustafa Öztürk',
-      telefon: '05556667788',
-      mahalle: 'Fatih Mah.',
-      yerlesim_tipi: 'MAHALLE',
-      sokak: 'Gül Sok.',
-      kapi_no: 7,
-      acik_adres: 'Gül Sokak No: 7',
-      hane_no: '103',
-      norm_adres: normalizeAddress('Fatih Mah.', 'Gül Sokak No: 7', '103'),
-      hedef_torba: 34,
-      teslimat_durumu: 'EKSIK',
-      teslimat_tarihi: '2026-10-13 14:15:00',
-      teslim_alan: 'Mustafa Öztürk',
-      torba_sayisi: 25,
-      teslim_eden_personel: 'Kemal Taş',
-      teslimat_notu: 'Kamyonette kömür azaldığı için 25 torba verildi, kalan 9 torba ertesi gün tamamlanacak.',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '6',
-      tc_no: '45678901238',
-      ad_soyad: 'Hatice Kaya',
-      telefon: '05057778899',
-      mahalle: 'Dereköy Köyü',
-      yerlesim_tipi: 'KOY',
-      sokak: 'Köy İçi Mevkii',
-      kapi_no: 12,
-      acik_adres: 'Dereköy Köy İçi Mevkii No: 12',
-      hane_no: '104',
-      norm_adres: normalizeAddress('Dereköy Köyü', 'Dereköy Köy İçi Mevkii No: 12', '104'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: 'Köy muhtarlığı yanı',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '7',
-      tc_no: '56789012340',
-      ad_soyad: 'Ali Şen',
-      telefon: '05308889900',
-      mahalle: 'Yeni Mahalle',
-      acik_adres: 'Çınar Sokak No: 19',
-      hane_no: '105',
-      norm_adres: normalizeAddress('Yeni Mahalle', 'Çınar Sokak No: 19', '105'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: null,
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '8',
-      tc_no: '67890123452',
-      ad_soyad: 'Zeynep Aydın',
-      telefon: '05359990011',
-      mahalle: 'Cumhuriyet Mah.',
-      acik_adres: 'Menekşe Sokak No: 3',
-      hane_no: '106',
-      norm_adres: normalizeAddress('Cumhuriyet Mah.', 'Menekşe Sokak No: 3', '106'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: null,
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '9',
-      tc_no: '78901234564',
-      ad_soyad: 'Emine Kaya',
-      telefon: '05367771122',
-      mahalle: 'Dereköy Köyü',
-      yerlesim_tipi: 'KOY',
-      sokak: 'Köy İçi Mevkii',
-      kapi_no: 3,
-      acik_adres: 'Dereköy Köy İçi Mevkii No: 3',
-      hane_no: '107',
-      norm_adres: normalizeAddress('Dereköy Köyü', 'Dereköy Köy İçi Mevkii No: 3', '107'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: 'Köy girişi',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '10',
-      tc_no: '89012345676',
-      ad_soyad: 'Hasan Yılmaz',
-      telefon: '05378882233',
-      mahalle: 'Cumhuriyet Mah.',
-      yerlesim_tipi: 'MAHALLE',
-      sokak: 'Karanfil Sok.',
-      kapi_no: 10,
-      acik_adres: 'Karanfil Sokak No: 10',
-      hane_no: '108',
-      norm_adres: normalizeAddress('Cumhuriyet Mah.', 'Karanfil Sokak No: 10', '108'),
-      hedef_torba: 34,
-      teslimat_durumu: 'BEKLIYOR',
-      teslimat_tarihi: null,
-      teslim_alan: null,
-      torba_sayisi: 0,
-      teslim_eden_personel: null,
-      teslimat_notu: null,
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-  ];
-
-  const mahalleCounters = new Map<string, number>();
-  return seeds.map((s) => {
-    const m = s.mahalle || 'Merkez';
-    const cnt = (mahalleCounters.get(m) || 0) + 1;
-    mahalleCounters.set(m, cnt);
-    return {
-      ...s,
-      sira_no: String(cnt),
-      mahalle_sira: cnt,
-      ek_liste_no: 0,
-      ek_liste_adi: 'Ana Liste',
-      batch_id: 'SEED-INITIAL',
-    };
-  });
+export function getSeedBeneficiaries(nowStr?: string): any[] {
+  return [];
 }
 
-function getSeedHistory() {
-  return [
-    {
-      id: '1',
-      beneficiary_id: '1',
-      tc_no: '12345678902',
-      ad_soyad: 'Ahmet Yılmaz',
-      mahalle: 'Cumhuriyet Mah.',
-      acik_adres: 'Karanfil Sokak No: 14 Daire: 2',
-      islem_tipi: 'TESLIMAT',
-      torba_sayisi: 34,
-      teslim_alan: 'Ahmet Yılmaz (Kendisi)',
-      personel: 'Murat Dağıtım',
-      notlar: 'Tam teslimat yapıldı, 34 torba',
-      iptal_nedeni: null,
-      tarih: '2026-10-12 11:30:00',
-      gun_tarihi: '2026-10-12',
-    },
-    {
-      id: '2',
-      beneficiary_id: '5',
-      tc_no: '34567890126',
-      ad_soyad: 'Mustafa Öztürk',
-      mahalle: 'Fatih Mah.',
-      acik_adres: 'Gül Sokak No: 7',
-      islem_tipi: 'TESLIMAT',
-      torba_sayisi: 25,
-      teslim_alan: 'Mustafa Öztürk',
-      personel: 'Kemal Taş',
-      notlar: 'Kısmi teslimat (25 torba verildi, 9 torba eksik kaldı)',
-      iptal_nedeni: null,
-      tarih: '2026-10-13 14:15:00',
-      gun_tarihi: '2026-10-13',
-    },
-    {
-      id: '3',
-      beneficiary_id: '7',
-      tc_no: '56789012340',
-      ad_soyad: 'Ali Şen',
-      mahalle: 'Yeni Mahalle',
-      acik_adres: 'Çınar Sokak No: 19',
-      islem_tipi: 'IPTAL',
-      torba_sayisi: 25,
-      teslim_alan: 'Ali Şen',
-      personel: 'Yönetici',
-      notlar: null,
-      iptal_nedeni: 'Adres karışıklığı nedeniyle iptal edildi.',
-      tarih: '2026-10-13 15:40:00',
-      gun_tarihi: '2026-10-13',
-    },
-  ];
+export function getSeedHistory(): any[] {
+  return [];
 }
 
-function getSeedTrucks(nowStr: string) {
-  return [
-    {
-      id: '1',
-      tir_sirasi: 1,
-      plaka: '06 KMR 101',
-      irsaliye_no: 'IRS-2026-1001',
-      tarih: '2026-10-11',
-      net_tonaj: 26.5,
-      brut_tonaj: 41.2,
-      tara_tonaj: 14.7,
-      sofor_adi: 'Kadir Vural',
-      notlar: '1. Sevkiyat Soma Linyit',
-      created_at: nowStr,
-    },
-    {
-      id: '2',
-      tir_sirasi: 2,
-      plaka: '06 KMR 102',
-      irsaliye_no: 'IRS-2026-1002',
-      tarih: '2026-10-12',
-      net_tonaj: 27.1,
-      brut_tonaj: 42.0,
-      tara_tonaj: 14.9,
-      sofor_adi: 'Hüseyin Er',
-      notlar: '2. Sevkiyat Tunçbilek Torbalı',
-      created_at: nowStr,
-    },
-    {
-      id: '3',
-      tir_sirasi: 3,
-      plaka: '34 KMR 805',
-      irsaliye_no: 'IRS-2026-1003',
-      tarih: '2026-10-13',
-      net_tonaj: 26.85,
-      brut_tonaj: 41.65,
-      tara_tonaj: 14.8,
-      sofor_adi: 'Metin Sönmez',
-      notlar: '3. Sevkiyat Kalorisi Yüksek',
-      created_at: nowStr,
-    },
-  ];
+export function getSeedTrucks(nowStr?: string): any[] {
+  return [];
 }
 
-function getSeedShifts(nowStr: string) {
-  return [
-    {
-      id: '1',
-      personel_adi: 'Murat Dağıtım',
-      tarih: '2026-10-12',
-      baslama_saati: '08:30',
-      bitis_saati: '17:45',
-      toplam_dakika: 555,
-      durum: 'TAMAMLANDI',
-      mahalleler: 'Cumhuriyet Mah.',
-      teslim_edilen_torba: 136,
-      teslim_edilen_hane: 4,
-      notlar: 'Günlük dağıtım planı tamamlandı.',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '2',
-      personel_adi: 'Ahmet Saha',
-      tarih: '2026-10-12',
-      baslama_saati: '08:00',
-      bitis_saati: '16:30',
-      toplam_dakika: 510,
-      durum: 'TAMAMLANDI',
-      mahalleler: 'Atatürk Mah.',
-      teslim_edilen_torba: 102,
-      teslim_edilen_hane: 3,
-      notlar: 'Araç bakımı yapıldı.',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '3',
-      personel_adi: 'Murat Dağıtım',
-      tarih: '2026-10-11',
-      baslama_saati: '08:00',
-      bitis_saati: '17:00',
-      toplam_dakika: 540,
-      durum: 'TAMAMLANDI',
-      mahalleler: 'Cumhuriyet Mah., Fatih Mah.',
-      teslim_edilen_torba: 170,
-      teslim_edilen_hane: 5,
-      notlar: 'Pazar günü dağıtımı gerçekleştirildi.',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-    {
-      id: '4',
-      personel_adi: 'Ahmet Saha',
-      tarih: '2026-10-10',
-      baslama_saati: '08:30',
-      bitis_saati: '16:00',
-      toplam_dakika: 450,
-      durum: 'TAMAMLANDI',
-      mahalleler: 'Fatih Mah.',
-      teslim_edilen_torba: 102,
-      teslim_edilen_hane: 3,
-      notlar: 'Cumartesi mesaisi tamamlandı.',
-      created_at: nowStr,
-      updated_at: nowStr,
-    },
-  ];
+export function getSeedShifts(nowStr?: string): any[] {
+  return [];
 }
 
-export function getSeedActivityLogs(nowStr: string) {
-  return [
-    {
-      id: '1',
-      kullanici_adi: 'Murat Dağıtım',
-      kullanici_rolu: 'PERSONEL',
-      islem_tipi: 'TESLIMAT',
-      baslik: 'Kömür Teslimatı Yapıldı',
-      detay: 'Ahmet Yılmaz (TC: 12345678902) hanesine 34 torba kömür teslim edildi. Tam teslimat yapıldı, 34 torba kömürlüğe istiflendi.',
-      hedef_kisi: 'Ahmet Yılmaz (Kendisi)',
-      hedef_tc: '12345678902',
-      mahalle: 'Cumhuriyet Mah.',
-      torba_sayisi: 34,
-      tarih: '12.10.2026 11:30:00',
-      tarih_iso: '2026-10-12T08:30:00.000Z',
-    },
-    {
-      id: '2',
-      kullanici_adi: 'Kemal Taş',
-      kullanici_rolu: 'PERSONEL',
-      islem_tipi: 'EKSIK_TESLIMAT',
-      baslik: 'Kısmi Kömür Teslimatı',
-      detay: 'Mustafa Öztürk (TC: 34567890126) hanesine 25/34 torba verildi, 9 torba eksik kaldı. Kamyonette kömür azaldığı için 25 torba verildi, kalan 9 torba ertesi gün tamamlanacak.',
-      hedef_kisi: 'Mustafa Öztürk',
-      hedef_tc: '34567890126',
-      mahalle: 'Fatih Mah.',
-      torba_sayisi: 25,
-      tarih: '13.10.2026 14:15:00',
-      tarih_iso: '2026-10-13T11:15:00.000Z',
-    },
-    {
-      id: '3',
-      kullanici_adi: 'Sistem Yöneticisi',
-      kullanici_rolu: 'ADMIN',
-      islem_tipi: 'KOTA_DEGISTIRME',
-      baslik: 'Varsayılan Hedef Kömür Kotası Güncellendi',
-      detay: 'Hane başı dağıtım kotası 34 torba (0.85 Ton) olarak teyit edildi.',
-      tarih: '14.10.2026 08:30:00',
-      tarih_iso: '2026-10-14T05:30:00.000Z',
-    },
-    {
-      id: '4',
-      kullanici_adi: 'Murat Dağıtım',
-      kullanici_rolu: 'PERSONEL',
-      islem_tipi: 'MESAI_BASLAT',
-      baslik: 'Günlük Mesai Başlatıldı',
-      detay: '16 KMR 01 plakalı dağıtım kamyoneti ile saha mesaisi başlatıldı.',
-      tarih: '14.10.2026 09:00:00',
-      tarih_iso: '2026-10-14T06:00:00.000Z',
-    },
-    {
-      id: '5',
-      kullanici_adi: 'Murat Dağıtım',
-      kullanici_rolu: 'PERSONEL',
-      islem_tipi: 'ROTA_OLUSTURMA',
-      baslik: 'Yeni Dağıtım Rotası Oluşturuldu',
-      detay: '"14.10.2026 Kömür Dağıtım Rotası" oluşturuldu (2 durak, 68 torba hedef).',
-      mahalle: 'Cumhuriyet Mah.',
-      tarih: '14.10.2026 15:31:03',
-      tarih_iso: '2026-10-14T12:31:03.000Z',
-    },
-    {
-      id: '6',
-      kullanici_adi: 'Murat Dağıtım',
-      kullanici_rolu: 'PERSONEL',
-      islem_tipi: 'ROTA_KAPATMA',
-      baslik: 'Dağıtım Rotası Tamamlandı & Kapatıldı',
-      detay: '"14.10.2026 Kömür Dağıtım Rotası" başarıyla tamamlandı ve kapatıldı. 2 haneye toplam 68 torba kömür teslim edildi.',
-      mahalle: 'Cumhuriyet Mah.',
-      tarih: '14.10.2026 15:31:37',
-      tarih_iso: '2026-10-14T12:31:37.000Z',
-    }
-  ];
+export function getSeedActivityLogs(nowStr?: string): any[] {
+  return [];
 }
 
 /**
- * Record a user operation / audit activity log
+ * Record a user operation / audit activity log (with AES-256-GCM encryption for PII)
  */
 export async function recordActivityLog(item: {
   kullanici_adi: string;
@@ -994,11 +585,240 @@ export async function recordActivityLog(item: {
       tarih_iso: item.tarih_iso || now.toISOString(),
       gun_tarihi: now.toLocaleDateString('en-CA'),
     };
-    await activityLogs.insertOne(doc);
+    // Encrypt sensitive details before writing to MongoDB Atlas
+    const encryptedDoc = encryptActivityLog(doc);
+    await activityLogs.insertOne(encryptedDoc);
     return doc;
   } catch (err) {
     console.error('Error recording activity log:', err);
     return null;
   }
 }
+
+/**
+ * Automatically migrate and encrypt any unencrypted plaintext documents in MongoDB Atlas
+ * using military/banking-grade AES-256-GCM and HMAC-SHA256 blind indexing.
+ * Ensures zero plaintext personal data remains in the database.
+ */
+export async function migrateAndEncryptExistingData(db: Db) {
+  try {
+    const beneficiaries = db.collection('beneficiaries');
+    const history = db.collection('delivery_history');
+    const logs = db.collection('import_logs');
+    const activityLogs = db.collection('activity_logs');
+
+    // 1. Hak Sahipleri (Beneficiaries) Şifreleme Migrasyonu
+    const unencryptedBens = await beneficiaries.find({
+      $or: [
+        { tc_hash: { $exists: false } },
+        { tc_no: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedBens.length > 0) {
+      console.log(`[AES-256-GCM] Veritabanında ${unencryptedBens.length} adet açık kayıt tespit edildi, şifreleniyor...`);
+      for (const b of unencryptedBens) {
+        const plainTc = isEncrypted(b.tc_no) ? decryptField(b.tc_no) : b.tc_no;
+        const plainName = isEncrypted(b.ad_soyad) ? decryptField(b.ad_soyad) : b.ad_soyad;
+        const plainTel = isEncrypted(b.telefon) ? decryptField(b.telefon) : b.telefon;
+        const plainTel2 = isEncrypted(b.telefon2) ? decryptField(b.telefon2) : b.telefon2;
+        const plainAdres = isEncrypted(b.acik_adres) ? decryptField(b.acik_adres) : b.acik_adres;
+        const plainHane = isEncrypted(b.hane_no) ? decryptField(b.hane_no) : b.hane_no;
+        const plainNorm = isEncrypted(b.norm_adres) ? decryptField(b.norm_adres) : b.norm_adres;
+        const plainSokak = isEncrypted(b.sokak) ? decryptField(b.sokak) : b.sokak;
+        const plainTeslimAlan = isEncrypted(b.teslim_alan) ? decryptField(b.teslim_alan) : b.teslim_alan;
+        const plainNot = isEncrypted(b.teslimat_notu) ? decryptField(b.teslimat_notu) : b.teslimat_notu;
+        const plainUyari = isEncrypted(b.uyari_notu) ? decryptField(b.uyari_notu) : b.uyari_notu;
+
+        const updateFields: any = {
+          tc_no: encryptField(plainTc),
+          tc_hash: hashTc(plainTc),
+          ad_soyad: encryptField(plainName),
+          telefon: encryptField(plainTel),
+          telefon2: encryptField(plainTel2),
+          acik_adres: encryptField(plainAdres),
+          hane_no: encryptField(plainHane),
+          hane_hash: hashHane(plainHane),
+          norm_adres: encryptField(plainNorm),
+          adres_hash: hashAddress(plainNorm),
+          sokak: encryptField(plainSokak),
+          teslim_alan: encryptField(plainTeslimAlan),
+          teslimat_notu: encryptField(plainNot),
+          uyari_notu: encryptField(plainUyari),
+        };
+
+        await beneficiaries.updateOne({ _id: b._id }, { $set: updateFields });
+      }
+      console.log(`[AES-256-GCM] ${unencryptedBens.length} hak sahibi başarıyla AES-256-GCM ile şifrelendi.`);
+    }
+
+    // 2. Teslimat Geçmişi (Delivery History) Şifreleme Migrasyonu
+    const unencryptedHist = await history.find({
+      $or: [
+        { tc_hash: { $exists: false } },
+        { tc_no: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedHist.length > 0) {
+      console.log(`[AES-256-GCM] ${unencryptedHist.length} teslimat geçmişi kaydı şifreleniyor...`);
+      for (const h of unencryptedHist) {
+        const plainTc = isEncrypted(h.tc_no) ? decryptField(h.tc_no) : h.tc_no;
+        const plainName = isEncrypted(h.ad_soyad) ? decryptField(h.ad_soyad) : h.ad_soyad;
+        const plainAdres = isEncrypted(h.acik_adres) ? decryptField(h.acik_adres) : h.acik_adres;
+        const plainTeslimAlan = isEncrypted(h.teslim_alan) ? decryptField(h.teslim_alan) : h.teslim_alan;
+        const plainNot = isEncrypted(h.notlar) ? decryptField(h.notlar) : h.notlar;
+        const plainIptal = isEncrypted(h.iptal_nedeni) ? decryptField(h.iptal_nedeni) : h.iptal_nedeni;
+
+        const updateFields: any = {
+          tc_no: encryptField(plainTc),
+          tc_hash: hashTc(plainTc),
+          ad_soyad: encryptField(plainName),
+          acik_adres: encryptField(plainAdres),
+          teslim_alan: encryptField(plainTeslimAlan),
+          notlar: encryptField(plainNot),
+          iptal_nedeni: encryptField(plainIptal),
+        };
+
+        await history.updateOne({ _id: h._id }, { $set: updateFields });
+      }
+    }
+
+    // 3. Sistem İşlem Kayıtları (Activity Logs) Şifreleme Migrasyonu
+    const unencryptedActs = await activityLogs.find({
+      $or: [
+        { hedef_tc_hash: { $exists: false } },
+        { detay: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedActs.length > 0) {
+      console.log(`[AES-256-GCM] ${unencryptedActs.length} işlem kaydı şifreleniyor...`);
+      for (const a of unencryptedActs) {
+        const plainTc = isEncrypted(a.hedef_tc) ? decryptField(a.hedef_tc) : a.hedef_tc;
+        const plainKisi = isEncrypted(a.hedef_kisi) ? decryptField(a.hedef_kisi) : a.hedef_kisi;
+        const plainDetay = isEncrypted(a.detay) ? decryptField(a.detay) : a.detay;
+
+        const updateFields: any = {
+          detay: encryptField(plainDetay),
+          hedef_kisi: encryptField(plainKisi),
+          hedef_tc: encryptField(plainTc),
+          hedef_tc_hash: hashTc(plainTc),
+        };
+
+        await activityLogs.updateOne({ _id: a._id }, { $set: updateFields });
+      }
+    }
+
+    // 4. Excel Yükleme Hata Günlükleri (Import Logs) Şifreleme Migrasyonu
+    const unencryptedLogs = await logs.find({
+      $or: [
+        { tc_hash: { $exists: false } },
+        { tc_no: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedLogs.length > 0) {
+      for (const l of unencryptedLogs) {
+        const plainTc = isEncrypted(l.tc_no) ? decryptField(l.tc_no) : l.tc_no;
+        const plainName = isEncrypted(l.ad_soyad) ? decryptField(l.ad_soyad) : l.ad_soyad;
+        const plainTel = isEncrypted(l.telefon) ? decryptField(l.telefon) : l.telefon;
+        const plainAdres = isEncrypted(l.acik_adres) ? decryptField(l.acik_adres) : l.acik_adres;
+        const plainHane = isEncrypted(l.hane_no) ? decryptField(l.hane_no) : l.hane_no;
+        const plainHata = isEncrypted(l.hata_nedeni) ? decryptField(l.hata_nedeni) : l.hata_nedeni;
+
+        const updateFields: any = {
+          tc_no: encryptField(plainTc),
+          tc_hash: hashTc(plainTc),
+          ad_soyad: encryptField(plainName),
+          telefon: encryptField(plainTel),
+          acik_adres: encryptField(plainAdres),
+          hane_no: encryptField(plainHane),
+          hata_nedeni: encryptField(plainHata),
+        };
+
+        await logs.updateOne({ _id: l._id }, { $set: updateFields });
+      }
+    }
+
+    // 5. Kullanıcı Hesapları (Users) Şifreleme Migrasyonu (Ad Soyad, Şifre, Telefon)
+    const usersCol = db.collection('users');
+    const unencryptedUsers = await usersCol.find({
+      $or: [
+        { sifre: { $not: /^ENC:GCM:v1:/ } },
+        { ad_soyad: { $not: /^ENC:GCM:v1:/ } },
+        { telefon: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedUsers.length > 0) {
+      console.log(`[AES-256-GCM] ${unencryptedUsers.length} kullanıcı hesabı şifreleniyor...`);
+      for (const u of unencryptedUsers) {
+        const plainName = isEncrypted(u.ad_soyad) ? decryptField(u.ad_soyad) : u.ad_soyad;
+        const plainPass = isEncrypted(u.sifre) ? decryptField(u.sifre) : u.sifre;
+        const plainTel = isEncrypted(u.telefon) ? decryptField(u.telefon) : u.telefon;
+
+        const updateFields: any = {
+          ad_soyad: encryptField(plainName),
+          sifre: encryptField(plainPass),
+          telefon: encryptField(plainTel),
+        };
+        await usersCol.updateOne({ _id: u._id }, { $set: updateFields });
+      }
+      console.log(`[AES-256-GCM] Kullanıcı hesapları (şifre, telefon, isim) başarıyla şifrelendi.`);
+    }
+
+    // 6. Şoförler ve Tır Sevkiyatları (Truck Deliveries) Şifreleme Migrasyonu
+    const trucksCol = db.collection('truck_deliveries');
+    const unencryptedTrucks = await trucksCol.find({
+      $or: [
+        { sofor_adi: { $not: /^ENC:GCM:v1:/ } },
+        { plaka: { $not: /^ENC:GCM:v1:/ } },
+        { irsaliye_no: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedTrucks.length > 0) {
+      console.log(`[AES-256-GCM] ${unencryptedTrucks.length} şoför ve tır sevkiyatı kaydı şifreleniyor...`);
+      for (const t of unencryptedTrucks) {
+        const plainSofor = isEncrypted(t.sofor_adi) ? decryptField(t.sofor_adi) : t.sofor_adi;
+        const plainPlaka = isEncrypted(t.plaka) ? decryptField(t.plaka) : t.plaka;
+        const plainIrsaliye = isEncrypted(t.irsaliye_no) ? decryptField(t.irsaliye_no) : t.irsaliye_no;
+        const plainNot = isEncrypted(t.notlar) ? decryptField(t.notlar) : t.notlar;
+
+        const updateFields: any = {
+          sofor_adi: encryptField(plainSofor),
+          plaka: encryptField(plainPlaka),
+          irsaliye_no: encryptField(plainIrsaliye),
+          notlar: encryptField(plainNot),
+        };
+        await trucksCol.updateOne({ _id: t._id }, { $set: updateFields });
+      }
+      console.log(`[AES-256-GCM] Şoförler ve tır sevkiyatları başarıyla şifrelendi.`);
+    }
+
+    // 7. Personel Mesaileri (Work Shifts) Şifreleme Migrasyonu
+    const shiftsCol = db.collection('work_shifts');
+    const unencryptedShifts = await shiftsCol.find({
+      $or: [
+        { personel_adi: { $not: /^ENC:GCM:v1:/ } }
+      ]
+    }).toArray();
+
+    if (unencryptedShifts.length > 0) {
+      for (const s of unencryptedShifts) {
+        const plainPersonel = isEncrypted(s.personel_adi) ? decryptField(s.personel_adi) : s.personel_adi;
+        const plainNot = isEncrypted(s.notlar) ? decryptField(s.notlar) : s.notlar;
+        const updateFields: any = {
+          personel_adi: encryptField(plainPersonel),
+          notlar: encryptField(plainNot),
+        };
+        await shiftsCol.updateOne({ _id: s._id }, { $set: updateFields });
+      }
+    }
+  } catch (err) {
+    console.error('[AES-256-GCM] Migration error:', err);
+  }
+}
+
 

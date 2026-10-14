@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
+import { encryptUser, encryptField } from '@/lib/crypto';
 
 export async function GET(request: NextRequest) {
   try {
@@ -65,7 +66,9 @@ export async function POST(request: NextRequest) {
       created_at: new Date().toLocaleString('tr-TR'),
     };
 
-    const result = await usersCol.insertOne(newDoc);
+    // Encrypt sensitive personnel info with AES-256-GCM
+    const encryptedDoc = encryptUser(newDoc);
+    const result = await usersCol.insertOne(encryptedDoc);
     const newId = result.insertedId ? result.insertedId.toString() : '';
 
     await recordActivityLog({
@@ -128,9 +131,9 @@ export async function PUT(request: NextRequest) {
     };
 
     if (trimmedUser) updateFields.username = trimmedUser;
-    if (trimmedName) updateFields.ad_soyad = trimmedName;
-    if (trimmedPass) updateFields.sifre = trimmedPass;
-    if (telefon !== undefined) updateFields.telefon = (telefon || '').trim();
+    if (trimmedName) updateFields.ad_soyad = encryptField(trimmedName);
+    if (trimmedPass) updateFields.sifre = encryptField(trimmedPass);
+    if (telefon !== undefined) updateFields.telefon = encryptField((telefon || '').trim());
 
     await usersCol.updateOne(buildIdFilter(id), { $set: updateFields });
 

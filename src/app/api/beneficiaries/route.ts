@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, buildTurkishSearchFilter, extractPhoneNumbers, detectSettlement, extractStreetAndDoor } from '@/lib/normalizer';
+import {
+  cleanTcNo,
+  normalizeAddress,
+  cleanPhone,
+  cleanTurkishText,
+  turkishIncludes,
+  extractPhoneNumbers,
+  detectSettlement,
+  extractStreetAndDoor,
+  cleanHaneKey,
+} from '@/lib/normalizer';
+import {
+  hashTc,
+  hashHane,
+  hashAddress,
+  encryptBeneficiary,
+} from '@/lib/crypto';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +33,15 @@ export async function GET(request: NextRequest) {
     // Special Query: If looking up a specific TC to show person AND household relatives
     if (targetTc) {
       const cleanedTargetTc = cleanTcNo(targetTc);
-      const rawPerson = await benCol.findOne({ tc_no: cleanedTargetTc });
+      const tcHash = hashTc(cleanedTargetTc);
+
+      // Search by blind index hash or plaintext fallback
+      const rawPerson = await benCol.findOne({
+        $or: [
+          ...(tcHash ? [{ tc_hash: tcHash }] : []),
+          { tc_no: cleanedTargetTc },
+        ],
+      });
 
       if (!rawPerson) {
         return NextResponse.json({
@@ -33,24 +57,35 @@ export async function GET(request: NextRequest) {
       person.kalan_torba = Math.max(0, person.hedef_torba - (person.torba_sayisi || 0));
 
       // Find other people at the exact same normalized address or household
+      const normHash = hashAddress(person.norm_adres);
+      const haneHash = person.hane_no ? hashHane(person.hane_no) : null;
+
+      const householdOrList: any[] = [];
+      if (normHash) householdOrList.push({ adres_hash: normHash });
+      if (person.norm_adres) householdOrList.push({ norm_adres: person.norm_adres });
+      if (haneHash) householdOrList.push({ hane_hash: haneHash });
+      if (person.hane_no) householdOrList.push({ hane_no: person.hane_no });
+
       const householdFilter: any = {
-        tc_no: { $ne: person.tc_no },
-        $or: [
-          { norm_adres: person.norm_adres },
-          ...(person.hane_no ? [{ hane_no: person.hane_no }] : []),
+        $and: [
+          { _id: { $ne: rawPerson._id } },
+          ...(tcHash ? [{ tc_hash: { $ne: tcHash } }] : []),
+          { $or: householdOrList },
         ],
       };
 
       const rawMembers = await benCol
         .find(householdFilter)
-        .sort({ ad_soyad: 1 })
         .toArray();
 
-      const householdMembers = mapDocs(rawMembers).map((m: any) => {
-        m.hedef_torba = m.hedef_torba || 34;
-        m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
-        return m;
-      });
+      const householdMembers = mapDocs(rawMembers)
+        .filter((m: any) => m.id !== person.id && m.tc_no !== person.tc_no)
+        .sort((a: any, b: any) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'))
+        .map((m: any) => {
+          m.hedef_torba = m.hedef_torba || 34;
+          m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
+          return m;
+        });
 
       return NextResponse.json({
         success: true,
@@ -62,24 +97,6 @@ export async function GET(request: NextRequest) {
 
     // General List & Search
     const filter: any = {};
-
-    if (q) {
-      const searchFilter = buildTurkishSearchFilter(q, [
-        'tc_no',
-        'ad_soyad',
-        'telefon',
-        'telefon2',
-        'acik_adres',
-        'mahalle',
-        'hane_no',
-        'sokak',
-      ]);
-      if (searchFilter.$and) {
-        filter.$and = searchFilter.$and;
-      } else if (searchFilter.$or) {
-        filter.$or = searchFilter.$or;
-      }
-    }
 
     // Support multiple neighborhoods e.g. "mahalleler=Cumhuriyet Mah.,İstiklal Mah." or single "mahalle"
     const rawMahalleler = searchParams.get('mahalleler') || mahalle;
@@ -97,7 +114,6 @@ export async function GET(request: NextRequest) {
 
     if (durum && durum !== 'HEPSI') {
       if (durum === 'DAGITILACAK') {
-        // Pending or Incomplete only (NOT completed)
         filter.teslimat_durumu = { $in: ['BEKLIYOR', 'EKSIK', null] };
       } else if (durum === 'TAMAMLANDI') {
         filter.teslimat_durumu = { $in: ['TAMAMLANDI', 'TESLIM_EDILDI'] };
@@ -110,23 +126,78 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const total = await benCol.countDocuments(filter);
+    let records: any[] = [];
+    let total = 0;
 
-    const rawRecords = await benCol
-      .find(filter)
-      .sort({ mahalle: 1, ek_liste_no: 1, mahalle_sira: 1, ad_soyad: 1 })
-      .skip(skip)
-      .limit(limit)
-      .toArray();
+    if (!q) {
+      // Direct fast MongoDB query with sorting and pagination
+      total = await benCol.countDocuments(filter);
+      const rawRecords = await benCol
+        .find(filter)
+        .sort({ mahalle: 1, ek_liste_no: 1, mahalle_sira: 1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
 
-    const records = mapDocs(rawRecords).map((r: any) => {
-      r.hedef_torba = r.hedef_torba || 34;
-      r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
-      return r;
-    });
+      records = mapDocs(rawRecords).map((r: any) => {
+        r.hedef_torba = r.hedef_torba || 34;
+        r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
+        return r;
+      });
+    } else {
+      // Encrypted field search:
+      // If q is an 11-digit TC, we can directly blind-index query in MongoDB
+      const cleanedTcQuery = cleanTcNo(q);
+      if (cleanedTcQuery && cleanedTcQuery.length === 11) {
+        const tcHash = hashTc(cleanedTcQuery);
+        filter.$or = [
+          ...(tcHash ? [{ tc_hash: tcHash }] : []),
+          { tc_no: cleanedTcQuery },
+        ];
+        total = await benCol.countDocuments(filter);
+        const rawRecords = await benCol.find(filter).toArray();
+        records = mapDocs(rawRecords).map((r: any) => {
+          r.hedef_torba = r.hedef_torba || 34;
+          r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
+          return r;
+        });
+      } else {
+        // Text / partial search (names, streets, partial TCs, phones):
+        // Query candidates by non-PII filters (mahalle, durum) from MongoDB,
+        // transparently decrypt, and apply Turkish-aware memory search.
+        const rawCandidates = await benCol.find(filter).toArray();
+        const decryptedCandidates = mapDocs(rawCandidates);
+
+        const qClean = cleanTurkishText(q);
+        const qDigits = q.replace(/\D/g, '');
+
+        const filtered = decryptedCandidates.filter((r: any) => {
+          if (qClean && turkishIncludes(r.ad_soyad || '', qClean)) return true;
+          if (qClean && turkishIncludes(r.acik_adres || '', qClean)) return true;
+          if (qClean && turkishIncludes(r.mahalle || '', qClean)) return true;
+          if (qClean && turkishIncludes(r.sokak || '', qClean)) return true;
+          if (qClean && r.hane_no && turkishIncludes(String(r.hane_no), qClean)) return true;
+          if (qDigits && qDigits.length >= 3) {
+            if (r.tc_no && String(r.tc_no).includes(qDigits)) return true;
+            if (r.telefon && String(r.telefon).includes(qDigits)) return true;
+            if (r.telefon2 && String(r.telefon2).includes(qDigits)) return true;
+          }
+          return false;
+        });
+
+        total = filtered.length;
+        records = filtered.slice(skip, skip + limit).map((r: any) => {
+          r.hedef_torba = r.hedef_torba || 34;
+          r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
+          return r;
+        });
+      }
+    }
 
     // Aggregated list of neighborhoods/villages with distribution metrics
-    const allBeneficiaries = await benCol.find({}).toArray();
+    const allBeneficiariesRaw = await benCol.find({}).toArray();
+    const allBeneficiaries = mapDocs(allBeneficiariesRaw);
+
     const mahalleMap = new Map<string, {
       mahalle: string;
       kisi_sayisi: number;
@@ -161,7 +232,7 @@ export async function GET(request: NextRequest) {
     // Incomplete & Signed-Undelivered Households for Morning Alert Banner
     const rawEksik = await benCol
       .find({ teslimat_durumu: 'EKSIK' })
-      .sort({ mahalle: 1, ad_soyad: 1 })
+      .sort({ mahalle: 1 })
       .toArray();
 
     const mappedEksik = mapDocs(rawEksik).map((m: any) => {
@@ -171,13 +242,13 @@ export async function GET(request: NextRequest) {
       return m;
     });
 
-    // İmzası alınmış fakat kömürü henüz teslim edilmemiş (veya aynı gün teslim edilememiş) haneler
+    // İmzası alınmış fakat kömürü henüz teslim edilmemiş haneler
     const rawImzali = await benCol
       .find({
         imza_durumu: 'IMZALANDI',
-        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'] }
+        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'] },
       })
-      .sort({ mahalle: 1, ad_soyad: 1 })
+      .sort({ mahalle: 1 })
       .toArray();
 
     const mappedImzali = mapDocs(rawImzali).map((m: any) => {
@@ -222,33 +293,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Ad Soyad, Mahalle ve Açık Adres zorunludur' }, { status: 400 });
     }
 
-    // Check duplicate TC
-    const existingTc = await benCol.findOne({ tc_no: cleanedTc });
+    // Check duplicate TC with blind index
+    const tcHash = hashTc(cleanedTc);
+    const existingTc = await benCol.findOne({
+      $or: [
+        ...(tcHash ? [{ tc_hash: tcHash }] : []),
+        { tc_no: cleanedTc },
+      ],
+    });
     if (existingTc) {
+      const decTc = mapDoc(existingTc);
       return NextResponse.json(
         {
           success: false,
-          error: `Bu TC Kimlik Numarası zaten kayıtlı: ${existingTc.ad_soyad}`,
+          error: `Bu TC Kimlik Numarası zaten kayıtlı: ${decTc.ad_soyad}`,
         },
         { status: 400 }
       );
     }
 
     const normAdres = normalizeAddress(mahalle, acik_adres, hane_no);
+    const normHash = hashAddress(normAdres);
+    const haneHash = hane_no ? hashHane(hane_no) : null;
 
-    // Check duplicate household
-    const haneFilter: any = {
-      $or: [
-        { norm_adres: normAdres },
-        ...(hane_no ? [{ hane_no: hane_no.trim() }] : []),
-      ],
-    };
-    const existingHane = await benCol.findOne(haneFilter);
+    // Check duplicate household with blind index
+    const haneOrList: any[] = [];
+    if (normHash) haneOrList.push({ adres_hash: normHash });
+    if (normAdres) haneOrList.push({ norm_adres: normAdres });
+    if (haneHash) haneOrList.push({ hane_hash: haneHash });
+    if (hane_no) haneOrList.push({ hane_no: hane_no.trim() });
+
+    const existingHane = await benCol.findOne({ $or: haneOrList });
     if (existingHane) {
+      const decHane = mapDoc(existingHane);
       return NextResponse.json(
         {
           success: false,
-          error: `Bu adreste/hanede zaten kayıt bulunmaktadır! Kayıtlı Kişi: ${existingHane.ad_soyad} (TC: ${existingHane.tc_no})`,
+          error: `Bu adreste/hanede zaten kayıt bulunmaktadır! Kayıtlı Kişi: ${decHane.ad_soyad} (TC: ${decHane.tc_no})`,
         },
         { status: 400 }
       );
@@ -287,7 +368,9 @@ export async function POST(request: NextRequest) {
       updated_at: nowStr,
     };
 
-    const res = await benCol.insertOne(newDoc);
+    // Encrypt with AES-256-GCM and generate blind indexes
+    const encryptedDoc = encryptBeneficiary(newDoc);
+    const res = await benCol.insertOne(encryptedDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
 
     await recordActivityLog({
@@ -301,8 +384,8 @@ export async function POST(request: NextRequest) {
       torba_sayisi: targetQuota,
       ek_bilgi: {
         id: newId,
-        adres: newDoc.acik_adres
-      }
+        adres: newDoc.acik_adres,
+      },
     });
 
     return NextResponse.json({

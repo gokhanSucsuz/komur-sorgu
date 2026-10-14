@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, recordActivityLog, mapDocs } from '@/lib/mongodb';
+import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
 import { 
   cleanTcNo, 
   normalizeAddress, 
@@ -73,27 +74,9 @@ export async function POST(request: NextRequest) {
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const defaultQuota = settingDoc ? parseInt(settingDoc.value, 10) : 34;
 
-    // Cache existing TCs, Hanes, and Addresses with their Coal Delivery Status
-    const existingList = await benCol
-      .find({}, { 
-        projection: { 
-          tc_no: 1, 
-          ad_soyad: 1, 
-          norm_adres: 1, 
-          hane_no: 1,
-          mahalle: 1,
-          acik_adres: 1,
-          teslimat_durumu: 1,
-          torba_sayisi: 1,
-          hedef_torba: 1,
-          teslimat_tarihi: 1,
-          teslim_alan: 1,
-          teslim_eden_personel: 1,
-          sira_no: 1,
-          ek_liste_no: 1
-        } 
-      })
-      .toArray();
+    // Cache existing TCs, Hanes, and Addresses with their Coal Delivery Status (Transparently Decrypted)
+    const rawExistingList = await benCol.find({}).toArray();
+    const existingList = mapDocs(rawExistingList);
 
     // Check which neighborhoods already have records in DB and determine their highest ek_liste_no
     const existingMahalleEkMap = new Map<string, { maxEkNo: number; hasRecords: boolean }>();
@@ -587,12 +570,14 @@ export async function POST(request: NextRequest) {
       insertedCount++;
     }
 
-    // Insert batches into MongoDB
+    // Insert batches into MongoDB (AES-256-GCM Şifreleme ve HMAC-SHA256 Kör Dizinler ile)
     if (toInsertBeneficiaries.length > 0) {
-      await benCol.insertMany(toInsertBeneficiaries);
+      const encryptedBeneficiaries = toInsertBeneficiaries.map(encryptBeneficiary);
+      await benCol.insertMany(encryptedBeneficiaries);
     }
     if (toInsertLogs.length > 0) {
-      await logsCol.insertMany(toInsertLogs);
+      const encryptedLogs = toInsertLogs.map(encryptImportLog);
+      await logsCol.insertMany(encryptedLogs);
     }
 
     // Mahalle bazında yükleme özetleri (Hangi mahalleden kaç kişi, hangi ek liste numarasıyla yüklendi)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog } from '@/lib/mongodb';
+import { encryptField, encryptDeliveryHistory } from '@/lib/crypto';
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,21 +48,21 @@ export async function POST(request: NextRequest) {
         newStatus = 'EKSIK';
       }
 
-      // Update beneficiary in MongoDB
+      // Update beneficiary in MongoDB (with encrypted recipient and notes)
       await benCol.updateOne(buildIdFilter(beneficiary.id), {
         $set: {
           teslimat_durumu: newStatus,
           teslimat_tarihi: localTimeStr,
           torba_sayisi: newTotalBags,
-          teslim_alan: recipient,
+          teslim_alan: encryptField(recipient),
           teslim_eden_personel: staff,
-          teslimat_notu: note,
+          teslimat_notu: encryptField(note),
           updated_at: localTimeStr,
         },
       });
 
-      // Add to delivery history
-      await histCol.insertOne({
+      // Add to delivery history (AES-256-GCM Şifreli)
+      await histCol.insertOne(encryptDeliveryHistory({
         beneficiary_id: beneficiary.id,
         tc_no: beneficiary.tc_no,
         ad_soyad: beneficiary.ad_soyad,
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
         iptal_nedeni: null,
         tarih: localTimeStr,
         gun_tarihi: localToday,
-      });
+      }));
 
       const eksikKalan = Math.max(0, hedef - newTotalBags);
 
@@ -124,8 +125,8 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Record cancellation in history
-      await histCol.insertOne({
+      // Record cancellation in history (AES-256-GCM Şifreli)
+      await histCol.insertOne(encryptDeliveryHistory({
         beneficiary_id: beneficiary.id,
         tc_no: beneficiary.tc_no,
         ad_soyad: beneficiary.ad_soyad,
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
         iptal_nedeni: cancelReason,
         tarih: localTimeStr,
         gun_tarihi: localToday,
-      });
+      }));
 
       // Record Activity Log for Admin Audit
       await recordActivityLog({

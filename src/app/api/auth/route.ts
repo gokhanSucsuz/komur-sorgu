@@ -44,9 +44,15 @@ export async function POST(request: NextRequest) {
 
     let rawUser = await usersCol.findOne({
       $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-      sifre: trimmedPass,
       aktif: 1,
     });
+
+    if (rawUser) {
+      const decUser = mapDoc(rawUser);
+      if (decUser.sifre !== trimmedPass && rawUser.sifre !== trimmedPass) {
+        rawUser = null;
+      }
+    }
 
     // 2. If trying to login as ADMIN with default PIN '1234'
     if (!rawUser && role === 'ADMIN' && (trimmedPass === '1234' || trimmedPass.toLowerCase() === 'admin')) {
@@ -64,11 +70,16 @@ export async function POST(request: NextRequest) {
 
     // 3. If trying to login as Personel with matching PIN
     if (!rawUser && role === 'PERSONEL' && trimmedUser) {
-      rawUser = await usersCol.findOne({
+      const candidate = await usersCol.findOne({
         $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-        sifre: trimmedPass,
         aktif: 1,
       });
+      if (candidate) {
+        const decCand = mapDoc(candidate);
+        if (decCand.sifre === trimmedPass || candidate.sifre === trimmedPass) {
+          rawUser = candidate;
+        }
+      }
     }
 
     if (!rawUser) {

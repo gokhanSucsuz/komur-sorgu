@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
+import { encryptShift, encryptField } from '@/lib/crypto';
 
 function calculateMinutes(start: string, end: string): number {
   if (!start || !end) return 0;
@@ -52,17 +53,15 @@ export async function GET(request: NextRequest) {
     const dayType = (searchParams.get('dayType') || '').trim();
 
     // Query all shifts chronologically to accurately calculate carryovers
-    const filter: any = {};
-    if (personel && personel !== 'ALL') {
-      filter.personel_adi = personel;
-    }
-
     const rawShifts = await shiftsCol
-      .find(filter)
+      .find({})
       .sort({ tarih: 1, baslama_saati: 1 })
       .toArray();
 
-    const allDbShifts = mapDocs(rawShifts);
+    let allDbShifts = mapDocs(rawShifts);
+    if (personel && personel !== 'ALL') {
+      allDbShifts = allDbShifts.filter((s: any) => s.personel_adi === personel);
+    }
 
     // Find distinct available months in the database
     const allUniqueDates: string[] = await shiftsCol.distinct('tarih');
@@ -80,13 +79,9 @@ export async function GET(request: NextRequest) {
       }));
 
     // Find any currently active shift for the requested personnel (or generally today)
-    const activeFilter: any = { durum: 'DEVAM_EDIYOR' };
-    if (personel && personel !== 'ALL') {
-      activeFilter.personel_adi = personel;
-    }
-
-    const rawActive = await shiftsCol.findOne(activeFilter);
-    const activeShift = mapDoc(rawActive);
+    const rawAllActive = await shiftsCol.find({ durum: 'DEVAM_EDIYOR' }).toArray();
+    const activeShifts = mapDocs(rawAllActive);
+    const activeShift = activeShifts.find((s: any) => (!personel || personel === 'ALL' || s.personel_adi === personel)) || null;
 
     // Process carryover chains per personnel chronologically
     const carryoverMap: Record<string, { minutes: number; sourceDate: string; sourceDayName: string }> = {};
@@ -400,7 +395,9 @@ export async function POST(request: NextRequest) {
         updated_at: nowStr,
       };
 
-      const result = await shiftsCol.insertOne(newDoc);
+      // Encrypt shift with AES-256-GCM
+      const encryptedDoc = encryptShift(newDoc);
+      const result = await shiftsCol.insertOne(encryptedDoc);
       const inserted = await shiftsCol.findOne({ _id: result.insertedId });
 
       await recordActivityLog({
@@ -425,16 +422,10 @@ export async function POST(request: NextRequest) {
       if (shiftId) {
         targetShift = await shiftsCol.findOne(buildIdFilter(shiftId));
       } else if (personel_adi) {
-        targetShift = await shiftsCol.findOne({
-          personel_adi: { $regex: new RegExp(`^${personel_adi.trim()}$`, 'i') },
-          durum: 'DEVAM_EDIYOR',
-        });
-        if (!targetShift) {
-          targetShift = await shiftsCol.findOne({
-            personel_adi,
-            durum: 'DEVAM_EDIYOR',
-          });
-        }
+        const rawActiveList = await shiftsCol.find({ durum: 'DEVAM_EDIYOR' }).toArray();
+        const activeList = mapDocs(rawActiveList);
+        const match = activeList.find((s: any) => s.personel_adi?.toLowerCase() === personel_adi.trim().toLowerCase());
+        if (match) targetShift = await shiftsCol.findOne(buildIdFilter(match.id));
       }
 
       if (!targetShift) {

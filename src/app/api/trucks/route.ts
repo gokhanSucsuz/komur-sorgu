@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
+import { encryptTruck } from '@/lib/crypto';
+import { cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,18 +9,22 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const q = (searchParams.get('q') || '').trim();
 
-    const filter: any = {};
-    if (q) {
-      const wild = new RegExp(q.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'), 'i');
-      filter.$or = [{ plaka: wild }, { irsaliye_no: wild }, { sofor_adi: wild }];
-    }
-
     const rawTrucks = await trucksCol
-      .find(filter)
+      .find({})
       .sort({ tarih: -1, tir_sirasi: -1 })
       .toArray();
 
-    const trucks = mapDocs(rawTrucks);
+    let trucks = mapDocs(rawTrucks);
+
+    if (q) {
+      const qClean = cleanTurkishText(q);
+      trucks = trucks.filter((t: any) =>
+        (t.plaka && turkishIncludes(t.plaka, qClean)) ||
+        (t.sofor_adi && turkishIncludes(t.sofor_adi, qClean)) ||
+        (t.irsaliye_no && turkishIncludes(t.irsaliye_no, qClean)) ||
+        (t.notlar && turkishIncludes(t.notlar, qClean))
+      );
+    }
 
     // Calculate aggregated truck metrics
     const allTrucks = await trucksCol.find({}).toArray();
@@ -116,7 +122,9 @@ export async function POST(request: NextRequest) {
       created_at: nowStr,
     };
 
-    const result = await trucksCol.insertOne(newDoc);
+    // Encrypt driver name, plate, waybill, and notes with AES-256-GCM
+    const encryptedDoc = encryptTruck(newDoc);
+    const result = await trucksCol.insertOne(encryptedDoc);
     const newId = result.insertedId ? result.insertedId.toString() : '';
 
     return NextResponse.json({
