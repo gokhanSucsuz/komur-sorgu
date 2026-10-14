@@ -88,7 +88,7 @@ export default function PwaRegister() {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wider text-amber-200">Mobil Uygulama Olarak İndir</p>
             <p className="text-sm font-medium leading-tight truncate">
-              {isIOS ? 'Safari Paylaş > Ana Ekrana Ekle' : 'Telefonunuza hızlıca yükleyin'}
+              {isIOS ? 'Safari Paylaş > Ana Ekrana Ekle' : deferredPrompt ? 'Telefonunuza hızlıca yükleyin' : 'Chrome Menü (⋮) > Ana ekrana ekle'}
             </p>
           </div>
         </div>

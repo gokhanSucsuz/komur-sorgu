@@ -49,32 +49,34 @@ export default function Header({
   return (
     <>
       <header className="app-header no-print">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
           {/* Logo Icon */}
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shadow-amber-500/20 border border-amber-400/40 shrink-0">
-            <Flame className="w-5 h-5 text-white fill-white" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shadow-amber-500/20 border border-amber-400/40 shrink-0">
+            <Flame className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white" />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-base font-extrabold tracking-tight text-slate-900 leading-none">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <h1 className="text-xs sm:text-base font-extrabold tracking-tight text-slate-900 leading-none truncate">
                 KÖMÜR TAKİP
               </h1>
-              <span className="text-[10px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+              <span className="text-[9px] sm:text-[10px] uppercase font-black tracking-wider px-1 sm:px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
                 PRO
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium">Dağıtım & Sorgulama Sistemi</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate hidden md:block">
+              Dağıtım & Sorgulama Sistemi
+            </p>
           </div>
         </div>
 
         {/* User Role Badge & Actions */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
           {/* Admin Personnel Management Shortcut */}
           {userRole === 'ADMIN' && onOpenPersonnelModal && (
             <button
               onClick={onOpenPersonnelModal}
               title="Personel & Şifre Yönetimi"
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold text-purple-900 transition-all active:scale-95 shadow-sm"
+              className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold text-purple-900 transition-all active:scale-95 shadow-sm shrink-0"
             >
               <Users className="w-3.5 h-3.5 text-purple-700" />
               <span className="hidden sm:inline">Personel</span>
@@ -85,10 +87,10 @@ export default function Header({
             <button
               onClick={onOpenQuotaModal}
               title="Hane Kömür Kotası Ayarla"
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-900 transition-all active:scale-95 shadow-sm"
+              className="flex items-center gap-0.5 sm:gap-1 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-900 transition-all active:scale-95 shadow-sm shrink-0"
             >
               <span className="text-xs">🎯</span>
-              <span>{defaultQuota || 34}</span>
+              <span className="text-[11px] sm:text-xs font-bold">{defaultQuota || 34}</span>
             </button>
           )}
 
@@ -96,11 +98,11 @@ export default function Header({
             onClick={onRefresh}
             title="Yenile"
             aria-label="Yenile"
-            className={`p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 hover:text-slate-900 transition-all active:scale-95 shadow-sm ${
+            className={`p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 hover:text-slate-900 transition-all active:scale-95 shadow-sm shrink-0 ${
               isRefreshing ? 'animate-spin text-amber-600' : ''
             }`}
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
           <button
@@ -109,30 +111,30 @@ export default function Header({
               setInputName(userName);
               setShowRoleModal(true);
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[130px]"
+            className="flex items-center gap-1 sm:gap-1.5 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[85px] xs:max-w-[105px] sm:max-w-[130px] shrink-0"
           >
             {userRole === 'ADMIN' ? (
               <>
                 <Shield className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="text-amber-900 font-bold truncate">{userName || 'Yönetici'}</span>
+                <span className="text-amber-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Yönetici'}</span>
               </>
             ) : (
               <>
                 <User className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="text-sky-900 font-bold truncate">{userName || 'Personel'}</span>
+                <span className="text-sky-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Personel'}</span>
               </>
             )}
           </button>
 
-          {/* Logout Button */}
+          {/* Logout Button - Always visible and pinned on right */}
           {onLogout && (
             <button
               onClick={onLogout}
               title="Çıkış Yap"
               aria-label="Çıkış Yap"
-              className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 transition-all active:scale-95 shadow-sm shrink-0"
+              className="p-1.5 sm:p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 transition-all active:scale-95 shadow-sm shrink-0"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           )}
         </div>
@@ -233,20 +235,35 @@ export default function Header({
                 </div>
               )}
 
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowRoleModal(false)}
-                  className="btn-secondary flex-1"
-                >
-                  İptal
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary flex-1 font-bold"
-                >
-                  Giriş Yap
-                </button>
+              <div className="pt-2 space-y-2">
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowRoleModal(false)}
+                    className="btn-secondary flex-1"
+                  >
+                    İptal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary flex-1 font-bold"
+                  >
+                    Kaydet
+                  </button>
+                </div>
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRoleModal(false);
+                      onLogout();
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-600" />
+                    Oturumu Kapat (Çıkış Yap)
+                  </button>
+                )}
               </div>
             </form>
           </div>
