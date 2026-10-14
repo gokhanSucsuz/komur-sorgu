@@ -377,11 +377,14 @@ export default function DeliveryArchive({
               {/* Official Institutional Header */}
               <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
-                  <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+                  <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200" style={{ width: '52px', height: '52px', minWidth: '52px', minHeight: '52px' }}>
                     <img
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
-                      className="w-full h-full object-contain"
+                      width={48}
+                      height={48}
+                      className="print-logo-img"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                     />
                   </div>
                   <div className="text-center flex-1 px-3">

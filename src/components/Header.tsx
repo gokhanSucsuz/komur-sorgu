@@ -53,11 +53,14 @@ export default function Header({
       <header className="app-header no-print">
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
           {/* Official Edirne SYDV Logo */}
-          <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white p-0.5 shadow-md shadow-slate-300/40 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center">
+          <div className="header-logo-container" style={{ width: '40px', height: '40px', minWidth: '40px', minHeight: '40px' }}>
             <img
               src="/edirne-sydv-logo.png"
               alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
-              className="w-full h-full object-contain"
+              width={40}
+              height={40}
+              className="header-logo-img"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           </div>
           <div className="min-w-0">

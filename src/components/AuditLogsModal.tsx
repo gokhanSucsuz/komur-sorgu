@@ -160,11 +160,14 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
           <div className="flex items-center gap-2.5">
-            <div className="w-11 h-11 rounded-full border-2 border-indigo-200 bg-white p-0.5 shadow-xs shrink-0 flex items-center justify-center overflow-hidden">
+            <div className="w-11 h-11 rounded-full border-2 border-indigo-200 bg-white p-0.5 shadow-xs shrink-0 flex items-center justify-center overflow-hidden" style={{ width: '40px', height: '40px', minWidth: '40px', minHeight: '40px' }}>
               <img
                 src="/edirne-sydv-logo.png"
                 alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
-                className="w-full h-full object-contain"
+                width={36}
+                height={36}
+                className="modal-logo-img"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             </div>
             <div>

@@ -83,11 +83,13 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     <div className="min-h-screen w-full bg-[#f8fafc] text-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-amber-500 selection:text-white">
       {/* Brand Header */}
       <div className="w-full max-w-md text-center mb-5">
-        <div className="w-24 h-24 mx-auto rounded-full bg-white p-1 shadow-xl shadow-slate-300/50 border-2 border-slate-200/90 mb-3 animate-in zoom-in-95 duration-300 flex items-center justify-center overflow-hidden">
+        <div className="login-logo-container" style={{ width: '76px', height: '76px', minWidth: '76px', minHeight: '76px', margin: '0 auto 12px auto' }}>
           <img
             src="/edirne-sydv-logo.png"
             alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
-            className="w-full h-full object-contain"
+            width={76}
+            height={76}
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </div>
         <div className="space-y-0.5">

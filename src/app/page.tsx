@@ -478,7 +478,10 @@ export default function Home() {
             <img
               src="/edirne-sydv-logo.png"
               alt="Edirne SYDV Logo"
-              className="w-5 h-5 object-contain rounded-full border border-slate-200 bg-white"
+              width={20}
+              height={20}
+              className="footer-logo-img"
+              style={{ width: '20px', height: '20px', minWidth: '20px', minHeight: '20px', objectFit: 'contain' }}
             />
             <span className="font-extrabold text-slate-700">
               Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı

@@ -913,3 +913,116 @@ button {
   }
 }
 
+/* ====================================================
+   KURUMSAL EDİRNE SYDV LOGO KESİN ÖLÇÜLERİ & GÜVENLİK SINIRLARI
+   ==================================================== */
+img[src*="edirne-sydv-logo"] {
+  max-width: 80px;
+  max-height: 80px;
+  object-fit: contain;
+}
+
+.header-logo-container {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  max-width: 38px !important;
+  max-height: 38px !important;
+  border-radius: 50% !important;
+  background-color: #ffffff !important;
+  padding: 1px !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  flex-shrink: 0 !important;
+}
+
+@media (min-width: 640px) {
+  .header-logo-container {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    max-width: 44px !important;
+    max-height: 44px !important;
+  }
+}
+
+.header-logo-img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  border-radius: 50% !important;
+}
+
+.login-logo-container {
+  width: 76px !important;
+  height: 76px !important;
+  min-width: 76px !important;
+  min-height: 76px !important;
+  max-width: 76px !important;
+  max-height: 76px !important;
+  margin: 0 auto 12px auto !important;
+  border-radius: 50% !important;
+  background-color: #ffffff !important;
+  padding: 2px !important;
+  border: 2px solid #e2e8f0 !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+}
+
+.login-logo-container img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+}
+
+.modal-logo-img {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  max-width: 36px !important;
+  max-height: 36px !important;
+  border-radius: 50% !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.print-logo-img {
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+  max-width: 52px !important;
+  max-height: 52px !important;
+  border-radius: 50% !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.footer-logo-img {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  max-width: 20px !important;
+  max-height: 20px !important;
+  border-radius: 50% !important;
+  object-fit: contain !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+}
+
