@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { PackageCheck, Minus, Plus, User, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus } from 'lucide-react';
+import { saveOfflineDelivery } from '@/lib/offlineSync';
 
 interface DeliveryModalProps {
   beneficiary: any;
@@ -60,6 +61,36 @@ export default function DeliveryModal({
     setIsSubmitting(true);
     setErrorMsg('');
 
+    // 1. Offline Mode Check
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    if (isOffline) {
+      saveOfflineDelivery({
+        beneficiary_id: beneficiary.id,
+        tc_no: beneficiary.tc_no,
+        ad_soyad: beneficiary.ad_soyad,
+        eklenen_torba: mevcutTorba > 0 ? torbaSayisi : undefined,
+        torba_sayisi: mevcutTorba === 0 ? torbaSayisi : undefined,
+        teslim_alan: teslimAlan,
+        personel: personel,
+        notlar: notlar
+      });
+
+      if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
+        navigator.vibrate([100, 50, 100]);
+      }
+
+      alert(`📶 Çevrimdışı Teslimat Kaydedildi:\n${beneficiary.ad_soyad} için yapılan teslimat cihazınıza yerel olarak depolandı. İnternet bağlantısı kurulduğunda anlık olarak sisteme aktarılacaktır.`);
+
+      onSuccess({
+        ...beneficiary,
+        torba_sayisi: projectedTotal,
+        teslimat_durumu: willBeComplete ? 'TAMAMLANDI' : 'EKSIK',
+        teslim_eden_personel: `${personel} (Çevrimdışı)`,
+        teslimat_tarihi: new Date().toLocaleTimeString('tr-TR')
+      });
+      return;
+    }
+
     try {
       const res = await fetch('/api/delivery', {
         method: 'POST',
@@ -76,6 +107,13 @@ export default function DeliveryModal({
       });
 
       const data = await res.json();
+
+      if (res.status === 409 || data.conflict) {
+        // Double delivery detected!
+        setErrorMsg(data.error || 'UYARI: Bu vatandaşa başka bir personel tarafından zaten teslimat yapılmıştır!');
+        return;
+      }
+
       if (!data.success) {
         throw new Error(data.error || 'Teslimat kaydedilemedi');
       }
@@ -86,7 +124,32 @@ export default function DeliveryModal({
 
       onSuccess(data.beneficiary);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Bağlantı hatası');
+      // If network failed suddenly, save to offline queue
+      if (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('Failed')) {
+        saveOfflineDelivery({
+          beneficiary_id: beneficiary.id,
+          tc_no: beneficiary.tc_no,
+          ad_soyad: beneficiary.ad_soyad,
+          eklenen_torba: mevcutTorba > 0 ? torbaSayisi : undefined,
+          torba_sayisi: mevcutTorba === 0 ? torbaSayisi : undefined,
+          teslim_alan: teslimAlan,
+          personel: personel,
+          notlar: notlar
+        });
+
+        alert(`📶 İnternet Bağlantısı Kesildi:\nTeslimat işlemi cihazınıza güvenle kaydedildi. İnternet tekrar sağlandığında anlık olarak aktarılacaktır.`);
+
+        onSuccess({
+          ...beneficiary,
+          torba_sayisi: projectedTotal,
+          teslimat_durumu: willBeComplete ? 'TAMAMLANDI' : 'EKSIK',
+          teslim_eden_personel: `${personel} (Çevrimdışı Kuyrukta)`,
+          teslimat_tarihi: new Date().toLocaleTimeString('tr-TR')
+        });
+        return;
+      }
+
+      setErrorMsg(err.message || 'Bağlantı hatası oluştu');
     } finally {
       setIsSubmitting(false);
     }

@@ -40,6 +40,14 @@ interface BatchRecordInfo {
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
+    const userRole = request.headers.get('x-user-role') || (formData.get('userRole') as string | null);
+    if (userRole !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Excel aktarımı ve yükleme işlemleri sadece Yönetici (Admin) yetkisiyle yapılabilir.' },
+        { status: 403 }
+      );
+    }
+
     const file = formData.get('file') as File | null;
 
     if (!file) {

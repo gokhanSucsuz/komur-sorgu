@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Header from '@/components/Header';
 import BottomNav, { NavTab } from '@/components/BottomNav';
 import BeneficiaryList from '@/components/BeneficiaryList';
@@ -21,6 +21,8 @@ import ShiftStartModal from '@/components/ShiftStartModal';
 import ShiftEndModal from '@/components/ShiftEndModal';
 import ShiftPage from '@/components/ShiftPage';
 import RoutePage from '@/components/RoutePage';
+import AdminAuthModal from '@/components/AdminAuthModal';
+import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>('search');
@@ -30,11 +32,18 @@ export default function Home() {
   const [userName, setUserName] = useState<string>('Saha Personeli');
   const [activeRouteStopsCount, setActiveRouteStopsCount] = useState<number>(0);
 
+  // Offline Sync & Network States
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false);
+  const lastKnownSyncRef = useRef<string>('');
+
   // Quota & Personnel & Audit Log modals state
   const [defaultQuota, setDefaultQuota] = useState<number>(34);
   const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
   const [showPersonnelModal, setShowPersonnelModal] = useState<boolean>(false);
   const [showAuditLogsModal, setShowAuditLogsModal] = useState<boolean>(false);
+  const [showAdminAuthModal, setShowAdminAuthModal] = useState<boolean>(false);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -306,6 +315,110 @@ export default function Home() {
     }
   }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveShift, fetchActiveRouteCount]);
 
+  // Check online status and pending offline queue
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      setPendingSyncCount(getPendingOfflineCount());
+
+      const handleOnline = () => {
+        setIsOnline(true);
+        handleSyncOfflineQueue();
+      };
+
+      const handleOffline = () => {
+        setIsOnline(false);
+      };
+
+      const handleQueueChanged = () => {
+        setPendingSyncCount(getPendingOfflineCount());
+      };
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      window.addEventListener('komur_offline_queue_changed', handleQueueChanged);
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+        window.removeEventListener('komur_offline_queue_changed', handleQueueChanged);
+      };
+    }
+  }, []);
+
+  // Sync offline queue handler
+  const handleSyncOfflineQueue = async () => {
+    if (typeof window === 'undefined' || !navigator.onLine) return;
+    const pending = getPendingOfflineCount();
+    if (pending === 0) return;
+
+    setIsSyncingOffline(true);
+    try {
+      const result = await syncOfflineDeliveries();
+      setPendingSyncCount(getPendingOfflineCount());
+      if (result.synced > 0 || result.conflicts > 0) {
+        handleRefreshAll();
+      }
+    } catch (e) {
+      console.error('Offline queue sync error:', e);
+    } finally {
+      setIsSyncingOffline(false);
+    }
+  };
+
+  // Real-time synchronization polling:
+  // Polls /api/sync/status every 9 seconds and immediately upon window focus/visibilitychange
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const checkSyncStatus = async () => {
+      if (typeof window !== 'undefined' && !navigator.onLine) return;
+      try {
+        const res = await fetch('/api/sync/status');
+        const data = await res.json();
+        if (data.success && data.lastSyncTime) {
+          if (!lastKnownSyncRef.current) {
+            lastKnownSyncRef.current = data.lastSyncTime;
+          } else if (data.lastSyncTime !== lastKnownSyncRef.current) {
+            // New delivery or update occurred across field staff!
+            lastKnownSyncRef.current = data.lastSyncTime;
+            fetchBeneficiaries();
+            fetchArchive();
+            fetchStats();
+            fetchActiveRouteCount();
+            fetchActiveShift();
+          }
+        }
+      } catch (err) {
+        // Blip or offline
+      }
+    };
+
+    checkSyncStatus();
+    const interval = setInterval(checkSyncStatus, 9000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkSyncStatus();
+      }
+    };
+    window.addEventListener('focus', checkSyncStatus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkSyncStatus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount, fetchActiveShift]);
+
+  // Tab protection: Non-admin can never view 'import' tab
+  useEffect(() => {
+    if (userRole !== 'ADMIN' && currentTab === 'import') {
+      setCurrentTab('search');
+    }
+  }, [userRole, currentTab]);
+
   // Handle opening Household Modal
   const handleOpenHousehold = async (person: any) => {
     setHouseholdTarget(person);
@@ -358,18 +471,26 @@ export default function Home() {
         userName={userName}
         defaultQuota={defaultQuota}
         currentTab={currentTab}
-        onTabChange={setCurrentTab}
+        onTabChange={(tab) => {
+          if (tab === 'import' && userRole !== 'ADMIN') {
+            setShowAdminAuthModal(true);
+            return;
+          }
+          setCurrentTab(tab);
+        }}
         hasActiveShift={!!activeShift}
         incompleteDeliveriesCount={eksikHaneler.length}
         importErrorsCount={overallStats?.toplamHataSayisi}
         activeRouteStopsCount={activeRouteStopsCount}
+        pendingSyncCount={pendingSyncCount}
+        onTriggerSync={handleSyncOfflineQueue}
+        isOnline={isOnline}
         onOpenQuotaModal={() => setShowQuotaModal(true)}
         onOpenPersonnelModal={() => setShowPersonnelModal(true)}
         onOpenAuditLogs={() => setShowAuditLogsModal(true)}
         onLogout={handleLogout}
-        onRoleChange={handleRoleChange}
         onRefresh={handleRefreshAll}
-        isRefreshing={isRefreshing}
+        isRefreshing={isRefreshing || isSyncingOffline}
       />
 
       {/* Main Container */}
@@ -469,11 +590,11 @@ export default function Home() {
           />
         )}
 
-        {/* Tab 5: Excel Yükleme & Yükleme Sonuçları */}
-        {currentTab === 'import' && (
+        {/* Tab 5: Excel Yükleme & Yükleme Sonuçları (Sadece Yönetici) */}
+        {currentTab === 'import' && userRole === 'ADMIN' && (
           <ExcelImportPage
             userRole={userRole}
-            onSwitchToAdmin={() => handleRoleChange('ADMIN', 'Yönetici')}
+            onSwitchToAdmin={() => setShowAdminAuthModal(true)}
             onRefreshAll={handleRefreshAll}
           />
         )}
@@ -502,7 +623,14 @@ export default function Home() {
       {/* Mobile Sticky Bottom Navigation */}
       <BottomNav
         currentTab={currentTab}
-        onTabChange={setCurrentTab}
+        onTabChange={(tab) => {
+          if (tab === 'import' && userRole !== 'ADMIN') {
+            setShowAdminAuthModal(true);
+            return;
+          }
+          setCurrentTab(tab);
+        }}
+        userRole={userRole}
         hasActiveShift={!!activeShift}
         incompleteDeliveriesCount={eksikHaneler.length}
         importErrorsCount={overallStats?.toplamHataSayisi}
@@ -595,6 +723,19 @@ export default function Home() {
       {showAuditLogsModal && (
         <AuditLogsModal
           onClose={() => setShowAuditLogsModal(false)}
+        />
+      )}
+
+      {/* 7. Şifreli Yönetici Yetkilendirme Modalı */}
+      {showAdminAuthModal && (
+        <AdminAuthModal
+          isOpen={showAdminAuthModal}
+          onClose={() => setShowAdminAuthModal(false)}
+          onSuccess={(adminUser) => {
+            handleRoleChange('ADMIN', adminUser.name);
+          }}
+          title="Yönetici Yetkilendirmesi Gereklidir"
+          description="Excel aktarımı ve toplu veri yönetimi işlemleri için lütfen Yönetici şifrenizi veya PIN kodunuzu giriniz."
         />
       )}
     </main>

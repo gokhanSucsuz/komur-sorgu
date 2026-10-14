@@ -23,7 +23,15 @@ export async function POST(request: NextRequest) {
   try {
     const { systemSettings, beneficiaries } = await getDbCollections();
     const body = await request.json();
-    const { varsayilan_hedef_torba, updateExisting } = body;
+    const { varsayilan_hedef_torba, updateExisting, userRole } = body;
+    const reqRole = request.headers.get('x-user-role') || userRole;
+
+    if (reqRole && reqRole !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Kömür kotasını sadece Sistem Yöneticisi belirleyebilir veya değiştirebilir.' },
+        { status: 403 }
+      );
+    }
 
     const bagVal = parseInt(varsayilan_hedef_torba, 10);
     if (isNaN(bagVal) || bagVal <= 0) {

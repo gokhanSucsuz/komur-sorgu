@@ -27,7 +27,11 @@ export async function POST(request: NextRequest) {
   try {
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
-    const { username, ad_soyad, rol, sifre, telefon } = body;
+    const { username, ad_soyad, rol, sifre, telefon, callerRole } = body;
+    const reqRole = request.headers.get('x-user-role') || callerRole;
+    if (reqRole !== 'ADMIN') {
+      return NextResponse.json({ success: false, error: 'Yetkisiz erişim! Personel kayıt işlemlerini sadece Yönetici yapabilir.' }, { status: 403 });
+    }
 
     const trimmedUser = (username || '').trim().toLowerCase();
     const trimmedName = (ad_soyad || '').trim();
@@ -95,7 +99,11 @@ export async function PUT(request: NextRequest) {
   try {
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
-    const { id, username, ad_soyad, rol, sifre, telefon, aktif } = body;
+    const { id, username, ad_soyad, rol, sifre, telefon, aktif, callerRole } = body;
+    const reqRole = request.headers.get('x-user-role') || callerRole;
+    if (reqRole !== 'ADMIN') {
+      return NextResponse.json({ success: false, error: 'Yetkisiz erişim! Personel düzenleme işlemlerini sadece Yönetici yapabilir.' }, { status: 403 });
+    }
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Personel ID zorunludur' }, { status: 400 });
@@ -105,6 +113,19 @@ export async function PUT(request: NextRequest) {
     const trimmedName = (ad_soyad || '').trim();
     const trimmedPass = (sifre || '').trim();
     const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : 'PERSONEL';
+
+    // Prevent demoting an admin account to personnel: "yönetici de kendini normal personel olarak kaydedemez"
+    const targetUser = await usersCol.findOne(buildIdFilter(id));
+    if (targetUser && targetUser.rol === 'ADMIN' && trimmedRole === 'PERSONEL') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Güvenlik kuralı: Bir Yönetici (Admin) hesabı normal personele düşürülemez!',
+        },
+        { status: 400 }
+      );
+    }
+
     const isActive = aktif === 0 ? 0 : 1;
 
     // Check unique username excluding current
@@ -160,6 +181,11 @@ export async function DELETE(request: NextRequest) {
   try {
     const { users: usersCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
+    const reqRole = request.headers.get('x-user-role') || searchParams.get('callerRole');
+    if (reqRole && reqRole !== 'ADMIN') {
+      return NextResponse.json({ success: false, error: 'Yetkisiz erişim! Personel silme işlemlerini sadece Yönetici yapabilir.' }, { status: 403 });
+    }
+
     const id = searchParams.get('id');
 
     if (!id) {

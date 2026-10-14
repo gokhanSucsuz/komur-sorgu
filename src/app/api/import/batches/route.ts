@@ -61,8 +61,16 @@ export async function GET() {
 // DELETE /api/import/batches - Delete an imported Excel batch and rollback its beneficiaries
 export async function DELETE(request: NextRequest) {
   try {
-    const { importBatches: batchesCol, beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
+    const reqRole = request.headers.get('x-user-role') || searchParams.get('callerRole');
+    if (reqRole !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Excel dosyası ve hak sahiplerini silme yetkisi sadece Yöneticilere aittir.' },
+        { status: 403 }
+      );
+    }
+
+    const { importBatches: batchesCol, beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
     let batchId = searchParams.get('batchId');
     let forceDelivered = searchParams.get('force') === 'true';
 

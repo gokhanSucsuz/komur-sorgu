@@ -18,6 +18,7 @@ export default function PersonnelManagementModal({
   const [isLoading, setIsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingOriginalRole, setEditingOriginalRole] = useState<'ADMIN' | 'PERSONEL' | null>(null);
 
   // Form states
   const [adSoyad, setAdSoyad] = useState('');
@@ -55,6 +56,7 @@ export default function PersonnelManagementModal({
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
+    setEditingOriginalRole(null);
     setAdSoyad('');
     setUsername('');
     setSifre('');
@@ -67,6 +69,7 @@ export default function PersonnelManagementModal({
 
   const handleStartEdit = (person: any) => {
     setEditingId(person.id);
+    setEditingOriginalRole(person.rol);
     setAdSoyad(person.ad_soyad);
     setUsername(person.username);
     setSifre(person.sifre);
@@ -92,12 +95,16 @@ export default function PersonnelManagementModal({
         username: username.trim().toLowerCase(),
         sifre: sifre.trim(),
         telefon: telefon.trim(),
-        rol
+        rol,
+        callerRole: 'ADMIN'
       };
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-role': 'ADMIN'
+        },
         body: JSON.stringify(payload)
       });
 
@@ -123,7 +130,10 @@ export default function PersonnelManagementModal({
     if (!confirm(`${name} isimli personeli silmek istediğinize emin misiniz?`)) return;
 
     try {
-      const res = await fetch(`/api/personnel?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/personnel?id=${id}&callerRole=ADMIN`, { 
+        method: 'DELETE',
+        headers: { 'x-user-role': 'ADMIN' }
+      });
       const data = await res.json();
       if (!data.success) {
         throw new Error(data.error || 'Silinemedi');
@@ -278,18 +288,29 @@ export default function PersonnelManagementModal({
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                Yetki Rolü
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  Yetki Rolü
+                </label>
+                {editingOriginalRole === 'ADMIN' && (
+                  <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    🔒 Yönetici rolü düşürülemez
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
+                  disabled={editingOriginalRole === 'ADMIN'}
                   onClick={() => setRol('PERSONEL')}
                   className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    rol === 'PERSONEL'
+                    editingOriginalRole === 'ADMIN'
+                      ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                      : rol === 'PERSONEL'
                       ? 'bg-sky-50 border-sky-400 text-sky-900 shadow-xs'
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
                   }`}
+                  title={editingOriginalRole === 'ADMIN' ? 'Yönetici hesabı normal personele düşürülemez' : undefined}
                 >
                   <User className="w-3.5 h-3.5" />
                   <span>Saha Personeli</span>

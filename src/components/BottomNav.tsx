@@ -7,6 +7,7 @@ export type NavTab = 'search' | 'route' | 'shift' | 'analytics' | 'archive' | 't
 interface BottomNavProps {
   currentTab: NavTab;
   onTabChange: (tab: NavTab) => void;
+  userRole?: 'ADMIN' | 'PERSONEL';
   hasActiveShift?: boolean;
   incompleteDeliveriesCount?: number;
   importErrorsCount?: number;
@@ -16,6 +17,7 @@ interface BottomNavProps {
 export default function BottomNav({
   currentTab,
   onTabChange,
+  userRole = 'PERSONEL',
   hasActiveShift,
   incompleteDeliveriesCount,
   importErrorsCount,
@@ -67,9 +69,11 @@ export default function BottomNav({
     }
   ];
 
+  const visibleTabs = tabs.filter((tab) => tab.id !== 'import' || userRole === 'ADMIN');
+
   return (
     <nav className="mobile-nav-bar no-print lg:hidden" role="navigation" aria-label="Ana Menü">
-      {tabs.map((tab) => {
+      {visibleTabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = currentTab === tab.id;
 

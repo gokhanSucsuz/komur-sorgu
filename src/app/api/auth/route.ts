@@ -54,34 +54,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. If trying to login as ADMIN with default PIN '1234'
-    if (!rawUser && role === 'ADMIN' && (trimmedPass === '1234' || trimmedPass.toLowerCase() === 'admin')) {
-      rawUser = await usersCol.findOne({ rol: 'ADMIN' });
-      if (!rawUser) {
-        rawUser = {
-          id: '1',
-          username: 'admin',
-          ad_soyad: 'Sistem Yöneticisi',
-          rol: 'ADMIN',
-          telefon: '05551112233',
-        };
-      }
-    }
-
-    // 3. If trying to login as Personel with matching PIN
-    if (!rawUser && role === 'PERSONEL' && trimmedUser) {
-      const candidate = await usersCol.findOne({
-        $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-        aktif: 1,
-      });
-      if (candidate) {
-        const decCand = mapDoc(candidate);
-        if (decCand.sifre === trimmedPass || candidate.sifre === trimmedPass) {
-          rawUser = candidate;
-        }
-      }
-    }
-
     if (!rawUser) {
       return NextResponse.json(
         {

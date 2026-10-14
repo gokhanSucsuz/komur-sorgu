@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
-  Trash2, Filter, Search, ShieldAlert, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck
+  Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck
 } from 'lucide-react';
 
 interface ExcelImportPageProps {
@@ -77,9 +77,11 @@ export default function ExcelImportPage({
   };
 
   useEffect(() => {
-    fetchLogs();
-    fetchUploadedBatches();
-  }, [selectedBatch, selectedDurum, searchLog]);
+    if (userRole === 'ADMIN') {
+      fetchLogs();
+      fetchUploadedBatches();
+    }
+  }, [userRole, selectedBatch, selectedDurum, searchLog]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -102,10 +104,14 @@ export default function ExcelImportPage({
 
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('userRole', userRole);
 
     try {
       const res = await fetch('/api/import', {
         method: 'POST',
+        headers: {
+          'x-user-role': userRole
+        },
         body: formData
       });
 
@@ -131,8 +137,11 @@ export default function ExcelImportPage({
   const handleDeleteBatch = async (batchId: string, force: boolean) => {
     setIsDeletingBatch(true);
     try {
-      const res = await fetch(`/api/import/batches?batchId=${encodeURIComponent(batchId)}&force=${force}`, {
-        method: 'DELETE'
+      const res = await fetch(`/api/import/batches?batchId=${encodeURIComponent(batchId)}&force=${force}&callerRole=${userRole}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-role': userRole
+        }
       });
       const data = await res.json();
       if (data.success) {
@@ -154,7 +163,12 @@ export default function ExcelImportPage({
   const handleClearLogs = async () => {
     if (!confirm('Yükleme hata kayıtlarını temizlemek istediğinize emin misiniz?')) return;
     try {
-      const res = await fetch('/api/import/logs', { method: 'DELETE' });
+      const res = await fetch('/api/import/logs', { 
+        method: 'DELETE',
+        headers: {
+          'x-user-role': userRole
+        }
+      });
       const data = await res.json();
       if (data.success) {
         fetchLogs();
@@ -164,26 +178,33 @@ export default function ExcelImportPage({
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Admin Privilege Check Notice */}
-      {userRole !== 'ADMIN' && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 space-y-2 shadow-xs">
-          <div className="flex items-center gap-2 font-black text-sm text-amber-800">
-            <ShieldAlert className="w-5 h-5 text-amber-600" />
-            <span>Yönetici (Admin) Yetkisi Gereklidir</span>
-          </div>
-          <p className="text-xs text-amber-900 leading-relaxed font-medium">
-            Excel dosyası yükleme ve toplu veri aktarma işlemleri için Yönetici girişi yapmanız gerekmektedir.
+  if (userRole !== 'ADMIN') {
+    return (
+      <div className="max-w-md mx-auto my-12 p-6 rounded-3xl bg-white border border-slate-200 shadow-md text-center space-y-4">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-base font-extrabold text-slate-800">Excel Aktarımı Sayfası Kilitli</h3>
+          <p className="text-xs text-slate-600 font-medium leading-relaxed">
+            Excel dosyası aktarımı, hak sahibi yükleme ve liste silme işlemleri yalnızca <strong>Yönetici (Admin)</strong> yetkisine sahip kullanıcılar tarafından yapılabilir.
           </p>
+        </div>
+        <div className="pt-2">
           <button
             onClick={onSwitchToAdmin}
-            className="btn-primary text-xs py-2 px-3 mt-1 bg-gradient-to-r from-amber-500 to-amber-600 font-bold"
+            className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
           >
-            Yönetici Olarak Giriş Yap
+            <Shield className="w-4 h-4" />
+            <span>Yönetici Doğrulaması Yap</span>
           </button>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
 
       {/* MASAÜSTÜ İKİ KOLONLU DÜZEN: Yükleme Paneli & Yüklenen Dosyalar */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">

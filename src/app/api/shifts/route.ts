@@ -432,6 +432,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Sonlandırılacak aktif mesai kaydı bulunamadı.' }, { status: 404 });
       }
 
+      // Check shift ownership if non-admin
+      const callerRole = request.headers.get('x-user-role') || body.callerRole;
+      const callerName = request.headers.get('x-user-name') || body.callerName;
+
+      if (callerRole && callerRole !== 'ADMIN' && callerName) {
+        if (targetShift.personel_adi?.trim().toLowerCase() !== callerName.trim().toLowerCase()) {
+          return NextResponse.json(
+            { success: false, error: 'Yetkisiz işlem! Personeller sadece kendi mesailerini sonlandırabilir.' },
+            { status: 403 }
+          );
+        }
+      }
+
       const startTime = baslama_saati || targetShift.baslama_saati || '08:30';
       const endTime = bitis_saati || localTime;
       const totalMinutes = calculateMinutes(startTime, endTime);
@@ -545,6 +558,23 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
     }
 
+    const callerRole = request.headers.get('x-user-role') || body.callerRole;
+    const callerName = request.headers.get('x-user-name') || body.callerName;
+
+    const existingShift = await shiftsCol.findOne(buildIdFilter(id));
+    if (!existingShift) {
+      return NextResponse.json({ success: false, error: 'Mesai kaydı bulunamadı' }, { status: 404 });
+    }
+
+    if (callerRole && callerRole !== 'ADMIN' && callerName) {
+      if (existingShift.personel_adi?.trim().toLowerCase() !== callerName.trim().toLowerCase()) {
+        return NextResponse.json(
+          { success: false, error: 'Yetkisiz işlem! Personeller diğer personellerin mesai kayıtlarını değiştiremez.' },
+          { status: 403 }
+        );
+      }
+    }
+
     let totalMinutes = 0;
     if (baslama_saati && bitis_saati) {
       totalMinutes = calculateMinutes(baslama_saati, bitis_saati);
@@ -583,7 +613,16 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { workShifts: shiftsCol } = await getDbCollections();
-    const { id } = await request.json();
+    const body = await request.json();
+    const { id, callerRole } = body;
+    const reqRole = request.headers.get('x-user-role') || callerRole;
+
+    if (reqRole && reqRole !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Yetkisiz işlem! Mesai kayıtlarını sadece Sistem Yöneticisi silebilir.' },
+        { status: 403 }
+      );
+    }
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });

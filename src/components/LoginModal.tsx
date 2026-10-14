@@ -85,7 +85,8 @@ export default function LoginModal({ isOpen, onLoginSuccess }: LoginModalProps) 
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
+      <div className="login-card-container" style={{ maxWidth: '460px' }}>
+        <div className="login-main-card max-h-[92vh] overflow-hidden flex flex-col shadow-2xl">
         {/* Top Header Banner */}
         <div className="p-6 bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-white text-center relative">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-white/20 backdrop-blur border border-white/30 flex items-center justify-center shadow-lg mb-3">
@@ -148,142 +149,121 @@ export default function LoginModal({ isOpen, onLoginSuccess }: LoginModalProps) 
             </div>
           )}
 
-          {/* ADMIN LOGIN VIEW */}
-          {activeTab === 'ADMIN' && (
-            <div className="space-y-3">
-              {/* Highlighted Admin Credentials Info Box */}
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-xs text-amber-900 space-y-1 shadow-xs">
-                <div className="flex items-center gap-1.5 font-black text-amber-800">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  <span>Varsayılan Yönetici Bilgileri:</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-                  <div className="bg-white p-1.5 rounded-lg border border-amber-200">
-                    <span className="text-slate-500 block text-[10px]">Kullanıcı Adı:</span>
-                    <strong className="text-slate-900">admin</strong>
-                  </div>
-                  <div className="bg-white p-1.5 rounded-lg border border-amber-200">
-                    <span className="text-slate-500 block text-[10px]">Şifre / PIN:</span>
-                    <strong className="text-slate-900">1234</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Yönetici Kullanıcı Adı
-                </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Yönetici Şifresi / PIN (1234)
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Şifre veya 1234"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-amber-500 focus:bg-white pr-10"
-                    required
-                  />
-                  <KeyRound className="w-4 h-4 absolute right-3.5 top-3 text-slate-400" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STAFF LOGIN VIEW */}
-          {activeTab === 'PERSONEL' && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Giriş Yapacak Personeli Seçiniz
-                </label>
-                {isLoadingStaff ? (
-                  <div className="p-3 text-center text-xs text-slate-500 bg-slate-50 rounded-xl">
-                    Personel listesi yükleniyor...
-                  </div>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
-                    {staffList.map((person) => {
-                      const isSelected = selectedStaff?.id === person.id;
-                      return (
-                        <div
-                          key={person.id}
-                          onClick={() => {
-                            setSelectedStaff(person);
-                            setUsername(person.username);
-                          }}
-                          className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                            isSelected
-                              ? 'bg-sky-50 border-sky-400 text-slate-900 shadow-xs'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
-                              isSelected
-                                ? 'bg-sky-500 text-white'
-                                : 'bg-slate-200 text-slate-600'
-                            }`}>
-                              <User className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <p className="text-xs font-extrabold text-slate-900">{person.ad_soyad}</p>
-                              <p className="text-[11px] text-slate-500 font-mono">@{person.username}</p>
-                            </div>
-                          </div>
-                          {isSelected && <CheckCircle2 className="w-4 h-4 text-sky-600" />}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                    Personel PIN Kodu / Şifresi
+            {/* ADMIN LOGIN VIEW */}
+            {activeTab === 'ADMIN' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Yönetici Kullanıcı Adı
                   </label>
-                  <span className="text-[11px] text-amber-700 font-bold">
-                    Varsayılan: 1234
-                  </span>
-                </div>
-                <div className="relative">
                   <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Varsayılan: 1234"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-sky-500 focus:bg-white pr-10"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Kullanıcı adınızı girin"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
                     required
                   />
-                  <KeyRound className="w-4 h-4 absolute right-3.5 top-3 text-slate-400" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Yönetici Şifresi / PIN
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Şifrenizi girin"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-amber-500 focus:bg-white pr-10"
+                      required
+                    />
+                    <KeyRound className="w-4 h-4 absolute right-3.5 top-3 text-slate-400" />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* STAFF LOGIN VIEW */}
+            {activeTab === 'PERSONEL' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Giriş Yapacak Personeli Seçiniz
+                  </label>
+                  {isLoadingStaff ? (
+                    <div className="p-3 text-center text-xs text-slate-500 bg-slate-50 rounded-xl">
+                      Personel listesi yükleniyor...
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                      {staffList.map((person) => {
+                        const isSelected = selectedStaff?.id === person.id;
+                        return (
+                          <div
+                            key={person.id}
+                            onClick={() => {
+                              setSelectedStaff(person);
+                              setUsername(person.username);
+                            }}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-sky-50 border-sky-400 text-slate-900 shadow-xs'
+                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
+                                isSelected
+                                  ? 'bg-sky-500 text-white'
+                                  : 'bg-slate-200 text-slate-600'
+                              }`}>
+                                <User className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-extrabold text-slate-900">{person.ad_soyad}</p>
+                                <p className="text-[11px] text-slate-500 font-mono">@{person.username}</p>
+                              </div>
+                            </div>
+                            {isSelected && <CheckCircle2 className="w-4 h-4 text-sky-600" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                      Personel PIN Kodu / Şifresi
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="PIN Kodunuzu girin"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-sky-500 focus:bg-white pr-10"
+                      required
+                    />
+                    <KeyRound className="w-4 h-4 absolute right-3.5 top-3 text-slate-400" />
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* Submit Button */}
-          <div className="pt-2">
+          <div className="pt-2 flex justify-center">
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`btn-primary w-full py-3 text-sm font-extrabold shadow-lg ${
+              className={`login-submit-btn text-sm font-extrabold shadow-lg ${
                 activeTab === 'ADMIN'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/25'
-                  : 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-sky-600/25'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/25 hover:from-amber-600 hover:to-orange-700'
+                  : 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-sky-600/25 hover:from-sky-700 hover:to-indigo-700'
               }`}
             >
               {isSubmitting ? (
@@ -299,6 +279,7 @@ export default function LoginModal({ isOpen, onLoginSuccess }: LoginModalProps) 
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

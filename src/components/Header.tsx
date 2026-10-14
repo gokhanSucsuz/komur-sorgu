@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3
+  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 
@@ -17,11 +17,13 @@ interface HeaderProps {
   incompleteDeliveriesCount?: number;
   importErrorsCount?: number;
   activeRouteStopsCount?: number;
+  pendingSyncCount?: number;
+  onTriggerSync?: () => void;
+  isOnline?: boolean;
   onOpenQuotaModal?: () => void;
   onOpenPersonnelModal?: () => void;
   onOpenAuditLogs?: () => void;
   onLogout?: () => void;
-  onRoleChange: (role: 'ADMIN' | 'PERSONEL', name: string) => void;
   onRefresh: () => void;
   isRefreshing?: boolean;
 }
@@ -36,21 +38,19 @@ export default function Header({
   incompleteDeliveriesCount,
   importErrorsCount,
   activeRouteStopsCount,
+  pendingSyncCount = 0,
+  onTriggerSync,
+  isOnline = true,
   onOpenQuotaModal,
   onOpenPersonnelModal,
   onOpenAuditLogs,
   onLogout,
-  onRoleChange,
   onRefresh,
   isRefreshing = false
 }: HeaderProps) {
-  const [showRoleModal, setShowRoleModal] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<'ADMIN' | 'PERSONEL'>(userRole);
-  const [inputName, setInputName] = useState(userName);
-  const [adminPin, setAdminPin] = useState('');
-  const [pinError, setPinError] = useState('');
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
-  const navTabs = [
+  const allNavTabs = [
     {
       id: 'search' as NavTab,
       label: 'Sorgu & Dağıtım',
@@ -96,19 +96,8 @@ export default function Header({
     }
   ];
 
-  const handleSaveRole = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedRole === 'ADMIN') {
-      if (adminPin !== '1234' && adminPin.toLowerCase() !== 'admin') {
-        setPinError('Geçersiz Yönetici PIN kodu! (Varsayılan: 1234)');
-        return;
-      }
-    }
-    setPinError('');
-    onRoleChange(selectedRole, inputName || (selectedRole === 'ADMIN' ? 'Yönetici' : 'Saha Personeli'));
-    setShowRoleModal(false);
-    setAdminPin('');
-  };
+  // Restrict Excel Import Tab strictly to ADMIN
+  const visibleNavTabs = allNavTabs.filter((tab) => tab.id !== 'import' || userRole === 'ADMIN');
 
   return (
     <>
@@ -145,11 +134,32 @@ export default function Header({
 
             {/* User Role Badge & Actions */}
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
-              {/* Admin Personnel Management Shortcut */}
+              {/* Pending Offline Sync Badge */}
+              {pendingSyncCount > 0 && onTriggerSync && (
+                <button
+                  onClick={onTriggerSync}
+                  title="Çevrimdışı yapılan teslimatları sisteme aktar"
+                  className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-500 text-white text-[11px] font-black shadow-xs hover:bg-amber-600 transition-all shrink-0 animate-pulse"
+                >
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span className="hidden xs:inline">Eşitle:</span>
+                  <span>{pendingSyncCount}</span>
+                </button>
+              )}
+
+              {/* Offline Indicator on mobile */}
+              {!isOnline && (
+                <span className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold shrink-0">
+                  <WifiOff className="w-3 h-3 text-amber-700" />
+                  <span className="hidden xs:inline">Çevrimdışı</span>
+                </span>
+              )}
+
+              {/* Admin Personnel Management Shortcut - Admin Only */}
               {userRole === 'ADMIN' && onOpenPersonnelModal && (
                 <button
                   onClick={onOpenPersonnelModal}
-                  title="Personel & Şifre Yönetimi"
+                  title="Personel & Şifre Yönetimi (Sadece Yönetici)"
                   className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold text-purple-900 transition-all active:scale-95 shadow-sm shrink-0"
                 >
                   <Users className="w-3.5 h-3.5 text-purple-700" />
@@ -157,11 +167,11 @@ export default function Header({
                 </button>
               )}
 
-              {/* Admin Audit Logs Shortcut */}
+              {/* Admin Audit Logs Shortcut - Admin Only */}
               {userRole === 'ADMIN' && onOpenAuditLogs && (
                 <button
                   onClick={onOpenAuditLogs}
-                  title="Kullanıcı İşlem & Denetim Logları"
+                  title="Kullanıcı İşlem & Denetim Logları (Sadece Yönetici)"
                   className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold text-indigo-900 transition-all active:scale-95 shadow-sm shrink-0"
                 >
                   <FileClock className="w-3.5 h-3.5 text-indigo-700" />
@@ -169,15 +179,24 @@ export default function Header({
                 </button>
               )}
 
-              {onOpenQuotaModal && (
+              {/* Target Quota - Only Admin Can Edit; Personnel Sees Read-Only */}
+              {userRole === 'ADMIN' && onOpenQuotaModal ? (
                 <button
                   onClick={onOpenQuotaModal}
-                  title="Hane Kömür Kotası Ayarla"
+                  title="Hane Kömür Kotası Ayarla (Yönetici Yetkisi)"
                   className="flex items-center gap-0.5 sm:gap-1 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-900 transition-all active:scale-95 shadow-sm shrink-0"
                 >
                   <span className="text-xs">🎯</span>
                   <span className="text-[11px] sm:text-xs font-bold">{defaultQuota || 34}</span>
                 </button>
+              ) : (
+                <div
+                  title={`Hedef Hane Kotası: ${defaultQuota || 34} Torba (Yönetici Tarafından Belirlenir)`}
+                  className="flex items-center gap-1 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 shrink-0 cursor-default"
+                >
+                  <span className="text-xs">🎯</span>
+                  <span className="text-[11px] sm:text-xs font-bold">{defaultQuota || 34}</span>
+                </div>
               )}
 
               <button
@@ -191,13 +210,11 @@ export default function Header({
                 <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
 
+              {/* User Profile Badge (Clicking Opens Profile Info, No Arbitrary Role Change) */}
               <button
-                onClick={() => {
-                  setSelectedRole(userRole);
-                  setInputName(userName);
-                  setShowRoleModal(true);
-                }}
+                onClick={() => setShowProfileModal(true)}
                 className="flex items-center gap-1 sm:gap-1.5 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[85px] xs:max-w-[105px] sm:max-w-[130px] shrink-0"
+                title="Kullanıcı Oturum Bilgisi"
               >
                 {userRole === 'ADMIN' ? (
                   <>
@@ -212,12 +229,12 @@ export default function Header({
                 )}
               </button>
 
-              {/* Logout Button - Always visible and pinned on right */}
+              {/* Logout Button */}
               {onLogout && (
                 <button
                   onClick={onLogout}
-                  title="Çıkış Yap"
-                  aria-label="Çıkış Yap"
+                  title="Güvenli Çıkış Yap"
+                  aria-label="Güvenli Çıkış Yap"
                   className="p-1.5 sm:p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 transition-all active:scale-95 shadow-sm shrink-0"
                 >
                   <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -226,11 +243,11 @@ export default function Header({
             </div>
           </div>
 
-          {/* Desktop Navigation Bar (Visible on min-width: 1024px, hidden on mobile) */}
+          {/* Desktop Navigation Bar */}
           {onTabChange && (
             <div className="desktop-nav-bar hidden lg:flex items-center justify-between w-full">
               <nav className="desktop-nav-tabs" role="tablist" aria-label="Masaüstü Ana Menü">
-                {navTabs.map((tab) => {
+                {visibleNavTabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = currentTab === tab.id;
 
@@ -256,10 +273,17 @@ export default function Header({
 
               {/* Institutional Online Status Tag */}
               <div className="hidden xl:flex items-center gap-2 text-xs font-bold text-slate-500 shrink-0">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Sistem Çevrimiçi</span>
-                </span>
+                {!isOnline ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    <span>Çevrimdışı Mod</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Sistem Çevrimiçi</span>
+                  </span>
+                )}
                 <span className="text-slate-300">•</span>
                 <span className="text-slate-600 font-semibold">T.C. Edirne Valiliği SYDV</span>
               </div>
@@ -268,132 +292,56 @@ export default function Header({
         </div>
       </header>
 
-      {/* Role Switcher Modal - Light Mode */}
-      {showRoleModal && (
-        <div className="modal-overlay" onClick={() => setShowRoleModal(false)}>
-          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-amber-600" />
-                Kullanıcı Girişi / Rol Değiştir
+      {/* User Profile Info Modal (Read-Only, Role is Enforced by Account, No Self Escalation) */}
+      {showProfileModal && (
+        <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
+          <div className="modal-sheet max-w-md" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <User className="w-5 h-5 text-amber-600" />
+                Kullanıcı ve Oturum Bilgisi
               </h3>
               <button
-                onClick={() => setShowRoleModal(false)}
+                onClick={() => setShowProfileModal(false)}
                 className="text-slate-400 hover:text-slate-700 text-sm p-1"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveRole} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                  Giriş Türü Seçiniz
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedRole('PERSONEL');
-                      setPinError('');
-                    }}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      selectedRole === 'PERSONEL'
-                        ? 'border-sky-500 bg-sky-50 text-slate-900 shadow-sm'
-                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <User className="w-5 h-5 text-sky-600" />
-                      {selectedRole === 'PERSONEL' && <CheckCircle2 className="w-4 h-4 text-sky-600" />}
-                    </div>
-                    <div className="text-sm font-bold text-slate-900">Saha Personeli</div>
-                    <div className="text-[11px] text-slate-500">Sorgulama, Mahalle, Teslimat</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedRole('ADMIN');
-                      setPinError('');
-                    }}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      selectedRole === 'ADMIN'
-                        ? 'border-amber-500 bg-amber-50 text-slate-900 shadow-sm'
-                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <Shield className="w-5 h-5 text-amber-600" />
-                      {selectedRole === 'ADMIN' && <CheckCircle2 className="w-4 h-4 text-amber-600" />}
-                    </div>
-                    <div className="text-sm font-bold text-slate-900">Yönetici (Admin)</div>
-                    <div className="text-[11px] text-slate-500">Excel Yükleme, Tonaj, Tam Yetki</div>
-                  </button>
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500 font-bold uppercase">Giriş Yapan Kullanıcı</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    userRole === 'ADMIN' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-sky-100 text-sky-900 border border-sky-300'
+                  }`}>
+                    {userRole === 'ADMIN' ? 'Yönetici' : 'Saha Personeli'}
+                  </span>
                 </div>
+                <div className="text-sm font-black text-slate-900">{userName}</div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Adınız / Takma Adınız
-                </label>
-                <input
-                  type="text"
-                  value={inputName}
-                  onChange={(e) => setInputName(e.target.value)}
-                  placeholder="Örn: Ahmet Yılmaz"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
-                />
+              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 leading-relaxed font-medium">
+                🛡️ <strong>Güvenlik ve Yetki İlkesi:</strong> Sistem yetkileri hesap kaydınıza tanımlıdır. Normal personel kendini yönetici yapamaz, yönetici de kendini personele düşüremez. Personel kayıt ve rol işlemleri sadece Sistem Yöneticisi tarafından yürütülmektedir.
               </div>
 
-              {selectedRole === 'ADMIN' && (
-                <div>
-                  <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1.5">
-                    Yönetici PIN Kodu
-                  </label>
-                  <input
-                    type="password"
-                    value={adminPin}
-                    onChange={(e) => setAdminPin(e.target.value)}
-                    placeholder="Varsayılan: 1234"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-amber-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
-                  />
-                  {pinError && <p className="text-xs text-rose-600 mt-1 font-medium">{pinError}</p>}
-                  <p className="text-[11px] text-slate-500 mt-1">İpucu: Varsayılan PIN <span className="text-amber-800 font-mono font-bold">1234</span> veya <span className="text-amber-800 font-mono font-bold">admin</span></p>
-                </div>
-              )}
-
-              <div className="pt-2 space-y-2">
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowRoleModal(false)}
-                    className="btn-secondary flex-1"
-                  >
-                    İptal
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary flex-1 font-bold"
-                  >
-                    Kaydet
-                  </button>
-                </div>
+              <div className="pt-2">
                 {onLogout && (
                   <button
                     type="button"
                     onClick={() => {
-                      setShowRoleModal(false);
+                      setShowProfileModal(false);
                       onLogout();
                     }}
-                    className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-95 shadow-xs"
                   >
                     <LogOut className="w-4 h-4 text-rose-600" />
-                    Oturumu Kapat (Çıkış Yap)
+                    Güvenli Oturumu Kapat (Çıkış Yap)
                   </button>
                 )}
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

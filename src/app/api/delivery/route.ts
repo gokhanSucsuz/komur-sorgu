@@ -26,15 +26,45 @@ export async function POST(request: NextRequest) {
 
     if (action === 'TESLIMAT') {
       const hedef = beneficiary.hedef_torba || 34;
+      const currentStatus = beneficiary.teslimat_durumu;
+      const currentBags = beneficiary.torba_sayisi || 0;
+
+      // 1. Conflict Check: Is it already completed or cancelled?
+      if (currentStatus === 'TAMAMLANDI') {
+        const staffName = beneficiary.teslim_eden_personel || 'başka bir personel';
+        const dateStr = beneficiary.teslimat_tarihi || '';
+        return NextResponse.json(
+          {
+            success: false,
+            conflict: true,
+            error: `UYARI: Bu hak sahibine (${beneficiary.ad_soyad}) zaten ${staffName} tarafından ${dateStr ? dateStr + ' tarihinde ' : ''}tam teslimat yapılmıştır! Mükerrer teslimat engellendi.`,
+            beneficiary,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (currentStatus === 'IPTAL') {
+        return NextResponse.json(
+          {
+            success: false,
+            conflict: true,
+            error: `UYARI: Bu hak sahibinin kaydı iptal edilmiştir! Teslimat yapılamaz. İptal Gerekçesi: ${beneficiary.iptal_nedeni || 'Belirtilmemiş'}`,
+            beneficiary,
+          },
+          { status: 409 }
+        );
+      }
+
       let newTotalBags = 0;
       let deliveredThisTime = 0;
 
       if (eklenen_torba !== undefined && eklenen_torba !== null) {
         deliveredThisTime = parseInt(eklenen_torba, 10) || 0;
-        newTotalBags = (beneficiary.torba_sayisi || 0) + deliveredThisTime;
+        newTotalBags = currentBags + deliveredThisTime;
       } else {
         newTotalBags = parseInt(torba_sayisi || String(hedef), 10);
-        deliveredThisTime = newTotalBags - (beneficiary.torba_sayisi || 0);
+        deliveredThisTime = newTotalBags - currentBags;
         if (deliveredThisTime <= 0) deliveredThisTime = newTotalBags;
       }
 
@@ -48,18 +78,50 @@ export async function POST(request: NextRequest) {
         newStatus = 'EKSIK';
       }
 
-      // Update beneficiary in MongoDB (with encrypted recipient and notes)
-      await benCol.updateOne(buildIdFilter(beneficiary.id), {
-        $set: {
-          teslimat_durumu: newStatus,
-          teslimat_tarihi: localTimeStr,
-          torba_sayisi: newTotalBags,
-          teslim_alan: encryptField(recipient),
-          teslim_eden_personel: staff,
-          teslimat_notu: encryptField(note),
-          updated_at: localTimeStr,
+      // Optimistic Concurrency Update
+      const updateResult = await benCol.updateOne(
+        {
+          ...buildIdFilter(beneficiary.id),
+          teslimat_durumu: { $ne: 'TAMAMLANDI' }
         },
-      });
+        {
+          $set: {
+            teslimat_durumu: newStatus,
+            teslimat_tarihi: localTimeStr,
+            torba_sayisi: newTotalBags,
+            teslim_alan: encryptField(recipient),
+            teslim_eden_personel: staff,
+            teslimat_notu: encryptField(note),
+            updated_at: localTimeStr,
+          },
+        }
+      );
+
+      if (updateResult.matchedCount === 0) {
+        const freshRaw = await benCol.findOne(buildIdFilter(beneficiary.id));
+        const freshBen = mapDoc(freshRaw);
+        return NextResponse.json(
+          {
+            success: false,
+            conflict: true,
+            error: `UYARI: Bu kayıt siz işlemi tamamlarken ${freshBen.teslim_eden_personel || 'başka bir personel'} tarafından güncellendi! Mükerrer teslimat engellendi.`,
+            beneficiary: freshBen,
+          },
+          { status: 409 }
+        );
+      }
+
+      // Update sync pulse in systemSettings so other clients auto-refresh
+      try {
+        const { systemSettings } = await getDbCollections();
+        await systemSettings.updateOne(
+          { key: 'last_delivery_sync_time' },
+          { $set: { key: 'last_delivery_sync_time', value: nowIso, updated_by: staff } },
+          { upsert: true }
+        );
+      } catch (pulseErr) {
+        // Non-blocking
+      }
 
       // Add to delivery history (AES-256-GCM Şifreli)
       await histCol.insertOne(encryptDeliveryHistory({
