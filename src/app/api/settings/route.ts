@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections } from '@/lib/mongodb';
+import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
 
 export async function GET() {
   try {
@@ -65,6 +65,15 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    await recordActivityLog({
+      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'KOTA_DEGISTIRME',
+      baslik: 'Varsayılan Hedef Kömür Kotası Güncellendi',
+      detay: `Hane başı hedef torba sayısı ${bagVal} torba (${(bagVal * 0.025).toFixed(2)} Ton) olarak güncellendi.${updateExisting ? ' Bekleyen hanelerin hedefleri de güncellendi.' : ''}`,
+      ek_bilgi: { bagVal, updateExisting },
+    });
 
     return NextResponse.json({
       success: true,

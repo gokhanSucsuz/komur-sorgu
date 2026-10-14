@@ -841,7 +841,7 @@ export default function BeneficiaryList({
                       isBulkSignMode && selectedIds.has(String(person.id))
                         ? 'border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/40'
                         : isPartial
-                        ? 'border-amber-300 bg-amber-50/20'
+                        ? 'border-amber-400 bg-amber-50/30 ring-1 ring-amber-300 shadow-sm'
                         : hasHouseholdDuplicate
                         ? 'has-household-duplicate'
                         : ''
@@ -1000,13 +1000,13 @@ export default function BeneficiaryList({
 
                     {/* Incomplete Warning Bar on Card */}
                     {isPartial && (
-                      <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>Bu haneye daha önce <strong>{teslim} torba</strong> verildi.</span>
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>Eksik Dağıtım: <strong>{teslim}/{hedef} Torba Verildi</strong> • Kalan tamamlanıncaya kadar uyarı aktiftir</span>
                         </div>
-                        <span className="text-rose-700 font-bold bg-rose-100 px-2 py-0.5 rounded border border-rose-200 shrink-0">
-                          {kalan} Torba Eksik
+                        <span className="text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-300 shrink-0 font-mono">
+                          +{kalan} Torba Eksik
                         </span>
                       </div>
                     )}

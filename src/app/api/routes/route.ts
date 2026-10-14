@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
-import { getDbCollections, buildIdFilter, mapDoc, mapDocs } from '@/lib/mongodb';
+import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
@@ -198,6 +198,15 @@ export async function POST(request: NextRequest) {
       };
 
       await routeCol.insertOne(newRoute);
+
+      await recordActivityLog({
+        kullanici_adi: olusturan_personel.trim(),
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: 'ROTA_OLUSTURMA',
+        baslik: 'Yeni Dağıtım Rotası Oluşturuldu',
+        detay: `"${routeName}" oluşturuldu. Toplam ${duraklar.length} durak, ${hedefToplam} torba hedef. Araç: ${arac_plaka || 'Belirtilmedi'}. Mahalleler: ${mahalleler.join(', ')}`,
+        ek_bilgi: { routeId: routeIdStr, totalStops: duraklar.length, hedefToplam }
+      });
 
       return NextResponse.json({
         success: true,
@@ -463,6 +472,15 @@ export async function POST(request: NextRequest) {
           kapatan_personel: personel.trim(),
           updated_at: localTimeStr
         }
+      });
+
+      await recordActivityLog({
+        kullanici_adi: personel.trim(),
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: 'ROTA_KAPATMA',
+        baslik: 'Dağıtım Rotası Tamamlandı & Kapatıldı',
+        detay: `"${route.rota_adi}" rotası tamamlandı ve arşivlendi. ${completedCount} hane tamamlandı, ${eksikCount} eksik, ${totalDeliveredBags} torba kömür dağıtıldı.`,
+        ek_bilgi: { route_id, completedCount, eksikCount, totalDeliveredBags }
       });
 
       return NextResponse.json({

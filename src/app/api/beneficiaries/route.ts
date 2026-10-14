@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, mapDoc } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
 import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, buildTurkishSearchFilter, extractPhoneNumbers, detectSettlement, extractStreetAndDoor } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
@@ -289,6 +289,21 @@ export async function POST(request: NextRequest) {
 
     const res = await benCol.insertOne(newDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
+
+    await recordActivityLog({
+      islem_tipi: 'HANE_EKLEME',
+      kullanici_adi: body.created_by || 'Sistem Yöneticisi',
+      baslik: `Yeni Hane Eklendi (${newDoc.ad_soyad})`,
+      detay: `Yeni vatandaş/hane sisteme kaydedildi: ${newDoc.ad_soyad} (${newDoc.mahalle}) - TC: ${newDoc.tc_no}, Hedef: ${targetQuota} Torba`,
+      hedef_kisi: newDoc.ad_soyad,
+      hedef_tc: newDoc.tc_no,
+      mahalle: newDoc.mahalle,
+      torba_sayisi: targetQuota,
+      ek_bilgi: {
+        id: newId,
+        adres: newDoc.acik_adres
+      }
+    });
 
     return NextResponse.json({
       success: true,

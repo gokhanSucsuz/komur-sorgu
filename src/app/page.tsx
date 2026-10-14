@@ -15,6 +15,7 @@ import HouseholdModal from '@/components/HouseholdModal';
 import QuotaModal from '@/components/QuotaModal';
 import LoginPage from '@/components/LoginPage';
 import PersonnelManagementModal from '@/components/PersonnelManagementModal';
+import AuditLogsModal from '@/components/AuditLogsModal';
 import ShiftActiveBanner from '@/components/ShiftActiveBanner';
 import ShiftStartModal from '@/components/ShiftStartModal';
 import ShiftEndModal from '@/components/ShiftEndModal';
@@ -29,10 +30,11 @@ export default function Home() {
   const [userName, setUserName] = useState<string>('Saha Personeli');
   const [activeRouteStopsCount, setActiveRouteStopsCount] = useState<number>(0);
 
-  // Quota & Personnel modals state
+  // Quota & Personnel & Audit Log modals state
   const [defaultQuota, setDefaultQuota] = useState<number>(34);
   const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
   const [showPersonnelModal, setShowPersonnelModal] = useState<boolean>(false);
+  const [showAuditLogsModal, setShowAuditLogsModal] = useState<boolean>(false);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -357,6 +359,7 @@ export default function Home() {
         defaultQuota={defaultQuota}
         onOpenQuotaModal={() => setShowQuotaModal(true)}
         onOpenPersonnelModal={() => setShowPersonnelModal(true)}
+        onOpenAuditLogs={() => setShowAuditLogsModal(true)}
         onLogout={handleLogout}
         onRoleChange={handleRoleChange}
         onRefresh={handleRefreshAll}
@@ -559,6 +562,13 @@ export default function Home() {
           isOpen={showPersonnelModal}
           onClose={() => setShowPersonnelModal(false)}
           onRefresh={handleRefreshAll}
+        />
+      )}
+
+      {/* 6. Admin Kullanıcı İşlem & Denetim Logları Modal */}
+      {showAuditLogsModal && (
+        <AuditLogsModal
+          onClose={() => setShowAuditLogsModal(false)}
         />
       )}
     </main>

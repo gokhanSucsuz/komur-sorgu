@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
 
 // GET /api/import/batches - List all uploaded Excel batches with live delivery stats
 export async function GET() {
@@ -112,6 +112,15 @@ export async function DELETE(request: NextRequest) {
         $or: [{ batch_id: batchId }, { id: batchId }],
       });
     }
+
+    await recordActivityLog({
+      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'EXCEL_SILME',
+      baslik: 'Excel Dosyası Geri Alındı / Silindi',
+      detay: `"${batchId}" kodlu Excel dosyasına ait ${deletedBeneficiariesCount} hak sahibi veritabanından silindi.${isPartial ? ` Teslimat yapılmış ${deliveredCount} hane korundu.` : ''}`,
+      ek_bilgi: { batchId, deletedCount: deletedBeneficiariesCount, protectedCount: isPartial ? deliveredCount : 0 },
+    });
 
     return NextResponse.json({
       success: true,

@@ -24,10 +24,10 @@ export default function MorningAlertBanner({
   onCompleteHousehold
 }: MorningAlertBannerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isDismissed, setIsDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<'ALL' | 'EKSIK' | 'IMZALI'>('ALL');
 
-  if (isDismissed || !eksikHaneler || eksikHaneler.length === 0) {
+  // Tamamlanıncaya kadar uyarı olarak görünmesi gerekiyor; dismissed yok!
+  if (!eksikHaneler || eksikHaneler.length === 0) {
     return null;
   }
 
@@ -104,21 +104,17 @@ export default function MorningAlertBanner({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+          <span className="hidden md:inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-900 bg-amber-200/80 border border-amber-300 px-2.5 py-1 rounded-xl shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+            <span>Tamamlanana Kadar Aktif</span>
+          </span>
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 flex items-center gap-1 transition-all active:scale-95 shadow-xs"
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
           >
-            <span>{isExpanded ? 'Gizle' : `Listeyi Gör (${eksikHaneler.length})`}</span>
+            <span>{isExpanded ? 'Detayları Kapat' : `Eksikleri Gör (${eksikHaneler.length})`}</span>
             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsDismissed(true)}
-            aria-label="Kapat"
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg transition-colors"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -126,6 +122,14 @@ export default function MorningAlertBanner({
       {/* Expanded List of Alerts with Tabs */}
       {isExpanded && (
         <div className="p-3 bg-white border-t border-amber-200 space-y-3">
+          {/* Persistent alert indicator notice */}
+          <div className="px-3 py-2 rounded-xl bg-amber-100/70 border border-amber-300 text-xs text-amber-950 font-bold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              Bu listedeki hanelere ait eksik kömür dağıtımı tamamlanıncaya kadar bu uyarı sistemi ana ekranda görünmeye devam edecektir.
+            </span>
+          </div>
+
           {/* Filter Tabs if multiple types exist */}
           {eksikKalanlar.length > 0 && imzaliBekleyenler.length > 0 && (
             <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">

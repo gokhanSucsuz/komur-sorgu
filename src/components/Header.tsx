@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut } from 'lucide-react';
+import { Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock } from 'lucide-react';
 
 interface HeaderProps {
   userRole: 'ADMIN' | 'PERSONEL';
@@ -9,6 +9,7 @@ interface HeaderProps {
   defaultQuota?: number;
   onOpenQuotaModal?: () => void;
   onOpenPersonnelModal?: () => void;
+  onOpenAuditLogs?: () => void;
   onLogout?: () => void;
   onRoleChange: (role: 'ADMIN' | 'PERSONEL', name: string) => void;
   onRefresh: () => void;
@@ -21,6 +22,7 @@ export default function Header({
   defaultQuota = 34,
   onOpenQuotaModal,
   onOpenPersonnelModal,
+  onOpenAuditLogs,
   onLogout,
   onRoleChange,
   onRefresh,
@@ -80,6 +82,18 @@ export default function Header({
             >
               <Users className="w-3.5 h-3.5 text-purple-700" />
               <span className="hidden sm:inline">Personel</span>
+            </button>
+          )}
+
+          {/* Admin Audit Logs Shortcut */}
+          {userRole === 'ADMIN' && onOpenAuditLogs && (
+            <button
+              onClick={onOpenAuditLogs}
+              title="Kullanıcı İşlem & Denetim Logları"
+              className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold text-indigo-900 transition-all active:scale-95 shadow-sm shrink-0"
+            >
+              <FileClock className="w-3.5 h-3.5 text-indigo-700" />
+              <span className="hidden sm:inline">İşlem Logları</span>
             </button>
           )}
 

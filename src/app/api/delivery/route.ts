@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, buildIdFilter, mapDoc } from '@/lib/mongodb';
+import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog } from '@/lib/mongodb';
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,6 +79,19 @@ export async function POST(request: NextRequest) {
 
       const eksikKalan = Math.max(0, hedef - newTotalBags);
 
+      // Record Activity Log for Admin Audit
+      await recordActivityLog({
+        kullanici_adi: staff,
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: newStatus === 'TAMAMLANDI' ? 'TESLIMAT' : 'EKSIK_TESLIMAT',
+        baslik: newStatus === 'TAMAMLANDI' ? 'Kömür Teslimatı Tamamlandı' : 'Eksik Kömür Teslimatı Yapıldı',
+        detay: `${recipient} (${beneficiary.tc_no}) hanesine ${deliveredThisTime} torba kömür teslim edildi. Toplam: ${newTotalBags}/${hedef} torba.${newStatus === 'EKSIK' ? ` Kalan ${eksikKalan} torba tamamlanmayı bekliyor.` : ''} ${note ? 'Not: ' + note : ''}`,
+        hedef_kisi: recipient,
+        hedef_tc: beneficiary.tc_no,
+        mahalle: beneficiary.mahalle,
+        torba_sayisi: deliveredThisTime,
+      });
+
       return NextResponse.json({
         success: true,
         message:
@@ -125,6 +138,18 @@ export async function POST(request: NextRequest) {
         iptal_nedeni: cancelReason,
         tarih: localTimeStr,
         gun_tarihi: localToday,
+      });
+
+      // Record Activity Log for Admin Audit
+      await recordActivityLog({
+        kullanici_adi: staff,
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'IPTAL',
+        baslik: 'Teslimat İptal Edildi',
+        detay: `${beneficiary.ad_soyad} (${beneficiary.tc_no}) hanesine yapılan teslimat kaydı geri alındı ve hane beklemeye döndürüldü. İptal Gerekçesi: ${cancelReason}`,
+        hedef_kisi: beneficiary.ad_soyad,
+        hedef_tc: beneficiary.tc_no,
+        mahalle: beneficiary.mahalle,
       });
 
       return NextResponse.json({

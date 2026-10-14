@@ -133,6 +133,7 @@ function getInMemoryStore() {
       work_shifts: [],
       import_batches: [],
       delivery_routes: [],
+      activity_logs: [],
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
@@ -349,6 +350,7 @@ export async function getDbCollections() {
         workShifts: db.collection<any>('work_shifts'),
         importBatches: db.collection<any>('import_batches'),
         deliveryRoutes: db.collection<any>('delivery_routes'),
+        activityLogs: db.collection<any>('activity_logs'),
       };
     } catch (err) {
       console.warn('[MongoDB] Atlas connection warning, using memory fallback:', err);
@@ -368,6 +370,7 @@ export async function getDbCollections() {
     workShifts: new InMemoryCollection('work_shifts') as any,
     importBatches: new InMemoryCollection('import_batches') as any,
     deliveryRoutes: new InMemoryCollection('delivery_routes') as any,
+    activityLogs: new InMemoryCollection('activity_logs') as any,
   };
 }
 
@@ -382,6 +385,7 @@ async function initializeIndexesAndSeed(db: Db) {
   const logs = db.collection('import_logs');
   const settings = db.collection('system_settings');
   const shifts = db.collection('work_shifts');
+  const activityLogs = db.collection('activity_logs');
 
   try {
     await Promise.allSettled([
@@ -408,6 +412,11 @@ async function initializeIndexesAndSeed(db: Db) {
       shifts.createIndex({ tarih: -1 }),
       shifts.createIndex({ personel_adi: 1 }),
       shifts.createIndex({ durum: 1 }),
+
+      activityLogs.createIndex({ tarih_iso: -1 }),
+      activityLogs.createIndex({ islem_tipi: 1 }),
+      activityLogs.createIndex({ kullanici_adi: 1 }),
+      activityLogs.createIndex({ gun_tarihi: -1 }),
     ]);
   } catch (err) {
     console.warn('[MongoDB] Index initialization notice:', err);
@@ -440,6 +449,13 @@ async function initializeIndexesAndSeed(db: Db) {
     await trucks.insertMany(getSeedTrucks(nowStr));
     await shifts.insertMany(getSeedShifts(nowStr));
   }
+
+  // 4. Seed Activity Logs if empty
+  const actCount = await activityLogs.countDocuments();
+  if (actCount === 0) {
+    const nowStr = new Date().toLocaleString('tr-TR');
+    await activityLogs.insertMany(getSeedActivityLogs(nowStr));
+  }
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
@@ -455,6 +471,7 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.delivery_history = getSeedHistory();
   store.truck_deliveries = getSeedTrucks(nowStr);
   store.work_shifts = getSeedShifts(nowStr);
+  store.activity_logs = getSeedActivityLogs(nowStr);
   store.import_logs = [
     {
       id: '1',
@@ -853,3 +870,114 @@ function getSeedShifts(nowStr: string) {
     },
   ];
 }
+
+export function getSeedActivityLogs(nowStr: string) {
+  return [
+    {
+      id: '1',
+      kullanici_adi: 'Murat Dağıtım',
+      kullanici_rolu: 'PERSONEL',
+      islem_tipi: 'TESLIMAT',
+      baslik: 'Kömür Teslimatı Yapıldı',
+      detay: 'Ahmet Yılmaz (TC: 12345678902) hanesine 34 torba kömür teslim edildi. Tam teslimat yapıldı, 34 torba kömürlüğe istiflendi.',
+      hedef_kisi: 'Ahmet Yılmaz (Kendisi)',
+      hedef_tc: '12345678902',
+      mahalle: 'Cumhuriyet Mah.',
+      torba_sayisi: 34,
+      tarih: '12.10.2026 11:30:00',
+      tarih_iso: '2026-10-12T08:30:00.000Z',
+    },
+    {
+      id: '2',
+      kullanici_adi: 'Kemal Taş',
+      kullanici_rolu: 'PERSONEL',
+      islem_tipi: 'EKSIK_TESLIMAT',
+      baslik: 'Kısmi Kömür Teslimatı',
+      detay: 'Mustafa Öztürk (TC: 34567890126) hanesine 25/34 torba verildi, 9 torba eksik kaldı. Kamyonette kömür azaldığı için 25 torba verildi, kalan 9 torba ertesi gün tamamlanacak.',
+      hedef_kisi: 'Mustafa Öztürk',
+      hedef_tc: '34567890126',
+      mahalle: 'Fatih Mah.',
+      torba_sayisi: 25,
+      tarih: '13.10.2026 14:15:00',
+      tarih_iso: '2026-10-13T11:15:00.000Z',
+    },
+    {
+      id: '3',
+      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'KOTA_DEGISTIRME',
+      baslik: 'Varsayılan Hedef Kömür Kotası Güncellendi',
+      detay: 'Hane başı dağıtım kotası 34 torba (0.85 Ton) olarak teyit edildi.',
+      tarih: '14.10.2026 08:30:00',
+      tarih_iso: '2026-10-14T05:30:00.000Z',
+    },
+    {
+      id: '4',
+      kullanici_adi: 'Murat Dağıtım',
+      kullanici_rolu: 'PERSONEL',
+      islem_tipi: 'MESAI_BASLAT',
+      baslik: 'Günlük Mesai Başlatıldı',
+      detay: '16 KMR 01 plakalı dağıtım kamyoneti ile saha mesaisi başlatıldı.',
+      tarih: '14.10.2026 09:00:00',
+      tarih_iso: '2026-10-14T06:00:00.000Z',
+    },
+    {
+      id: '5',
+      kullanici_adi: 'Murat Dağıtım',
+      kullanici_rolu: 'PERSONEL',
+      islem_tipi: 'ROTA_OLUSTURMA',
+      baslik: 'Yeni Dağıtım Rotası Oluşturuldu',
+      detay: '"14.10.2026 Kömür Dağıtım Rotası" oluşturuldu (2 durak, 68 torba hedef).',
+      mahalle: 'Cumhuriyet Mah.',
+      tarih: '14.10.2026 15:31:03',
+      tarih_iso: '2026-10-14T12:31:03.000Z',
+    },
+    {
+      id: '6',
+      kullanici_adi: 'Murat Dağıtım',
+      kullanici_rolu: 'PERSONEL',
+      islem_tipi: 'ROTA_KAPATMA',
+      baslik: 'Dağıtım Rotası Tamamlandı & Kapatıldı',
+      detay: '"14.10.2026 Kömür Dağıtım Rotası" başarıyla tamamlandı ve kapatıldı. 2 haneye toplam 68 torba kömür teslim edildi.',
+      mahalle: 'Cumhuriyet Mah.',
+      tarih: '14.10.2026 15:31:37',
+      tarih_iso: '2026-10-14T12:31:37.000Z',
+    }
+  ];
+}
+
+/**
+ * Record a user operation / audit activity log
+ */
+export async function recordActivityLog(item: {
+  kullanici_adi: string;
+  kullanici_rolu?: 'ADMIN' | 'PERSONEL';
+  islem_tipi: string;
+  baslik: string;
+  detay: string;
+  hedef_kisi?: string | null;
+  hedef_tc?: string | null;
+  mahalle?: string | null;
+  torba_sayisi?: number | null;
+  tarih?: string;
+  tarih_iso?: string;
+  ek_bilgi?: any;
+}) {
+  try {
+    const { activityLogs } = await getDbCollections();
+    const now = new Date();
+    const doc = {
+      ...item,
+      kullanici_rolu: item.kullanici_rolu || (item.kullanici_adi?.toLowerCase().includes('admin') || item.kullanici_adi?.toLowerCase().includes('yönetici') ? 'ADMIN' : 'PERSONEL'),
+      tarih: item.tarih || now.toLocaleString('tr-TR'),
+      tarih_iso: item.tarih_iso || now.toISOString(),
+      gun_tarihi: now.toLocaleDateString('en-CA'),
+    };
+    await activityLogs.insertOne(doc);
+    return doc;
+  } catch (err) {
+    console.error('Error recording activity log:', err);
+    return null;
+  }
+}
+

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, mapDoc, buildIdFilter } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
 
 function calculateMinutes(start: string, end: string): number {
   if (!start || !end) return 0;
@@ -403,6 +403,15 @@ export async function POST(request: NextRequest) {
       const result = await shiftsCol.insertOne(newDoc);
       const inserted = await shiftsCol.findOne({ _id: result.insertedId });
 
+      await recordActivityLog({
+        kullanici_adi: personel_adi,
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: 'MESAI_BASLAT',
+        baslik: 'Günlük Dağıtım Mesaisi Başlatıldı',
+        detay: `${personel_adi} tarafından saat ${startTime} itibarıyla mesai başlatıldı.`,
+        ek_bilgi: { shiftDate, startTime },
+      });
+
       return NextResponse.json({
         success: true,
         message: 'Kömür dağıtım mesaisi başarıyla başlatıldı.',
@@ -472,6 +481,15 @@ export async function POST(request: NextRequest) {
           notlar: notlar || targetShift.notlar,
           updated_at: nowStr,
         },
+      });
+
+      await recordActivityLog({
+        kullanici_adi: targetShift.personel_adi,
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: 'MESAI_BITIR',
+        baslik: 'Günlük Dağıtım Mesaisi Tamamlandı',
+        detay: `${targetShift.personel_adi} mesaiyi tamamladı (${startTime} - ${endTime}, ${formatMinutes(totalMinutes)}). Toplam ${finalTorba} torba kömür, ${finalHane} haneye teslim edildi. Mahalleler: ${finalMahalleler || 'Merkez'}`,
+        ek_bilgi: { totalMinutes, finalTorba, finalHane, finalMahalleler },
       });
 
       const completedShift = await shiftsCol.findOne(updateFilter);

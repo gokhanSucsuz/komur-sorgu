@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
 
 export async function GET(request: NextRequest) {
   try {
@@ -68,6 +68,15 @@ export async function POST(request: NextRequest) {
     const result = await usersCol.insertOne(newDoc);
     const newId = result.insertedId ? result.insertedId.toString() : '';
 
+    await recordActivityLog({
+      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'PERSONEL_ISLEM',
+      baslik: 'Yeni Personel Tanımlandı',
+      detay: `"${trimmedName}" (${trimmedUser}) sisteme ${trimmedRole === 'ADMIN' ? 'Yönetici' : 'Saha Personeli'} olarak eklendi.`,
+      ek_bilgi: { username: trimmedUser, rol: trimmedRole },
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Personel başarıyla eklendi',
@@ -124,6 +133,15 @@ export async function PUT(request: NextRequest) {
     if (telefon !== undefined) updateFields.telefon = (telefon || '').trim();
 
     await usersCol.updateOne(buildIdFilter(id), { $set: updateFields });
+
+    await recordActivityLog({
+      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'PERSONEL_ISLEM',
+      baslik: 'Personel Bilgileri Güncellendi',
+      detay: `Personel "${trimmedName || id}" bilgileri güncellendi.`,
+      ek_bilgi: { id, username: trimmedUser, rol: trimmedRole },
+    });
 
     return NextResponse.json({
       success: true,

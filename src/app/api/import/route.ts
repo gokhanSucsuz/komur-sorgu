@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import { getDbCollections } from '@/lib/mongodb';
+import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
 import { 
   cleanTcNo, 
   normalizeAddress, 
@@ -554,6 +554,15 @@ export async function POST(request: NextRequest) {
       hatali_kisi: failedCount,
       created_at: nowStr,
       tarih_iso: new Date().toISOString(),
+    });
+
+    await recordActivityLog({
+      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'EXCEL_YUKLEME',
+      baslik: 'Excel Dosyası Yüklendi',
+      detay: `"${file.name}" dosyasından ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${failedCount} mükerrer/hatalı kayıt elendi.`,
+      ek_bilgi: { batch_id: batchId, totalRows, insertedCount, failedCount },
     });
 
     const mukerrerTcCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_TC').length;

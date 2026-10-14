@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const { beneficiaries: benCol, importLogs: logsCol, deliveryHistory: histCol } = await getDbCollections();
+    const { beneficiaries: benCol, importLogs: logsCol, deliveryHistory: histCol, activityLogs: actCol } = await getDbCollections();
 
     if (type === 'daily_deliveries') {
       const targetDate = searchParams.get('date') || new Date().toLocaleDateString('en-CA');
@@ -217,6 +217,53 @@ export async function GET(request: NextRequest) {
       return new NextResponse(buf, {
         headers: {
           'Content-Disposition': 'attachment; filename="Komur_Yukleme_Hatalari_Raporu.xlsx"',
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+    }
+
+    if (type === 'activity_logs') {
+      const rawRecords = await actCol
+        .find({})
+        .sort({ _id: -1 })
+        .toArray();
+
+      const records = mapDocs(rawRecords);
+
+      const exportData = records.map((r: any, idx: number) => ({
+        'Sıra': idx + 1,
+        'Tarih & Saat': r.tarih || '-',
+        'Kullanıcı / Personel': r.kullanici_adi || '-',
+        'Rol': r.kullanici_rolu || '-',
+        'İşlem Türü': r.islem_tipi || '-',
+        'Başlık': r.baslik || '-',
+        'Detay Açıklama': r.detay || '-',
+        'Hak Sahibi': r.hedef_kisi || '-',
+        'TC Kimlik No': r.hedef_tc || '-',
+        'Mahalle': r.mahalle || '-',
+        'Torba Sayısı': r.torba_sayisi !== undefined && r.torba_sayisi !== null ? r.torba_sayisi : '-',
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      worksheet['!cols'] = [
+        { wch: 6 },  // Sıra
+        { wch: 20 }, // Tarih
+        { wch: 22 }, // Personel
+        { wch: 12 }, // Rol
+        { wch: 18 }, // İşlem
+        { wch: 30 }, // Başlık
+        { wch: 50 }, // Detay
+        { wch: 22 }, // Hak Sahibi
+        { wch: 16 }, // TC
+        { wch: 18 }, // Mahalle
+        { wch: 12 }, // Torba
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Islem Loglari');
+      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      return new NextResponse(buf, {
+        headers: {
+          'Content-Disposition': 'attachment; filename="Kullanici_Islem_Loglari_Raporu.xlsx"',
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
