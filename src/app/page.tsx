@@ -19,6 +19,7 @@ import ShiftActiveBanner from '@/components/ShiftActiveBanner';
 import ShiftStartModal from '@/components/ShiftStartModal';
 import ShiftEndModal from '@/components/ShiftEndModal';
 import ShiftPage from '@/components/ShiftPage';
+import RoutePage from '@/components/RoutePage';
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>('search');
@@ -26,6 +27,7 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
   const [userName, setUserName] = useState<string>('Saha Personeli');
+  const [activeRouteStopsCount, setActiveRouteStopsCount] = useState<number>(0);
 
   // Quota & Personnel modals state
   const [defaultQuota, setDefaultQuota] = useState<number>(34);
@@ -226,6 +228,24 @@ export default function Home() {
     }
   }, [userName]);
 
+  // Fetch Active Route pending stops count for navbar badge
+  const fetchActiveRouteCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/routes');
+      const data = await res.json();
+      if (data.success && data.activeRoute) {
+        const pending = (data.activeRoute.duraklar || []).filter(
+          (s: any) => !s.durum || s.durum === 'BEKLIYOR'
+        ).length;
+        setActiveRouteStopsCount(pending);
+      } else {
+        setActiveRouteStopsCount(0);
+      }
+    } catch (e) {
+      console.error('Error fetching route count:', e);
+    }
+  }, []);
+
   // Quick Start Shift (one-click with current time)
   const handleQuickStartShift = async () => {
     try {
@@ -265,7 +285,8 @@ export default function Home() {
       fetchTrucks(),
       fetchStats(),
       fetchSettings(),
-      fetchActiveShift()
+      fetchActiveShift(),
+      fetchActiveRouteCount()
     ]);
     setIsRefreshing(false);
   };
@@ -279,8 +300,9 @@ export default function Home() {
       fetchTrucks();
       fetchStats();
       fetchActiveShift();
+      fetchActiveRouteCount();
     }
-  }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveShift]);
+  }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveShift, fetchActiveRouteCount]);
 
   // Handle opening Household Modal
   const handleOpenHousehold = async (person: any) => {
@@ -380,10 +402,21 @@ export default function Home() {
               onOpenDelivery={(person) => setDeliveryTarget(person)}
               onOpenHousehold={handleOpenHousehold}
               onOpenCancel={(person) => setCancelTarget(person)}
+              onNavigateToRoute={() => setCurrentTab('route')}
               defaultQuota={defaultQuota}
               isLoading={isLoadingBeneficiaries}
             />
           </>
+        )}
+
+        {/* Tab: Dağıtım Rotası & İmza Takibi */}
+        {currentTab === 'route' && (
+          <RoutePage
+            userRole={userRole}
+            userName={userName}
+            onRefreshAll={handleRefreshAll}
+            onNavigateToSearch={() => setCurrentTab('search')}
+          />
         )}
 
         {/* Tab: Mesai & Vardiya Takibi */}
@@ -444,6 +477,7 @@ export default function Home() {
         hasActiveShift={!!activeShift}
         incompleteDeliveriesCount={eksikHaneler.length}
         importErrorsCount={overallStats?.toplamHataSayisi}
+        activeRouteStopsCount={activeRouteStopsCount}
       />
 
       {/* MODALS */}

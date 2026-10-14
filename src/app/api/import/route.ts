@@ -126,8 +126,12 @@ export async function POST(request: NextRequest) {
       const kapiNo = streetInfo.kapiNo;
       const daireNo = streetInfo.daireNo;
 
-      // Validation 1: TC Invalid Length
-      if (!tcNo || tcNo.length !== 11) {
+      // Collect warnings for missing data without skipping the row
+      const rowWarnings: string[] = [];
+
+      // Check 1: TC Kimlik
+      const hasValidTc = Boolean(tcNo && tcNo.length === 11);
+      if (!hasValidTc) {
         failedCount++;
         toInsertLogs.push({
           batch_id: batchId,
@@ -135,36 +139,31 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo || 'Eksik',
           ad_soyad: adSoyad || 'Bilinmiyor',
           telefon: displayPhoneLog,
-          mahalle,
-          acik_adres: acikAdres,
+          mahalle: mahalle || 'Adres Eksik',
+          acik_adres: acikAdres || 'Adres Eksik',
           hane_no: haneNo,
-          hata_nedeni: 'Geçersiz veya Eksik TC Kimlik Numarası (11 haneli olmalı)',
+          hata_nedeni: 'Geçersiz veya Eksik TC Kimlik Numarası (Kayıt Sisteme Eklendi)',
           durum: 'HATALI',
           tarih: nowStr,
         });
-        continue;
+        rowWarnings.push('TC Kimlik Eksik/Geçersiz');
+        // Assign a unique placeholder so database indexing never collides
+        if (!tcNo || tcNo.length !== 11) {
+          tcNo = `EKSİK_TC_${batchId.slice(-4)}_${rowNum}`;
+        }
       }
 
-      // Validation 2: Name Missing
+      // Check 2: Name Missing (skip only if entire row is empty/corrupted)
       if (!adSoyad || adSoyad.length < 2) {
-        failedCount++;
-        toInsertLogs.push({
-          batch_id: batchId,
-          satir_no: rowNum,
-          tc_no: tcNo,
-          ad_soyad: adSoyad || 'Eksik',
-          telefon: displayPhoneLog,
-          mahalle,
-          acik_adres: acikAdres,
-          hane_no: haneNo,
-          hata_nedeni: 'Ad Soyad bilgisi boş veya çok kısa',
-          durum: 'HATALI',
-          tarih: nowStr,
-        });
-        continue;
+        if (!hasValidTc && !acikAdres && !rawMahalle && !rawStreet) {
+          // Completely blank row in Excel, skip safely
+          continue;
+        }
+        adSoyad = adSoyad || 'İsimsiz Hak Sahibi';
+        rowWarnings.push('İsim Bilgisi Eksik');
       }
 
-      // Validation 3: Address Missing
+      // Check 3: Address Missing (still insert into system, record warning)
       if (!mahalle && !acikAdres) {
         failedCount++;
         toInsertLogs.push({
@@ -173,18 +172,36 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo,
           ad_soyad: adSoyad,
           telefon: displayPhoneLog,
-          mahalle,
-          acik_adres: acikAdres,
+          mahalle: 'Adres Belirtilmedi',
+          acik_adres: 'Açık Adres Belirtilmedi',
           hane_no: haneNo,
-          hata_nedeni: 'Mahalle veya Açık Adres bilgisi bulunamadı',
+          hata_nedeni: 'Mahalle veya Açık Adres Bilgisi Eksik (Kayıt Sisteme Eklendi)',
           durum: 'HATALI',
           tarih: nowStr,
         });
-        continue;
+        rowWarnings.push('Adres Bilgisi Eksik');
       }
 
-      // Validation 4: Duplicate TC in current file
-      if (seenTcsInBatch.has(tcNo)) {
+      // Check 4: Phone Missing (still insert into system, record warning)
+      if (!telefon && !telefon2) {
+        toInsertLogs.push({
+          batch_id: batchId,
+          satir_no: rowNum,
+          tc_no: tcNo,
+          ad_soyad: adSoyad,
+          telefon: 'Eksik',
+          mahalle: mahalle || 'Merkez',
+          acik_adres: acikAdres || 'Belirtilmedi',
+          hane_no: haneNo,
+          hata_nedeni: 'Telefon Numarası Eksik (Kayıt Sisteme Eklendi)',
+          durum: 'HATALI',
+          tarih: nowStr,
+        });
+        rowWarnings.push('Telefon Numarası Eksik');
+      }
+
+      // Check 5: Duplicate TC in current file (only applies if valid 11-digit TC)
+      if (hasValidTc && seenTcsInBatch.has(tcNo)) {
         failedCount++;
         toInsertLogs.push({
           batch_id: batchId,
@@ -202,8 +219,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Validation 5: Duplicate TC in Database
-      if (existingTcMap.has(tcNo)) {
+      // Check 6: Duplicate TC in Database (only applies if valid 11-digit TC)
+      if (hasValidTc && existingTcMap.has(tcNo)) {
         failedCount++;
         toInsertLogs.push({
           batch_id: batchId,
@@ -221,10 +238,10 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const normAdres = normalizeAddress(mahalle, acikAdres, haneNo);
+      const normAdres = normalizeAddress(mahalle || 'Merkez', acikAdres || 'Adres Belirtilmedi', haneNo);
 
-      // Validation 6: Duplicate Household in current file
-      if (normAdres && seenAddressesInBatch.has(normAdres)) {
+      // Check 7: Duplicate Household in current file (only if address is known)
+      if (normAdres && normAdres.length > 5 && seenAddressesInBatch.has(normAdres)) {
         failedCount++;
         toInsertLogs.push({
           batch_id: batchId,
@@ -242,9 +259,10 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Validation 7: Duplicate Household in Database
+      // Check 8: Duplicate Household in Database (only if address is known)
       const existingHane =
-        existingAddressMap.get(normAdres) || (haneNo ? existingAddressMap.get(`HANE_${haneNo}`) : undefined);
+        (normAdres && normAdres.length > 5 ? existingAddressMap.get(normAdres) : undefined) ||
+        (haneNo ? existingAddressMap.get(`HANE_${haneNo}`) : undefined);
 
       if (existingHane) {
         failedCount++;
@@ -297,6 +315,8 @@ export async function POST(request: NextRequest) {
         teslim_alan: null,
         teslim_eden_personel: null,
         teslimat_notu: null,
+        uyarilar: rowWarnings,
+        uyari_notu: rowWarnings.length > 0 ? rowWarnings.join(', ') : null,
         created_at: nowStr,
         updated_at: nowStr,
       });

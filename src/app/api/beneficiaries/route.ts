@@ -158,17 +158,36 @@ export async function GET(request: NextRequest) {
       a.mahalle.localeCompare(b.mahalle, 'tr', { sensitivity: 'base' })
     );
 
-    // Incomplete Households (Eksik Kalanlar) for Morning Alert Banner
+    // Incomplete & Signed-Undelivered Households for Morning Alert Banner
     const rawEksik = await benCol
       .find({ teslimat_durumu: 'EKSIK' })
       .sort({ mahalle: 1, ad_soyad: 1 })
       .toArray();
 
-    const eksikHaneler = mapDocs(rawEksik).map((m: any) => {
+    const mappedEksik = mapDocs(rawEksik).map((m: any) => {
       m.hedef_torba = m.hedef_torba || 34;
       m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
+      m.uyari_tipi = 'EKSIK_TESLIMAT';
       return m;
     });
+
+    // İmzası alınmış fakat kömürü henüz teslim edilmemiş (veya aynı gün teslim edilememiş) haneler
+    const rawImzali = await benCol
+      .find({
+        imza_durumu: 'IMZALANDI',
+        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'] }
+      })
+      .sort({ mahalle: 1, ad_soyad: 1 })
+      .toArray();
+
+    const mappedImzali = mapDocs(rawImzali).map((m: any) => {
+      m.hedef_torba = m.hedef_torba || 34;
+      m.kalan_torba = m.hedef_torba;
+      m.uyari_tipi = 'IMZALI_TESLIM_BEKLIYOR';
+      return m;
+    });
+
+    const eksikHaneler = [...mappedEksik, ...mappedImzali];
 
     return NextResponse.json({
       success: true,
@@ -178,7 +197,9 @@ export async function GET(request: NextRequest) {
       limit,
       mahalleler,
       eksikHaneler,
-      eksikSayisi: eksikHaneler.length,
+      eksikSayisi: mappedEksik.length,
+      imzaliBekleyenSayisi: mappedImzali.length,
+      toplamUyariSayisi: eksikHaneler.length,
     });
   } catch (error: any) {
     console.error('Error fetching beneficiaries:', error);

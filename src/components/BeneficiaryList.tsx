@@ -5,7 +5,7 @@ import {
   Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, 
   CheckCircle2, Clock, Filter, AlertCircle, ChevronRight, ChevronDown, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
-  Navigation, ArrowUpDown, Trees, Building2, Compass
+  Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool
 } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
 
@@ -23,6 +23,8 @@ interface BeneficiaryListProps {
   onOpenDelivery: (person: any) => void;
   onOpenHousehold: (person: any) => void;
   onOpenCancel?: (person: any) => void;
+  onToggleSignature?: (person: any) => void;
+  onNavigateToRoute?: () => void;
   defaultQuota?: number;
   isLoading?: boolean;
 }
@@ -41,17 +43,104 @@ export default function BeneficiaryList({
   onOpenDelivery,
   onOpenHousehold,
   onOpenCancel,
+  onToggleSignature,
+  onNavigateToRoute,
   defaultQuota = 34,
   isLoading = false
 }: BeneficiaryListProps) {
   const [showAllOpenAddresses, setShowAllOpenAddresses] = useState(false);
   const [expandedAddresses, setExpandedAddresses] = useState<Record<number, boolean>>({});
+  const [localSignatures, setLocalSignatures] = useState<Record<string, boolean>>({});
   const [showMahalleModal, setShowMahalleModal] = useState(false);
   const [showSokakModal, setShowSokakModal] = useState(false);
   const [phoneSelectTarget, setPhoneSelectTarget] = useState<any | null>(null);
   const [sortOrder, setSortOrder] = useState<'ADDRESS_ASC' | 'NAME_ASC'>('ADDRESS_ASC');
   const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
+
+  // Bulk Signature & Signature Status Filter
+  const [isBulkSignMode, setIsBulkSignMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [signatureFilter, setSignatureFilter] = useState<'ALL' | 'SIGNED' | 'UNSIGNED'>('ALL');
+  const [isBulkSignLoading, setIsBulkSignLoading] = useState(false);
+
+  const handleToggleCardSelect = (personId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(personId)) next.delete(personId);
+      else next.add(personId);
+      return next;
+    });
+  };
+
+  const handleBulkSignSubmit = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkSignLoading(true);
+    const idsArray = Array.from(selectedIds);
+
+    // Optimistic local update
+    setLocalSignatures((prev) => {
+      const next = { ...prev };
+      idsArray.forEach((id) => {
+        next[id] = true;
+      });
+      return next;
+    });
+
+    try {
+      const res = await fetch('/api/routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'BULK_SIGN',
+          beneficiary_ids: idsArray,
+          imza_durumu: 'IMZALANDI'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedIds(new Set());
+        setIsBulkSignMode(false);
+      } else {
+        alert(data.error || 'İmzalar toplu olarak kaydedilemedi');
+      }
+    } catch (err: any) {
+      alert('Hata: ' + err.message);
+    } finally {
+      setIsBulkSignLoading(false);
+    }
+  };
+
+  const handleToggleSignature = async (person: any) => {
+    const personId = String(person.id);
+    if (onToggleSignature) {
+      onToggleSignature(person);
+      return;
+    }
+    const currentSigned = localSignatures[personId] !== undefined
+      ? localSignatures[personId]
+      : person.imza_durumu === 'IMZALANDI';
+    const nextSigned = !currentSigned;
+
+    // Optimistic UI update
+    setLocalSignatures((prev) => ({ ...prev, [personId]: nextSigned }));
+
+    try {
+      await fetch('/api/routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SIGN_BENEFICIARY',
+          beneficiary_id: personId,
+          imza_durumu: nextSigned ? 'IMZALANDI' : 'BEKLIYOR'
+        })
+      });
+    } catch (err) {
+      console.error('Error toggling signature:', err);
+      // Revert on error
+      setLocalSignatures((prev) => ({ ...prev, [personId]: currentSigned }));
+    }
+  };
 
   const toggleAddress = (id: number) => {
     setExpandedAddresses((prev) => {
@@ -149,14 +238,36 @@ export default function BeneficiaryList({
     }
   }, [availableStreets, selectedSokak]);
 
-  // Filter records by selected street if active
-  const streetFilteredList = useMemo(() => {
-    if (selectedSokak === 'HEPSI') return activeDisplayList;
+  const totalSignedCount = useMemo(() => {
     return activeDisplayList.filter((r) => {
-      const st = getRecordStreetInfo(r);
-      return st.sokak === selectedSokak;
-    });
-  }, [activeDisplayList, selectedSokak]);
+      const pId = String(r.id);
+      return localSignatures[pId] !== undefined ? localSignatures[pId] : r.imza_durumu === 'IMZALANDI';
+    }).length;
+  }, [activeDisplayList, localSignatures]);
+
+  // Filter records by selected street and signature status
+  const streetFilteredList = useMemo(() => {
+    let list = activeDisplayList;
+    if (selectedSokak !== 'HEPSI') {
+      list = list.filter((r) => {
+        const st = getRecordStreetInfo(r);
+        return st.sokak === selectedSokak;
+      });
+    }
+    if (signatureFilter === 'SIGNED') {
+      list = list.filter((r) => {
+        const pId = String(r.id);
+        return localSignatures[pId] !== undefined ? localSignatures[pId] : r.imza_durumu === 'IMZALANDI';
+      });
+    } else if (signatureFilter === 'UNSIGNED') {
+      list = list.filter((r) => {
+        const pId = String(r.id);
+        const signed = localSignatures[pId] !== undefined ? localSignatures[pId] : r.imza_durumu === 'IMZALANDI';
+        return !signed;
+      });
+    }
+    return list;
+  }, [activeDisplayList, selectedSokak, signatureFilter, localSignatures]);
 
   // Group active records by mahalle / village
   const groupedByMahalle = useMemo(() => {
@@ -409,7 +520,101 @@ export default function BeneficiaryList({
                 </button>
               </div>
             )}
+
+            {/* İmza Durumu Filtresi & Toplu İmza Seçim Butonu */}
+            <div className="pt-1 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setSignatureFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    signatureFilter === 'ALL'
+                      ? 'bg-white text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Tümü ({activeDisplayList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSignatureFilter('SIGNED')}
+                  className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                    signatureFilter === 'SIGNED'
+                      ? 'bg-emerald-600 text-white shadow-2xs font-black'
+                      : 'text-emerald-800 hover:text-emerald-950'
+                  }`}
+                >
+                  <PenTool className="w-3 h-3" />
+                  <span>İmzalı ({totalSignedCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSignatureFilter('UNSIGNED')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    signatureFilter === 'UNSIGNED'
+                      ? 'bg-white text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  İmzasız ({Math.max(0, activeDisplayList.length - totalSignedCount)})
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBulkSignMode((prev) => !prev);
+                  setSelectedIds(new Set());
+                }}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 ${
+                  isBulkSignMode
+                    ? 'bg-emerald-600 text-white border-emerald-600 font-black'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>{isBulkSignMode ? 'Seçim Modunu Kapat' : 'Toplu İmza Seç'}</span>
+                {isBulkSignMode && selectedIds.size > 0 && (
+                  <span className="bg-emerald-800 text-white px-1.5 py-0.2 rounded-full text-[10px]">
+                    {selectedIds.size}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Toplu İmza Seçim Yardımcı Çubuğu */}
+          {isBulkSignMode && (
+            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs font-bold text-emerald-950 shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-emerald-700" />
+                <span>
+                  <strong>{selectedIds.size}</strong> hane seçildi
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allIds = new Set<string>();
+                    streetFilteredList.forEach((r) => allIds.add(String(r.id)));
+                    setSelectedIds(allIds);
+                  }}
+                  className="text-emerald-800 hover:text-emerald-950 underline"
+                >
+                  Görünen Tümünü Seç
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-rose-700 hover:text-rose-900 underline"
+                >
+                  Seçimi Temizle
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Selected Neighborhood Chips (Dismissible) */}
           {selectedMahalleler.length > 0 && selectedMahalleler.length < mahalleler.length && (
@@ -618,12 +823,24 @@ export default function BeneficiaryList({
                   ? expandedAddresses[person.id]
                   : showAllOpenAddresses;
                 const hasHouseholdDuplicate = (householdCounts[person.norm_adres] || 0) > 1;
+                const isSigned = localSignatures[String(person.id)] !== undefined
+                  ? localSignatures[String(person.id)]
+                  : person.imza_durumu === 'IMZALANDI';
 
                 return (
                   <div
                     key={person.id}
+                    onClick={() => {
+                      if (isBulkSignMode) {
+                        handleToggleCardSelect(String(person.id));
+                      }
+                    }}
                     className={`citizen-card ${
-                      isPartial
+                      isBulkSignMode ? 'cursor-pointer select-none' : ''
+                    } ${
+                      isBulkSignMode && selectedIds.has(String(person.id))
+                        ? 'border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/40'
+                        : isPartial
                         ? 'border-amber-300 bg-amber-50/20'
                         : hasHouseholdDuplicate
                         ? 'has-household-duplicate'
@@ -634,12 +851,37 @@ export default function BeneficiaryList({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
+                          {isBulkSignMode && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleCardSelect(String(person.id));
+                              }}
+                              className="shrink-0 text-emerald-700"
+                            >
+                              {selectedIds.has(String(person.id)) ? (
+                                <CheckSquare className="w-5 h-5 text-emerald-600" />
+                              ) : (
+                                <Square className="w-5 h-5 text-slate-300" />
+                              )}
+                            </button>
+                          )}
                           <h4 className="text-base font-extrabold text-slate-900 leading-tight truncate">
                             {person.ad_soyad}
                           </h4>
+                          {person.uyari_notu && (
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 inline-flex items-center gap-0.5 shrink-0" title={person.uyari_notu}>
+                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              <span>{person.uyari_notu}</span>
+                            </span>
+                          )}
                           {hasHouseholdDuplicate && (
                             <button
-                              onClick={() => onOpenHousehold(person)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenHousehold(person);
+                              }}
                               title="Aynı adreste başka kişi kayıtlı!"
                               className="badge badge-household shrink-0 text-[10px] py-0.5 px-2 cursor-pointer active:scale-95"
                             >
@@ -714,17 +956,39 @@ export default function BeneficiaryList({
                       </div>
 
                       {/* Status Badge */}
-                      <div className="shrink-0">
+                      <div className="shrink-0 flex flex-col items-end gap-1">
+                        {isSigned && (
+                          <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                            <PenTool className="w-3 h-3 text-emerald-700" />
+                            İmzalı
+                          </span>
+                        )}
                         {isComplete ? (
-                          <span className="badge badge-delivered">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Tam ({teslim} Torba)
-                          </span>
+                          <div className="text-right">
+                            <span className="badge badge-delivered">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Tam ({teslim} Torba)
+                            </span>
+                            {person.teslimat_tarihi && (
+                              <div className="text-[10px] text-emerald-800 font-bold mt-1 flex items-center justify-end gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                <Clock className="w-3 h-3 text-emerald-600" />
+                                <span>{person.teslimat_tarihi}</span>
+                              </div>
+                            )}
+                          </div>
                         ) : isPartial ? (
-                          <span className="badge badge-pending">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            Eksik: {teslim}/{hedef}
-                          </span>
+                          <div className="text-right">
+                            <span className="badge badge-pending">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              Eksik: {teslim}/{hedef}
+                            </span>
+                            {person.teslimat_tarihi && (
+                              <div className="text-[10px] text-amber-800 font-bold mt-1 flex items-center justify-end gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                <span>{person.teslimat_tarihi}</span>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <span className="badge badge-pending">
                             <Clock className="w-3.5 h-3.5" />
@@ -812,6 +1076,19 @@ export default function BeneficiaryList({
                             <PackagePlus className="w-4 h-4 text-white" />
                             <span>Kalanı Tamamla (+{kalan} Torba)</span>
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSignature(person)}
+                            className={`px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 border shrink-0 ${
+                              isSigned
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-300 font-black'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                            title={isSigned ? 'Kapıda İmza Alındı (İptal etmek için tıklayın)' : 'Kapıda İmza Al'}
+                          >
+                            <PenTool className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{isSigned ? 'İmzalı' : 'İmza Al'}</span>
+                          </button>
                           {onOpenCancel && (
                             <button
                               onClick={() => onOpenCancel(person)}
@@ -824,16 +1101,38 @@ export default function BeneficiaryList({
                           )}
                         </div>
                       ) : !isComplete ? (
-                        <button
-                          onClick={() => onOpenDelivery(person)}
-                          className="btn-primary flex-1 py-2 text-xs font-bold"
-                        >
-                          <PackageCheck className="w-4 h-4 text-white" />
-                          Kömür Teslimatı Yap ({hedef} Torba)
-                        </button>
+                        <div className="flex-1 flex items-center gap-1.5">
+                          <button
+                            onClick={() => onOpenDelivery(person)}
+                            className="btn-primary flex-1 py-2 text-xs font-bold"
+                          >
+                            <PackageCheck className="w-4 h-4 text-white" />
+                            Kömür Teslimatı Yap ({hedef} Torba)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSignature(person)}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 border shrink-0 ${
+                              isSigned
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-300 font-black'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                            title={isSigned ? 'Kapıda İmza Alındı (İptal etmek için tıklayın)' : 'Kapıda İmza Al'}
+                          >
+                            <PenTool className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{isSigned ? 'İmzalı' : 'İmza Al'}</span>
+                          </button>
+                        </div>
                       ) : (
-                        <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold">
-                          <span className="truncate">✓ {teslim} Torba Tamamlandı</span>
+                        <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-semibold">
+                          <div className="truncate">
+                            <span className="font-extrabold text-emerald-950">✓ {teslim} Torba Tamamlandı</span>
+                            {person.teslimat_tarihi && (
+                              <span className="text-[11px] text-emerald-800 block mt-0.5">
+                                Teslim Tarihi: <strong className="font-mono text-emerald-950">{person.teslimat_tarihi}</strong>
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                             {onOpenCancel && (
                               <button
@@ -862,6 +1161,52 @@ export default function BeneficiaryList({
           </div>
         );
       })}
+
+      {/* Floating Bulk Sign & Route Bar */}
+      {isBulkSignMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-6 sm:w-96 z-40 p-3 rounded-2xl bg-slate-900/95 text-white shadow-2xl border border-slate-700 backdrop-blur-md flex flex-col gap-2 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center justify-between text-xs font-bold px-1">
+            <span className="text-emerald-400 flex items-center gap-1.5">
+              <PenTool className="w-3.5 h-3.5" />
+              <span>{selectedIds.size} Hane Seçildi</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-slate-400 hover:text-white text-[11px]"
+            >
+              Seçimi Sıfırla
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isBulkSignLoading}
+              onClick={handleBulkSignSubmit}
+              className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all disabled:opacity-50"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{isBulkSignLoading ? 'Kaydediliyor...' : 'İmzaları Kaydet'}</span>
+            </button>
+
+            {onNavigateToRoute && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleBulkSignSubmit();
+                  onNavigateToRoute();
+                }}
+                className="py-2.5 px-3 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
+                title="İmzaları kaydet ve Rota ekranına geç"
+              >
+                <Navigation className="w-3.5 h-3.5" />
+                <span>Rotaya Geç</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MULTI-MAHALLE SELECTION MODAL */}
       {showMahalleModal && (

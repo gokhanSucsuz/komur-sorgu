@@ -189,11 +189,17 @@ button {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid var(--border-subtle);
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 8px)) 12px;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 6px)) 4px;
   display: flex;
   justify-content: space-around;
   align-items: center;
   box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-nav-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-item {
@@ -201,14 +207,15 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 6px 10px;
+  gap: 2px;
+  padding: 4px 5px;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   border-radius: var(--radius-md);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  min-width: 58px;
+  min-width: 44px;
+  flex-shrink: 0;
   position: relative;
 }
 

@@ -1,8 +1,8 @@
 'use client';
 
-import { Search, Clock, History, Truck, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3 } from 'lucide-react';
 
-export type NavTab = 'search' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import';
+export type NavTab = 'search' | 'route' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import';
 
 interface BottomNavProps {
   currentTab: NavTab;
@@ -10,6 +10,7 @@ interface BottomNavProps {
   hasActiveShift?: boolean;
   incompleteDeliveriesCount?: number;
   importErrorsCount?: number;
+  activeRouteStopsCount?: number;
 }
 
 export default function BottomNav({
@@ -17,15 +18,23 @@ export default function BottomNav({
   onTabChange,
   hasActiveShift,
   incompleteDeliveriesCount,
-  importErrorsCount
+  importErrorsCount,
+  activeRouteStopsCount
 }: BottomNavProps) {
   const tabs = [
     {
       id: 'search' as NavTab,
-      label: 'Sorgu/Dağıtım',
+      label: 'Sorgu',
       icon: Search,
       badge: incompleteDeliveriesCount && incompleteDeliveriesCount > 0 ? incompleteDeliveriesCount : undefined,
       badgeColor: 'bg-amber-600 text-white'
+    },
+    {
+      id: 'route' as NavTab,
+      label: 'Rota',
+      icon: RouteIcon,
+      badge: activeRouteStopsCount && activeRouteStopsCount > 0 ? activeRouteStopsCount : undefined,
+      badgeColor: 'bg-sky-600 text-white font-extrabold'
     },
     {
       id: 'shift' as NavTab,

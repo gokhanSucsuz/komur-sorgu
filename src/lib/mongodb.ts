@@ -132,6 +132,7 @@ function getInMemoryStore() {
       system_settings: [],
       work_shifts: [],
       import_batches: [],
+      delivery_routes: [],
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
@@ -195,7 +196,10 @@ class InMemoryCollection {
 
   private get items(): any[] {
     const store = getInMemoryStore();
-    return store[this.colName] || [];
+    if (!store[this.colName]) {
+      store[this.colName] = [];
+    }
+    return store[this.colName];
   }
 
   private set items(val: any[]) {
@@ -344,6 +348,7 @@ export async function getDbCollections() {
         systemSettings: db.collection<any>('system_settings'),
         workShifts: db.collection<any>('work_shifts'),
         importBatches: db.collection<any>('import_batches'),
+        deliveryRoutes: db.collection<any>('delivery_routes'),
       };
     } catch (err) {
       console.warn('[MongoDB] Atlas connection warning, using memory fallback:', err);
@@ -362,6 +367,7 @@ export async function getDbCollections() {
     systemSettings: new InMemoryCollection('system_settings') as any,
     workShifts: new InMemoryCollection('work_shifts') as any,
     importBatches: new InMemoryCollection('import_batches') as any,
+    deliveryRoutes: new InMemoryCollection('delivery_routes') as any,
   };
 }
 

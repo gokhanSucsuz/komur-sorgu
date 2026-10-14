@@ -62,7 +62,80 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const { beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
+    const { beneficiaries: benCol, importLogs: logsCol, deliveryHistory: histCol } = await getDbCollections();
+
+    if (type === 'daily_deliveries') {
+      const targetDate = searchParams.get('date') || new Date().toLocaleDateString('en-CA');
+      
+      const filter: any = { islem_tipi: 'TESLIMAT' };
+      if (targetDate && targetDate !== 'ALL') {
+        filter.gun_tarihi = targetDate;
+      }
+
+      const rawRecords = await histCol
+        .find(filter)
+        .sort({ tarih: 1 })
+        .toArray();
+
+      const records = mapDocs(rawRecords);
+
+      let totalBags = 0;
+      const exportData = records.map((r: any, idx: number) => {
+        const bag = r.torba_sayisi || 0;
+        totalBags += bag;
+        return {
+          'Sıra': idx + 1,
+          'Teslim Tarihi / Saati': r.tarih || '-',
+          'TC Kimlik No': r.tc_no,
+          'Adı Soyadı': r.ad_soyad,
+          'Mahalle': r.mahalle,
+          'Açık Adres': r.acik_adres || '-',
+          'Teslim Edilen Torba': bag,
+          'Teslim Alan': r.teslim_alan || r.ad_soyad,
+          'Teslim Eden Personel': r.personel || '-',
+          'Açıklama / Not': r.notlar || '-',
+        };
+      });
+
+      // Summary row at the bottom
+      if (exportData.length > 0) {
+        exportData.push({
+          'Sıra': '' as any,
+          'Teslim Tarihi / Saati': 'TOPLAM:',
+          'TC Kimlik No': `${exportData.length} Hane`,
+          'Adı Soyadı': '',
+          'Mahalle': '',
+          'Açık Adres': '',
+          'Teslim Edilen Torba': `${totalBags} Torba (${(totalBags * 0.025).toFixed(2)} Ton)` as any,
+          'Teslim Alan': '',
+          'Teslim Eden Personel': '',
+          'Açıklama / Not': '',
+        });
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      worksheet['!cols'] = [
+        { wch: 6 },  // Sıra
+        { wch: 20 }, // Tarih/Saat
+        { wch: 15 }, // TC
+        { wch: 24 }, // Ad Soyad
+        { wch: 18 }, // Mahalle
+        { wch: 35 }, // Açık Adres
+        { wch: 18 }, // Torba
+        { wch: 22 }, // Teslim Alan
+        { wch: 20 }, // Personel
+        { wch: 30 }, // Not
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Teslimat Listesi');
+      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      return new NextResponse(buf, {
+        headers: {
+          'Content-Disposition': `attachment; filename="Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx"`,
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+    }
 
     if (type === 'beneficiaries') {
       const rawRecords = await benCol
