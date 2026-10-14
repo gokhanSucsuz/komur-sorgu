@@ -5,9 +5,10 @@ import {
   Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, 
   CheckCircle2, Clock, Filter, AlertCircle, ChevronRight, ChevronDown, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
-  Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool
+  Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
+  List, LayoutGrid
 } from 'lucide-react';
-import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
+import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo } from '@/lib/normalizer';
 
 interface BeneficiaryListProps {
   records: any[];
@@ -54,7 +55,8 @@ export default function BeneficiaryList({
   const [showMahalleModal, setShowMahalleModal] = useState(false);
   const [showSokakModal, setShowSokakModal] = useState(false);
   const [phoneSelectTarget, setPhoneSelectTarget] = useState<any | null>(null);
-  const [sortOrder, setSortOrder] = useState<'ADDRESS_ASC' | 'NAME_ASC'>('ADDRESS_ASC');
+  const [desktopViewMode, setDesktopViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
+  const [sortOrder, setSortOrder] = useState<'SIRA_ASC' | 'ADDRESS_ASC' | 'NAME_ASC'>('SIRA_ASC');
   const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
 
@@ -281,10 +283,12 @@ export default function BeneficiaryList({
     }
     // Sort each settlement according to selected sortOrder
     Object.keys(groups).forEach((key) => {
-      if (sortOrder === 'ADDRESS_ASC') {
+      if (sortOrder === 'SIRA_ASC') {
+        groups[key].sort(compareBySiraNo);
+      } else if (sortOrder === 'ADDRESS_ASC') {
         groups[key].sort(compareByAddressAsc);
       } else {
-        groups[key].sort((a, b) => a.ad_soyad.localeCompare(b.ad_soyad, 'tr'));
+        groups[key].sort((a, b) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'));
       }
     });
     return groups;
@@ -366,10 +370,10 @@ export default function BeneficiaryList({
             </button>
           </div>
 
-          {/* MOBİL ERGONOMİK FİLTRE VE GÖRÜNÜM KONTROL PANELİ */}
+          {/* MOBİL VE MASAÜSTÜ ERGONOMİK FİLTRE VE GÖRÜNÜM KONTROL PANELİ */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-2.5 space-y-2">
-            {/* Üst Satır: Mahalle/Köy Seçici & Sokak/Cadde Seçici (50% - 50% Grid) */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Mahalle/Köy, Sokak/Cadde, Adres Sıralaması & Açık Adresleri Göster/Gizle (Mobil: 2x2, Masaüstü: 4'lü Bar) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Mahalle / Köy Seçim Butonu */}
               <button
                 type="button"
@@ -407,24 +411,29 @@ export default function BeneficiaryList({
                 </div>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
               </button>
-            </div>
 
-            {/* Orta Satır: Adres Sıralaması (Küçükten Büyüğe Kapı No) & Açık Adresleri Göster/Gizle */}
-            <div className="grid grid-cols-2 gap-2">
               {/* Sıralama Seçici */}
               <button
                 type="button"
-                onClick={() => setSortOrder((prev) => (prev === 'ADDRESS_ASC' ? 'NAME_ASC' : 'ADDRESS_ASC'))}
+                onClick={() => {
+                  setSortOrder((prev) => {
+                    if (prev === 'SIRA_ASC') return 'ADDRESS_ASC';
+                    if (prev === 'ADDRESS_ASC') return 'NAME_ASC';
+                    return 'SIRA_ASC';
+                  });
+                }}
                 className={`w-full py-2.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs active:scale-95 min-h-[44px] ${
-                  sortOrder === 'ADDRESS_ASC'
+                  sortOrder === 'SIRA_ASC'
+                    ? 'bg-amber-500 border-amber-600 text-white font-black'
+                    : sortOrder === 'ADDRESS_ASC'
                     ? 'bg-emerald-50 hover:bg-emerald-100/80 border-emerald-300 text-emerald-950 font-black'
                     : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
                 }`}
-                title="Adrese (Kapı No: 1, 2, 3...) veya isme göre sıralayın"
+                title="İmza listesi sırası, kapı numarası veya isme göre sıralayın"
               >
                 <ArrowUpDown className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span className="truncate">
-                  {sortOrder === 'ADDRESS_ASC' ? 'Kapı No (1→99)' : 'İsim (A→Z)'}
+                  {sortOrder === 'SIRA_ASC' ? 'İmza Sırası (1→99)' : sortOrder === 'ADDRESS_ASC' ? 'Kapı No (1→99)' : 'İsim (A→Z)'}
                 </span>
               </button>
 
@@ -455,6 +464,82 @@ export default function BeneficiaryList({
                   </>
                 )}
               </button>
+            </div>
+
+            {/* MASAÜSTÜ ÖZEL GÖRÜNÜM SEÇİCİ & HIZLI SIRALAMA PANELİ (Mobil Hariç) */}
+            <div className="hidden lg:flex items-center justify-between gap-3 pt-2.5 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Geniş Ekran Modu:</span>
+                <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setDesktopViewMode('TABLE')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      desktopViewMode === 'TABLE'
+                        ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90 font-black'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Kömür almayan hak sahiplerini sade liste (Ad Soyad, TC, Tel, Adres) halinde görüntüle"
+                  >
+                    <List className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Liste Halinde Görüntüle</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDesktopViewMode('CARDS')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      desktopViewMode === 'CARDS'
+                        ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90 font-black'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Geniş ekran 2 sütunlu kart görünümü"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Kart Görünümü</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Masaüstü Sıralama Butonları */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-500 font-bold">Kayıt Sıralaması:</span>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder('SIRA_ASC')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                    sortOrder === 'SIRA_ASC'
+                      ? 'bg-amber-500 text-white border-amber-600 font-black shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="İmza listesi sırası: Ana liste 1, 2, 3... Ek listeler Ek1 - 1, Ek1 - 2..."
+                >
+                  İmza Sırası (1→99 / Ek)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder('ADDRESS_ASC')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                    sortOrder === 'ADDRESS_ASC'
+                      ? 'bg-emerald-600 text-white border-emerald-700 font-black shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Sokak ve kapı numarasına göre sırala"
+                >
+                  Kapı No (1→99)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder('NAME_ASC')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                    sortOrder === 'NAME_ASC'
+                      ? 'bg-sky-600 text-white border-sky-700 font-black shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="İsme göre alfabetik sırala"
+                >
+                  İsim (A→Z)
+                </button>
+              </div>
             </div>
 
             {/* Alt Satır: Dağıtım Durumu Filtresi (3'lü Segment: Tüm Kalanlar | Eksik Kalanlar ⚠️ | Bekleyenler) */}
@@ -808,8 +893,161 @@ export default function BeneficiaryList({
               </div>
             </div>
 
-            {/* Citizens Cards */}
-            <div className="space-y-2.5">
+            {/* 1. MASAÜSTÜ KOMPAKT LİSTE / TABLO GÖRÜNÜMÜ (Mobil Hariç - Sadece Desktop Ekranlarda Tablo Modu Aktifken) */}
+            {desktopViewMode === 'TABLE' && (
+              <div className="hidden lg:block overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+                <table className="desktop-compact-table">
+                  <thead>
+                    <tr>
+                      <th className="w-16 text-center">Sıra No</th>
+                      <th>Hak Sahibi (Ad Soyad)</th>
+                      <th>T.C. Kimlik No</th>
+                      <th>Telefon Numarası</th>
+                      <th>Adres & Yerleşim Bilgisi</th>
+                      <th>Kömür Durumu</th>
+                      <th className="text-right">Hızlı İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {citizens.map((person) => {
+                      const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
+                      const isPartial = person.teslimat_durumu === 'EKSIK';
+                      const hedef = person.hedef_torba || defaultQuota;
+                      const teslim = person.torba_sayisi || 0;
+                      const kalan = Math.max(0, hedef - teslim);
+                      const phones = getRecordPhones(person);
+                      const stInfo = getRecordStreetInfo(person);
+                      const hasHouseholdDuplicate = (householdCounts[person.norm_adres] || 0) > 1;
+
+                      return (
+                        <tr key={person.id} className={isPartial ? 'row-incomplete' : ''}>
+                          {/* Sıra No (İmza Listesi Sırası: 1, 2... veya Ek1 - 1, Ek1 - 2...) */}
+                          <td className="text-center font-mono font-black">
+                            <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs">
+                              #{person.sira_no || person.mahalle_sira || person.id}
+                            </span>
+                          </td>
+
+                          {/* Adı Soyadı */}
+                          <td>
+                            <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                              <span>{person.ad_soyad}</span>
+                              {hasHouseholdDuplicate && (
+                                <span className="badge badge-household text-[10px] py-0 px-1.5 shrink-0">
+                                  Aynı Hane
+                                </span>
+                              )}
+                              {person.uyari_notu && (
+                                <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-300 shrink-0 font-bold" title={person.uyari_notu}>
+                                  ⚠️ {person.uyari_notu}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* T.C. Kimlik No */}
+                          <td className="font-mono text-xs font-bold text-slate-700 whitespace-nowrap">
+                            {person.tc_no}
+                          </td>
+
+                          {/* Telefon */}
+                          <td>
+                            {phones.length > 0 ? (
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={`tel:${phones[0]}`}
+                                  className="inline-flex items-center gap-1 text-xs text-emerald-800 font-bold hover:underline bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200"
+                                  title={`${formatPhoneDisplay(phones[0])} Ara`}
+                                >
+                                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>{formatPhoneDisplay(phones[0])}</span>
+                                </a>
+                                {phones.length > 1 && (
+                                  <span className="text-[10px] font-extrabold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">
+                                    +{phones.length - 1}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic">Telefon Yok</span>
+                            )}
+                          </td>
+
+                          {/* Adres Bilgisi */}
+                          <td>
+                            <div className="text-xs text-slate-700 max-w-sm">
+                              <div className="font-bold text-sky-950 flex items-center gap-1">
+                                <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
+                                <span>{stInfo.sokak} No: {stInfo.kapiNo !== 999999 ? stInfo.kapiNo : (person.hane_no || '-')}</span>
+                                {stInfo.daireNo > 0 && <span className="text-sky-700">D: {stInfo.daireNo}</span>}
+                              </div>
+                              <span className="text-slate-500 block text-[11px] truncate mt-0.5" title={person.acik_adres}>
+                                {person.acik_adres}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Durum / Kömür */}
+                          <td className="whitespace-nowrap">
+                            {isComplete ? (
+                              <span className="badge badge-success text-[11px]">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                ✓ {teslim} Torba Tamamlandı
+                              </span>
+                            ) : isPartial ? (
+                              <span className="badge badge-warning text-[11px]">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                Eksik: {teslim}/{hedef} (+{kalan} Torba)
+                              </span>
+                            ) : (
+                              <span className="badge badge-pending text-[11px]">
+                                <Clock className="w-3.5 h-3.5" />
+                                {hedef} Torba Bekliyor
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Hızlı İşlem */}
+                          <td className="text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              {isPartial ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenDelivery(person)}
+                                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
+                                >
+                                  <PackagePlus className="w-3.5 h-3.5" />
+                                  <span>Kalanı Ver (+{kalan})</span>
+                                </button>
+                              ) : !isComplete ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenDelivery(person)}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95"
+                                >
+                                  <PackageCheck className="w-3.5 h-3.5" />
+                                  <span>Teslim Et ({hedef})</span>
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => onOpenHousehold(person)}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
+                              >
+                                Detay
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 2. KART GÖRÜNÜMÜ (Mobilde Her Zaman, Masaüstünde "Kart Görünümü" Seçiliyken) */}
+            <div className={`citizen-cards-grid ${desktopViewMode === 'TABLE' ? 'block lg:hidden' : ''}`}>
               {citizens.map((person) => {
                 const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
                 const isPartial = person.teslimat_durumu === 'EKSIK';
@@ -867,6 +1105,9 @@ export default function BeneficiaryList({
                               )}
                             </button>
                           )}
+                          <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
+                            #{person.sira_no || person.mahalle_sira || person.id}
+                          </span>
                           <h4 className="text-base font-extrabold text-slate-900 leading-tight truncate">
                             {person.ad_soyad}
                           </h4>
@@ -1071,7 +1312,7 @@ export default function BeneficiaryList({
                         <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center gap-1.5">
                           <button
                             onClick={() => onOpenDelivery(person)}
-                            className="btn-primary flex-1 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
+                            className="btn-primary flex-1 lg:flex-none lg:w-auto lg:px-5 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
                           >
                             <PackagePlus className="w-4 h-4 text-white" />
                             <span>Kalanı Tamamla (+{kalan} Torba)</span>
@@ -1104,7 +1345,7 @@ export default function BeneficiaryList({
                         <div className="flex-1 flex items-center gap-1.5">
                           <button
                             onClick={() => onOpenDelivery(person)}
-                            className="btn-primary flex-1 py-2 text-xs font-bold"
+                            className="btn-primary flex-1 lg:flex-none lg:w-auto lg:px-5 py-2 text-xs font-bold"
                           >
                             <PackageCheck className="w-4 h-4 text-white" />
                             Kömür Teslimatı Yap ({hedef} Torba)

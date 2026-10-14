@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
+import { getRecordStreetInfo } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,6 +9,7 @@ export async function GET(request: NextRequest) {
       deliveryHistory: histCol,
       truckDeliveries: trucksCol,
       systemSettings: settingsCol,
+      importBatches: batchesCol,
     } = await getDbCollections();
 
     const searchParams = request.nextUrl.searchParams;
@@ -143,12 +145,219 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => a.mahalle.localeCompare(b.mahalle, 'tr', { sensitivity: 'base' }))
       .map((m: any) => ({
         ...m,
+        toplamKayit: m.toplamHane,
+        teslimEdilen: m.tamHane,
+        teslimEdilmeyen: m.bekleyenHane + m.eksikHane,
+        kalanTorba: Math.max(0, m.hedefTorba - m.dagitilanTorba),
+        tip: (/(?:Köyü|Koy|Koyu)$/i.test(m.mahalle) ? 'KOY' : 'MAHALLE'),
         dagitilanTonaj: parseFloat(((m.dagitilanTorba || 0) * 0.025).toFixed(2)),
         hedefTonaj: parseFloat(((m.hedefTorba || 0) * 0.025).toFixed(2)),
         yuzde: m.hedefTorba > 0 ? parseFloat(((m.dagitilanTorba / m.hedefTorba) * 100).toFixed(1)) : 0,
       }));
 
-    // 6. Truck Arrivals in Date Range
+    // 6. Street and Cadde Level Breakdown (Sokak sokak, cadde cadde döküm)
+    const sokakMap = new Map<string, {
+      mahalle: string;
+      sokak: string;
+      toplamKayit: number;
+      teslimEdilen: number;
+      teslimEdilmeyen: number;
+      eksik: number;
+      dagitilanTorba: number;
+    }>();
+
+    for (const b of allBeneficiaries) {
+      const m = b.mahalle || 'Belirtilmemiş';
+      const stInfo = getRecordStreetInfo(b);
+      const sName = stInfo.sokak || 'Sokak Belirtilmemiş';
+      const key = `${m}:::${sName}`;
+
+      if (!sokakMap.has(key)) {
+        sokakMap.set(key, {
+          mahalle: m,
+          sokak: sName,
+          toplamKayit: 0,
+          teslimEdilen: 0,
+          teslimEdilmeyen: 0,
+          eksik: 0,
+          dagitilanTorba: 0,
+        });
+      }
+
+      const sItem = sokakMap.get(key)!;
+      sItem.toplamKayit += 1;
+      const d = b.teslimat_durumu;
+      if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
+        sItem.teslimEdilen += 1;
+      } else if (d === 'EKSIK') {
+        sItem.eksik += 1;
+        sItem.teslimEdilmeyen += 1;
+      } else {
+        sItem.teslimEdilmeyen += 1;
+      }
+      sItem.dagitilanTorba += Number(b.torba_sayisi || 0);
+    }
+
+    const sokakStats = Array.from(sokakMap.values())
+      .sort((a, b) => {
+        const mComp = a.mahalle.localeCompare(b.mahalle, 'tr');
+        if (mComp !== 0) return mComp;
+        return a.sokak.localeCompare(b.sokak, 'tr');
+      })
+      .map((item) => ({
+        ...item,
+        yuzde: item.toplamKayit > 0 ? parseFloat(((item.teslimEdilen / item.toplamKayit) * 100).toFixed(1)) : 0,
+      }));
+
+    // 7. Uploaded Excel Batches Breakdown (Her dosya yükleme ve ek liste işlemi ayrı ayrı)
+    const rawBatches = await batchesCol.find({}).sort({ _id: -1 }).toArray();
+    const batches = mapDocs(rawBatches);
+
+    // Group beneficiaries by batch_id
+    const beneficiariesByBatch = new Map<string, any[]>();
+    for (const b of allBeneficiaries) {
+      const bId = b.batch_id || 'ONCEKI_KAYITLAR';
+      if (!beneficiariesByBatch.has(bId)) {
+        beneficiariesByBatch.set(bId, []);
+      }
+      beneficiariesByBatch.get(bId)!.push(b);
+    }
+
+    const batchStats: any[] = [];
+
+    for (const batch of batches) {
+      const bId = batch.batch_id || batch.id;
+      const list = beneficiariesByBatch.get(bId) || [];
+
+      // Mahalle breakdown within this batch
+      const mBatchMap = new Map<string, {
+        mahalle: string;
+        ekListeAdi: string;
+        ekListeNo: number;
+        siraNoList: string[];
+        toplamKayit: number;
+        teslimEdilen: number;
+        bekleyen: number;
+        eksik: number;
+      }>();
+
+      let batchDelivered = 0;
+      let batchPending = 0;
+
+      for (const b of list) {
+        const m = b.mahalle || 'Belirtilmemiş';
+        if (!mBatchMap.has(m)) {
+          mBatchMap.set(m, {
+            mahalle: m,
+            ekListeAdi: b.ek_liste_adi || (b.sira_no && b.sira_no.startsWith('Ek') ? `Ek ${b.sira_no.replace(/^Ek\s*(\d+).*/i, '$1')}` : 'Ana Liste'),
+            ekListeNo: typeof b.ek_liste_no === 'number' ? b.ek_liste_no : (b.sira_no && b.sira_no.startsWith('Ek') ? parseInt(b.sira_no.replace(/^Ek\s*(\d+).*/i, '$1'), 10) || 0 : 0),
+            siraNoList: [],
+            toplamKayit: 0,
+            teslimEdilen: 0,
+            bekleyen: 0,
+            eksik: 0,
+          });
+        }
+
+        const mItem = mBatchMap.get(m)!;
+        mItem.toplamKayit += 1;
+        if (b.sira_no) mItem.siraNoList.push(b.sira_no);
+
+        const d = b.teslimat_durumu;
+        if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
+          mItem.teslimEdilen += 1;
+          batchDelivered += 1;
+        } else if (d === 'EKSIK') {
+          mItem.eksik += 1;
+          mItem.bekleyen += 1;
+          batchPending += 1;
+        } else {
+          mItem.bekleyen += 1;
+          batchPending += 1;
+        }
+      }
+
+      const mahalleler = Array.from(mBatchMap.values()).map((m) => {
+        let siraAraligi = '';
+        if (m.siraNoList.length > 0) {
+          const first = m.siraNoList[0];
+          const last = m.siraNoList[m.siraNoList.length - 1];
+          siraAraligi = first === last ? first : `${first} - ${last}`;
+        } else {
+          siraAraligi = m.ekListeNo === 0 ? `1 - ${m.toplamKayit}` : `Ek${m.ekListeNo} - 1'den Ek${m.ekListeNo} - ${m.toplamKayit}'e`;
+        }
+        return {
+          mahalle: m.mahalle,
+          ekListeAdi: m.ekListeAdi,
+          ekListeNo: m.ekListeNo,
+          siraAraligi,
+          toplamKayit: m.toplamKayit,
+          teslimEdilen: m.teslimEdilen,
+          bekleyen: m.bekleyen,
+          eksik: m.eksik,
+          yuzde: m.toplamKayit > 0 ? parseFloat(((m.teslimEdilen / m.toplamKayit) * 100).toFixed(1)) : 0,
+        };
+      });
+
+      batchStats.push({
+        batchId: bId,
+        dosyaAdi: batch.dosya_adi || 'Excel Dosyası',
+        yuklemeTarihi: batch.created_at || 'Tarih Belirtilmedi',
+        toplamSatir: batch.toplam_satir || list.length,
+        eklenenKisi: list.length,
+        teslimEdilen: batchDelivered,
+        bekleyen: batchPending,
+        yuzde: list.length > 0 ? parseFloat(((batchDelivered / list.length) * 100).toFixed(1)) : 0,
+        mahalleler,
+      });
+    }
+
+    // Also check unbatched or initial seed records if any
+    const unbatchedList = beneficiariesByBatch.get('ONCEKI_KAYITLAR') || [];
+    if (unbatchedList.length > 0) {
+      const mBatchMap = new Map<string, any>();
+      let del = 0;
+      let pend = 0;
+      for (const b of unbatchedList) {
+        const m = b.mahalle || 'Merkez';
+        if (!mBatchMap.has(m)) {
+          mBatchMap.set(m, { mahalle: m, ekListeAdi: 'Ana Liste', siraNoList: [], toplamKayit: 0, teslimEdilen: 0, bekleyen: 0 });
+        }
+        const mi = mBatchMap.get(m)!;
+        mi.toplamKayit += 1;
+        if (b.sira_no) mi.siraNoList.push(b.sira_no);
+        if (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI') {
+          mi.teslimEdilen += 1;
+          del += 1;
+        } else {
+          mi.bekleyen += 1;
+          pend += 1;
+        }
+      }
+
+      batchStats.unshift({
+        batchId: 'ONCEKI_KAYITLAR',
+        dosyaAdi: 'İlk Kayıtlar / Sistem Başlangıç Verileri',
+        yuklemeTarihi: 'Sistem Başlangıcı',
+        toplamSatir: unbatchedList.length,
+        eklenenKisi: unbatchedList.length,
+        teslimEdilen: del,
+        bekleyen: pend,
+        yuzde: unbatchedList.length > 0 ? parseFloat(((del / unbatchedList.length) * 100).toFixed(1)) : 0,
+        mahalleler: Array.from(mBatchMap.values()).map((m) => ({
+          mahalle: m.mahalle,
+          ekListeAdi: m.ekListeAdi,
+          ekListeNo: 0,
+          siraAraligi: `1 - ${m.toplamKayit}`,
+          toplamKayit: m.toplamKayit,
+          teslimEdilen: m.teslimEdilen,
+          bekleyen: m.bekleyen,
+          yuzde: m.toplamKayit > 0 ? parseFloat(((m.teslimEdilen / m.toplamKayit) * 100).toFixed(1)) : 0,
+        })),
+      });
+    }
+
+    // 8. Truck Arrivals in Date Range
     const truckFilter: any = {};
     if (startDate) truckFilter.tarih = { ...(truckFilter.tarih || {}), $gte: startDate };
     if (endDate) truckFilter.tarih = { ...(truckFilter.tarih || {}), $lte: endDate };
@@ -202,6 +411,8 @@ export async function GET(request: NextRequest) {
         dailyBreakdown,
         eksikHaneler,
         mahalleStats,
+        sokakStats,
+        batchStats,
         deliveries,
         trucks,
       },

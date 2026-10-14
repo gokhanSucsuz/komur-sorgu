@@ -185,8 +185,10 @@ export default function ExcelImportPage({
         </div>
       )}
 
-      {/* Excel Upload Section - Light Mode */}
-      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+      {/* MASAÜSTÜ İKİ KOLONLU DÜZEN: Yükleme Paneli & Yüklenen Dosyalar */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        {/* Excel Upload Section - Light Mode */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center border border-emerald-200">
@@ -489,6 +491,18 @@ export default function ExcelImportPage({
                       </span>
                     )}
                   </div>
+
+                  {batch.mahalle_ozet && batch.mahalle_ozet.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {batch.mahalle_ozet.map((mo: any, moIdx: number) => (
+                        <span key={moIdx} className="text-[11px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-2xs">
+                          <strong className="text-slate-900">{mo.mahalle}:</strong>
+                          <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                          <span className="text-emerald-700 font-mono font-bold">({mo.sira_araligi})</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -507,6 +521,7 @@ export default function ExcelImportPage({
           </div>
         )}
       </div>
+    </div>
 
       {/* YÜKLEME SONUÇLARI VE SORUNLU KAYITLAR SAYFASI - Light Mode */}
       <div className="space-y-3">

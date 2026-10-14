@@ -241,7 +241,7 @@ export default function DeliveryArchive({
                 </div>
 
                 {/* Delivered Items */}
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
                   {dayGroup.items.map((item: any) => (
                     <div
                       key={item.id}
@@ -308,38 +308,40 @@ export default function DeliveryArchive({
               Henüz iptal edilmiş bir teslimat kaydı bulunmuyor.
             </div>
           ) : (
-            filteredCancelled.map((item) => (
-              <div
-                key={item.id}
-                className="p-4 rounded-2xl bg-white border border-rose-200 space-y-2 shadow-xs"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h4 className="text-sm font-extrabold text-slate-900">{item.ad_soyad}</h4>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                      <span className="font-mono font-bold text-rose-700">TC: {item.tc_no}</span>
-                      <span>•</span>
-                      <span className="text-slate-700 font-medium">{item.mahalle}</span>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {filteredCancelled.map((item) => (
+                <div
+                  key={item.id}
+                  className="p-4 rounded-2xl bg-white border border-rose-200 space-y-2 shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">{item.ad_soyad}</h4>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                        <span className="font-mono font-bold text-rose-700">TC: {item.tc_no}</span>
+                        <span>•</span>
+                        <span className="text-slate-700 font-medium">{item.mahalle}</span>
+                      </div>
                     </div>
+
+                    <span className="badge badge-cancelled text-[11px]">
+                      İptal Edildi
+                    </span>
                   </div>
 
-                  <span className="badge badge-cancelled text-[11px]">
-                    İptal Edildi
-                  </span>
-                </div>
+                  {/* Cancellation Reason */}
+                  <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200 text-xs text-rose-900">
+                    <p className="font-bold text-rose-800">İptal Gerekçesi:</p>
+                    <p className="mt-0.5 font-medium">{item.iptal_nedeni || 'Gerekçe belirtilmedi'}</p>
+                  </div>
 
-                {/* Cancellation Reason */}
-                <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200 text-xs text-rose-900">
-                  <p className="font-bold text-rose-800">İptal Gerekçesi:</p>
-                  <p className="mt-0.5 font-medium">{item.iptal_nedeni || 'Gerekçe belirtilmedi'}</p>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 font-medium">
+                    <span>İşlemi Yapan: <strong className="text-slate-800">{item.personel}</strong></span>
+                    <span>{item.tarih}</span>
+                  </div>
                 </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 font-medium">
-                  <span>İşlemi Yapan: <strong className="text-slate-800">{item.personel}</strong></span>
-                  <span>{item.tarih}</span>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       )}

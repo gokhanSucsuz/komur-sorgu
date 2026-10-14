@@ -88,10 +88,33 @@ export async function POST(request: NextRequest) {
           hedef_torba: 1,
           teslimat_tarihi: 1,
           teslim_alan: 1,
-          teslim_eden_personel: 1
+          teslim_eden_personel: 1,
+          sira_no: 1,
+          ek_liste_no: 1
         } 
       })
       .toArray();
+
+    // Check which neighborhoods already have records in DB and determine their highest ek_liste_no
+    const existingMahalleEkMap = new Map<string, { maxEkNo: number; hasRecords: boolean }>();
+    for (const b of existingList) {
+      const m = b.mahalle ? b.mahalle.trim() : '';
+      if (!m) continue;
+      if (!existingMahalleEkMap.has(m)) {
+        existingMahalleEkMap.set(m, { maxEkNo: 0, hasRecords: true });
+      }
+      const curr = existingMahalleEkMap.get(m)!;
+      let ekNo = typeof b.ek_liste_no === 'number' ? b.ek_liste_no : 0;
+      if (!ekNo && b.sira_no && typeof b.sira_no === 'string') {
+        const match = b.sira_no.match(/^Ek\s*(\d+)/i);
+        if (match) ekNo = parseInt(match[1], 10);
+      }
+      if (ekNo > curr.maxEkNo) {
+        curr.maxEkNo = ekNo;
+      }
+    }
+
+    const mahalleCounters = new Map<string, number>();
 
     const existingTcMap = new Map<string, ExistingRecordInfo>();
     const existingHaneMap = new Map<string, ExistingRecordInfo>();
@@ -506,14 +529,42 @@ export async function POST(request: NextRequest) {
         existingAddressMap.set(normAdres, recordInfo);
       }
 
+      // Mahalle bazında sıra numarası belirleme (Her mahalle kendi içinde 1'den başlar; önceden kayıt varsa Ek1 - 1, Ek1 - 2...)
+      const targetMahalle = mahalle || 'Merkez Mah.';
+      const counter = (mahalleCounters.get(targetMahalle) || 0) + 1;
+      mahalleCounters.set(targetMahalle, counter);
+
+      const existingData = existingMahalleEkMap.get(targetMahalle);
+      let siraNo: string;
+      let ekListeNo: number;
+      let ekListeAdi: string;
+
+      if (!existingData || !existingData.hasRecords) {
+        // Bu mahalle ilk defa sisteme yükleniyor (Ana Liste) -> Sıra no 1'den başlar
+        siraNo = String(counter);
+        ekListeNo = 0;
+        ekListeAdi = 'Ana Liste';
+      } else {
+        // Bu mahalleye ait daha önce veritabanında kayıt vardı!
+        // Sonradan eklenen dosya Ek1, Ek2 olarak adlandırılır ve format Ek1 - 1, Ek1 - 2 şeklinde olur
+        const nextEkNo = existingData.maxEkNo + 1;
+        siraNo = `Ek${nextEkNo} - ${counter}`;
+        ekListeNo = nextEkNo;
+        ekListeAdi = `Ek ${nextEkNo}`;
+      }
+
       toInsertBeneficiaries.push({
         batch_id: batchId,
         dosya_adi: file.name,
+        sira_no: siraNo,
+        mahalle_sira: counter,
+        ek_liste_no: ekListeNo,
+        ek_liste_adi: ekListeAdi,
         tc_no: tcNo,
         ad_soyad: adSoyad,
         telefon: telefon || '',
         telefon2: telefon2 || '',
-        mahalle: mahalle || 'Merkez Mah.',
+        mahalle: targetMahalle,
         yerlesim_tipi: yerlesimTipi,
         sokak: sokak,
         kapi_no: kapiNo,
@@ -544,6 +595,19 @@ export async function POST(request: NextRequest) {
       await logsCol.insertMany(toInsertLogs);
     }
 
+    // Mahalle bazında yükleme özetleri (Hangi mahalleden kaç kişi, hangi ek liste numarasıyla yüklendi)
+    const mahalleOzet = Array.from(mahalleCounters.entries()).map(([m, cnt]) => {
+      const info = existingMahalleEkMap.get(m);
+      const ekNo = (!info || !info.hasRecords) ? 0 : info.maxEkNo + 1;
+      return {
+        mahalle: m,
+        kayit_sayisi: cnt,
+        ek_liste_no: ekNo,
+        ek_liste_adi: ekNo === 0 ? 'Ana Liste' : `Ek ${ekNo}`,
+        sira_araligi: ekNo === 0 ? `1 - ${cnt}` : `Ek${ekNo} - 1'den Ek${ekNo} - ${cnt}'e`,
+      };
+    });
+
     // Record batch metadata in import_batches
     await batchesCol.insertOne({
       batch_id: batchId,
@@ -552,6 +616,7 @@ export async function POST(request: NextRequest) {
       toplam_satir: totalRows,
       eklenen_kisi: insertedCount,
       hatali_kisi: failedCount,
+      mahalle_ozet: mahalleOzet,
       created_at: nowStr,
       tarih_iso: new Date().toISOString(),
     });

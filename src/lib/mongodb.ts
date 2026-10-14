@@ -110,6 +110,12 @@ export function mapDoc<T = any>(doc: any): T {
   } else if (mapped.id) {
     mapped.id = String(mapped.id);
   }
+  // If beneficiary document and missing sira_no
+  if (mapped.tc_no && !mapped.sira_no) {
+    mapped.sira_no = String(mapped.mahalle_sira || mapped.id || '1');
+    mapped.ek_liste_no = typeof mapped.ek_liste_no === 'number' ? mapped.ek_liste_no : 0;
+    mapped.ek_liste_adi = mapped.ek_liste_adi || 'Ana Liste';
+  }
   return mapped;
 }
 
@@ -491,7 +497,7 @@ function seedInMemoryStore(store: Record<string, any[]>) {
 }
 
 function getSeedBeneficiaries(nowStr: string) {
-  return [
+  const seeds = [
     {
       id: '1',
       tc_no: '12345678902',
@@ -707,6 +713,21 @@ function getSeedBeneficiaries(nowStr: string) {
       updated_at: nowStr,
     },
   ];
+
+  const mahalleCounters = new Map<string, number>();
+  return seeds.map((s) => {
+    const m = s.mahalle || 'Merkez';
+    const cnt = (mahalleCounters.get(m) || 0) + 1;
+    mahalleCounters.set(m, cnt);
+    return {
+      ...s,
+      sira_no: String(cnt),
+      mahalle_sira: cnt,
+      ek_liste_no: 0,
+      ek_liste_adi: 'Ana Liste',
+      batch_id: 'SEED-INITIAL',
+    };
+  });
 }
 
 function getSeedHistory() {

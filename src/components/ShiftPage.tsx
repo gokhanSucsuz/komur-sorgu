@@ -648,7 +648,9 @@ export default function ShiftPage({
           </div>
         )}
 
-        {!isLoading && shifts.map((shift) => {
+        {!isLoading && shifts.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+            {shifts.map((shift) => {
           const isOngoing = shift.durum === 'DEVAM_EDIYOR';
           const isSaturday = shift.isSaturday;
           const isSunday = shift.isSunday;
@@ -873,6 +875,8 @@ export default function ShiftPage({
           );
         })}
       </div>
+    )}
+  </div>
 
       {/* Manual Add / Edit Shift Modal */}
       {showEditModal && editingShift && (

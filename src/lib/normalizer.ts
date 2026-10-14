@@ -508,6 +508,42 @@ export function compareByAddressAsc(a: any, b: any): number {
 }
 
 /**
+ * Natural comparison by Order Number (Sıra No / İmza Listesi Sırası):
+ * Ana Liste (0) first: 1, 2, 3...
+ * Then Ek 1: Ek1 - 1, Ek1 - 2...
+ * Then Ek 2: Ek2 - 1, Ek2 - 2...
+ */
+export function compareBySiraNo(a: any, b: any): number {
+  const getEkNo = (item: any): number => {
+    if (typeof item.ek_liste_no === 'number') return item.ek_liste_no;
+    if (item.sira_no && typeof item.sira_no === 'string') {
+      const match = item.sira_no.match(/^Ek\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+    }
+    return 0; // Ana Liste
+  };
+
+  const getSeqNo = (item: any): number => {
+    if (typeof item.mahalle_sira === 'number') return item.mahalle_sira;
+    if (item.sira_no) {
+      const match = String(item.sira_no).match(/(\d+)(?!.*\d)/); // extract last number
+      if (match) return parseInt(match[1], 10);
+    }
+    return 999999;
+  };
+
+  const ekA = getEkNo(a);
+  const ekB = getEkNo(b);
+  if (ekA !== ekB) return ekA - ekB;
+
+  const seqA = getSeqNo(a);
+  const seqB = getSeqNo(b);
+  if (seqA !== seqB) return seqA - seqB;
+
+  return (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr');
+}
+
+/**
  * Cleans household number (Hane No) e.g. "Hane: 101" -> "101"
  */
 export function cleanHaneNo(hane: string | number | null | undefined): string {

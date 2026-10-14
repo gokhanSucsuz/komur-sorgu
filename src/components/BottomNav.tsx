@@ -68,7 +68,7 @@ export default function BottomNav({
   ];
 
   return (
-    <nav className="mobile-nav-bar no-print" role="navigation" aria-label="Ana Menü">
+    <nav className="mobile-nav-bar no-print lg:hidden" role="navigation" aria-label="Ana Menü">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = currentTab === tab.id;

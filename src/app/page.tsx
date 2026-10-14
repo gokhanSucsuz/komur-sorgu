@@ -357,6 +357,12 @@ export default function Home() {
         userRole={userRole}
         userName={userName}
         defaultQuota={defaultQuota}
+        currentTab={currentTab}
+        onTabChange={setCurrentTab}
+        hasActiveShift={!!activeShift}
+        incompleteDeliveriesCount={eksikHaneler.length}
+        importErrorsCount={overallStats?.toplamHataSayisi}
+        activeRouteStopsCount={activeRouteStopsCount}
         onOpenQuotaModal={() => setShowQuotaModal(true)}
         onOpenPersonnelModal={() => setShowPersonnelModal(true)}
         onOpenAuditLogs={() => setShowAuditLogsModal(true)}

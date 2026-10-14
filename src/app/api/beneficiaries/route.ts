@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
 
     const rawRecords = await benCol
       .find(filter)
-      .sort({ mahalle: 1, ad_soyad: 1 })
+      .sort({ mahalle: 1, ek_liste_no: 1, mahalle_sira: 1, ad_soyad: 1 })
       .skip(skip)
       .limit(limit)
       .toArray();

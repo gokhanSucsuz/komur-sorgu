@@ -558,8 +558,12 @@ export default function RoutePage({
                 </div>
               </div>
 
-              {/* ROTA ÖZETİ VE İLERLEME KARTI */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+              {/* MASAÜSTÜ İKİ KOLONLU KOMUTA DÜZENİ / MOBİL DİKEY SIRALAMA */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* Sol Panel: Rota Özeti & İlerleme Kartı (Masaüstünde Yapışkan Panel) */}
+                <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-28 space-y-3">
+                  {/* ROTA ÖZETİ VE İLERLEME KARTI */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -689,8 +693,8 @@ export default function RoutePage({
                 </div>
               </div>
 
-              {/* SIRALI DURAKLAR LİSTESİ */}
-              <div className="space-y-2">
+              {/* Sağ Panel: SIRALI DURAKLAR LİSTESİ */}
+              <div className="lg:col-span-7 xl:col-span-8 space-y-2.5">
                 <div className="flex items-center justify-between px-1">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Navigation className="w-3.5 h-3.5 text-sky-600" />
@@ -925,6 +929,8 @@ export default function RoutePage({
                     </div>
                   );
                 })}
+                  </div>
+                </div>
               </div>
             </>
           )}
