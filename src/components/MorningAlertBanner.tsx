@@ -24,33 +24,33 @@ export default function MorningAlertBanner({
   return (
     <div className="mb-4 rounded-2xl bg-amber-50/90 border border-amber-300 shadow-md shadow-amber-500/5 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
       {/* Alert Header Banner - Light Mode */}
-      <div className="p-3.5 flex items-center justify-between gap-3">
+      <div className="p-3 sm:p-3.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
             <AlertTriangle className="w-5 h-5 text-white" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full border border-amber-300">
                 Günün Dağıtım Uyarısı
               </span>
-              <span className="text-[11px] font-bold text-rose-700 font-mono bg-rose-100 px-1.5 py-0.5 rounded border border-rose-200">
+              <span className="text-[10px] sm:text-[11px] font-bold text-rose-700 font-mono bg-rose-100 px-1.5 py-0.5 rounded border border-rose-200">
                 {eksikHaneler.length} Hane Eksik
               </span>
             </div>
-            <p className="text-sm font-bold text-slate-900 leading-tight truncate mt-0.5">
-              Daha önce yarım kalan kömürler: <strong className="text-amber-800">{toplamEksikTorba} Torba</strong> eksik!
+            <p className="text-xs sm:text-sm font-bold text-slate-900 leading-tight mt-1">
+              Daha önce yarım kalan: <strong className="text-amber-800">{toplamEksikTorba} Torba</strong> eksik!
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 flex items-center gap-1 transition-all active:scale-95 shadow-xs"
           >
             <span>{isExpanded ? 'Gizle' : 'Listeyi Gör'}</span>
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
           <button
             onClick={() => setIsDismissed(true)}
@@ -62,14 +62,14 @@ export default function MorningAlertBanner({
         </div>
       </div>
 
-      {/* Expanded List of Incomplete Households - Light Mode */}
+      {/* Expanded List of Incomplete Households - Mobile Friendly Cards */}
       {isExpanded && (
-        <div className="p-3 bg-white border-t border-amber-200 space-y-2">
+        <div className="p-3 bg-white border-t border-amber-200 space-y-2.5">
           <p className="text-xs text-slate-600 font-medium">
             Dağıtıma başlamadan önce lütfen bu hanelerin eksik kalan kömürlerini tamamlayınız:
           </p>
 
-          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
             {eksikHaneler.map((person) => {
               const hedef = person.hedef_torba || 34;
               const teslim = person.torba_sayisi || 0;
@@ -78,39 +78,39 @@ export default function MorningAlertBanner({
               return (
                 <div
                   key={person.id}
-                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2.5 hover:border-amber-400 transition-all shadow-xs"
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:border-amber-400 transition-all shadow-xs"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-extrabold text-slate-900 truncate">{person.ad_soyad}</span>
-                      <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between sm:justify-start gap-1.5">
+                      <span className="text-sm font-extrabold text-slate-900">{person.ad_soyad}</span>
+                      <span className="text-xs font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300">
                         TC: {person.tc_no}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs text-slate-600 mt-1">
-                      <span className="flex items-center gap-1 text-slate-800 font-semibold">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-700 flex-wrap">
+                      <span className="flex items-center gap-1 font-semibold text-slate-900">
                         <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         {person.mahalle}
                       </span>
-                      <span>•</span>
-                      <span className="text-slate-700 font-medium">
-                        Verilen: {teslim} / {hedef} Torba
-                      </span>
-                      <span className="text-rose-700 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
-                        Kalan: {kalan} Torba
-                      </span>
+                      <span className="text-slate-400">•</span>
+                      <span className="text-slate-600 truncate max-w-[200px] sm:max-w-none">{person.acik_adres}</span>
                     </div>
 
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                      {person.acik_adres}
-                    </p>
+                    <div className="flex items-center gap-2 text-xs pt-1">
+                      <span className="text-slate-600 font-medium bg-slate-200/80 px-2 py-0.5 rounded">
+                        Verilen: <strong className="text-slate-900">{teslim}</strong>/{hedef}
+                      </span>
+                      <span className="text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                        Kalan: <strong>{kalan} Torba</strong>
+                      </span>
+                    </div>
                   </div>
 
                   {/* Complete Household Button */}
                   <button
                     onClick={() => onCompleteHousehold(person)}
-                    className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 shadow-md shadow-emerald-600/20 active:scale-95 transition-all"
+                    className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all mt-1 sm:mt-0"
                   >
                     <PackagePlus className="w-4 h-4 text-white" />
                     <span>+{kalan} Torbayı Tamamla</span>

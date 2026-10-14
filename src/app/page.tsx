@@ -338,21 +338,25 @@ export default function Home() {
         {/* Tab 1: Sorgu & Dağıtım Listesi */}
         {currentTab === 'search' && (
           <>
-            {/* LIVE WORK SHIFT / OVERTIME TRACKER BANNER */}
-            <ShiftActiveBanner
-              activeShift={activeShift}
-              currentStaff={userName}
-              onOpenStartModal={() => setShowShiftStartModal(true)}
-              onOpenEndModal={(shift) => setShiftEndTarget(shift)}
-              onQuickStart={handleQuickStartShift}
-              onNavigateToShiftPage={() => setCurrentTab('shift')}
-            />
+            {/* LIVE WORK SHIFT BANNER - Arama yaparken sahada ekranı sade tutmak için gizlenir */}
+            {!searchQuery.trim() && (
+              <ShiftActiveBanner
+                activeShift={activeShift}
+                currentStaff={userName}
+                onOpenStartModal={() => setShowShiftStartModal(true)}
+                onOpenEndModal={(shift) => setShiftEndTarget(shift)}
+                onQuickStart={handleQuickStartShift}
+                onNavigateToShiftPage={() => setCurrentTab('shift')}
+              />
+            )}
 
-            {/* MORNING / ACTIVE ALERT BANNER FOR INCOMPLETE HOUSEHOLDS */}
-            <MorningAlertBanner
-              eksikHaneler={eksikHaneler}
-              onCompleteHousehold={(person) => setDeliveryTarget(person)}
-            />
+            {/* MORNING ALERT BANNER - Arama yaparken sahada ekranı sade tutmak için gizlenir */}
+            {!searchQuery.trim() && (
+              <MorningAlertBanner
+                eksikHaneler={eksikHaneler}
+                onCompleteHousehold={(person) => setDeliveryTarget(person)}
+              />
+            )}
 
             <BeneficiaryList
               records={beneficiaries}
