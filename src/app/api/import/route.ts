@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getDbCollections } from '@/lib/mongodb';
-import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText } from '@/lib/normalizer';
+import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
 
 export async function POST(request: NextRequest) {
   try {
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       let tcNo = cleanTcNo(getField(['tc', 'tcno', 'tckimlik', 'tckimlikno', 'kimlikno', 'tc kimlik']));
       let adSoyad = getField(['ad soyad', 'adi soyadi', 'isim soyisim', 'adsoyad', 'ad', 'isim']);
       const soyad = getField(['soyad', 'soyadi']);
-      if (soyad && !adSoyad.toLowerCase().includes(soyad.toLowerCase())) {
+      if (soyad && !turkishIncludes(adSoyad, soyad)) {
         adSoyad = `${adSoyad} ${soyad}`.trim();
       }
 

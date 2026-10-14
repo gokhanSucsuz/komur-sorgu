@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin } from 'lucide-react';
+import { turkishRecordMatches } from '@/lib/normalizer';
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -32,25 +33,13 @@ export default function DeliveryArchive({
   const filteredDelivered = deliveredItems.filter((r) => {
     if (selectedDay !== 'ALL' && r.gun_tarihi !== selectedDay) return false;
     if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      r.tc_no.includes(q) ||
-      r.ad_soyad.toLowerCase().includes(q) ||
-      r.mahalle.toLowerCase().includes(q) ||
-      (r.personel && r.personel.toLowerCase().includes(q))
-    );
+    return turkishRecordMatches(r, ['tc_no', 'ad_soyad', 'mahalle', 'personel', 'acik_adres', 'notlar'], searchQuery);
   });
 
   // Search filter for cancellations
   const filteredCancelled = cancelledItems.filter((r) => {
     if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      r.tc_no.includes(q) ||
-      r.ad_soyad.toLowerCase().includes(q) ||
-      (r.iptal_nedeni && r.iptal_nedeni.toLowerCase().includes(q)) ||
-      (r.personel && r.personel.toLowerCase().includes(q))
-    );
+    return turkishRecordMatches(r, ['tc_no', 'ad_soyad', 'mahalle', 'iptal_nedeni', 'personel'], searchQuery);
   });
 
   // Re-group filtered deliveries by date
@@ -60,12 +49,7 @@ export default function DeliveryArchive({
       if (item.islem_tipi !== 'TESLIMAT') return false;
       if (selectedDay !== 'ALL' && item.gun_tarihi !== selectedDay) return false;
       if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        item.tc_no.includes(q) ||
-        item.ad_soyad.toLowerCase().includes(q) ||
-        item.mahalle.toLowerCase().includes(q)
-      );
+      return turkishRecordMatches(item, ['tc_no', 'ad_soyad', 'mahalle', 'personel', 'acik_adres', 'notlar'], searchQuery);
     })
   })).filter((group) => group.items.length > 0);
 

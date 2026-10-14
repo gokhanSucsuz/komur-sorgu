@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc } from '@/lib/mongodb';
-import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText } from '@/lib/normalizer';
+import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, buildTurkishSearchFilter } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -64,19 +64,19 @@ export async function GET(request: NextRequest) {
     const filter: any = {};
 
     if (q) {
-      const cleanedTc = cleanTcNo(q);
-      const cleanedPhone = cleanPhone(q);
-      const cleanedText = cleanTurkishText(q);
-      const escapedText = cleanedText.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-      const textRegex = new RegExp(escapedText, 'i');
-
-      filter.$or = [
-        { tc_no: new RegExp(cleanedTc || q, 'i') },
-        { ad_soyad: textRegex },
-        { telefon: new RegExp(cleanedPhone || q, 'i') },
-        { acik_adres: textRegex },
-        { mahalle: textRegex },
-      ];
+      const searchFilter = buildTurkishSearchFilter(q, [
+        'tc_no',
+        'ad_soyad',
+        'telefon',
+        'acik_adres',
+        'mahalle',
+        'hane_no',
+      ]);
+      if (searchFilter.$and) {
+        filter.$and = searchFilter.$and;
+      } else if (searchFilter.$or) {
+        filter.$or = searchFilter.$or;
+      }
     }
 
     // Support multiple neighborhoods e.g. "mahalleler=Cumhuriyet Mah.,İstiklal Mah." or single "mahalle"

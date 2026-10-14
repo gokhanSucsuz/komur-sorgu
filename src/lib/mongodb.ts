@@ -141,10 +141,14 @@ function matchDoc(doc: any, filter: any): boolean {
   if (!filter || Object.keys(filter).length === 0) return true;
 
   if (filter.$or && Array.isArray(filter.$or)) {
-    return filter.$or.some((subFilter: any) => matchDoc(doc, subFilter));
+    if (!filter.$or.some((subFilter: any) => matchDoc(doc, subFilter))) {
+      return false;
+    }
   }
   if (filter.$and && Array.isArray(filter.$and)) {
-    return filter.$and.every((subFilter: any) => matchDoc(doc, subFilter));
+    if (!filter.$and.every((subFilter: any) => matchDoc(doc, subFilter))) {
+      return false;
+    }
   }
 
   for (const key of Object.keys(filter)) {
@@ -172,7 +176,7 @@ function matchDoc(doc: any, filter: any): boolean {
     } else if (cond instanceof RegExp) {
       if (!cond.test(String(val || ''))) return false;
     } else {
-      if (String(val ?? '').toLowerCase() !== String(cond ?? '').toLowerCase()) {
+      if (String(val ?? '').toLocaleLowerCase('tr-TR') !== String(cond ?? '').toLocaleLowerCase('tr-TR')) {
         return false;
       }
     }

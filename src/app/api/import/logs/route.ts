@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
+import { buildTurkishSearchFilter } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,8 +21,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (q) {
-      const wild = new RegExp(q.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'), 'i');
-      filter.$or = [{ tc_no: wild }, { ad_soyad: wild }, { hata_nedeni: wild }];
+      const searchFilter = buildTurkishSearchFilter(q, [
+        'tc_no',
+        'ad_soyad',
+        'mahalle',
+        'acik_adres',
+        'hata_nedeni',
+        'hane_no',
+        'telefon',
+      ]);
+      if (searchFilter.$and) {
+        filter.$and = searchFilter.$and;
+      } else if (searchFilter.$or) {
+        filter.$or = searchFilter.$or;
+      }
     }
 
     const rawLogs = await logsCol

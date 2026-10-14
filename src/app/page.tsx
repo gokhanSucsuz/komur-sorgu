@@ -34,9 +34,22 @@ export default function Home() {
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedMahalleler, setSelectedMahalleler] = useState<string[]>([]);
   const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED'>('PENDING_AND_PARTIAL');
   const [selectedDurumFilter, setSelectedDurumFilter] = useState<string>('HEPSI');
+
+  // Debounce search query to prevent input stutter and out-of-order race conditions
+  useEffect(() => {
+    if (!searchQuery) {
+      setDebouncedSearchQuery('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Data states
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
@@ -134,7 +147,7 @@ export default function Home() {
     setIsLoadingBeneficiaries(true);
     try {
       const params = new URLSearchParams({
-        q: searchQuery,
+        q: debouncedSearchQuery,
         mahalleler: selectedMahalleler.join(','),
         durum: 'HEPSI',
         limit: '500'
@@ -151,7 +164,7 @@ export default function Home() {
     } finally {
       setIsLoadingBeneficiaries(false);
     }
-  }, [searchQuery, selectedMahalleler]);
+  }, [debouncedSearchQuery, selectedMahalleler]);
 
   // Fetch Delivery History only when authenticated
   const fetchArchive = useCallback(async () => {
