@@ -52,21 +52,25 @@ export default function Header({
     <>
       <header className="app-header no-print">
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
-          {/* Logo Icon */}
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shadow-amber-500/20 border border-amber-400/40 shrink-0">
-            <Flame className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white" />
+          {/* Official Edirne SYDV Logo */}
+          <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white p-0.5 shadow-md shadow-slate-300/40 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center">
+            <img
+              src="/edirne-sydv-logo.png"
+              alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1 sm:gap-1.5">
-              <h1 className="text-xs sm:text-base font-extrabold tracking-tight text-slate-900 leading-none truncate">
-                KÖMÜR TAKİP
+              <h1 className="text-xs sm:text-sm font-black tracking-tight text-slate-900 leading-tight truncate">
+                EDİRNE SYDV BAŞKANLIĞI
               </h1>
-              <span className="text-[9px] sm:text-[10px] uppercase font-black tracking-wider px-1 sm:px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
-                PRO
+              <span className="text-[8px] sm:text-[9px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200 shrink-0 hidden sm:inline-block">
+                T.C. VALİLİK
               </span>
             </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate hidden md:block">
-              Dağıtım & Sorgulama Sistemi
+            <p className="text-[10px] sm:text-[11px] text-slate-500 font-semibold truncate">
+              Kömür Dağıtım ve Sorgulama Sistemi
             </p>
           </div>
         </div>

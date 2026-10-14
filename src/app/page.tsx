@@ -471,6 +471,23 @@ export default function Home() {
             onRefreshAll={handleRefreshAll}
           />
         )}
+
+        {/* Official Institutional Footer */}
+        <footer className="mt-8 mb-20 text-center text-xs text-slate-500 py-4 border-t border-slate-200/80 space-y-1 no-print">
+          <div className="flex items-center justify-center gap-2">
+            <img
+              src="/edirne-sydv-logo.png"
+              alt="Edirne SYDV Logo"
+              className="w-5 h-5 object-contain rounded-full border border-slate-200 bg-white"
+            />
+            <span className="font-extrabold text-slate-700">
+              Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 font-medium">
+            T.C. Edirne Valiliği • Kömür Dağıtım ve Sorgulama Sistemi
+          </p>
+        </footer>
       </div>
 
       {/* Mobile Sticky Bottom Navigation */}

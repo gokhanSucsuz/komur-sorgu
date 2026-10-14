@@ -140,6 +140,34 @@ export default function ShiftPage({
 
   return (
     <div className="space-y-4">
+      {/* Official Print Header (Sadece Yazdırırken Çıkar) */}
+      <div className="p-4 rounded-2xl bg-white border border-slate-300 shadow-sm print-only-header">
+        <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
+          <div className="w-16 h-16 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+            <img
+              src="/edirne-sydv-logo.png"
+              alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div className="text-center flex-1 px-3">
+            <p className="text-xs font-black tracking-widest text-slate-800 uppercase">
+              T.C. EDİRNE VALİLİĞİ
+            </p>
+            <h1 className="text-base font-black tracking-wide text-slate-900 uppercase">
+              EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+            </h1>
+            <h2 className="text-xs font-bold text-amber-800 uppercase mt-0.5">
+              PERSONEL GÜNLÜK ÇALIŞMA VE DAĞITIM MESAİ İCMALİ TUTANAĞI
+            </h2>
+          </div>
+          <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[8px] font-black text-slate-700 leading-tight">
+            <span>RESMİ</span>
+            <span>MESAİ</span>
+          </div>
+        </div>
+      </div>
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>

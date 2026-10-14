@@ -19,16 +19,16 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Kömür Dağıtım ve Sorgulama Sistemi",
-  description: "Mobil Kömür Dağıtım, Sorgulama, Mükerrer Hane Tespiti ve Tonaj Takip Uygulaması",
+  title: "Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı - Kömür Dağıtım ve Sorgulama Sistemi",
+  description: "T.C. Edirne Valiliği - Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı Kömür Dağıtım, Sorgulama ve Saha Takip Sistemi",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Kömür Takip"
+    title: "Edirne SYDV Kömür Takip"
   },
   icons: {
-    icon: "/icons/icon-192x192.png",
+    icon: "/edirne-sydv-logo.png",
     apple: "/icons/icon-192x192.png"
   }
 };

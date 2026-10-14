@@ -200,7 +200,7 @@ export default function ExcelImportPage({
 
           <a
             href="/api/export?type=template"
-            download="Komur_Yukleme_Sablonu.xlsx"
+            download="Edirne_SYDV_Komur_Yukleme_Sablonu.xlsx"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 border border-slate-200 shrink-0 transition-all active:scale-95 shadow-xs"
             title="Örnek Excel Şablonu İndir"
           >
@@ -407,7 +407,7 @@ export default function ExcelImportPage({
           <span>Veritabanındaki güncel listeyi dışa aktarın:</span>
           <a
             href="/api/export?type=beneficiaries"
-            download="Komur_Hak_Sahipleri_Listesi.xlsx"
+            download="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"
             className="flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline"
           >
             <Download className="w-3.5 h-3.5" />
@@ -526,7 +526,7 @@ export default function ExcelImportPage({
               <>
                 <a
                   href="/api/export?type=errors"
-                  download="Komur_Yukleme_Hatalari_Raporu.xlsx"
+                  download="Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx"
                   className="p-2 rounded-xl bg-white hover:bg-slate-100 text-amber-700 border border-slate-200 shadow-xs"
                   title="Hata Raporunu Excel İndir"
                 >

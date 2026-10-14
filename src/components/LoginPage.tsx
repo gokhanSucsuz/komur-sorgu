@@ -83,20 +83,24 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     <div className="min-h-screen w-full bg-[#f8fafc] text-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-amber-500 selection:text-white">
       {/* Brand Header */}
       <div className="w-full max-w-md text-center mb-5">
-        <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/25 border border-amber-300/40 mb-3 animate-in zoom-in-95 duration-300">
-          <Flame className="w-9 h-9 text-white fill-white" />
+        <div className="w-24 h-24 mx-auto rounded-full bg-white p-1 shadow-xl shadow-slate-300/50 border-2 border-slate-200/90 mb-3 animate-in zoom-in-95 duration-300 flex items-center justify-center overflow-hidden">
+          <img
+            src="/edirne-sydv-logo.png"
+            alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+            className="w-full h-full object-contain"
+          />
         </div>
-        <div className="flex items-center justify-center gap-2">
-          <h1 className="text-xl font-black text-slate-900 tracking-tight leading-none">
-            KÖMÜR DAĞITIM VE TAKİP
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-black uppercase tracking-widest text-rose-800">
+            T.C. EDİRNE VALİLİĞİ
+          </p>
+          <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
+            Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı
           </h1>
-          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-            PRO
-          </span>
+          <p className="text-xs text-amber-900 font-bold mt-1 bg-amber-50 inline-block px-3 py-1 rounded-full border border-amber-200">
+            Kömür Dağıtım ve Sorgulama Sistemi
+          </p>
         </div>
-        <p className="text-xs text-slate-500 font-semibold mt-1">
-          Güvenli Kullanıcı Girişi & Saha Yönetim Portalı
-        </p>
       </div>
 
       {/* Main Login Card */}

@@ -374,12 +374,34 @@ export default function DeliveryArchive({
 
             {/* Modal Body / Printable Content */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs text-slate-800" id="printableDeliveryReport">
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                  T.C. KÖMÜR YARDIMI DAĞITIM VE TESLİMAT TUTANAĞI
-                </h2>
-                <p className="text-xs text-slate-600">
-                  Bu tutanak {printDayGroup.gun_tarihi} tarihinde hanelere teslim edilen kömür kayıtlarını içerir.
+              {/* Official Institutional Header */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
+                  <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+                    <img
+                      src="/edirne-sydv-logo.png"
+                      alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="text-center flex-1 px-3">
+                    <p className="text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                      T.C. EDİRNE VALİLİĞİ
+                    </p>
+                    <h2 className="text-sm font-black text-slate-900 uppercase">
+                      EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+                    </h2>
+                    <h3 className="text-xs font-bold text-amber-800 uppercase mt-0.5">
+                      KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI
+                    </h3>
+                  </div>
+                  <div className="w-14 h-14 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[8px] font-black text-slate-700 leading-tight">
+                    <span>RESMİ</span>
+                    <span>TUTANAK</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600 pt-1">
+                  Bu tutanak, <strong>{printDayGroup.gun_tarihi}</strong> tarihinde Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
                 </p>
               </div>
 
@@ -445,7 +467,7 @@ export default function DeliveryArchive({
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
               <a
                 href={`/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}`}
-                download={`Komur_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}
+                download={`Edirne_SYDV_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}
                 className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs"
               >
                 <Download className="w-4 h-4 text-emerald-700" />

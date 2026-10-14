@@ -3,13 +3,58 @@ import * as XLSX from 'xlsx';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { extractPhoneNumbers } from '@/lib/normalizer';
 
+/**
+ * Creates an official state foundation standard worksheet with institutional header block
+ */
+function createOfficialWorksheet(
+  title: string,
+  subtitle: string,
+  data: any[],
+  colWidths: { wch: number }[]
+) {
+  const numCols = colWidths.length;
+  const nowStr = new Date().toLocaleString('tr-TR');
+
+  const headerRows = [
+    ['T.C. EDİRNE VALİLİĞİ'],
+    ['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI'],
+    [title.toUpperCase()],
+    [`Rapor Kapsamı: ${subtitle} | Düzenleme Tarihi: ${nowStr} | Resmi Kömür Dağıtım Sistemi`],
+    [], // Boş ayırıcı satır
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(headerRows);
+
+  if (data && data.length > 0) {
+    XLSX.utils.sheet_add_json(worksheet, data, { origin: 'A6' });
+  }
+
+  worksheet['!cols'] = colWidths;
+  worksheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(0, numCols - 1) } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: Math.max(0, numCols - 1) } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: Math.max(0, numCols - 1) } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: Math.max(0, numCols - 1) } },
+  ];
+
+  return worksheet;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type') || 'template'; // 'template', 'beneficiaries', 'errors', 'deliveries'
+    const type = searchParams.get('type') || 'template';
 
     const workbook = XLSX.utils.book_new();
+    workbook.Props = {
+      Title: 'Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı Kömür Dağıtım Raporu',
+      Subject: 'Resmi Kömür Dağıtım ve Saha Takip Çıktısı',
+      Author: 'Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı',
+      Company: 'T.C. Edirne Valiliği - Edirne SYDV',
+      CreatedDate: new Date(),
+    };
 
+    // 1. Örnek Yükleme Şablonu
     if (type === 'template') {
       const templateData = [
         {
@@ -41,22 +86,29 @@ export async function GET(request: NextRequest) {
         },
       ];
 
-      const worksheet = XLSX.utils.json_to_sheet(templateData);
-      worksheet['!cols'] = [
-        { wch: 15 }, // TC
-        { wch: 22 }, // Ad Soyad
-        { wch: 15 }, // Telefon
-        { wch: 15 }, // Telefon 2
-        { wch: 20 }, // Mahalle
-        { wch: 40 }, // Açık Adres
-        { wch: 12 }, // Hane No
+      const colWidths = [
+        { wch: 16 }, // TC
+        { wch: 24 }, // Ad Soyad
+        { wch: 16 }, // Telefon
+        { wch: 16 }, // Telefon 2
+        { wch: 22 }, // Mahalle
+        { wch: 45 }, // Açık Adres
+        { wch: 14 }, // Hane No
       ];
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
 
+      const worksheet = createOfficialWorksheet(
+        'KÖMÜR YARDIMI HAK SAHİBİ LİSTESİ YÜKLEME ŞABLONU',
+        'Toplu Excel Yükleme Formatı (TC, Ad Soyad, Telefon, Mahalle, Açık Adres, Hane No)',
+        templateData,
+        colWidths
+      );
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
       return new NextResponse(buf, {
         headers: {
-          'Content-Disposition': 'attachment; filename="Komur_Yukleme_Sablonu.xlsx"',
+          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Komur_Yukleme_Sablonu.xlsx"',
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
@@ -64,6 +116,7 @@ export async function GET(request: NextRequest) {
 
     const { beneficiaries: benCol, importLogs: logsCol, deliveryHistory: histCol, activityLogs: actCol } = await getDbCollections();
 
+    // 2. Günlük / Tarih Bazlı Teslimat Listesi
     if (type === 'daily_deliveries') {
       const targetDate = searchParams.get('date') || new Date().toLocaleDateString('en-CA');
       
@@ -113,30 +166,38 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      worksheet['!cols'] = [
+      const colWidths = [
         { wch: 6 },  // Sıra
         { wch: 20 }, // Tarih/Saat
-        { wch: 15 }, // TC
+        { wch: 16 }, // TC
         { wch: 24 }, // Ad Soyad
         { wch: 18 }, // Mahalle
-        { wch: 35 }, // Açık Adres
-        { wch: 18 }, // Torba
+        { wch: 38 }, // Açık Adres
+        { wch: 20 }, // Torba
         { wch: 22 }, // Teslim Alan
         { wch: 20 }, // Personel
         { wch: 30 }, // Not
       ];
 
+      const worksheet = createOfficialWorksheet(
+        'KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI',
+        `Dağıtım Tarihi: ${targetDate} | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`,
+        exportData,
+        colWidths
+      );
+
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Teslimat Listesi');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
       return new NextResponse(buf, {
         headers: {
-          'Content-Disposition': `attachment; filename="Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx"`,
+          'Content-Disposition': `attachment; filename="Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx"`,
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
     }
 
+    // 3. Hak Sahipleri Genel Listesi
     if (type === 'beneficiaries') {
       const rawRecords = await benCol
         .find({})
@@ -156,25 +217,57 @@ export async function GET(request: NextRequest) {
           'Mahalle': r.mahalle,
           'Açık Adres': r.acik_adres,
           'Hane No': r.hane_no || '-',
-          'Durum': r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' ? 'Teslim Edildi' : 'Bekliyor',
-          'Torba Sayısı': r.torba_sayisi || 0,
+          'Durum': r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' 
+            ? 'Teslim Edildi' 
+            : r.teslimat_durumu === 'EKSIK' 
+            ? `Eksik Teslimat (${r.torba_sayisi || 0}/${r.hedef_torba || 34})` 
+            : 'Bekliyor',
+          'Hedef Torba': r.hedef_torba || 34,
+          'Teslim Edilen Torba': r.torba_sayisi || 0,
+          'Kalan Torba': Math.max(0, (r.hedef_torba || 34) - (r.torba_sayisi || 0)),
           'Teslimat Tarihi': r.teslimat_tarihi || '-',
           'Teslim Alan': r.teslim_alan || '-',
           'Teslim Eden Personel': r.teslim_eden_personel || '-',
         };
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const colWidths = [
+        { wch: 6 },  // Sıra
+        { wch: 16 }, // TC
+        { wch: 24 }, // Ad Soyad
+        { wch: 15 }, // Telefon
+        { wch: 15 }, // Telefon 2
+        { wch: 20 }, // Mahalle
+        { wch: 40 }, // Açık Adres
+        { wch: 12 }, // Hane No
+        { wch: 22 }, // Durum
+        { wch: 14 }, // Hedef
+        { wch: 18 }, // Teslim
+        { wch: 14 }, // Kalan
+        { wch: 18 }, // Tarih
+        { wch: 22 }, // Teslim Alan
+        { wch: 20 }, // Personel
+      ];
+
+      const worksheet = createOfficialWorksheet(
+        'KÖMÜR YARDIMI TÜM HAK SAHİPLERİ VE DAĞITIM DURUM LİSTESİ',
+        `Toplam Kayıt: ${records.length} Hane`,
+        exportData,
+        colWidths
+      );
+
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
       return new NextResponse(buf, {
         headers: {
-          'Content-Disposition': 'attachment; filename="Komur_Hak_Sahipleri_Listesi.xlsx"',
+          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"',
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
     }
 
+    // 4. Excel Yükleme Hata & Mükerrer Kayıt Raporu
     if (type === 'errors') {
       const rawRecords = await logsCol
         .find({})
@@ -197,31 +290,39 @@ export async function GET(request: NextRequest) {
         'Tarih': r.tarih || '-',
       }));
 
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      worksheet['!cols'] = [
+      const colWidths = [
         { wch: 6 },  // Sıra
-        { wch: 45 }, // Hata Nedeni
+        { wch: 50 }, // Hata Nedeni
         { wch: 18 }, // Durum
         { wch: 35 }, // Teslim Durumu
-        { wch: 15 }, // TC
-        { wch: 22 }, // Ad Soyad
-        { wch: 18 }, // Telefon
-        { wch: 18 }, // Mahalle
-        { wch: 30 }, // Açık Adres
+        { wch: 16 }, // TC
+        { wch: 24 }, // Ad Soyad
+        { wch: 16 }, // Telefon
+        { wch: 20 }, // Mahalle
+        { wch: 35 }, // Açık Adres
         { wch: 12 }, // Hane No
         { wch: 18 }, // Tarih
       ];
 
+      const worksheet = createOfficialWorksheet(
+        'KÖMÜR YARDIMI YÜKLEME VE HANE DENETİMİ HATA RAPORU',
+        `Mükerrer TC, Aynı Hane ve Hatalı Kayıt Dökümü (${records.length} Kayıt)`,
+        exportData,
+        colWidths
+      );
+
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Yukleme Hatalari');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
       return new NextResponse(buf, {
         headers: {
-          'Content-Disposition': 'attachment; filename="Komur_Yukleme_Hatalari_Raporu.xlsx"',
+          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx"',
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
     }
 
+    // 5. Sistem Yöneticisi Kullanıcı İşlem & Denetim Logları Raporu
     if (type === 'activity_logs') {
       const rawRecords = await actCol
         .find({})
@@ -244,26 +345,33 @@ export async function GET(request: NextRequest) {
         'Torba Sayısı': r.torba_sayisi !== undefined && r.torba_sayisi !== null ? r.torba_sayisi : '-',
       }));
 
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      worksheet['!cols'] = [
+      const colWidths = [
         { wch: 6 },  // Sıra
         { wch: 20 }, // Tarih
         { wch: 22 }, // Personel
         { wch: 12 }, // Rol
         { wch: 18 }, // İşlem
         { wch: 30 }, // Başlık
-        { wch: 50 }, // Detay
+        { wch: 55 }, // Detay
         { wch: 22 }, // Hak Sahibi
         { wch: 16 }, // TC
         { wch: 18 }, // Mahalle
-        { wch: 12 }, // Torba
+        { wch: 14 }, // Torba
       ];
+
+      const worksheet = createOfficialWorksheet(
+        'KULLANICI VE SAHA İŞLEM DENETİM LOGLARI RAPORU',
+        `Edirne SYDV Kömür Dağıtım Sistemi İşlem Geçmişi (${records.length} İşlem)`,
+        exportData,
+        colWidths
+      );
 
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Islem Loglari');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
       return new NextResponse(buf, {
         headers: {
-          'Content-Disposition': 'attachment; filename="Kullanici_Islem_Loglari_Raporu.xlsx"',
+          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx"',
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });

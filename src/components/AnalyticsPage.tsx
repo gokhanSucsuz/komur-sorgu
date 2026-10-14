@@ -211,18 +211,37 @@ export default function AnalyticsPage({
       </div>
 
       {/* PRINT OFFICIAL REPORT HEADER - Light Mode */}
-      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4 print-only-header">
-        <div className="text-center pb-3 border-b border-slate-200">
-          <h1 className="text-lg font-black tracking-wider text-slate-900 uppercase">
-            T.C. KÖMÜR DAĞITIM VE YARDIM HİZMETLERİ
-          </h1>
-          <h2 className="text-sm font-extrabold text-amber-700 uppercase mt-0.5">
-            RESMİ DAĞITIM, TONAJ VE EKSİK HANE DENETİM RAPORU
-          </h2>
-          <div className="text-xs text-slate-500 mt-1 flex items-center justify-center gap-3 font-medium">
-            <span>Rapor Tarih Aralığı: <strong className="text-slate-800">{startDate || 'Başlangıç'} - {endDate || 'Bugün'}</strong></span>
-            <span>•</span>
-            <span>Mahalle: <strong className="text-slate-800">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalleler' : selectedMahalle}</strong></span>
+      <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm space-y-4 print-only-header">
+        <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
+          <div className="w-16 h-16 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+            <img
+              src="/edirne-sydv-logo.png"
+              alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div className="text-center flex-1 px-3">
+            <p className="text-xs font-black tracking-widest text-slate-800 uppercase">
+              T.C. EDİRNE VALİLİĞİ
+            </p>
+            <h1 className="text-base font-black tracking-wide text-slate-900 uppercase">
+              EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+            </h1>
+            <h2 className="text-xs font-bold text-amber-800 uppercase mt-0.5">
+              RESMİ KÖMÜR DAĞITIM, TONAJ VE EKSİK HANE DENETİM RAPORU
+            </h2>
+            <div className="text-[11px] text-slate-600 mt-1 flex items-center justify-center gap-3 font-medium">
+              <span>Rapor Tarihi: <strong className="text-slate-800">{new Date().toLocaleDateString('tr-TR')}</strong></span>
+              <span>•</span>
+              <span>Kapsam: <strong className="text-slate-800">{startDate || 'Başlangıç'} - {endDate || 'Bugün'}</strong></span>
+              <span>•</span>
+              <span>Bölge: <strong className="text-slate-800">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalleler' : selectedMahalle}</strong></span>
+            </div>
+          </div>
+          <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[9px] font-black text-slate-700 text-center leading-tight">
+            <span>RESMİ</span>
+            <span>BELGE</span>
+            <span className="text-[7px] text-slate-500 font-normal">SYDV-2026</span>
           </div>
         </div>
 
@@ -478,9 +497,9 @@ export default function AnalyticsPage({
           </div>
 
           <div className="space-y-8">
-            <p className="font-bold text-slate-900">Komisyon Başkanı / Onay</p>
+            <p className="font-bold text-slate-900">Vakıf Müdürü / Onay</p>
             <div className="h-10 border-b border-dashed border-slate-300"></div>
-            <p className="text-[11px] text-slate-500">İmza / Kaşe</p>
+            <p className="text-[11px] text-slate-500 font-semibold">Edirne SYDV Başkanlığı</p>
           </div>
         </div>
       </div>

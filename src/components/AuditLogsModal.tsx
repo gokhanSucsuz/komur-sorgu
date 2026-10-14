@@ -160,20 +160,24 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
-              <FileClock className="w-5 h-5 text-white" />
+            <div className="w-11 h-11 rounded-full border-2 border-indigo-200 bg-white p-0.5 shadow-xs shrink-0 flex items-center justify-center overflow-hidden">
+              <img
+                src="/edirne-sydv-logo.png"
+                alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-extrabold text-slate-900 leading-tight">
                   Kullanıcı İşlem & Denetim Logları
                 </h3>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
-                  Yönetici Denetim
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200">
+                  T.C. EDİRNE SYDV
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Sistemde işlem yapan tüm personellerin teslimat, rota ve veri hareketleri
+                Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı denetim ve aktivite kayıtları
               </p>
             </div>
           </div>
@@ -181,7 +185,7 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
           <div className="flex items-center gap-2">
             <a
               href="/api/export?type=activity_logs"
-              download="Kullanici_Islem_Loglari_Raporu.xlsx"
+              download="Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300 transition-all active:scale-95 shadow-xs"
               title="Tüm Logları Excel İndir"
             >

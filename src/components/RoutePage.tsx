@@ -527,6 +527,34 @@ export default function RoutePage({
           {/* DURUM 2: DEVAM EDEN AKTİF BİR ROTA VAR İSE */}
           {activeRoute && (
             <>
+              {/* Resmi Baskı Başlığı (Sadece Yazdırırken Çıkar) */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-300 shadow-sm print-only-header">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
+                  <div className="w-16 h-16 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+                    <img
+                      src="/edirne-sydv-logo.png"
+                      alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="text-center flex-1 px-3">
+                    <p className="text-xs font-black tracking-widest text-slate-800 uppercase">
+                      T.C. EDİRNE VALİLİĞİ
+                    </p>
+                    <h2 className="text-sm font-black text-slate-900 uppercase">
+                      EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+                    </h2>
+                    <h3 className="text-xs font-bold text-amber-800 uppercase mt-0.5">
+                      RESMİ KÖMÜR DAĞITIM VE TESLİMAT SAHA ÇİZELGESİ
+                    </h3>
+                  </div>
+                  <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[8px] font-black text-slate-700 leading-tight">
+                    <span>RESMİ</span>
+                    <span>ÇİZELGE</span>
+                  </div>
+                </div>
+              </div>
+
               {/* ROTA ÖZETİ VE İLERLEME KARTI */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
@@ -640,7 +668,7 @@ export default function RoutePage({
                   <div className="flex items-center gap-2">
                     <a
                       href={`/api/export?type=daily_deliveries&date=${activeRoute.tarih || new Date().toLocaleDateString('en-CA')}`}
-                      download={`Bugunku_Teslimat_Listesi_${activeRoute.tarih || 'Bugun'}.xlsx`}
+                      download={`Edirne_SYDV_Teslimat_Listesi_${activeRoute.tarih || 'Bugun'}.xlsx`}
                       className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
                     >
                       <Download className="w-3.5 h-3.5 text-emerald-700" />
@@ -998,7 +1026,7 @@ export default function RoutePage({
                     <div className="flex items-center gap-2 pt-1">
                       <a
                         href={`/api/export?type=daily_deliveries&date=${route.tarih}`}
-                        download={`Rota_Teslimat_Listesi_${route.tarih}.xlsx`}
+                        download={`Edirne_SYDV_Rota_Teslimat_Listesi_${route.tarih}.xlsx`}
                         className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95"
                       >
                         <Download className="w-3.5 h-3.5" />

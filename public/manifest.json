@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Kömür Dağıtım ve Sorgulama Sistemi",
-  "short_name": "Kömür Takip",
-  "description": "Mobil Kömür Dağıtım, Sorgulama, Mükerrer Hane Tespiti ve Tonaj Takip Uygulaması",
+  "name": "Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı - Kömür Dağıtım Sistemi",
+  "short_name": "Edirne SYDV",
+  "description": "Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı Kömür Dağıtım, Sorgulama ve Saha Takip Uygulaması",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
