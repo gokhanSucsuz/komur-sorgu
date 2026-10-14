@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
+import { extractPhoneNumbers } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
           'TC Kimlik No': '12345678901',
           'Adı Soyadı': 'Ahmet Yılmaz',
           'Telefon': '05551234567',
+          'Telefon 2': '05321112233',
           'Mahalle': 'Cumhuriyet Mah.',
           'Açık Adres': 'Karanfil Cad. Lale Sokak No: 12 Daire: 4',
           'Hane No': '101',
@@ -23,6 +25,7 @@ export async function GET(request: NextRequest) {
           'TC Kimlik No': '23456789012',
           'Adı Soyadı': 'Fatma Demir',
           'Telefon': '05429876543',
+          'Telefon 2': '',
           'Mahalle': 'İstiklal Mah.',
           'Açık Adres': 'Atatürk Bulvarı No: 45',
           'Hane No': '102',
@@ -31,6 +34,7 @@ export async function GET(request: NextRequest) {
           'TC Kimlik No': '34567890123',
           'Adı Soyadı': 'Mehmet Çelik',
           'Telefon': '05335554433',
+          'Telefon 2': '05051234567',
           'Mahalle': 'Fatih Mah.',
           'Açık Adres': 'Menekşe Sok. No: 8',
           'Hane No': '103',
@@ -42,6 +46,7 @@ export async function GET(request: NextRequest) {
         { wch: 15 }, // TC
         { wch: 22 }, // Ad Soyad
         { wch: 15 }, // Telefon
+        { wch: 15 }, // Telefon 2
         { wch: 20 }, // Mahalle
         { wch: 40 }, // Açık Adres
         { wch: 12 }, // Hane No
@@ -67,20 +72,24 @@ export async function GET(request: NextRequest) {
 
       const records = mapDocs(rawRecords);
 
-      const exportData = records.map((r: any, idx: number) => ({
-        'Sıra': idx + 1,
-        'TC Kimlik No': r.tc_no,
-        'Adı Soyadı': r.ad_soyad,
-        'Telefon': r.telefon || '-',
-        'Mahalle': r.mahalle,
-        'Açık Adres': r.acik_adres,
-        'Hane No': r.hane_no || '-',
-        'Durum': r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' ? 'Teslim Edildi' : 'Bekliyor',
-        'Torba Sayısı': r.torba_sayisi || 0,
-        'Teslimat Tarihi': r.teslimat_tarihi || '-',
-        'Teslim Alan': r.teslim_alan || '-',
-        'Teslim Eden Personel': r.teslim_eden_personel || '-',
-      }));
+      const exportData = records.map((r: any, idx: number) => {
+        const phones = extractPhoneNumbers(r.telefon, r.telefon2);
+        return {
+          'Sıra': idx + 1,
+          'TC Kimlik No': r.tc_no,
+          'Adı Soyadı': r.ad_soyad,
+          'Telefon': phones[0] || r.telefon || '-',
+          'Telefon 2': phones[1] || r.telefon2 || '-',
+          'Mahalle': r.mahalle,
+          'Açık Adres': r.acik_adres,
+          'Hane No': r.hane_no || '-',
+          'Durum': r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' ? 'Teslim Edildi' : 'Bekliyor',
+          'Torba Sayısı': r.torba_sayisi || 0,
+          'Teslimat Tarihi': r.teslimat_tarihi || '-',
+          'Teslim Alan': r.teslim_alan || '-',
+          'Teslim Eden Personel': r.teslim_eden_personel || '-',
+        };
+      });
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');

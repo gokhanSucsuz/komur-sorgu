@@ -1,6 +1,7 @@
 'use client';
 
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2 } from 'lucide-react';
+import { getRecordPhones, formatPhoneDisplay } from '@/lib/normalizer';
 
 interface HouseholdModalProps {
   person: any;
@@ -70,14 +71,42 @@ export default function HouseholdModal({
             </div>
           </div>
 
-          {person.telefon && (
-            <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">
-              <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
-              <a href={`tel:${person.telefon}`} className="text-emerald-700 hover:underline font-mono font-bold">
-                {person.telefon}
-              </a>
-            </div>
-          )}
+          {/* Phone Numbers Display */}
+          {(() => {
+            const phones = getRecordPhones(person);
+            if (phones.length === 0) return null;
+            return (
+              <div className="space-y-1.5">
+                {phones.map((ph, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4 text-emerald-700" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                          {phones.length > 1 ? `${idx + 1}. Telefon Numarası` : 'Telefon'}
+                        </span>
+                        <span className="font-mono font-extrabold text-slate-900 text-sm">
+                          {formatPhoneDisplay(ph)}
+                        </span>
+                      </div>
+                    </div>
+                    <a
+                      href={`tel:${ph}`}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center gap-1.5 active:scale-95 shadow-xs shrink-0"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>Ara</span>
+                    </a>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="pt-2 border-t border-slate-200 text-xs space-y-1">
             <div className="flex items-center gap-1.5 text-slate-600 font-medium">
@@ -162,9 +191,27 @@ export default function HouseholdModal({
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-extrabold text-slate-900 truncate">{member.ad_soyad}</p>
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
                       <span className="font-mono font-bold text-purple-800">TC: {member.tc_no}</span>
-                      {member.telefon && <span>• {member.telefon}</span>}
+                      {(() => {
+                        const mPhones = getRecordPhones(member);
+                        if (mPhones.length === 0) return null;
+                        return (
+                          <>
+                            {mPhones.map((mph, midx) => (
+                              <a
+                                key={midx}
+                                href={`tel:${mph}`}
+                                className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-emerald-700 hover:underline bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
+                                title="Numarayı Ara"
+                              >
+                                <Phone className="w-2.5 h-2.5" />
+                                <span>{mPhones.length > 1 ? `${midx + 1}: ` : ''}{formatPhoneDisplay(mph)}</span>
+                              </a>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
 

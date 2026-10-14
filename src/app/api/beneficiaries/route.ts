@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc } from '@/lib/mongodb';
-import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, buildTurkishSearchFilter } from '@/lib/normalizer';
+import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, buildTurkishSearchFilter, extractPhoneNumbers, detectSettlement, extractStreetAndDoor } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -68,9 +68,11 @@ export async function GET(request: NextRequest) {
         'tc_no',
         'ad_soyad',
         'telefon',
+        'telefon2',
         'acik_adres',
         'mahalle',
         'hane_no',
+        'sokak',
       ]);
       if (searchFilter.$and) {
         filter.$and = searchFilter.$and;
@@ -123,14 +125,22 @@ export async function GET(request: NextRequest) {
       return r;
     });
 
-    // Aggregated list of neighborhoods with distribution metrics
+    // Aggregated list of neighborhoods/villages with distribution metrics
     const allBeneficiaries = await benCol.find({}).toArray();
-    const mahalleMap = new Map<string, { mahalle: string; kisi_sayisi: number; tamamlanan: number; eksik: number; bekleyen: number }>();
+    const mahalleMap = new Map<string, {
+      mahalle: string;
+      kisi_sayisi: number;
+      tamamlanan: number;
+      eksik: number;
+      bekleyen: number;
+      tip: 'MAHALLE' | 'KOY';
+    }>();
 
     for (const b of allBeneficiaries) {
       const m = b.mahalle || 'Belirtilmemiş';
+      const tip = b.yerlesim_tipi || (/(?:Köyü|Koy|Koyu)$/i.test(m) ? 'KOY' : 'MAHALLE');
       if (!mahalleMap.has(m)) {
-        mahalleMap.set(m, { mahalle: m, kisi_sayisi: 0, tamamlanan: 0, eksik: 0, bekleyen: 0 });
+        mahalleMap.set(m, { mahalle: m, kisi_sayisi: 0, tamamlanan: 0, eksik: 0, bekleyen: 0, tip });
       }
       const item = mahalleMap.get(m)!;
       item.kisi_sayisi += 1;
@@ -180,7 +190,7 @@ export async function POST(request: NextRequest) {
   try {
     const { beneficiaries: benCol, systemSettings } = await getDbCollections();
     const body = await request.json();
-    const { tc_no, ad_soyad, telefon, mahalle, acik_adres, hane_no, hedef_torba } = body;
+    const { tc_no, ad_soyad, telefon, telefon2, mahalle, acik_adres, hane_no, hedef_torba } = body;
 
     const cleanedTc = cleanTcNo(tc_no);
     if (!cleanedTc || cleanedTc.length !== 11) {
@@ -223,6 +233,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const phones = extractPhoneNumbers(telefon, telefon2);
+    const settlement = detectSettlement(mahalle, body.koy, acik_adres);
+    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, hane_no, settlement.name);
+
     // Default target quota from settings
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const targetQuota = parseInt(hedef_torba || settingDoc?.value || '34', 10);
@@ -231,8 +245,13 @@ export async function POST(request: NextRequest) {
     const newDoc = {
       tc_no: cleanedTc,
       ad_soyad: ad_soyad.trim(),
-      telefon: cleanPhone(telefon),
-      mahalle: mahalle.trim(),
+      telefon: phones[0] || '',
+      telefon2: phones[1] || '',
+      mahalle: settlement.name,
+      yerlesim_tipi: settlement.type,
+      sokak: streetInfo.sokak,
+      kapi_no: streetInfo.kapiNo,
+      daire_no: streetInfo.daireNo,
       acik_adres: acik_adres.trim(),
       hane_no: hane_no ? hane_no.trim() : null,
       norm_adres: normAdres,

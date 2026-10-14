@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getDbCollections } from '@/lib/mongodb';
-import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
+import { cleanTcNo, normalizeAddress, cleanPhone, cleanTurkishText, turkishIncludes, extractPhoneNumbers, detectSettlement, extractStreetAndDoor } from '@/lib/normalizer';
 
 export async function POST(request: NextRequest) {
   try {
@@ -90,23 +90,41 @@ export async function POST(request: NextRequest) {
         adSoyad = `${adSoyad} ${soyad}`.trim();
       }
 
-      const telefon = cleanPhone(getField(['telefon', 'tel', 'gsm', 'cep', 'cep telefonu', 'iletisim']));
-      let mahalle = getField(['mahalle', 'mahalle adi', 'mah', 'koy', 'koy adi', 'yerlesim']);
-      let acikAdres = getField(['adres', 'acik adres', 'acikadres', 'ikametgah', 'cadde sokak']);
+      // Check both primary phone column and secondary phone column
+      const rawPhone1 = getField(['telefon', 'tel', 'gsm', 'cep', 'cep telefonu', 'iletisim', 'telefon 1', 'tel 1', '1 telefon']);
+      const rawPhone2 = getField(['telefon 2', 'tel 2', 'telefon2', 'tel2', 'gsm 2', 'gsm2', 'cep 2', 'cep2', 'ikinci telefon', '2 telefon', 'yedek tel', 'yedek telefon', 'es tel', 'es telefonu', 'iletisim 2', 'diger telefon', 'diger tel']);
+
+      // Parse both numbers whether in separate columns or delimited in a single column
+      const phones = extractPhoneNumbers(rawPhone1, rawPhone2);
+      const telefon = phones[0] || '';
+      const telefon2 = phones[1] || '';
+      const displayPhoneLog = phones.length > 1 ? phones.join(' / ') : telefon;
+
+      // Settlement detection: Mahalle or Köy
+      const rawMahalle = getField(['mahalle', 'mahalle adi', 'mah', 'mh']);
+      const rawKoy = getField(['koy', 'koyu', 'koy adi', 'koyu adi', 'koy/mahalle', 'mahalle/koy', 'yerlesim', 'belde']);
+      let acikAdres = getField(['adres', 'acik adres', 'acikadres', 'ikametgah']);
+      const rawStreet = getField(['sokak', 'cadde', 'sokak cadde', 'cadde sokak', 'cadde/sokak', 'sokak/cadde', 'sk', 'cad', 'yol', 'mevkii', 'kume evleri', 'küme evleri', 'sok', 'bulvar', 'bulvari']);
       const haneNo = getField(['hane no', 'haneno', 'hane', 'kapi no', 'bina no', 'kapino', 'daire no']);
 
-      if (!mahalle && acikAdres) {
-        const mahMatch = acikAdres.match(/([A-Za-zÇŞĞÜÖİçşğüöı\s]+)\s+(?:Mahallesi|Mah\.|Mh\.)/i);
-        if (mahMatch) {
-          mahalle = `${mahMatch[1].trim()} Mah.`;
-        } else {
-          mahalle = 'Merkez Mah.';
-        }
+      // Auto-detect settlement (Mahalle vs Köy)
+      const settlement = detectSettlement(rawMahalle, rawKoy, acikAdres);
+      const mahalle = settlement.name; // e.g. "Cumhuriyet Mah." or "Dereköy Köyü"
+      const yerlesimTipi = settlement.type; // 'MAHALLE' or 'KOY'
+
+      if (!acikAdres && (rawStreet || haneNo)) {
+        acikAdres = `${rawStreet ? rawStreet + ' ' : ''}${haneNo ? 'No: ' + haneNo : ''}`.trim();
       }
 
       if (!acikAdres && mahalle) {
         acikAdres = `${mahalle} No: Belirtilmemiş`;
       }
+
+      // Auto-extract Street and Door info for natural ordering and street-level filtering
+      const streetInfo = extractStreetAndDoor(acikAdres, rawStreet, haneNo, mahalle);
+      const sokak = streetInfo.sokak;
+      const kapiNo = streetInfo.kapiNo;
+      const daireNo = streetInfo.daireNo;
 
       // Validation 1: TC Invalid Length
       if (!tcNo || tcNo.length !== 11) {
@@ -116,7 +134,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo || 'Eksik',
           ad_soyad: adSoyad || 'Bilinmiyor',
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -135,7 +153,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo,
           ad_soyad: adSoyad || 'Eksik',
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -154,7 +172,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo,
           ad_soyad: adSoyad,
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -173,7 +191,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo,
           ad_soyad: adSoyad,
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -192,7 +210,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo,
           ad_soyad: adSoyad,
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -213,7 +231,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo,
           ad_soyad: adSoyad,
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -235,7 +253,7 @@ export async function POST(request: NextRequest) {
           satir_no: rowNum,
           tc_no: tcNo,
           ad_soyad: adSoyad,
-          telefon,
+          telefon: displayPhoneLog,
           mahalle,
           acik_adres: acikAdres,
           hane_no: haneNo,
@@ -263,7 +281,12 @@ export async function POST(request: NextRequest) {
         tc_no: tcNo,
         ad_soyad: adSoyad,
         telefon: telefon || '',
-        mahalle: mahalle || 'Merkez',
+        telefon2: telefon2 || '',
+        mahalle: mahalle || 'Merkez Mah.',
+        yerlesim_tipi: yerlesimTipi,
+        sokak: sokak,
+        kapi_no: kapiNo,
+        daire_no: daireNo,
         acik_adres: acikAdres || 'Adres belirtilmedi',
         hane_no: haneNo || null,
         norm_adres: normAdres,

@@ -215,6 +215,7 @@ export default function ExcelImportPage({
             <span>⚡ Otomatik Kontroller ve Güvenlik:</span>
           </p>
           <ul className="list-disc list-inside space-y-0.5 text-slate-600 text-[11px] font-medium">
+            <li><strong>Çift Telefon Numarası Desteği:</strong> Dosyada iki telefon varsa (ayrı sütunlarda veya tek sütunda &quot;/&quot;, &quot;-&quot; ile ayrılmış) otomatik tespit edilir, sahada arama yaparken seçim sunulur.</li>
             <li><strong>Mükerrer TC Kontrolü:</strong> Veritabanında veya dosyada aynı TC varsa ikinci kayıt reddedilir.</li>
             <li><strong>Aynı Hane/Adres Kontrolü:</strong> Aynı adreste veya hanede oturan başka hak sahibi varsa elenir.</li>
             <li><strong>Hatalı Kayıtlar:</strong> Tüm reddedilen kayıtlar gerekçeleriyle aşağıdaki sonuç sayfasına kaydedilir.</li>
