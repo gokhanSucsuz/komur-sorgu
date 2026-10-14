@@ -506,3 +506,51 @@ export function compareByAddressAsc(a: any, b: any): number {
 
   return (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr');
 }
+
+/**
+ * Cleans household number (Hane No) e.g. "Hane: 101" -> "101"
+ */
+export function cleanHaneNo(hane: string | number | null | undefined): string {
+  if (hane === null || hane === undefined) return '';
+  const str = hane.toString().trim();
+  if (!str) return '';
+  return str.replace(/^(?:hane\s*(?:no|numaras[ıi])?\s*[:.-]?\s*)/i, '').trim();
+}
+
+/**
+ * Normalizes household number for exact key matching e.g. "Hane 101/A" -> "101a"
+ */
+export function cleanHaneKey(hane: string | number | null | undefined): string {
+  const cleaned = cleanHaneNo(hane);
+  if (!cleaned) return '';
+  return cleanTurkishText(cleaned).replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Formats delivery status into a human-readable, professional Turkish summary
+ * e.g. "TAMAMLANDI - 34 Torba Teslim Edildi (14.10.2026 11:30)"
+ */
+export function formatDeliveryStatusSummary(record: {
+  teslimat_durumu?: string | null;
+  torba_sayisi?: number | null;
+  hedef_torba?: number | null;
+  teslimat_tarihi?: string | null;
+  teslim_alan?: string | null;
+}): string {
+  const durum = (record.teslimat_durumu || 'BEKLIYOR').toUpperCase();
+  const torba = Number(record.torba_sayisi || 0);
+  const hedef = Number(record.hedef_torba || 34);
+  const tarih = record.teslimat_tarihi ? ` [Tarih: ${record.teslimat_tarihi}]` : '';
+
+  if (durum === 'TAMAMLANDI') {
+    return `TAMAMLANDI - ${torba} Torba Teslim Edildi${tarih}`;
+  } else if (durum === 'EKSIK') {
+    const kalan = Math.max(0, hedef - torba);
+    return `EKSİK TESLİMAT - ${torba}/${hedef} Torba Verildi, ${kalan} Torba Kalan${tarih}`;
+  } else if (durum === 'IPTAL') {
+    return `İPTAL EDİLDİ - Teslimat Yapılamadı${tarih}`;
+  } else {
+    return 'BEKLİYOR - Henüz Kömür Teslimatı Yapılmadı';
+  }
+}
+

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
-  Trash2, Filter, Search, ShieldAlert, RefreshCw, FileText, X, Undo2, FolderSync
+  Trash2, Filter, Search, ShieldAlert, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck
 } from 'lucide-react';
 
 interface ExcelImportPageProps {
@@ -266,26 +266,105 @@ export default function ExcelImportPage({
 
           {/* Upload Success Banner */}
           {uploadResult && (
-            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 space-y-2 animate-in fade-in">
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 space-y-3 animate-in fade-in">
               <div className="flex items-center gap-2 font-extrabold text-sm text-emerald-800">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <span>Yükleme Tamamlandı!</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>Yükleme İşlemi Tamamlandı!</span>
               </div>
-              <p className="text-xs font-medium">{uploadResult.message}</p>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-emerald-200 text-center">
+              <p className="text-xs font-medium text-emerald-950">{uploadResult.message}</p>
+              
+              <div className="grid grid-cols-3 gap-2 pt-1 border-t border-emerald-200 text-center">
                 <div className="p-1.5 rounded-lg bg-white border border-emerald-200">
                   <span className="text-[10px] text-slate-500 font-bold">Toplam Satır</span>
                   <p className="text-sm font-black text-slate-900">{uploadResult.totalRows}</p>
                 </div>
                 <div className="p-1.5 rounded-lg bg-white border border-emerald-200">
-                  <span className="text-[10px] text-emerald-700 font-bold">Başarılı</span>
+                  <span className="text-[10px] text-emerald-700 font-bold">Eklenen</span>
                   <p className="text-sm font-black text-emerald-600">+{uploadResult.insertedCount}</p>
                 </div>
                 <div className="p-1.5 rounded-lg bg-white border border-rose-200">
-                  <span className="text-[10px] text-rose-600 font-bold">Elenen Hatalı</span>
+                  <span className="text-[10px] text-rose-600 font-bold">Elenen / Mükerrer</span>
                   <p className="text-sm font-black text-rose-600">{uploadResult.failedCount}</p>
                 </div>
               </div>
+
+              {/* Duplicate Breakdown Chips */}
+              {(uploadResult.mukerrerTcCount > 0 || uploadResult.mukerrerHaneCount > 0) && (
+                <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-bold">
+                  {uploadResult.mukerrerTcCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                      Mükerrer TC: {uploadResult.mukerrerTcCount} adet (Yeniden Eklenmedi)
+                    </span>
+                  )}
+                  {uploadResult.mukerrerHaneCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-300">
+                      Mükerrer Hane: {uploadResult.mukerrerHaneCount} adet (Yeniden Eklenmedi)
+                    </span>
+                  )}
+                  {uploadResult.hataliCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 border border-rose-300">
+                      Eksik/Geçersiz: {uploadResult.hataliCount} adet
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Duplicate Warnings with Coal Delivery Status List */}
+              {uploadResult.duplicateWarnings && uploadResult.duplicateWarnings.length > 0 && (
+                <div className="mt-2 p-3 rounded-xl bg-amber-50/95 border border-amber-300 text-amber-950 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Mükerrer Kayıt & Kömür Teslimat Durumu Uyarıları ({uploadResult.duplicateWarnings.length} Kayıt Yeniden Eklenmedi)</span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 font-extrabold border border-rose-200">
+                      Yeniden Eklenmedi
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-900 leading-tight">
+                    Aynı TC Kimlik No veya aynı Hane Numarası sistemde/dosyada zaten kayıtlı olduğu için bu kayıtlar <strong>atlandı ve tekrar eklenmedi</strong>. İlgili hanelerin mevcut kömür teslimat durumları aşağıdadır:
+                  </p>
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 pt-1">
+                    {uploadResult.duplicateWarnings.map((dup: any, idx: number) => (
+                      <div key={idx} className="p-2.5 rounded-lg bg-white border border-amber-200 text-xs shadow-xs space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-extrabold text-slate-900">{dup.ad_soyad}</span>
+                            <span className="text-slate-500 font-mono text-[11px] ml-2">TC: {dup.tc_no}</span>
+                            {dup.hane_no && <span className="text-amber-800 text-[11px] font-bold ml-2">• Hane No: {dup.hane_no}</span>}
+                            {dup.satir_no && <span className="text-slate-400 text-[11px] ml-1.5">• Satır #{dup.satir_no}</span>}
+                          </div>
+                          <span className={`badge text-[9px] py-0.5 px-2 shrink-0 ${
+                            dup.teslimat_durumu === 'TAMAMLANDI'
+                              ? 'badge-completed'
+                              : dup.teslimat_durumu === 'EKSIK'
+                              ? 'badge-pending'
+                              : dup.teslimat_durumu === 'IPTAL'
+                              ? 'badge-cancelled'
+                              : 'badge-draft'
+                          }`}>
+                            {dup.teslimat_durumu === 'TAMAMLANDI' ? '✅ Teslim Edildi' :
+                             dup.teslimat_durumu === 'EKSIK' ? '⚠️ Eksik Teslimat' :
+                             dup.teslimat_durumu === 'IPTAL' ? '❌ İptal' : '⏳ Bekliyor'}
+                          </span>
+                        </div>
+
+                        {dup.teslimat_durumu_ozeti && (
+                          <div className="flex items-center gap-1.5 p-1.5 rounded-md bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-800">
+                            <PackageCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>Kömür Durumu:</span>
+                            <span className="text-amber-900 font-black">{dup.teslimat_durumu_ozeti}</span>
+                          </div>
+                        )}
+
+                        <div className="text-[11px] text-slate-700 bg-amber-50/70 p-1.5 rounded border border-amber-200 font-medium">
+                          {dup.hata_nedeni}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -543,36 +622,68 @@ export default function ExcelImportPage({
             {logs.map((item) => (
               <div
                 key={item.id}
-                className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all space-y-1.5 shadow-xs"
+                className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all space-y-2 shadow-xs"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h5 className="text-sm font-extrabold text-slate-900">{item.ad_soyad}</h5>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                       <span className="font-mono font-bold text-amber-800">TC: {item.tc_no}</span>
+                      {item.hane_no && <span className="font-bold text-indigo-700">• Hane No: {item.hane_no}</span>}
                       {item.satir_no && <span>• Satır #{item.satir_no}</span>}
                     </div>
                   </div>
 
-                  <span
-                    className={`badge text-[10px] py-0.5 px-2 ${
-                      item.durum === 'MUKERRER_TC'
-                        ? 'badge-pending'
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`badge text-[10px] py-0.5 px-2 ${
+                        item.durum === 'MUKERRER_TC'
+                          ? 'badge-pending'
+                          : item.durum === 'MUKERRER_HANE'
+                          ? 'badge-household'
+                          : 'badge-cancelled'
+                      }`}
+                    >
+                      {item.durum === 'MUKERRER_TC'
+                        ? 'Mükerrer TC'
                         : item.durum === 'MUKERRER_HANE'
-                        ? 'badge-household'
-                        : 'badge-cancelled'
-                    }`}
-                  >
-                    {item.durum === 'MUKERRER_TC'
-                      ? 'Mükerrer TC'
-                      : item.durum === 'MUKERRER_HANE'
-                      ? 'Aynı Hane'
-                      : 'Hatalı Bilgi'}
-                  </span>
+                        ? 'Aynı Hane'
+                        : 'Hatalı Bilgi'}
+                    </span>
+
+                    {(item.durum === 'MUKERRER_TC' || item.durum === 'MUKERRER_HANE') && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-black">
+                        Eklenmedi
+                      </span>
+                    )}
+                  </div>
                 </div>
 
+                {/* Kömür Teslim Durumu Rozeti & Özeti */}
+                {item.teslimat_durumu_ozeti ? (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800">
+                    <PackageCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="text-slate-600">Kömür Teslim Durumu:</span>
+                    <span className={`font-black ${
+                      item.teslimat_durumu === 'TAMAMLANDI' ? 'text-emerald-700' :
+                      item.teslimat_durumu === 'EKSIK' ? 'text-amber-700' :
+                      item.teslimat_durumu === 'IPTAL' ? 'text-rose-700' : 'text-slate-800'
+                    }`}>
+                      {item.teslimat_durumu_ozeti}
+                    </span>
+                  </div>
+                ) : item.teslimat_durumu ? (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800">
+                    <PackageCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="text-slate-600">Kömür Teslim Durumu:</span>
+                    <span className="text-slate-900 font-extrabold">
+                      {item.teslimat_durumu} ({item.torba_sayisi || 0} Torba)
+                    </span>
+                  </div>
+                ) : null}
+
                 {/* Hata Sebebi */}
-                <div className="p-2 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 font-semibold">
+                <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-xs text-amber-950 font-semibold leading-relaxed">
                   {item.hata_nedeni}
                 </div>
 

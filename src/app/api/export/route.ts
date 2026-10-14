@@ -185,8 +185,9 @@ export async function GET(request: NextRequest) {
 
       const exportData = records.map((r: any, idx: number) => ({
         'Sıra': idx + 1,
-        'Hata Nedeni': r.hata_nedeni,
-        'Durum / Tip': r.durum,
+        'Hata / Mükerrerlik Nedeni': r.hata_nedeni,
+        'Kayıt Durumu': r.durum === 'MUKERRER_TC' ? 'Mükerrer TC' : (r.durum === 'MUKERRER_HANE' ? 'Mükerrer Hane' : 'Hatalı / Eksik'),
+        'Mevcut Kömür Teslim Durumu': r.teslimat_durumu_ozeti || (r.teslimat_durumu ? `${r.teslimat_durumu} (${r.torba_sayisi || 0} Torba)` : 'BEKLİYOR'),
         'TC Kimlik No': r.tc_no || '-',
         'Adı Soyadı': r.ad_soyad || '-',
         'Telefon': r.telefon || '-',
@@ -197,6 +198,20 @@ export async function GET(request: NextRequest) {
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
+      worksheet['!cols'] = [
+        { wch: 6 },  // Sıra
+        { wch: 45 }, // Hata Nedeni
+        { wch: 18 }, // Durum
+        { wch: 35 }, // Teslim Durumu
+        { wch: 15 }, // TC
+        { wch: 22 }, // Ad Soyad
+        { wch: 18 }, // Telefon
+        { wch: 18 }, // Mahalle
+        { wch: 30 }, // Açık Adres
+        { wch: 12 }, // Hane No
+        { wch: 18 }, // Tarih
+      ];
+
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Yukleme Hatalari');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       return new NextResponse(buf, {
