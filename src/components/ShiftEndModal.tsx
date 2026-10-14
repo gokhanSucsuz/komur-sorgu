@@ -62,7 +62,7 @@ export default function ShiftEndModal({ shift, onClose, onSuccess }: ShiftEndMod
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'END',
-          shiftId: shift.id,
+          shiftId: shift.id || shift._id,
           personel_adi: shift.personel_adi,
           baslama_saati: startTime,
           bitis_saati: endTime,

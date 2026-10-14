@@ -417,22 +417,29 @@ export async function POST(request: NextRequest) {
         targetShift = await shiftsCol.findOne(buildIdFilter(shiftId));
       } else if (personel_adi) {
         targetShift = await shiftsCol.findOne({
-          personel_adi,
+          personel_adi: { $regex: new RegExp(`^${personel_adi.trim()}$`, 'i') },
           durum: 'DEVAM_EDIYOR',
         });
+        if (!targetShift) {
+          targetShift = await shiftsCol.findOne({
+            personel_adi,
+            durum: 'DEVAM_EDIYOR',
+          });
+        }
       }
 
       if (!targetShift) {
         return NextResponse.json({ success: false, error: 'Sonlandırılacak aktif mesai kaydı bulunamadı.' }, { status: 404 });
       }
 
+      const startTime = baslama_saati || targetShift.baslama_saati || '08:30';
       const endTime = bitis_saati || localTime;
-      const totalMinutes = calculateMinutes(targetShift.baslama_saati, endTime);
+      const totalMinutes = calculateMinutes(startTime, endTime);
 
       // Auto-aggregate deliveries performed by this staff on that day from delivery_history
       const deliveries = await histCol
         .find({
-          personel: targetShift.personel_adi,
+          personel: { $regex: new RegExp(`^${targetShift.personel_adi.trim()}$`, 'i') },
           gun_tarihi: targetShift.tarih,
           islem_tipi: 'TESLIMAT',
         })
@@ -451,8 +458,11 @@ export async function POST(request: NextRequest) {
       const finalHane = uniqueTc.size;
       const finalMahalleler = mahalleler || Array.from(uniqueMahalle).join(', ');
 
-      await shiftsCol.updateOne(buildIdFilter(targetShift.id || targetShift._id), {
+      const updateFilter = targetShift._id ? { _id: targetShift._id } : buildIdFilter(targetShift.id);
+
+      await shiftsCol.updateOne(updateFilter, {
         $set: {
+          baslama_saati: startTime,
           bitis_saati: endTime,
           toplam_dakika: totalMinutes,
           durum: 'TAMAMLANDI',
@@ -464,7 +474,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const completedShift = await shiftsCol.findOne(buildIdFilter(targetShift.id || targetShift._id));
+      const completedShift = await shiftsCol.findOne(updateFilter);
 
       return NextResponse.json({
         success: true,

@@ -1,19 +1,21 @@
 'use client';
 
-import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck } from 'lucide-react';
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2 } from 'lucide-react';
 
 interface HouseholdModalProps {
   person: any;
   householdMembers: any[];
   onClose: () => void;
   onOpenDelivery: (person: any) => void;
+  onOpenCancel?: (person: any) => void;
 }
 
 export default function HouseholdModal({
   person,
   householdMembers,
   onClose,
-  onOpenDelivery
+  onOpenDelivery,
+  onOpenCancel
 }: HouseholdModalProps) {
   const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
   const isPartial = person.teslimat_durumu === 'EKSIK';
@@ -102,6 +104,19 @@ export default function HouseholdModal({
                 <p className="text-[11px] text-slate-500">Tarih: {person.teslimat_tarihi}</p>
               )}
             </div>
+          )}
+
+          {(isComplete || isPartial) && onOpenCancel && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenCancel(person);
+              }}
+              className="w-full mt-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+            >
+              <Undo2 className="w-4 h-4 text-rose-600" />
+              <span>Yanlışlıkla Yapıldıysa Teslimatı Geri Al / İptal Et</span>
+            </button>
           )}
 
           {!isComplete && (

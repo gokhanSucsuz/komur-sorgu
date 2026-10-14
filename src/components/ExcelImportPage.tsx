@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
-  Trash2, Filter, Search, ShieldAlert, RefreshCw, FileText, X
+  Trash2, Filter, Search, ShieldAlert, RefreshCw, FileText, X, Undo2, FolderSync
 } from 'lucide-react';
 
 interface ExcelImportPageProps {
@@ -31,7 +31,29 @@ export default function ExcelImportPage({
   const [searchLog, setSearchLog] = useState('');
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
+  // Uploaded Excel Batches State & Rollback Target
+  const [uploadedBatches, setUploadedBatches] = useState<any[]>([]);
+  const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
+  const [batchDeleteTarget, setBatchDeleteTarget] = useState<any | null>(null);
+  const [deleteDeliveredChoice, setDeleteDeliveredChoice] = useState<boolean>(false);
+  const [isDeletingBatch, setIsDeletingBatch] = useState<boolean>(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchUploadedBatches = async () => {
+    setIsLoadingBatches(true);
+    try {
+      const res = await fetch('/api/import/batches');
+      const data = await res.json();
+      if (data.success) {
+        setUploadedBatches(data.batches || []);
+      }
+    } catch (err) {
+      console.error('Batches fetch error:', err);
+    } finally {
+      setIsLoadingBatches(false);
+    }
+  };
 
   const fetchLogs = async () => {
     setIsLoadingLogs(true);
@@ -56,6 +78,7 @@ export default function ExcelImportPage({
 
   useEffect(() => {
     fetchLogs();
+    fetchUploadedBatches();
   }, [selectedBatch, selectedDurum, searchLog]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,11 +119,35 @@ export default function ExcelImportPage({
       if (fileInputRef.current) fileInputRef.current.value = '';
       
       fetchLogs();
+      fetchUploadedBatches();
       onRefreshAll();
     } catch (err: any) {
       setErrorMsg(err.message || 'Dosya yükleme başarısız');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDeleteBatch = async (batchId: string, force: boolean) => {
+    setIsDeletingBatch(true);
+    try {
+      const res = await fetch(`/api/import/batches?batchId=${encodeURIComponent(batchId)}&force=${force}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBatchDeleteTarget(null);
+        fetchUploadedBatches();
+        fetchLogs();
+        onRefreshAll();
+        alert(data.message || 'Excel dosyasına ait kayıtlar başarıyla silindi.');
+      } else {
+        alert(data.error || 'Dosya kayıtları silinemedi.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Bağlantı hatası oluştu.');
+    } finally {
+      setIsDeletingBatch(false);
     }
   };
 
@@ -289,6 +336,98 @@ export default function ExcelImportPage({
         </div>
       </div>
 
+      {/* YÜKLENEN EXCEL DOSYALARI VE GERİ ALMA (DOSYA SİLME) YÖNETİMİ */}
+      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200">
+              <FolderSync className="w-5 h-5 text-amber-700" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                Yüklenen Excel Dosyaları ve Geri Alma (İptal)
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Yanlış yüklenen Excel dosyalarını ve bu dosyalardan eklenen kayıtları tek tıkla geri alın
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={fetchUploadedBatches}
+            className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBatches ? 'animate-spin text-amber-600' : ''}`} />
+            <span>Listeyi Yenile</span>
+          </button>
+        </div>
+
+        {isLoadingBatches ? (
+          <div className="py-6 text-center text-xs font-semibold text-slate-400">
+            Yükleme geçmişi kontrol ediliyor...
+          </div>
+        ) : uploadedBatches.length === 0 ? (
+          <div className="p-6 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-500 space-y-1">
+            <p className="font-bold text-slate-700">Henüz yeni bir Excel dosyası yüklenmedi</p>
+            <p className="text-[11px] text-slate-400">
+              Yukarıdan yükleyeceğiniz her Excel dosyası burada etiketlenerek saklanır; yanlış dosya seçilmesi durumunda tek tıkla tüm kayıtlarıyla birlikte geri alabilirsiniz.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {uploadedBatches.map((batch) => (
+              <div
+                key={batch.batch_id || batch.id}
+                className="p-4 rounded-xl bg-slate-50/80 border border-slate-200 hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+              >
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="truncate max-w-[240px] sm:max-w-none">{batch.dosya_adi}</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      {batch.created_at}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                      {batch.mevcut_kisi} Hak Sahibi Sistemde
+                    </span>
+                    <span className="font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      {batch.bekleyen} Bekliyor
+                    </span>
+                    {batch.teslim_edilen > 0 ? (
+                      <span className="font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                        {batch.teslim_edilen} Hanesine Teslimat Yapılmış
+                      </span>
+                    ) : (
+                      <span className="font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        Henüz teslimat yapılmadı
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchDeleteTarget(batch);
+                    setDeleteDeliveredChoice(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs shrink-0 self-stretch sm:self-auto"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  <span>Dosyayı ve Kayıtları Geri Al (Sil)</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* YÜKLEME SONUÇLARI VE SORUNLU KAYITLAR SAYFASI - Light Mode */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -447,6 +586,125 @@ export default function ExcelImportPage({
           </div>
         )}
       </div>
+
+      {/* EXCEL DOSYASI VE KAYITLARI SİLME (ROLLBACK) ONAY MODALI */}
+      {batchDeleteTarget && (
+        <div className="modal-overlay" onClick={() => !isDeletingBatch && setBatchDeleteTarget(null)}>
+          <div className="modal-sheet max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center border border-rose-200 shrink-0">
+                  <Trash2 className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                    Excel Dosyasını Geri Al (Kayıtları Sil)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">Hatalı yükleme geri alma işlemi</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBatchDeleteTarget(null)}
+                disabled={isDeletingBatch}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3.5 rounded-xl bg-rose-50/80 border border-rose-200 text-xs text-rose-900 space-y-1.5">
+                <div className="font-black text-rose-950 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Silinecek Dosya: {batchDeleteTarget.dosya_adi}</span>
+                </div>
+                <p className="text-slate-600 leading-relaxed">
+                  Bu dosyadan sisteme yüklenmiş olan <strong>{batchDeleteTarget.mevcut_kisi} hak sahibi kaydı</strong> veritabanından tamamen silinecektir.
+                </p>
+              </div>
+
+              {batchDeleteTarget.teslim_edilen > 0 ? (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-2">
+                  <div className="font-extrabold flex items-center gap-1 text-amber-900">
+                    <span>⚠️ Teslimat Uyarısı:</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    Bu Excel dosyasından eklenen hanelerden <strong>{batchDeleteTarget.teslim_edilen} tanesine</strong> fiilen kömür teslimatı yapılmış görünüyor!
+                  </p>
+
+                  <div className="space-y-1.5 pt-1">
+                    <label className="flex items-start gap-2 p-2 rounded-lg bg-white border border-amber-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deleteMode"
+                        checked={!deleteDeliveredChoice}
+                        onChange={() => setDeleteDeliveredChoice(false)}
+                        className="mt-0.5 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <strong className="block text-slate-900 font-bold">Yalnızca Teslim Edilmeyenleri Sil (Önerilen)</strong>
+                        <span className="text-slate-500 text-[11px]">
+                          Kömür teslimatı yapılmış {batchDeleteTarget.teslim_edilen} hane korunur, yalnızca bekleyen {batchDeleteTarget.bekleyen} hane silinir.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-2 p-2 rounded-lg bg-white border border-rose-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="deleteMode"
+                        checked={deleteDeliveredChoice}
+                        onChange={() => setDeleteDeliveredChoice(true)}
+                        className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <strong className="block text-rose-900 font-bold">Teslim Edilenler Dahil Dosyadaki Tümünü Sil</strong>
+                        <span className="text-slate-500 text-[11px]">
+                          Dosyadaki tüm {batchDeleteTarget.mevcut_kisi} hane veritabanından tamamen kaldırılır.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Bu dosyaya ait hanelere henüz hiçbir kömür teslimatı yapılmamıştır. Güvenle geri alabilirsiniz.</span>
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-slate-200 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBatchDeleteTarget(null)}
+                  disabled={isDeletingBatch}
+                  className="btn-secondary flex-1 py-2.5 text-xs font-bold"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingBatch}
+                  onClick={() => handleDeleteBatch(batchDeleteTarget.batch_id || batchDeleteTarget.id, deleteDeliveredChoice)}
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm transition-all active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isDeletingBatch ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Siliniyor...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 text-white" />
+                      <span>Kayıtları Sistemden Sil</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

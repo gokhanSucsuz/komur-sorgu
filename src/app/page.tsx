@@ -72,6 +72,7 @@ export default function Home() {
 
   // Shift state
   const [activeShift, setActiveShift] = useState<any | null>(null);
+  const [shiftRefreshKey, setShiftRefreshKey] = useState<number>(0);
   const [showShiftStartModal, setShowShiftStartModal] = useState<boolean>(false);
   const [shiftEndTarget, setShiftEndTarget] = useState<any | null>(null);
 
@@ -228,6 +229,7 @@ export default function Home() {
   // Quick Start Shift (one-click with current time)
   const handleQuickStartShift = async () => {
     try {
+      const staffName = (userName || '').trim() || 'Murat Dağıtım';
       const now = new Date();
       const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const res = await fetch('/api/shifts', {
@@ -235,22 +237,28 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'START',
-          personel_adi: userName,
+          personel_adi: staffName,
           baslama_saati: localTime
         })
       });
       const data = await res.json();
       if (data.success) {
         setActiveShift(data.shift);
+        setShiftRefreshKey((k) => k + 1);
+        handleRefreshAll();
+      } else {
+        alert(data.error || 'Mesai başlatılamadı.');
       }
     } catch (err) {
       console.error('Error quick starting shift:', err);
+      alert('Mesai başlatılırken bağlantı hatası oluştu.');
     }
   };
 
   // Refresh all data
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
+    setShiftRefreshKey((k) => k + 1);
     await Promise.all([
       fetchBeneficiaries(),
       fetchArchive(),
@@ -371,6 +379,7 @@ export default function Home() {
               onDurumFilterChange={setSelectedDurumFilter}
               onOpenDelivery={(person) => setDeliveryTarget(person)}
               onOpenHousehold={handleOpenHousehold}
+              onOpenCancel={(person) => setCancelTarget(person)}
               defaultQuota={defaultQuota}
               isLoading={isLoadingBeneficiaries}
             />
@@ -382,6 +391,8 @@ export default function Home() {
           <ShiftPage
             userRole={userRole}
             userName={userName}
+            activeShift={activeShift}
+            refreshTrigger={shiftRefreshKey}
             onOpenStartModal={() => setShowShiftStartModal(true)}
             onOpenEndModal={(shift) => setShiftEndTarget(shift)}
             onRefreshAll={handleRefreshAll}
@@ -467,6 +478,10 @@ export default function Home() {
           onOpenDelivery={(person) => {
             setHouseholdTarget(null);
             setDeliveryTarget(person);
+          }}
+          onOpenCancel={(person) => {
+            setHouseholdTarget(null);
+            setCancelTarget(person);
           }}
         />
       )}

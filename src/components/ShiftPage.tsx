@@ -10,6 +10,8 @@ import {
 interface ShiftPageProps {
   userRole: 'ADMIN' | 'PERSONEL';
   userName: string;
+  activeShift?: any | null;
+  refreshTrigger?: number;
   onOpenStartModal: () => void;
   onOpenEndModal: (shift: any) => void;
   onRefreshAll?: () => void;
@@ -18,13 +20,16 @@ interface ShiftPageProps {
 export default function ShiftPage({
   userRole,
   userName,
+  activeShift: propActiveShift,
+  refreshTrigger,
   onOpenStartModal,
   onOpenEndModal,
   onRefreshAll
 }: ShiftPageProps) {
   const [shifts, setShifts] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
-  const [activeShift, setActiveShift] = useState<any | null>(null);
+  const [internalActiveShift, setInternalActiveShift] = useState<any | null>(null);
+  const activeShift = propActiveShift !== undefined ? propActiveShift : internalActiveShift;
   const [isLoading, setIsLoading] = useState(true);
 
   // Filters
@@ -82,7 +87,7 @@ export default function ShiftPage({
       if (data.success) {
         setShifts(data.shifts || []);
         setStats(data.stats || {});
-        setActiveShift(data.activeShift || null);
+        setInternalActiveShift(data.activeShift || null);
         if (data.availableMonths) setAvailableMonths(data.availableMonths);
         if (data.monthlyBreakdown) setMonthlyBreakdown(data.monthlyBreakdown);
       }
@@ -95,7 +100,7 @@ export default function ShiftPage({
 
   useEffect(() => {
     fetchShifts();
-  }, [selectedPersonnel, selectedMonth, dateFilterType, dayTypeFilter, customStartDate, customEndDate]);
+  }, [selectedPersonnel, selectedMonth, dateFilterType, dayTypeFilter, customStartDate, customEndDate, refreshTrigger, propActiveShift]);
 
   // Extract distinct personnel list from shifts + defaults
   const personnelList = useMemo(() => {
@@ -119,6 +124,7 @@ export default function ShiftPage({
       const data = await res.json();
       if (data.success) {
         fetchShifts();
+        onRefreshAll?.();
       } else {
         alert(data.error || 'Silinemedi.');
       }
@@ -875,6 +881,7 @@ export default function ShiftPage({
                   if (data.success) {
                     setShowEditModal(false);
                     fetchShifts();
+                    onRefreshAll?.();
                   } else {
                     alert(data.error || 'Kaydedilemedi.');
                   }

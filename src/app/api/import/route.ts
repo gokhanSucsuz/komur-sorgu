@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında veri satırı bulunamadı' }, { status: 400 });
     }
 
-    const { beneficiaries: benCol, importLogs: logsCol, systemSettings } = await getDbCollections();
+    const { beneficiaries: benCol, importLogs: logsCol, importBatches: batchesCol, systemSettings } = await getDbCollections();
     const batchId = `BATCH-${Date.now()}`;
     const nowStr = new Date().toLocaleString('tr-TR');
 
@@ -258,6 +258,8 @@ export async function POST(request: NextRequest) {
       }
 
       toInsertBeneficiaries.push({
+        batch_id: batchId,
+        dosya_adi: file.name,
         tc_no: tcNo,
         ad_soyad: adSoyad,
         telefon: telefon || '',
@@ -285,6 +287,18 @@ export async function POST(request: NextRequest) {
     if (toInsertLogs.length > 0) {
       await logsCol.insertMany(toInsertLogs);
     }
+
+    // Record batch metadata in import_batches
+    await batchesCol.insertOne({
+      batch_id: batchId,
+      dosya_adi: file.name,
+      dosya_boyutu: file.size,
+      toplam_satir: totalRows,
+      eklenen_kisi: insertedCount,
+      hatali_kisi: failedCount,
+      created_at: nowStr,
+      tarih_iso: new Date().toISOString(),
+    });
 
     return NextResponse.json({
       success: true,
