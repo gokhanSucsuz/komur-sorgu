@@ -177,15 +177,9 @@ export async function POST(request: NextRequest) {
         },
       });
     } else if (action === 'IPTAL') {
-      if (session.rol !== 'ADMIN') {
-        return NextResponse.json(
-          { success: false, error: 'Yetkisiz erişim! Teslimat iptali sadece Sistem Yöneticisi tarafından yapılabilir.' },
-          { status: 403 }
-        );
-      }
-
       const cancelReason = (iptal_nedeni || 'Hatalı teslimat kaydı').trim();
-      const staff = session.ad_soyad || session.username || 'Sistem Yöneticisi';
+      const staff = session.ad_soyad || session.username || body.personel || 'Personel';
+      const userRole = session.rol || 'PERSONEL';
 
       // Revert beneficiary status to BEKLIYOR
       await benCol.updateOne(buildIdFilter(beneficiary.id), {
@@ -216,13 +210,13 @@ export async function POST(request: NextRequest) {
         gun_tarihi: localToday,
       }));
 
-      // Record Activity Log for Admin Audit
+      // Record Activity Log for Audit
       await recordActivityLog({
         kullanici_adi: staff,
-        kullanici_rolu: 'ADMIN',
+        kullanici_rolu: userRole,
         islem_tipi: 'IPTAL',
         baslik: 'Teslimat İptal Edildi',
-        detay: `${beneficiary.ad_soyad} (${beneficiary.tc_no}) hanesine yapılan teslimat kaydı geri alındı ve hane beklemeye döndürüldü. İptal Gerekçesi: ${cancelReason}`,
+        detay: `${beneficiary.ad_soyad} (${beneficiary.tc_no}) hanesine yapılan teslimat kaydı ${staff} (${userRole === 'ADMIN' ? 'Yönetici' : 'Saha Personeli'}) tarafından geri alındı ve hane beklemeye döndürüldü. İptal Gerekçesi: ${cancelReason}`,
         hedef_kisi: beneficiary.ad_soyad,
         hedef_tc: beneficiary.tc_no,
         mahalle: beneficiary.mahalle,

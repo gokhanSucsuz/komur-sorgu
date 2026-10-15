@@ -106,8 +106,11 @@ export default function Header({
     }
   ];
 
-  // Restrict Excel Import Tab strictly to ADMIN
-  const visibleNavTabs = allNavTabs.filter((tab) => tab.id !== 'import' || userRole === 'ADMIN');
+  // Restrict Analytics, Archive, and Excel tabs strictly to ADMIN
+  const adminOnlyTabs: NavTab[] = ['analytics', 'archive', 'import'];
+  const visibleNavTabs = allNavTabs.filter(
+    (tab) => !adminOnlyTabs.includes(tab.id) || userRole === 'ADMIN'
+  );
 
   return (
     <>

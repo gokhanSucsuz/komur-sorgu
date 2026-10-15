@@ -1312,6 +1312,17 @@ export default function BeneficiaryList({
                                   <span>Teslim Et ({hedef})</span>
                                 </button>
                               ) : null}
+                              {(isComplete || isPartial) && onOpenCancel && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenCancel(person)}
+                                  className="px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                                  title="Teslimatı Geri Al / İptal Et"
+                                >
+                                  <Undo2 className="w-3.5 h-3.5 text-rose-600" />
+                                  <span className="hidden xl:inline">Geri Al</span>
+                                </button>
+                              )}
                               {onOpenEdit && (
                                 <button
                                   type="button"

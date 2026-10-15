@@ -72,7 +72,11 @@ export default function BottomNav({
     }
   ];
 
-  const visibleTabs = tabs.filter((tab) => tab.id !== 'import' || userRole === 'ADMIN');
+  // Restrict Analytics, Archive, and Excel tabs strictly to ADMIN
+  const adminOnlyTabs: NavTab[] = ['analytics', 'archive', 'import'];
+  const visibleTabs = tabs.filter(
+    (tab) => !adminOnlyTabs.includes(tab.id) || userRole === 'ADMIN'
+  );
 
   return (
     <nav className="mobile-nav-bar no-print lg:hidden" role="navigation" aria-label="Ana Menü">

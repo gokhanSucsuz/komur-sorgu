@@ -514,9 +514,10 @@ export default function Home() {
     };
   }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount]);
 
-  // Tab protection: Non-admin can never view 'import' tab
+  // Tab protection: Non-admin can never view 'analytics', 'archive', or 'import' tabs
   useEffect(() => {
-    if (userRole !== 'ADMIN' && currentTab === 'import') {
+    const adminOnlyTabs: NavTab[] = ['analytics', 'archive', 'import'];
+    if (userRole !== 'ADMIN' && adminOnlyTabs.includes(currentTab)) {
       setCurrentTab('search');
     }
   }, [userRole, currentTab]);
@@ -799,8 +800,8 @@ export default function Home() {
           />
         )}
 
-        {/* Tab 2: İstatistik & Resmi PDF Raporlama */}
-        {currentTab === 'analytics' && (
+        {/* Tab 2: İstatistik & Resmi PDF Raporlama (Sadece Yönetici) */}
+        {currentTab === 'analytics' && userRole === 'ADMIN' && (
           <AnalyticsPage
             userRole={userRole}
             onOpenQuotaModal={() => setShowQuotaModal(true)}
@@ -809,8 +810,8 @@ export default function Home() {
           />
         )}
 
-        {/* Tab 3: Teslimat Arşivi & İptal Edilenler */}
-        {currentTab === 'archive' && (
+        {/* Tab 3: Teslimat Arşivi & İptal Edilenler (Sadece Yönetici) */}
+        {currentTab === 'archive' && userRole === 'ADMIN' && (
           <DeliveryArchive
             groupedDays={archiveGroupedDays}
             allRecords={archiveAllRecords}

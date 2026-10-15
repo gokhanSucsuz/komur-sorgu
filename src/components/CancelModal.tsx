@@ -17,7 +17,7 @@ export default function CancelModal({
   onSuccess
 }: CancelModalProps) {
   const [iptalNedeni, setIptalNedeni] = useState('');
-  const [personel, setPersonel] = useState(currentStaff || 'Yönetici');
+  const [personel, setPersonel] = useState(currentStaff || 'Personel');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 

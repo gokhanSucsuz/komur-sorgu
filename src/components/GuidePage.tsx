@@ -40,7 +40,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<string>('intro');
 
-  const categories = [
+  const allCategories = [
     { id: 'intro', order: 1, label: 'Giriş & Güvenlik', fullTitle: '1. Sisteme Giriş & Güvenlik', icon: Shield },
     { id: 'query', order: 2, label: 'Sorgu & Sayfalama', fullTitle: '2. Hak Sahibi Sorgulama', icon: Search },
     { id: 'delivery', order: 3, label: 'Teslimat & İmza', fullTitle: '3. Teslimat & Islak İmza', icon: PenTool },
@@ -52,6 +52,9 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
     { id: 'import', order: 9, label: 'Excel Yükleme', fullTitle: '9. Excel Hak Sahibi Yükleme', icon: FileSpreadsheet },
     { id: 'offline', order: 10, label: 'Çevrimdışı & PWA', fullTitle: '10. Çevrimdışı Mod & Mobil PWA', icon: WifiOff },
   ];
+
+  const adminOnlyGuides = ['season', 'analytics', 'import'];
+  const categories = allCategories.filter((c) => !adminOnlyGuides.includes(c.id) || userRole === 'ADMIN');
 
   const guideSections = [
     // 1. GİRİŞ VE GÜVENLİK
@@ -75,7 +78,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                 <span>Sistem Yöneticisi (ADMIN)</span>
               </div>
               <p className="text-[11px] text-amber-800">
-                Excel hak sahibi listesi yükleme, kömür dönemi belirleme ve arşivleme, personel ekleme/şifre yönetimi, hane kömür kotası belirleme ve yapılan teslimatları iptal edebilme yetkilerine sahiptir.
+                Excel hak sahibi listesi yükleme, kömür dönemi belirleme ve arşivleme, personel ekleme/şifre yönetimi, hane kömür kotası belirleme ve sistem denetim loglarını inceleme yetkilerine sahiptir.
               </p>
             </div>
 
@@ -85,7 +88,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                 <span>Saha Personeli (PERSONEL)</span>
               </div>
               <p className="text-[11px] text-sky-800">
-                Hak sahibi arama ve sorgulama, kömür teslimatı yapma, dokunmatik ıslak imza alma, saha dağıtım rotası oluşturma ve günlük/geriye dönük çalışma saatlerini sisteme kaydetme işlemlerini gerçekleştirir.
+                Hak sahibi arama ve sorgulama, kömür teslimatı yapma, dokunmatik ıslak imza alma, hatalı yapılan teslimatları geri alma / iptal etme, saha dağıtım rotası oluşturma ve çalışma saatlerini sisteme kaydetme işlemlerini gerçekleştirir.
               </p>
             </div>
           </div>
