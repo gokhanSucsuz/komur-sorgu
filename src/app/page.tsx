@@ -23,6 +23,7 @@ import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
 import SeasonManagementModal from '@/components/SeasonManagementModal';
 import GuidePage from '@/components/GuidePage';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
+import { signatureQueue } from '@/lib/signatureQueue';
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>('search');
@@ -275,7 +276,14 @@ export default function Home() {
       }
     }
 
-    setIsLoadingBeneficiaries(true);
+    // Only trigger full loading spinner when there are no records in memory
+    setBeneficiaries((current) => {
+      if (current.length === 0) {
+        setIsLoadingBeneficiaries(true);
+      }
+      return current;
+    });
+
     try {
       const params = new URLSearchParams({
         durum: 'HEPSI',
@@ -541,6 +549,148 @@ export default function Home() {
     handleRefreshAll();
   };
 
+  // ========================================================
+  // SIGNATURE QUEUE & LOCAL IN-MEMORY CACHE SYNC
+  // Sıfır veritabanı tam yeniden yüklemesi, sıfır kota harcaması
+  // ========================================================
+  useEffect(() => {
+    signatureQueue.setCallbacks(
+      // 1. Optimistic Update: Ekranı ve sessionStorage'ı anında yerinde güncelle (0ms)
+      (item) => {
+        const formattedDate = new Date().toLocaleString('tr-TR');
+        setBeneficiaries((prev) => {
+          const updated = prev.map((p) => {
+            if (String(p.id) === item.beneficiary_id) {
+              return {
+                ...p,
+                imza_durumu: item.imza_durumu,
+                imza_tarihi: item.imza_durumu === 'IMZALANDI' ? formattedDate : null,
+                imza_alan_personel: item.imza_durumu === 'IMZALANDI' ? (item.imza_alan_personel || userName) : null
+              };
+            }
+            return p;
+          });
+
+          // SessionStorage önbelleğini güncelle
+          if (typeof window !== 'undefined') {
+            try {
+              sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
+                data: updated,
+                mahalleler,
+                eksikHaneler
+              }));
+            } catch (e) {
+              // Ignore quota errors
+            }
+          }
+          return updated;
+        });
+
+        // Morning Alert Banner için eksik haneleri de yerinde güncelle
+        setEksikHaneler((prev) =>
+          prev.map((h) => {
+            if (String(h.id) === item.beneficiary_id) {
+              return {
+                ...h,
+                imza_durumu: item.imza_durumu,
+                imza_tarihi: item.imza_durumu === 'IMZALANDI' ? formattedDate : null
+              };
+            }
+            return h;
+          })
+        );
+      },
+      // 2. Sync Time Callback: Sunucudan dönen zaman damgasını kaydet, böylece polling bu işlemi kendi işlemimiz olarak tanır ve TÜM LİSTEYİ TEKRAR ÇEKMEZ!
+      (syncTime) => {
+        lastKnownSyncRef.current = syncTime;
+      },
+      // 3. Error Callback: Hata durumunda güvenli geri alma (rollback)
+      (failedItem, err) => {
+        console.error('İmza kuyruğu hatası, işlem geri alınıyor:', err);
+        setBeneficiaries((prev) =>
+          prev.map((p) => {
+            if (String(p.id) === failedItem.beneficiary_id) {
+              return {
+                ...p,
+                imza_durumu: failedItem.previousState || 'BEKLIYOR'
+              };
+            }
+            return p;
+          })
+        );
+      }
+    );
+  }, [mahalleler, eksikHaneler, userName]);
+
+  // Toplu imza (Bulk Sign) işlemlerinde önbellek senkronizasyonu
+  useEffect(() => {
+    const handleBulkSigned = (e: any) => {
+      const { ids = [], syncTime } = e.detail || {};
+      if (syncTime) {
+        lastKnownSyncRef.current = syncTime;
+      }
+      if (Array.isArray(ids) && ids.length > 0) {
+        const idSet = new Set(ids.map(String));
+        const formattedDate = new Date().toLocaleString('tr-TR');
+        setBeneficiaries((prev) => {
+          const updated = prev.map((p) => {
+            if (idSet.has(String(p.id))) {
+              return {
+                ...p,
+                imza_durumu: 'IMZALANDI',
+                imza_tarihi: formattedDate,
+                imza_alan_personel: userName || 'İmza Ekibi'
+              };
+            }
+            return p;
+          });
+          if (typeof window !== 'undefined') {
+            try {
+              sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
+                data: updated,
+                mahalleler,
+                eksikHaneler
+              }));
+            } catch (err) {}
+          }
+          return updated;
+        });
+
+        setEksikHaneler((prev) =>
+          prev.map((h) => {
+            if (idSet.has(String(h.id))) {
+              return {
+                ...h,
+                imza_durumu: 'IMZALANDI',
+                imza_tarihi: formattedDate
+              };
+            }
+            return h;
+          })
+        );
+      }
+    };
+
+    window.addEventListener('komur_bulk_signed', handleBulkSigned);
+    return () => {
+      window.removeEventListener('komur_bulk_signed', handleBulkSigned);
+    };
+  }, [mahalleler, eksikHaneler, userName]);
+
+  // Tekil imza butonuna tıklandığında çalışan kuyruklayıcı
+  const handleToggleSignature = useCallback((person: any) => {
+    const personId = String(person.id);
+    const isSigned = person.imza_durumu === 'IMZALANDI';
+    const nextSigned = !isSigned;
+
+    signatureQueue.enqueue({
+      beneficiary_id: personId,
+      imza_durumu: nextSigned ? 'IMZALANDI' : 'BEKLIYOR',
+      imza_alan_personel: userName || 'İmza Ekibi',
+      previousState: isSigned ? 'IMZALANDI' : 'BEKLIYOR'
+    });
+  }, [userName]);
+
   // 1. Initial Auth Checking Screen (prevents flash of content)
   if (isAuthChecking) {
     return (
@@ -622,6 +772,7 @@ export default function Home() {
               onOpenHousehold={handleOpenHousehold}
               onOpenCancel={(person) => setCancelTarget(person)}
               onOpenEdit={(person) => setEditTarget(person)}
+              onToggleSignature={handleToggleSignature}
               onNavigateToRoute={() => setCurrentTab('route')}
               defaultQuota={defaultQuota}
               isLoading={isLoadingBeneficiaries}

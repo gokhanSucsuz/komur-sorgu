@@ -582,7 +582,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Invalidate cache & pulse sync across devices
-      await touchSyncPulse('İmza Güncellendi');
+      const pulseTime = await touchSyncPulse('İmza Güncellendi');
 
       return NextResponse.json({
         success: true,
@@ -590,7 +590,8 @@ export async function POST(request: NextRequest) {
           ? 'Kapıda imza başarıyla alındı ve hane dağıtıma hazırlandı.'
           : 'İmza durumu sıfırlandı.',
         imza_durumu: isSigned ? 'IMZALANDI' : 'BEKLIYOR',
-        imza_tarihi: isSigned ? localTimeStr : null
+        imza_tarihi: isSigned ? localTimeStr : null,
+        syncTime: pulseTime
       });
     }
 
@@ -598,27 +599,54 @@ export async function POST(request: NextRequest) {
     // ACTION 7: BULK_SIGN (Toplu İmza Al)
     // ==========================================
     if (action === 'BULK_SIGN') {
-      const { beneficiary_ids = [], imza_alan_personel = 'İmza Ekibi' } = body;
+      const { 
+        beneficiary_ids = [], 
+        imza_durumu = 'IMZALANDI',
+        imza_alan_personel = 'İmza Ekibi' 
+      } = body;
       if (!Array.isArray(beneficiary_ids) || beneficiary_ids.length === 0) {
         return NextResponse.json({ success: false, error: 'En az bir hane seçilmelidir' }, { status: 400 });
       }
 
+      const isSigned = imza_durumu === 'IMZALANDI';
       const idFilters = beneficiary_ids.map((id: string) => buildIdFilter(id));
       await benCol.updateMany({ $or: idFilters }, {
         $set: {
-          imza_durumu: 'IMZALANDI',
-          imza_tarihi: localTimeStr,
-          imza_alan_personel: (imza_alan_personel || 'İmza Ekibi').trim(),
+          imza_durumu: isSigned ? 'IMZALANDI' : 'BEKLIYOR',
+          imza_tarihi: isSigned ? localTimeStr : null,
+          imza_alan_personel: isSigned ? (imza_alan_personel || 'İmza Ekibi').trim() : null,
           updated_at: localTimeStr
         }
       });
 
+      // Aktif rotalardaki durakları senkronize et
+      const activeRouteDocs = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      const idSet = new Set(beneficiary_ids.map(String));
+      for (const activeDoc of activeRouteDocs) {
+        const stops = activeDoc.duraklar || [];
+        let modified = false;
+        stops.forEach((s: any) => {
+          if (idSet.has(String(s.beneficiary_id))) {
+            s.imza_durumu = isSigned ? 'IMZALANDI' : 'BEKLIYOR';
+            s.imza_tarihi = isSigned ? localTimeStr : null;
+            s.imza_alan_personel = isSigned ? (imza_alan_personel || 'İmza Ekibi').trim() : null;
+            modified = true;
+          }
+        });
+        if (modified) {
+          await routeCol.updateOne(buildIdFilter(activeDoc.id || activeDoc._id), {
+            $set: { duraklar: stops, updated_at: localTimeStr }
+          });
+        }
+      }
+
       // Invalidate cache & pulse sync across devices
-      await touchSyncPulse('Toplu İmza');
+      const pulseTime = await touchSyncPulse('Toplu İmza');
 
       return NextResponse.json({
         success: true,
-        message: `${beneficiary_ids.length} hane için kapıda imza başarıyla kaydedildi.`
+        message: `${beneficiary_ids.length} hane için kapıda imza başarıyla kaydedildi.`,
+        syncTime: pulseTime
       });
     }
 

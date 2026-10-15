@@ -124,6 +124,13 @@ export default function BeneficiaryList({
       if (data.success) {
         setSelectedIds(new Set());
         setIsBulkSignMode(false);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('komur_bulk_signed', {
+              detail: { ids: idsArray, syncTime: data.syncTime }
+            })
+          );
+        }
       } else {
         alert(data.error || 'İmzalar toplu olarak kaydedilemedi');
       }
@@ -1049,8 +1056,8 @@ export default function BeneficiaryList({
         </>
       )}
 
-      {/* Loading state */}
-      {isLoading && (
+      {/* Loading state: Sadece hafızada hiç kayıt yokken ilk yükleme spinner'ı göster */}
+      {isLoading && records.length === 0 && (
         <div className="p-12 text-center text-slate-500">
           <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
           <p className="text-sm font-semibold">Kayıtlar listeleniyor...</p>
@@ -1058,7 +1065,7 @@ export default function BeneficiaryList({
       )}
 
       {/* Empty State */}
-      {!isLoading && activeDisplayList.length === 0 && (
+      {(!isLoading || records.length > 0) && activeDisplayList.length === 0 && (
         isSearching ? (
           <div className="p-8 text-center rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
@@ -1096,10 +1103,10 @@ export default function BeneficiaryList({
       )}
 
       {/* Top Pagination Bar */}
-      {!isLoading && totalFilteredRecords > 0 && renderPaginationBar('top')}
+      {(!isLoading || records.length > 0) && totalFilteredRecords > 0 && renderPaginationBar('top')}
 
       {/* Grouped by Neighborhood / Village - Light Mode */}
-      {!isLoading && mahalleKeys.map((mahalleName) => {
+      {(!isLoading || records.length > 0) && mahalleKeys.map((mahalleName) => {
         const citizens = groupedByMahalle[mahalleName];
         const incompleteCount = citizens.filter((c) => c.teslimat_durumu === 'EKSIK').length;
         const isKoy = citizens.some((c) => c.yerlesim_tipi === 'KOY') || /(?:Köyü|Koy|Koyu)$/i.test(mahalleName);
@@ -1705,7 +1712,7 @@ export default function BeneficiaryList({
       })}
 
       {/* Bottom Pagination Bar */}
-      {!isLoading && totalFilteredRecords > 0 && renderPaginationBar('bottom')}
+      {(!isLoading || records.length > 0) && totalFilteredRecords > 0 && renderPaginationBar('bottom')}
 
       {/* Floating Bulk Sign & Route Bar */}
       {isBulkSignMode && selectedIds.size > 0 && (
