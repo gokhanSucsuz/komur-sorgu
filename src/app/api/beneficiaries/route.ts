@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, buildIdFilter, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, buildIdFilter, mapDocs, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import {
   cleanTcNo,
   normalizeAddress,
@@ -30,8 +30,11 @@ export async function GET(request: NextRequest) {
     const durum = (searchParams.get('durum') || '').trim();
     const targetTc = (searchParams.get('targetTc') || '').trim();
     const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '500', 10);
-    const skip = (page - 1) * limit;
+    const rawLimit = searchParams.get('limit');
+    const limit = (rawLimit === '0' || rawLimit === 'ALL' || rawLimit === 'all' || !rawLimit)
+      ? 0
+      : parseInt(rawLimit, 10);
+    const skip = limit > 0 ? (page - 1) * limit : 0;
 
     // Special Query: If looking up a specific TC to show person AND household relatives
     if (targetTc) {
@@ -145,12 +148,12 @@ export async function GET(request: NextRequest) {
     if (!q) {
       // Direct fast MongoDB query with sorting and pagination
       total = await benCol.countDocuments(filter);
-      const rawRecords = await benCol
+      let query = benCol
         .find(filter)
-        .sort({ mahalle: 1, ek_liste_no: 1, mahalle_sira: 1 })
-        .skip(skip)
-        .limit(limit)
-        .toArray();
+        .sort({ mahalle: 1, ek_liste_no: 1, mahalle_sira: 1 });
+      if (skip > 0) query = query.skip(skip);
+      if (limit > 0) query = query.limit(limit);
+      const rawRecords = await query.toArray();
 
       records = mapDocs(rawRecords).map((r: any) => {
         r.hedef_torba = r.hedef_torba || 34;
@@ -199,7 +202,8 @@ export async function GET(request: NextRequest) {
         });
 
         total = filtered.length;
-        records = filtered.slice(skip, skip + limit).map((r: any) => {
+        const sliced = (limit > 0) ? filtered.slice(skip, skip + limit) : (skip > 0 ? filtered.slice(skip) : filtered);
+        records = sliced.map((r: any) => {
           r.hedef_torba = r.hedef_torba || 34;
           r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
           return r;
@@ -279,6 +283,7 @@ export async function GET(request: NextRequest) {
       total,
       page,
       limit,
+      totalPages: limit > 0 ? Math.ceil(total / limit) : 1,
       mahalleler,
       eksikHaneler,
       eksikSayisi: mappedEksik.length,
@@ -604,6 +609,9 @@ export async function PUT(request: NextRequest) {
 
     // Veritabanı güncellemesi
     await benCol.updateOne(buildIdFilter(id), { $set: updateSet });
+
+    // Invalidate client cache and trigger sync pulse across all devices
+    await touchSyncPulse(updated_by || 'Adres Güncelleme');
 
     // 6. Denetim ve Faaliyet Kaydı (Audit Log)
     await recordActivityLog({

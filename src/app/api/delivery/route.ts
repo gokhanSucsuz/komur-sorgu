@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptField, encryptDeliveryHistory } from '@/lib/crypto';
 
 export async function POST(request: NextRequest) {
@@ -111,17 +111,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Update sync pulse in systemSettings so other clients auto-refresh
-      try {
-        const { systemSettings } = await getDbCollections();
-        await systemSettings.updateOne(
-          { key: 'last_delivery_sync_time' },
-          { $set: { key: 'last_delivery_sync_time', value: nowIso, updated_by: staff } },
-          { upsert: true }
-        );
-      } catch (pulseErr) {
-        // Non-blocking
-      }
+      // Update sync pulse in systemSettings so other clients auto-refresh & invalidate cache
+      await touchSyncPulse(staff);
 
       // Add to delivery history (AES-256-GCM Şifreli)
       await histCol.insertOne(encryptDeliveryHistory({
@@ -214,6 +205,9 @@ export async function POST(request: NextRequest) {
         hedef_tc: beneficiary.tc_no,
         mahalle: beneficiary.mahalle,
       });
+
+      // Update sync pulse in systemSettings so other clients auto-refresh & invalidate cache
+      await touchSyncPulse(staff);
 
       return NextResponse.json({
         success: true,

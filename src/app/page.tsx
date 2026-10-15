@@ -130,6 +130,13 @@ export default function Home() {
     localStorage.removeItem('komur_user_role');
     localStorage.removeItem('komur_user_name');
     localStorage.removeItem('komur_username');
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem('komur_beneficiaries_cache');
+      } catch (e) {
+        // ignore
+      }
+    }
     // Clear data from memory for security
     setBeneficiaries([]);
     setEksikHaneler([]);
@@ -158,29 +165,62 @@ export default function Home() {
     localStorage.setItem('komur_user_name', name);
   };
 
-  // Fetch beneficiaries only when authenticated
-  const fetchBeneficiaries = useCallback(async () => {
+  // Fetch beneficiaries with smart client caching & instant restoration
+  const fetchBeneficiaries = useCallback(async (force: boolean = false) => {
+    // If not forced refresh, check sessionStorage cache first
+    if (!force && typeof window !== 'undefined') {
+      try {
+        const cachedRaw = sessionStorage.getItem('komur_beneficiaries_cache');
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (parsed && Array.isArray(parsed.data) && parsed.data.length > 0) {
+            setBeneficiaries(parsed.data);
+            setMahalleler(parsed.mahalleler || []);
+            setEksikHaneler(parsed.eksikHaneler || []);
+            setIsLoadingBeneficiaries(false);
+            return;
+          }
+        }
+      } catch (cacheErr) {
+        // Fallback to network fetch
+      }
+    }
+
     setIsLoadingBeneficiaries(true);
     try {
       const params = new URLSearchParams({
-        q: debouncedSearchQuery,
-        mahalleler: selectedMahalleler.join(','),
         durum: 'HEPSI',
-        limit: '500'
+        limit: '0'
       });
       const res = await fetch(`/api/beneficiaries?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
-        setBeneficiaries(data.data || []);
-        setMahalleler(data.mahalleler || []);
-        setEksikHaneler(data.eksikHaneler || []);
+        const records = data.data || [];
+        const mList = data.mahalleler || [];
+        const eksikList = data.eksikHaneler || [];
+        setBeneficiaries(records);
+        setMahalleler(mList);
+        setEksikHaneler(eksikList);
+
+        // Cache in sessionStorage for zero-latency subsequent views
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
+              data: records,
+              mahalleler: mList,
+              eksikHaneler: eksikList
+            }));
+          } catch (e) {
+            // Ignore quota errors if storage full
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching beneficiaries:', err);
     } finally {
       setIsLoadingBeneficiaries(false);
     }
-  }, [debouncedSearchQuery, selectedMahalleler]);
+  }, []);
 
   // Fetch Delivery History only when authenticated
   const fetchArchive = useCallback(async () => {
@@ -293,7 +333,7 @@ export default function Home() {
     setIsRefreshing(true);
     setShiftRefreshKey((k) => k + 1);
     await Promise.all([
-      fetchBeneficiaries(),
+      fetchBeneficiaries(true), // Force reload from server
       fetchArchive(),
       fetchTrucks(),
       fetchStats(),
@@ -384,7 +424,7 @@ export default function Home() {
           } else if (data.lastSyncTime !== lastKnownSyncRef.current) {
             // New delivery or update occurred across field staff!
             lastKnownSyncRef.current = data.lastSyncTime;
-            fetchBeneficiaries();
+            fetchBeneficiaries(true);
             fetchArchive();
             fetchStats();
             fetchActiveRouteCount();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
-import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
@@ -554,6 +554,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Invalidate cache & pulse sync across devices
+      await touchSyncPulse('İmza Güncellendi');
+
       return NextResponse.json({
         success: true,
         message: isSigned
@@ -582,6 +585,9 @@ export async function POST(request: NextRequest) {
           updated_at: localTimeStr
         }
       });
+
+      // Invalidate cache & pulse sync across devices
+      await touchSyncPulse('Toplu İmza');
 
       return NextResponse.json({
         success: true,

@@ -948,4 +948,23 @@ export async function migrateMahalleNames(db?: Db | null) {
   }
 }
 
+/**
+ * Update sync pulse in systemSettings so all active browsers and workers auto-detect dataset changes
+ */
+export async function touchSyncPulse(updatedBy: string = 'Sistem'): Promise<string> {
+  const nowIso = new Date().toISOString();
+  try {
+    const { systemSettings } = await getDbCollections();
+    await systemSettings.updateOne(
+      { key: 'last_delivery_sync_time' },
+      { $set: { key: 'last_delivery_sync_time', value: nowIso, updated_by: updatedBy } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('Error touching sync pulse:', err);
+  }
+  return nowIso;
+}
+
+
 

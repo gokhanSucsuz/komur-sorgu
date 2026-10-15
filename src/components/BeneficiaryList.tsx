@@ -3,12 +3,22 @@
 import { useState, useMemo, useEffect } from 'react';
 import { 
   Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, 
-  CheckCircle2, Clock, Filter, AlertCircle, ChevronRight, ChevronDown, AlertTriangle, 
+  CheckCircle2, Clock, Filter, AlertCircle, ChevronRight, ChevronDown, ChevronLeft,
+  ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
   List, LayoutGrid, Edit3
 } from 'lucide-react';
-import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo } from '@/lib/normalizer';
+import { 
+  getRecordPhones, 
+  formatPhoneDisplay, 
+  getRecordStreetInfo, 
+  compareByAddressAsc, 
+  compareBySiraNo,
+  cleanTurkishText,
+  cleanTcNo,
+  turkishIncludes
+} from '@/lib/normalizer';
 
 interface BeneficiaryListProps {
   records: any[];
@@ -62,11 +72,20 @@ export default function BeneficiaryList({
   const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
 
+  // Sayfalama Durumu (Kullanıcı isteği doğrultusunda sayfa başına varsayılan 250 kayıt)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(250);
+
   // Bulk Signature & Signature Status Filter
   const [isBulkSignMode, setIsBulkSignMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [signatureFilter, setSignatureFilter] = useState<'ALL' | 'SIGNED' | 'UNSIGNED'>('ALL');
   const [isBulkSignLoading, setIsBulkSignLoading] = useState(false);
+
+  // Filtre veya arama değiştiğinde sayfa numarasını otomatik olarak 1'e sıfırla
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedMahalleler, selectedSokak, selectedDurumFilter, selectedQueueTab, signatureFilter]);
 
   const handleToggleCardSelect = (personId: string) => {
     setSelectedIds((prev) => {
@@ -210,13 +229,41 @@ export default function BeneficiaryList({
 
   const isSearching = Boolean(searchQuery && searchQuery.trim().length > 0);
 
+  // In-memory Turkish-aware search across all cached records
+  const searchFilteredRecords = useMemo(() => {
+    if (!isSearching) return [];
+    const qClean = cleanTurkishText(searchQuery);
+    const qDigits = searchQuery.replace(/\D/g, '');
+    return records.filter((r) => {
+      if (qClean && turkishIncludes(r.ad_soyad || '', qClean)) return true;
+      if (qClean && turkishIncludes(r.acik_adres || '', qClean)) return true;
+      if (qClean && turkishIncludes(r.mahalle || '', qClean)) return true;
+      if (qClean && turkishIncludes(r.sokak || '', qClean)) return true;
+      if (qClean && r.hane_no && turkishIncludes(String(r.hane_no), qClean)) return true;
+      if (qDigits && qDigits.length >= 3) {
+        if (r.tc_no && String(r.tc_no).includes(qDigits)) return true;
+        if (r.telefon && String(r.telefon).includes(qDigits)) return true;
+        if (r.telefon2 && String(r.telefon2).includes(qDigits)) return true;
+      }
+      return false;
+    });
+  }, [records, isSearching, searchQuery]);
+
   // Active list to display based on search mode or selectedQueueTab
-  // When searching, display ALL matching records directly so field staff finds anyone instantly
   const activeDisplayList = isSearching
-    ? records
+    ? searchFilteredRecords
     : selectedQueueTab === 'PENDING_AND_PARTIAL'
     ? filteredPendingRecords
     : deliveredRecords;
+
+  // Filter by selected neighborhoods (if any)
+  const mahalleFilteredList = useMemo(() => {
+    if (!selectedMahalleler || selectedMahalleler.length === 0) {
+      return activeDisplayList;
+    }
+    const set = new Set(selectedMahalleler);
+    return activeDisplayList.filter((r) => set.has(r.mahalle));
+  }, [activeDisplayList, selectedMahalleler]);
 
   const totalPendingCount = allPendingRecords.length;
   const eksikCount = allPendingRecords.filter((r) => r.teslimat_durumu === 'EKSIK').length;
@@ -225,7 +272,7 @@ export default function BeneficiaryList({
   // Extract all available streets across current active records
   const availableStreets = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of activeDisplayList) {
+    for (const r of mahalleFilteredList) {
       const st = getRecordStreetInfo(r);
       const sName = st.sokak || 'Köy İçi / Ana Yol';
       map.set(sName, (map.get(sName) || 0) + 1);
@@ -233,7 +280,7 @@ export default function BeneficiaryList({
     return Array.from(map.entries())
       .map(([sokak, count]) => ({ sokak, count }))
       .sort((a, b) => a.sokak.localeCompare(b.sokak, 'tr'));
-  }, [activeDisplayList]);
+  }, [mahalleFilteredList]);
 
   // If selected street is no longer present, reset to HEPSI
   useEffect(() => {
@@ -251,7 +298,7 @@ export default function BeneficiaryList({
 
   // Filter records by selected street and signature status
   const streetFilteredList = useMemo(() => {
-    let list = activeDisplayList;
+    let list = mahalleFilteredList;
     if (selectedSokak !== 'HEPSI') {
       list = list.filter((r) => {
         const st = getRecordStreetInfo(r);
@@ -271,12 +318,24 @@ export default function BeneficiaryList({
       });
     }
     return list;
-  }, [activeDisplayList, selectedSokak, signatureFilter, localSignatures]);
+  }, [mahalleFilteredList, selectedSokak, signatureFilter, localSignatures]);
 
-  // Group active records by mahalle / village
+  // Sayfalama Hesaplamaları (Sayfa başına varsayılan 250 kayıt)
+  const totalFilteredRecords = streetFilteredList.length;
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(totalFilteredRecords / pageSize)) : 1;
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = pageSize > 0 ? (safeCurrentPage - 1) * pageSize : 0;
+  const endIndex = pageSize > 0 ? Math.min(startIndex + pageSize, totalFilteredRecords) : totalFilteredRecords;
+
+  const pagedList = useMemo(() => {
+    if (pageSize <= 0) return streetFilteredList;
+    return streetFilteredList.slice(startIndex, endIndex);
+  }, [streetFilteredList, startIndex, endIndex, pageSize]);
+
+  // Group active records of CURRENT PAGE by mahalle / village
   const groupedByMahalle = useMemo(() => {
     const groups: Record<string, any[]> = {};
-    for (const r of streetFilteredList) {
+    for (const r of pagedList) {
       const m = r.mahalle || 'Belirtilmemiş';
       if (!groups[m]) {
         groups[m] = [];
@@ -294,9 +353,175 @@ export default function BeneficiaryList({
       }
     });
     return groups;
-  }, [streetFilteredList, sortOrder]);
+  }, [pagedList, sortOrder]);
 
   const mahalleKeys = Object.keys(groupedByMahalle).sort((a, b) => a.localeCompare(b, 'tr'));
+
+  // Sayfa numaralandırma penceresi
+  const visiblePageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: number[] = [];
+    pages.push(1);
+    if (safeCurrentPage > 3) {
+      pages.push(-1); // Ellipsis
+    }
+    const start = Math.max(2, safeCurrentPage - 1);
+    const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+    for (let p = start; p <= end; p++) {
+      pages.push(p);
+    }
+    if (safeCurrentPage < totalPages - 2) {
+      pages.push(-1); // Ellipsis
+    }
+    pages.push(totalPages);
+    return pages;
+  }, [totalPages, safeCurrentPage]);
+
+  const handlePageChange = (newPage: number) => {
+    const target = Math.min(Math.max(1, newPage), totalPages);
+    setCurrentPage(target);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 120, behavior: 'smooth' });
+    }
+  };
+
+  // Modern Sayfalama Çubuğu Bileşeni (Üst ve Alt için Ortak)
+  const renderPaginationBar = (position: 'top' | 'bottom') => {
+    if (totalFilteredRecords === 0) return null;
+    return (
+      <div className={`p-3 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3 ${
+        position === 'top' ? 'mb-2' : 'mt-4'
+      }`}>
+        {/* Sol Taraf: Sayfa ve Kayıt Göstergesi + Sayfa Boyutu Seçici */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <span className="font-medium">
+            Sayfa <strong className="text-slate-900 font-black">{safeCurrentPage}</strong> / <strong className="text-slate-900 font-black">{totalPages}</strong>
+          </span>
+          <span className="text-slate-300">•</span>
+          <span>
+            Toplam <strong className="text-amber-800 font-black">{totalFilteredRecords.toLocaleString('tr-TR')}</strong> Hane
+            {totalFilteredRecords > 0 && (
+              <> (Bu Sayfada: <strong className="text-slate-900 font-bold">{startIndex + 1} - {endIndex}</strong>)</>
+            )}
+          </span>
+
+          <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-200">
+            <span className="text-[11px] text-slate-400 font-bold">Sayfa Başı:</span>
+            {[100, 250, 500].map((size) => (
+              <button
+                key={size}
+                type="button"
+                onClick={() => {
+                  setPageSize(size);
+                  setCurrentPage(1);
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-extrabold transition-all ${
+                  pageSize === size
+                    ? 'bg-amber-500 text-white shadow-2xs font-black'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title={`Her sayfada ${size} kayıt göster`}
+              >
+                {size}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setPageSize(0);
+                setCurrentPage(1);
+              }}
+              className={`px-2 py-0.5 rounded-lg text-[11px] font-extrabold transition-all ${
+                pageSize === 0
+                  ? 'bg-amber-500 text-white shadow-2xs font-black'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+              title="Tüm kayıtları tek sayfada göster"
+            >
+              Tümü
+            </button>
+          </div>
+        </div>
+
+        {/* Sağ Taraf: Sayfa Butonları */}
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              disabled={safeCurrentPage === 1}
+              onClick={() => handlePageChange(1)}
+              className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none text-slate-700 transition-colors"
+              title="İlk Sayfa"
+              aria-label="İlk Sayfa"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              disabled={safeCurrentPage === 1}
+              onClick={() => handlePageChange(safeCurrentPage - 1)}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none text-xs font-bold text-slate-700 flex items-center gap-1 transition-colors"
+              title="Önceki Sayfa"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Önceki</span>
+            </button>
+
+            <div className="flex items-center gap-1">
+              {visiblePageNumbers.map((p, idx) => {
+                if (p === -1) {
+                  return (
+                    <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 font-bold text-xs select-none">
+                      •••
+                    </span>
+                  );
+                }
+                const isActive = p === safeCurrentPage;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handlePageChange(p)}
+                    className={`min-w-[32px] h-8 px-2 rounded-xl text-xs font-black transition-all ${
+                      isActive
+                        ? 'bg-amber-500 text-white shadow-xs scale-105'
+                        : 'border border-slate-200 hover:bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              disabled={safeCurrentPage === totalPages}
+              onClick={() => handlePageChange(safeCurrentPage + 1)}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none text-xs font-bold text-slate-700 flex items-center gap-1 transition-colors"
+              title="Sonraki Sayfa"
+            >
+              <span className="hidden sm:inline">Sonraki</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={safeCurrentPage === totalPages}
+              onClick={() => handlePageChange(totalPages)}
+              className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none text-slate-700 transition-colors"
+              title="Son Sayfa"
+              aria-label="Son Sayfa"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   return (
     <div className="space-y-4">
@@ -684,12 +909,26 @@ export default function BeneficiaryList({
                   type="button"
                   onClick={() => {
                     const allIds = new Set<string>();
-                    streetFilteredList.forEach((r) => allIds.add(String(r.id)));
+                    pagedList.forEach((r) => allIds.add(String(r.id)));
                     setSelectedIds(allIds);
                   }}
                   className="text-emerald-800 hover:text-emerald-950 underline"
+                  title="Sadece mevcut sayfadaki haneleri seç"
                 >
-                  Görünen Tümünü Seç
+                  Bu Sayfayı Seç ({pagedList.length})
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allIds = new Set<string>();
+                    streetFilteredList.forEach((r) => allIds.add(String(r.id)));
+                    setSelectedIds(allIds);
+                  }}
+                  className="text-sky-800 hover:text-sky-950 underline"
+                  title="Filtrelenmiş tüm sayfalardaki haneleri seç"
+                >
+                  Tüm Sayfaları Seç ({streetFilteredList.length})
                 </button>
                 <span>•</span>
                 <button
@@ -697,7 +936,7 @@ export default function BeneficiaryList({
                   onClick={() => setSelectedIds(new Set())}
                   className="text-rose-700 hover:text-rose-900 underline"
                 >
-                  Seçimi Temizle
+                  Temizle
                 </button>
               </div>
             </div>
@@ -855,6 +1094,9 @@ export default function BeneficiaryList({
           </div>
         )
       )}
+
+      {/* Top Pagination Bar */}
+      {!isLoading && totalFilteredRecords > 0 && renderPaginationBar('top')}
 
       {/* Grouped by Neighborhood / Village - Light Mode */}
       {!isLoading && mahalleKeys.map((mahalleName) => {
@@ -1461,6 +1703,9 @@ export default function BeneficiaryList({
           </div>
         );
       })}
+
+      {/* Bottom Pagination Bar */}
+      {!isLoading && totalFilteredRecords > 0 && renderPaginationBar('bottom')}
 
       {/* Floating Bulk Sign & Route Bar */}
       {isBulkSignMode && selectedIds.size > 0 && (

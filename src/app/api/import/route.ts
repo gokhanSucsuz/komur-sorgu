@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import { getDbCollections, recordActivityLog, mapDocs } from '@/lib/mongodb';
+import { getDbCollections, recordActivityLog, mapDocs, touchSyncPulse } from '@/lib/mongodb';
 import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
 import { 
   cleanTcNo, 
@@ -765,6 +765,9 @@ export async function POST(request: NextRequest) {
     const mukerrerTcCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_TC').length;
     const mukerrerHaneCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_HANE').length;
     const hataliCount = toInsertLogs.filter(l => l.durum === 'HATALI').length;
+
+    // Trigger instant synchronization pulse for all clients & invalidate cache
+    await touchSyncPulse('Excel Yükleme');
 
     return NextResponse.json({
       success: true,

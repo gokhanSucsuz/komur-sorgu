@@ -28,6 +28,29 @@ function sanitizeSheetName(name: string, seenNames: Set<string>): string {
 }
 
 /**
+ * Generates an RFC 6266 / RFC 5987 compliant Content-Disposition header.
+ * Encodes Unicode/Turkish characters safely using filename*=UTF-8'' while
+ * providing a transliterated ASCII fallback to avoid Node.js ByteString (char > 255)
+ * crashes that cause "Siteye ulaşılamadı" errors in browsers.
+ */
+function buildContentDispositionHeader(filename: string): string {
+  const asciiFallback = filename
+    .replace(/[çÇ]/g, 'c')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[ıİiîÎ]/g, 'i')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[üÜûÛ]/g, 'u')
+    .replace(/[^a-zA-Z0-9._ -]/g, '_');
+
+  const utf8Encoded = encodeURIComponent(filename)
+    .replace(/['()]/g, escape)
+    .replace(/\*/g, '%2A');
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`;
+}
+
+/**
  * Creates an official state foundation standard worksheet with institutional header block
  */
 function createOfficialWorksheet(
@@ -130,9 +153,9 @@ export async function GET(request: NextRequest) {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
-          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Komur_Yukleme_Sablonu.xlsx"',
+          'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Komur_Yukleme_Sablonu.xlsx'),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
@@ -213,9 +236,9 @@ export async function GET(request: NextRequest) {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Teslimat Listesi');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
-          'Content-Disposition': `attachment; filename="Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx"`,
+          'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx`),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
@@ -283,9 +306,9 @@ export async function GET(request: NextRequest) {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
-          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"',
+          'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx'),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
@@ -585,9 +608,9 @@ export async function GET(request: NextRequest) {
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       const downloadFilename = `Edirne_SYDV_${cleanFileBase}_Mahalle_Sekmeli.xlsx`;
 
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
-          'Content-Disposition': `attachment; filename="${downloadFilename}"`,
+          'Content-Disposition': buildContentDispositionHeader(downloadFilename),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
@@ -658,9 +681,9 @@ export async function GET(request: NextRequest) {
         ? `Edirne_SYDV_Elenen_Kayitlar_${batchId}.xlsx`
         : 'Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx';
 
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
-          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Disposition': buildContentDispositionHeader(filename),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
@@ -713,9 +736,9 @@ export async function GET(request: NextRequest) {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Islem Loglari');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-      return new NextResponse(buf, {
+      return new NextResponse(new Uint8Array(buf), {
         headers: {
-          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx"',
+          'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx'),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });

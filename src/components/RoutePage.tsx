@@ -81,7 +81,7 @@ export default function RoutePage({
   // Fetch pending beneficiaries for custom route building
   const fetchPendingBeneficiaries = useCallback(async () => {
     try {
-      const res = await fetch('/api/beneficiaries?durum=HEPSI&limit=500');
+      const res = await fetch('/api/beneficiaries?durum=HEPSI&limit=0');
       const data = await res.json();
       if (data.success && data.data) {
         const pending = data.data.filter((b: any) => b.teslimat_durumu !== 'TAMAMLANDI');
