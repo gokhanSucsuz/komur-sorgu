@@ -2106,8 +2106,8 @@ export default function RoutePage({
                     <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
                       <th className="p-2.5 text-center w-10">Sıra</th>
                       <th className="p-2.5 w-28">T.C. Kimlik No</th>
-                      <th className="p-2.5">Hak Sahibi Adı Soyadı</th>
-                      <th className="p-2.5">Mahalle / Sokak / Kapı</th>
+                      <th className="p-2.5 w-36">Hak Sahibi</th>
+                      <th className="p-2.5 w-44">Adres & Yerleşim</th>
                       <th className="p-2.5 text-center w-24">Teslimat</th>
                       <th className="p-2.5 text-center w-24">Durum</th>
                       <th className="p-2.5 text-center w-28">İmza / Teslim Alan</th>
@@ -2122,8 +2122,8 @@ export default function RoutePage({
                         <tr key={index} className="hover:bg-slate-50 transition-colors">
                           <td className="p-2.5 text-center font-bold text-slate-500">{stop.sira || index + 1}</td>
                           <td className="p-2.5 font-mono text-slate-800 font-semibold">{stop.tc_no || '-'}</td>
-                          <td className="p-2.5 font-bold text-slate-900">{stop.ad_soyad}</td>
-                          <td className="p-2.5 text-slate-600">
+                          <td className="p-2.5 font-bold text-slate-900 break-words whitespace-normal max-w-[140px] leading-snug">{stop.ad_soyad}</td>
+                          <td className="p-2.5 text-slate-600 break-words whitespace-normal max-w-[180px] leading-snug">
                             <span className="font-semibold text-slate-900">{stop.mahalle}</span>
                             {stop.sokak && <span className="block text-[11px] text-slate-500 font-medium">{stop.sokak} No: {stop.kapi_no || '-'}</span>}
                           </td>

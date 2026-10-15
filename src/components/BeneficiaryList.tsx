@@ -1150,12 +1150,12 @@ export default function BeneficiaryList({
                 <table className="desktop-compact-table">
                   <thead>
                     <tr>
-                      <th className="w-16 text-center">Sıra No</th>
-                      <th className="min-w-[190px]">Hak Sahibi (Ad Soyad)</th>
-                      <th className="min-w-[130px] whitespace-nowrap">T.C. Kimlik No</th>
-                      <th className="min-w-[140px] whitespace-nowrap">Telefon Numarası</th>
-                      <th>Adres & Yerleşim Bilgisi</th>
-                      <th className="min-w-[130px] whitespace-nowrap">Kömür Durumu</th>
+                      <th className="w-14 text-center">Sıra</th>
+                      <th className="col-hak-sahibi">Hak Sahibi</th>
+                      <th className="w-[110px] whitespace-nowrap">T.C. Kimlik</th>
+                      <th className="w-[125px] whitespace-nowrap">Telefon</th>
+                      <th className="col-adres">Adres & Yerleşim</th>
+                      <th className="w-[130px] whitespace-nowrap">Kömür Durumu</th>
                       <th className="text-right whitespace-nowrap">Hızlı İşlem</th>
                     </tr>
                   </thead>
@@ -1173,17 +1173,19 @@ export default function BeneficiaryList({
                       return (
                         <tr key={person.id} className={isPartial ? 'row-incomplete' : ''}>
                           {/* Sıra No (İmza Listesi Sırası: 1, 2... veya Ek1 - 1, Ek1 - 2...) */}
-                          <td className="text-center font-mono font-black">
-                            <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs">
+                          <td className="text-center font-mono font-black w-14">
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs">
                               #{person.sira_no || person.mahalle_sira || person.id}
                             </span>
                           </td>
 
-                          {/* Adı Soyadı */}
-                          <td className="max-w-[280px]">
+                          {/* Hak Sahibi (Daraltılmış & Aşağı Doğru Uzayan) */}
+                          <td className="col-hak-sahibi">
                             <div className="flex flex-col gap-1 py-0.5 min-w-0">
-                              <div className="font-extrabold text-slate-900 text-sm leading-tight flex items-center gap-1.5 flex-wrap">
+                              <div className="font-extrabold text-slate-900 text-sm leading-snug break-words whitespace-normal">
                                 <span>{person.ad_soyad}</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1 min-w-0">
                                 {hasHouseholdDuplicate && (
                                   <button
                                     type="button"
@@ -1197,39 +1199,35 @@ export default function BeneficiaryList({
                                     Aynı Hane
                                   </button>
                                 )}
+                                {person.fiili_adres_guncellendi && (
+                                  <span
+                                    className="text-[10px] font-bold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 inline-flex items-center gap-0.5 shrink-0"
+                                    title="Fiili ikamet adresi güncellendi"
+                                  >
+                                    <MapPin className="w-2.5 h-2.5 text-sky-600 shrink-0" />
+                                    <span>Fiili</span>
+                                  </span>
+                                )}
                               </div>
-                              {(person.uyari_notu || person.fiili_adres_guncellendi) && (
-                                <div className="flex flex-wrap items-center gap-1 min-w-0">
-                                  {person.fiili_adres_guncellendi && (
-                                    <span
-                                      className="text-[10px] font-bold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 inline-flex items-center gap-0.5 shrink-0"
-                                      title="Fiili ikamet adresi güncellendi"
-                                    >
-                                      <MapPin className="w-2.5 h-2.5 text-sky-600 shrink-0" />
-                                      <span>Fiili İkamet</span>
-                                    </span>
-                                  )}
-                                  {person.uyari_notu && (
-                                    <span
-                                      className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300 font-bold inline-flex items-center gap-1 max-w-[250px] truncate shadow-2xs"
-                                      title={person.uyari_notu}
-                                    >
-                                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                                      <span className="truncate">{person.uyari_notu}</span>
-                                    </span>
-                                  )}
+                              {person.uyari_notu && (
+                                <div
+                                  className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300 font-bold flex items-start gap-1 break-words whitespace-normal leading-tight shadow-2xs mt-0.5"
+                                  title={person.uyari_notu}
+                                >
+                                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
+                                  <span className="break-words">{person.uyari_notu}</span>
                                 </div>
                               )}
                             </div>
                           </td>
 
                           {/* T.C. Kimlik No */}
-                          <td className="font-mono text-xs font-bold text-slate-700 whitespace-nowrap min-w-[130px]">
+                          <td className="font-mono text-xs font-bold text-slate-700 whitespace-nowrap w-[110px]">
                             {person.tc_no}
                           </td>
 
                           {/* Telefon */}
-                          <td>
+                          <td className="whitespace-nowrap w-[125px]">
                             {phones.length > 0 ? (
                               <div className="flex items-center gap-1.5">
                                 <a
@@ -1237,11 +1235,11 @@ export default function BeneficiaryList({
                                   className="inline-flex items-center gap-1 text-xs text-emerald-800 font-bold hover:underline bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200"
                                   title={`${formatPhoneDisplay(phones[0])} Ara`}
                                 >
-                                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                                  <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                   <span>{formatPhoneDisplay(phones[0])}</span>
                                 </a>
                                 {phones.length > 1 && (
-                                  <span className="text-[10px] font-extrabold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">
+                                  <span className="text-[10px] font-extrabold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded shrink-0">
                                     +{phones.length - 1}
                                   </span>
                                 )}
@@ -1251,22 +1249,29 @@ export default function BeneficiaryList({
                             )}
                           </td>
 
-                          {/* Adres Bilgisi */}
-                          <td>
-                            <div className="text-xs text-slate-700 max-w-sm">
-                              <div className="font-bold text-sky-950 flex items-center gap-1">
-                                <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
-                                <span>{stInfo.sokak} No: {stInfo.kapiNo !== 999999 ? stInfo.kapiNo : (person.hane_no || '-')}</span>
-                                {stInfo.daireNo > 0 && <span className="text-sky-700">D: {stInfo.daireNo}</span>}
-                                {person.fiili_adres_guncellendi && (
-                                  <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 ml-1 shrink-0" title="Fiili ikamet adresi güncellendi">
-                                    Fiili İkamet
-                                  </span>
-                                )}
+                          {/* Adres & Yerleşim (Daraltılmış & Aşağı Doğru Uzayan) */}
+                          <td className="col-adres">
+                            <div className="text-xs text-slate-700 min-w-0 flex flex-col gap-0.5">
+                              <div className="font-bold text-sky-950 flex items-start gap-1 break-words whitespace-normal leading-snug">
+                                <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
+                                <div className="min-w-0 flex-1 break-words">
+                                  <span>{stInfo.sokak} No: {stInfo.kapiNo !== 999999 ? stInfo.kapiNo : (person.hane_no || '-')}</span>
+                                  {stInfo.daireNo > 0 && <span className="text-sky-700 ml-1">D: {stInfo.daireNo}</span>}
+                                  {person.fiili_adres_guncellendi && (
+                                    <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1 py-0.2 rounded border border-sky-300 ml-1 inline-block shrink-0" title="Fiili ikamet adresi güncellendi">
+                                      Fiili İkamet
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                              <span className="text-slate-500 block text-[11px] truncate mt-0.5" title={person.acik_adres}>
-                                {person.acik_adres}
-                              </span>
+                              {person.acik_adres && (
+                                <span
+                                  className="text-slate-500 block text-[11px] leading-snug break-words whitespace-normal mt-0.5"
+                                  title={person.acik_adres}
+                                >
+                                  {person.acik_adres}
+                                </span>
+                              )}
                             </div>
                           </td>
 

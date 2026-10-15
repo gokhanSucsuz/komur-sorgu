@@ -904,6 +904,13 @@ body:has(.modal-overlay) .mobile-nav-bar {
 .uppercase { text-transform: uppercase; }
 .italic { font-style: italic; }
 .underline { text-decoration: underline; }
+.break-words { overflow-wrap: break-word; word-break: break-word; }
+.break-all { word-break: break-all; }
+.whitespace-normal { white-space: normal !important; }
+.whitespace-nowrap { white-space: nowrap !important; }
+.leading-snug { line-height: 1.375; }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tracking-tight { letter-spacing: -0.025em; }
 .tracking-wide { letter-spacing: 0.025em; }
@@ -1486,6 +1493,27 @@ img[src*="edirne-sydv-logo"] {
 
 .desktop-compact-table tr.row-incomplete:hover td {
   background: #fef3c7;
+}
+
+/* Hak Sahibi ve Adres sütunlarının daraltılıp aşağı doğru uzaması (ekran taşmasını önleme) */
+.desktop-compact-table th.col-hak-sahibi,
+.desktop-compact-table td.col-hak-sahibi {
+  width: 155px;
+  max-width: 165px;
+  min-width: 135px;
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.desktop-compact-table th.col-adres,
+.desktop-compact-table td.col-adres {
+  width: 200px;
+  max-width: 220px;
+  min-width: 175px;
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 @media (min-width: 640px) {
