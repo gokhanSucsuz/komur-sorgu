@@ -508,24 +508,24 @@ export async function POST(request: NextRequest) {
     if (action === 'CREATE') {
       if (!personel_adi || !tarih || !baslama_saati || !bitis_saati) {
         return NextResponse.json(
-          { success: false, error: 'Personel, tarih, başlama ve bitiş saatleri zorunludur' },
+          { success: false, error: 'Personel adı, tarih, başlama ve bitiş saatleri zorunludur' },
           { status: 400 }
         );
       }
 
-      const totalMinutes = calculateMinutes(baslama_saati, bitis_saati);
+      const totalMinutes = body.toplam_dakika || calculateMinutes(baslama_saati, bitis_saati);
 
       const newDoc = {
-        personel_adi,
-        tarih,
-        baslama_saati,
-        bitis_saati,
+        personel_adi: personel_adi.trim(),
+        tarih: tarih.trim(),
+        baslama_saati: baslama_saati.trim(),
+        bitis_saati: bitis_saati.trim(),
         toplam_dakika: totalMinutes,
         durum: 'TAMAMLANDI',
-        mahalleler: mahalleler || '',
+        mahalleler: mahalleler ? mahalleler.trim() : '',
         teslim_edilen_torba: body.teslim_edilen_torba || 0,
         teslim_edilen_hane: body.teslim_edilen_hane || 0,
-        notlar: notlar || null,
+        notlar: notlar ? notlar.trim() : null,
         created_at: nowStr,
         updated_at: nowStr,
       };
@@ -533,9 +533,18 @@ export async function POST(request: NextRequest) {
       const result = await shiftsCol.insertOne(newDoc);
       const inserted = await shiftsCol.findOne({ _id: result.insertedId });
 
+      await recordActivityLog({
+        kullanici_adi: personel_adi,
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: 'MESAI_GIRIS',
+        baslik: 'Günlük Çalışma Saati Kaydedildi',
+        detay: `${personel_adi} için ${tarih} tarihine çalışma saati girildi: ${baslama_saati} - ${bitis_saati} (${formatMinutes(totalMinutes)}).`,
+        ek_bilgi: { tarih, baslama_saati, bitis_saati, totalMinutes },
+      });
+
       return NextResponse.json({
         success: true,
-        message: 'Mesai kaydı başarıyla eklendi.',
+        message: 'Çalışma saati kaydı başarıyla eklendi.',
         shift: mapDoc(inserted),
       });
     }
@@ -600,7 +609,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Mesai kaydı güncellendi.',
+      message: 'Çalışma saati kaydı güncellendi.',
       shift: mapDoc(updated),
     });
   } catch (error: any) {
@@ -616,23 +625,31 @@ export async function DELETE(request: NextRequest) {
     const body = await request.json();
     const { id, callerRole } = body;
     const reqRole = request.headers.get('x-user-role') || callerRole;
-
-    if (reqRole && reqRole !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Yetkisiz işlem! Mesai kayıtlarını sadece Sistem Yöneticisi silebilir.' },
-        { status: 403 }
-      );
-    }
+    const reqName = request.headers.get('x-user-name') || body.callerName;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
+    }
+
+    const existing = await shiftsCol.findOne(buildIdFilter(id));
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Mesai kaydı bulunamadı' }, { status: 404 });
+    }
+
+    if (reqRole !== 'ADMIN') {
+      if (!reqName || existing.personel_adi?.trim().toLowerCase() !== reqName.trim().toLowerCase()) {
+        return NextResponse.json(
+          { success: false, error: 'Yetkisiz işlem! Personeller sadece kendi girdikleri çalışma saatlerini silebilir.' },
+          { status: 403 }
+        );
+      }
     }
 
     await shiftsCol.deleteOne(buildIdFilter(id));
 
     return NextResponse.json({
       success: true,
-      message: 'Mesai kaydı silindi.',
+      message: 'Çalışma saati kaydı silindi.',
     });
   } catch (error: any) {
     console.error('Error deleting shift:', error);

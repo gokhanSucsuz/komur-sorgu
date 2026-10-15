@@ -74,10 +74,8 @@ export default function Header({
     },
     {
       id: 'shift' as NavTab,
-      label: 'Mesai Takibi',
-      icon: Clock,
-      badge: hasActiveShift ? '●' : undefined,
-      badgeColor: 'bg-emerald-500 text-white animate-pulse'
+      label: 'Çalışma Saatleri',
+      icon: Clock
     },
     {
       id: 'analytics' as NavTab,

@@ -40,10 +40,8 @@ export default function BottomNav({
     },
     {
       id: 'shift' as NavTab,
-      label: 'Mesai',
-      icon: Clock,
-      badge: hasActiveShift ? '●' : undefined,
-      badgeColor: 'bg-emerald-500 text-white animate-pulse'
+      label: 'Çalışma Saati',
+      icon: Clock
     },
     {
       id: 'analytics' as NavTab,

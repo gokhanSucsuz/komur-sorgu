@@ -16,9 +16,6 @@ import QuotaModal from '@/components/QuotaModal';
 import LoginPage from '@/components/LoginPage';
 import PersonnelManagementModal from '@/components/PersonnelManagementModal';
 import AuditLogsModal from '@/components/AuditLogsModal';
-import ShiftActiveBanner from '@/components/ShiftActiveBanner';
-import ShiftStartModal from '@/components/ShiftStartModal';
-import ShiftEndModal from '@/components/ShiftEndModal';
 import ShiftPage from '@/components/ShiftPage';
 import RoutePage from '@/components/RoutePage';
 import AdminAuthModal from '@/components/AdminAuthModal';
@@ -87,12 +84,6 @@ export default function Home() {
   // Overall Stats
   const [overallStats, setOverallStats] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Shift state
-  const [activeShift, setActiveShift] = useState<any | null>(null);
-  const [shiftRefreshKey, setShiftRefreshKey] = useState<number>(0);
-  const [showShiftStartModal, setShowShiftStartModal] = useState<boolean>(false);
-  const [shiftEndTarget, setShiftEndTarget] = useState<any | null>(null);
 
   // Modals state
   const [deliveryTarget, setDeliveryTarget] = useState<any | null>(null);
@@ -365,20 +356,6 @@ export default function Home() {
     }
   }, []);
 
-  // Fetch active shift
-  const fetchActiveShift = useCallback(async () => {
-    if (!userName) return;
-    try {
-      const res = await fetch(`/api/shifts?personel=${encodeURIComponent(userName)}`);
-      const data = await res.json();
-      if (data.success) {
-        setActiveShift(data.activeShift || null);
-      }
-    } catch (err) {
-      console.error('Error fetching active shift:', err);
-    }
-  }, [userName]);
-
   // Fetch Active Route pending stops count for navbar badge
   const fetchActiveRouteCount = useCallback(async () => {
     try {
@@ -407,46 +384,15 @@ export default function Home() {
     }
   }, []);
 
-  // Quick Start Shift (one-click with current time)
-  const handleQuickStartShift = async () => {
-    try {
-      const staffName = (userName || '').trim() || 'Murat Dağıtım';
-      const now = new Date();
-      const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const res = await fetch('/api/shifts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'START',
-          personel_adi: staffName,
-          baslama_saati: localTime
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setActiveShift(data.shift);
-        setShiftRefreshKey((k) => k + 1);
-        handleRefreshAll();
-      } else {
-        alert(data.error || 'Mesai başlatılamadı.');
-      }
-    } catch (err) {
-      console.error('Error quick starting shift:', err);
-      alert('Mesai başlatılırken bağlantı hatası oluştu.');
-    }
-  };
-
   // Refresh all data
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
-    setShiftRefreshKey((k) => k + 1);
     await Promise.all([
       fetchBeneficiaries(true), // Force reload from server
       fetchArchive(),
       fetchTrucks(),
       fetchStats(),
       fetchSettings(),
-      fetchActiveShift(),
       fetchActiveRouteCount()
     ]);
     setIsRefreshing(false);
@@ -460,10 +406,9 @@ export default function Home() {
       fetchArchive();
       fetchTrucks();
       fetchStats();
-      fetchActiveShift();
       fetchActiveRouteCount();
     }
-  }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveShift, fetchActiveRouteCount]);
+  }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveRouteCount]);
 
   // Check online status and pending offline queue
   useEffect(() => {
@@ -536,7 +481,6 @@ export default function Home() {
             fetchArchive();
             fetchStats();
             fetchActiveRouteCount();
-            fetchActiveShift();
           }
         }
       } catch (err) {
@@ -560,7 +504,7 @@ export default function Home() {
       window.removeEventListener('focus', checkSyncStatus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount, fetchActiveShift]);
+  }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount]);
 
   // Tab protection: Non-admin can never view 'import' tab
   useEffect(() => {
@@ -633,7 +577,6 @@ export default function Home() {
           }
           setCurrentTab(tab);
         }}
-        hasActiveShift={!!activeShift}
         incompleteDeliveriesCount={eksikHaneler.length}
         importErrorsCount={overallStats?.toplamHataSayisi}
         activeRouteStopsCount={activeRouteStopsCount}
@@ -656,18 +599,6 @@ export default function Home() {
         {/* Tab 1: Sorgu & Dağıtım Listesi */}
         {currentTab === 'search' && (
           <>
-            {/* LIVE WORK SHIFT BANNER - Arama yaparken sahada ekranı sade tutmak için gizlenir */}
-            {!searchQuery.trim() && (
-              <ShiftActiveBanner
-                activeShift={activeShift}
-                currentStaff={userName}
-                onOpenStartModal={() => setShowShiftStartModal(true)}
-                onOpenEndModal={(shift) => setShiftEndTarget(shift)}
-                onQuickStart={handleQuickStartShift}
-                onNavigateToShiftPage={() => setCurrentTab('shift')}
-              />
-            )}
-
             {/* MORNING ALERT BANNER - Arama yaparken sahada ekranı sade tutmak için gizlenir */}
             {!searchQuery.trim() && (
               <MorningAlertBanner
@@ -708,15 +639,11 @@ export default function Home() {
           />
         )}
 
-        {/* Tab: Mesai & Vardiya Takibi */}
+        {/* Tab: Günlük Çalışma Saati Girişi (Aynı Gün veya Geriye Dönük) */}
         {currentTab === 'shift' && (
           <ShiftPage
             userRole={userRole}
             userName={userName}
-            activeShift={activeShift}
-            refreshTrigger={shiftRefreshKey}
-            onOpenStartModal={() => setShowShiftStartModal(true)}
-            onOpenEndModal={(shift) => setShiftEndTarget(shift)}
             onRefreshAll={handleRefreshAll}
           />
         )}
@@ -799,7 +726,6 @@ export default function Home() {
           setCurrentTab(tab);
         }}
         userRole={userRole}
-        hasActiveShift={!!activeShift}
         incompleteDeliveriesCount={eksikHaneler.length}
         importErrorsCount={overallStats?.toplamHataSayisi}
         activeRouteStopsCount={activeRouteStopsCount}
@@ -869,30 +795,6 @@ export default function Home() {
           currentQuota={defaultQuota}
           onClose={() => setShowQuotaModal(false)}
           onSuccess={handleRefreshAll}
-        />
-      )}
-
-      {/* 5. Dağıtım Mesaisini Başlat Modal */}
-      {showShiftStartModal && (
-        <ShiftStartModal
-          currentStaff={userName}
-          onClose={() => setShowShiftStartModal(false)}
-          onSuccess={(newShift) => {
-            setActiveShift(newShift);
-            handleRefreshAll();
-          }}
-        />
-      )}
-
-      {/* 6. Dağıtım Mesaisini Bitir & Kapat Modal */}
-      {shiftEndTarget && (
-        <ShiftEndModal
-          shift={shiftEndTarget}
-          onClose={() => setShiftEndTarget(null)}
-          onSuccess={(updatedShift) => {
-            setActiveShift(null);
-            handleRefreshAll();
-          }}
         />
       )}
 

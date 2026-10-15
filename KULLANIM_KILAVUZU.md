@@ -27,10 +27,10 @@
    - 5.2. Mahalle ve Sokak Bazlı Durak Oluşturma
    - 5.3. Tek Tıkla Navigasyon (Google Haritalar Yol Tarifi)
    - 5.4. Doğrudan Arama ve Rota İçi Teslimat
-6. [Saha Mesai Takibi](#6-saha-mesai-takibi)
-   - 6.1. Mesai Başlatma
-   - 6.2. Günlük Canlı Sayaç ve Dağıtım Takibi
-   - 6.3. Mesai Bitirme ve Günlük Saha Raporu
+6. [Personel Çalışma Saatleri (Aynı Gün veya Geriye Dönük)](#6-personel-çalışma-saatleri-aynı-gün-veya-geriye-dönük)
+   - 6.1. Serbest Çalışma Saati Girişi (Aynı Gün veya Geriye Dönük)
+   - 6.2. Hızlı Şablonlar ve Otomatik Süre Hesabı
+   - 6.3. Kayıt Geçmişi, Düzenleme ve Silme
 7. [Kömür Dağıtım Dönemi ve Sezon Sonu Güvenli Arşivleme](#7-kömür-dağıtım-dönemi-ve-sezon-sonu-güvenli-arşivleme)
    - 7.1. Aktif Dönem Belirleme (Örn: 2026-2027 Kış Dönemi)
    - 7.2. Hane Başı Kömür Kotası Belirleme
@@ -77,7 +77,7 @@ Sistemde iki ana rol tanımlanmıştır:
    - Sahada adrese gidip torba teslim etme ve dokunmatik ıslak imza alma.
    - Ekipler halinde dağıtım rotası oluşturma ve harita yol tarifi alma.
    - Taşınan veya telefonu değişen vatandaşların bilgilerini güncelleme.
-   - Günlük mesai başlatma ve mesai bitirme.
+   - Günlük ve geriye dönük çalışma saatlerini sisteme kaydetme.
 
 ### 2.2. Tek Cihaz Eşzamanlılık Koruması (Single Active Session)
 - **Güvenlik Kuralı:** Aynı kullanıcı adı ve şifre ile **aynı anda sadece 1 cihaz** oturum açabilir.
@@ -155,16 +155,25 @@ Sistemde iki ana rol tanımlanmıştır:
 
 ---
 
-## 6. SAHA MESAİ TAKİBİ
+## 6. PERSONEL ÇALIŞMA SAATLERİ (AYNI GÜN VEYA GERİYE DÖNÜK)
 
-### 6.1. Mesai Başlatma
-- Sabah sahaya çıkarken **"Mesai Takibi"** sekmesinden veya ana ekrandaki banner'dan **"Mesaiyi Başlat"** butonuna basılır. Başlama saati ve personel bilgisi kaydedilir.
+Sistemde kronometre veya "mesai başlat/bitir" baskısı kaldırılmıştır. Personel, çalıştığı saatleri aynı gün içinde veya sonraki günlerde geriye dönük olarak istediği zaman sisteme girebilir.
 
-### 6.2. Canlı Sayaç ve Dağıtım Hedefi
-- Mesai açıkken üstte canlı çalışma süresi, gün içinde dağıtılan toplam torba sayısı ve tamamlanan hane sayısı canlı olarak ilerler.
+### 6.1. Serbest Çalışma Saati Girişi (Aynı Gün veya Geriye Dönük)
+- **"Çalışma Saatleri"** sekmesine geçilir.
+- **Tarih:** Tarih seçiciden bugün veya geçmiş herhangi bir gün seçilebilir.
+- **Personel:** Giriş yapan personelin adı otomatik gelir (istenirse değiştirilebilir).
+- **Başlama & Bitiş Saati:** Çalışılan saatler seçilir.
 
-### 6.3. Mesai Bitirme
-- Dağıtım tamamlandığında **"Mesaiyi Bitir"** butonuna basılır. Kapanış kilometresi, dağıtılan nihai kömür miktarı ve gün içi saha notları girilerek mesai raporu tamamlanır.
+### 6.2. Hızlı Şablonlar ve Otomatik Süre Hesabı
+- Hızlı seçim butonları (`08:30 - 17:30`, `08:00 - 17:00`, `09:00 - 18:00`) ile tek tıkla saatler doldurulabilir.
+- Sistem girilen saatler arasındaki toplam çalışma süresini (Örn: `9 sa 00 dk`) anında hesaplar.
+- Çalışılan mahalleler ve saha notları eklenerek **"Çalışma Saatini Kaydet"** butonuna basılır.
+
+### 6.3. Kayıt Geçmişi, Düzenleme ve Silme
+- Girilen tüm mesai kayıtları tarih sırasına göre listelenir.
+- Ay ve personel bazında filtreleme yapılabilir.
+- Hatalı girilen bir kayıt mavi **"Düzenle"** butonu ile anında güncellenebilir veya silinebilir.
 
 ---
 
