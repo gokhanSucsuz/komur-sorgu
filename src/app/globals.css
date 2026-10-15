@@ -1044,11 +1044,19 @@ button {
    OFFICIAL PDF / PRINT STYLES (@media print)
    ==================================================== */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 6mm 10mm 6mm;
+  }
+
   body {
     background: #ffffff !important;
     color: #111827 !important;
-    font-size: 11pt !important;
+    font-size: 10pt !important;
     padding: 0 !important;
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .no-print,
@@ -1094,6 +1102,8 @@ button {
 
   table {
     width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
     border-collapse: collapse !important;
     page-break-inside: auto !important;
   }
@@ -1103,21 +1113,29 @@ button {
     page-break-after: auto !important;
   }
 
+  thead {
+    display: table-header-group !important;
+  }
+
   th {
     background: #e5e7eb !important;
     color: #111827 !important;
     border-bottom: 2px solid #9ca3af !important;
     font-weight: bold !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
 
   td {
     border-bottom: 1px solid #e5e7eb !important;
     color: #1f2937 !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
 
   .print-signatures {
     display: block !important;
-    margin-top: 40px !important;
+    margin-top: 30px !important;
     page-break-inside: avoid !important;
     background: transparent !important;
     border: 1px solid #d1d5db !important;
@@ -1178,6 +1196,27 @@ button {
     padding: 0 !important;
     margin: 0 !important;
   }
+}
+
+/* Screen Modal Taşma Önleme & Kilitlenme Karşıtı Kesin Kurallar */
+.report-modal-overlay {
+  overscroll-behavior: contain;
+}
+
+.report-modal-card {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.report-modal-body {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+.report-modal-header,
+.report-modal-footer {
+  flex-shrink: 0 !important;
 }
 
 /* ====================================================

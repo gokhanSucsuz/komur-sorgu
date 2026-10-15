@@ -126,6 +126,26 @@ export default function ShiftPage({
     fetchShifts();
   }, [fetchShifts]);
 
+  // ESC tuşu ile rapor modalını güvenli kapatma
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showReportModal) {
+        setShowReportModal(false);
+        setReportTargetDate('ALL');
+      }
+    };
+    if (showReportModal) {
+      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [showReportModal]);
+
   // Handle Form Submit: Add Work Hours (Same Day or Retrospective)
   const handleCreateWorkHours = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -891,37 +911,54 @@ export default function ShiftPage({
       {/* RESMİ PERSONEL ÇALIŞMA SAATLERİ VE MESAİ RAPORU MODALI  */}
       {/* ======================================================== */}
       {showReportModal && (
-        <div className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="report-modal-card bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+        <div 
+          className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowReportModal(false);
+              setReportTargetDate('ALL');
+            }
+          }}
+        >
+          <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl max-w-5xl w-full h-[90vh] max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
             {/* Modal Header */}
-            <div className="report-modal-header p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+            <div className="report-modal-header shrink-0 p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <FileText className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">
+                <div className="truncate">
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
                     Personel Çalışma Saatleri & Mesai Takip Cetveli
                   </h3>
-                  <p className="text-xs text-slate-500 font-semibold">
-                    Dönem: <strong className="text-slate-800">{reportTargetDate !== 'ALL' ? reportTargetDate : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong> • Personel: <strong className="text-slate-800">{selectedPersonnel === 'ALL' ? 'Tüm Personeller' : selectedPersonnel}</strong> • Toplam: <strong className="text-emerald-700">{reportUniqueDays} Gün ({filteredReportShifts.length} Mesai)</strong> • <strong className="text-amber-800">{formatMinutes(reportTotalMinutes)}</strong>
+                  <p className="text-[11px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+                    <span>Dönem: <strong className="text-slate-800">{reportTargetDate !== 'ALL' ? reportTargetDate : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong></span>
+                    <span>•</span>
+                    <span>Personel: <strong className="text-slate-800">{selectedPersonnel === 'ALL' ? 'Tüm Personeller' : selectedPersonnel}</strong></span>
+                    <span>•</span>
+                    <span>Toplam: <strong className="text-emerald-700">{reportUniqueDays} Gün ({filteredReportShifts.length} Mesai)</strong></span>
+                    <span>•</span>
+                    <span><strong className="text-amber-800">{formatMinutes(reportTotalMinutes)}</strong></span>
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowReportModal(false);
-                  setReportTargetDate('ALL');
-                }}
-                className="w-9 h-9 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition-all"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReportModal(false);
+                    setReportTargetDate('ALL');
+                  }}
+                  className="w-9 h-9 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition-all active:scale-95 shadow-2xs"
+                  title="Pencereyi Kapat (ESC)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body / Printable Content */}
-            <div className="report-modal-body p-4 sm:p-6 overflow-y-auto space-y-4 text-xs text-slate-800" id="printableShiftReport">
+            <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 space-y-4 text-xs text-slate-800" id="printableShiftReport">
               {/* Official Institutional Header */}
               <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
@@ -1083,11 +1120,11 @@ export default function ShiftPage({
             </div>
 
             {/* Modal Footer */}
-            <div className="report-modal-footer p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 no-print">
+            <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-10 shadow-sm">
               <a
                 href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}${reportTargetDate !== 'ALL' ? `&date=${reportTargetDate}` : ''}`}
                 download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
-                className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs"
+                className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
               >
                 <Download className="w-4 h-4 text-emerald-700" />
                 <span>Excel Olarak İndir</span>
@@ -1100,14 +1137,15 @@ export default function ShiftPage({
                     setShowReportModal(false);
                     setReportTargetDate('ALL');
                   }}
-                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold transition-all active:scale-95 shadow-2xs"
                 >
-                  Kapat
+                  Kapat (ESC)
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                  title="Yazıcıdan çıktı al veya PDF olarak kaydet"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Yazdır / PDF Kaydet</span>

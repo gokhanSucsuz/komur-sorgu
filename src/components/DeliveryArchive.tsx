@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin, Printer, X, FileText, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin, Printer, X, FileText, CheckCircle2, Settings } from 'lucide-react';
 import { turkishRecordMatches } from '@/lib/normalizer';
 
 interface DeliveryArchiveProps {
@@ -23,6 +23,25 @@ export default function DeliveryArchive({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDay, setSelectedDay] = useState<string>('ALL');
   const [printDayGroup, setPrintDayGroup] = useState<any | null>(null);
+
+  // ESC tuşu ve overlay ile yazdırma modalını güvenli kapatma (ekran kilitlenmesini önler)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPrintDayGroup(null);
+      }
+    };
+    if (printDayGroup) {
+      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [printDayGroup]);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
   const todayRecords = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT' && r.gun_tarihi === todayStr);
@@ -363,38 +382,51 @@ export default function DeliveryArchive({
 
       {/* Günlük Teslimat Tutanağı ve Yazdırma Modalı */}
       {printDayGroup && (
-        <div className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="report-modal-card bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="report-modal-header p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+        <div 
+          className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPrintDayGroup(null);
+          }}
+        >
+          <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl max-w-5xl w-full h-[90vh] max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Modal Header (Daima üstte sabit kalır) */}
+            <div className="report-modal-header shrink-0 p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <FileText className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">
-                    Günlük Kömür Dağıtım ve Teslimat Listesi
+                <div className="truncate">
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
+                    Günlük Kömür Dağıtım ve Teslimat Tutanağı
                   </h3>
-                  <p className="text-xs text-slate-500 font-semibold">
-                    Tarih: <strong className="text-slate-800">{printDayGroup.gun_tarihi}</strong> • Toplam: <strong className="text-emerald-700">{printDayGroup.items.length} Hane</strong> • <strong className="text-amber-800">{(printDayGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton</strong>
+                  <p className="text-[11px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+                    <span>Tarih: <strong className="text-slate-800">{printDayGroup.gun_tarihi}</strong></span>
+                    <span>•</span>
+                    <span>Toplam: <strong className="text-emerald-700">{printDayGroup.items.length} Hane</strong></span>
+                    <span>•</span>
+                    <span><strong className="text-amber-800">{(printDayGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton</strong></span>
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setPrintDayGroup(null)}
-                className="w-9 h-9 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition-all"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintDayGroup(null)}
+                  className="w-9 h-9 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition-all active:scale-95 shadow-2xs"
+                  title="Pencereyi Kapat (ESC)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Modal Body / Printable Content */}
-            <div className="report-modal-body p-4 sm:p-6 overflow-y-auto space-y-4 text-xs text-slate-800" id="printableDeliveryReport">
+            {/* Modal Body / Printable Content (Yalnızca içerik kaydırılır, butonlar asla taşmaz) */}
+            <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 space-y-4 text-xs text-slate-800" id="printableDeliveryReport">
               {/* Official Institutional Header */}
-              <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
-                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
-                  <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200" style={{ width: '52px', height: '52px', minWidth: '52px', minHeight: '52px' }}>
+              <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
                     <img
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
@@ -404,61 +436,61 @@ export default function DeliveryArchive({
                       style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                     />
                   </div>
-                  <div className="text-center flex-1 px-3">
-                    <p className="text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                  <div className="text-center flex-1 px-1 sm:px-3 min-w-0">
+                    <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
                       T.C. EDİRNE VALİLİĞİ
                     </p>
-                    <h2 className="text-sm font-black text-slate-900 uppercase">
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900 uppercase">
                       EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
                     </h2>
-                    <h3 className="text-xs font-bold text-amber-800 uppercase mt-0.5">
+                    <h3 className="text-[11px] sm:text-xs font-bold text-amber-800 uppercase mt-0.5">
                       KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI
                     </h3>
                   </div>
-                  <div className="w-14 h-14 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[8px] font-black text-slate-700 leading-tight">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[7px] sm:text-[8px] font-black text-slate-700 leading-tight">
                     <span>RESMİ</span>
                     <span>TUTANAK</span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-600 pt-1">
+                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
                   Bu tutanak, <strong>{printDayGroup.gun_tarihi}</strong> tarihinde Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
                 </p>
               </div>
 
               {/* Table of households */}
-              <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="overflow-x-auto rounded-xl sm:rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs border-collapse table-fixed min-w-[700px]">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
                       <th className="py-2 px-2 text-center w-8">#</th>
-                      <th className="py-2 px-2">TC Kimlik</th>
-                      <th className="py-2 px-2">Adı Soyadı</th>
+                      <th className="py-2 px-2 w-28">TC Kimlik</th>
+                      <th className="py-2 px-2 w-36">Adı Soyadı</th>
                       <th className="py-2 px-2">Mahalle / Açık Adres</th>
-                      <th className="py-2 px-2 text-center">Torba</th>
-                      <th className="py-2 px-2">Teslim Alan</th>
-                      <th className="py-2 px-2">Teslim Saati</th>
-                      <th className="py-2 px-2 text-center">İmza / Teyit</th>
+                      <th className="py-2 px-2 text-center w-14">Torba</th>
+                      <th className="py-2 px-2 w-32">Teslim Alan</th>
+                      <th className="py-2 px-2 text-center w-16">Saat</th>
+                      <th className="py-2 px-2 text-center w-20">İmza / Teyit</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {printDayGroup.items.map((item: any, idx: number) => (
                       <tr key={item.id} className="hover:bg-slate-50/80">
                         <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
-                        <td className="py-2 px-2 font-mono font-bold text-slate-800">{item.tc_no}</td>
-                        <td className="py-2 px-2 font-bold text-slate-900">{item.ad_soyad}</td>
-                        <td className="py-2 px-2 text-slate-600 max-w-[200px] truncate" title={item.acik_adres}>
-                          <span className="font-semibold text-slate-800">{item.mahalle}</span>
-                          {item.acik_adres && <span className="block text-[11px] text-slate-500 truncate">{item.acik_adres}</span>}
+                        <td className="py-2 px-2 font-mono font-bold text-slate-800 truncate">{item.tc_no}</td>
+                        <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
+                        <td className="py-2 px-2 text-slate-600 break-words" title={item.acik_adres}>
+                          <span className="font-semibold text-slate-800 block">{item.mahalle}</span>
+                          {item.acik_adres && <span className="block text-[11px] text-slate-500 line-clamp-2">{item.acik_adres}</span>}
                         </td>
                         <td className="py-2 px-2 text-center">
                           <span className="font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded text-[11px]">
                             {item.torba_sayisi}
                           </span>
                         </td>
-                        <td className="py-2 px-2 font-medium text-slate-700">{item.teslim_alan || item.ad_soyad}</td>
-                        <td className="py-2 px-2 font-mono text-[11px] text-slate-500">{item.tarih ? item.tarih.split(' ')[1] || item.tarih : '-'}</td>
+                        <td className="py-2 px-2 font-medium text-slate-700 break-words">{item.teslim_alan || item.ad_soyad}</td>
+                        <td className="py-2 px-2 font-mono text-[11px] text-slate-500 text-center">{item.tarih ? item.tarih.split(' ')[1] || item.tarih : '-'}</td>
                         <td className="py-2 px-2 text-center">
-                          <div className="w-16 h-6 border-b border-dashed border-slate-400 mx-auto"></div>
+                          <div className="w-14 h-5 border-b border-dashed border-slate-400 mx-auto"></div>
                         </td>
                       </tr>
                     ))}
@@ -467,33 +499,33 @@ export default function DeliveryArchive({
               </div>
 
               {/* Sign-off area (3-box Official Institutional Signature Block) */}
-              <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-center print-signatures">
+              <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-center print-signatures">
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase">Dağıtımı Yapan Personel</span>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase">Dağıtımı Yapan Personel</span>
                   <p className="text-xs font-black text-slate-800 mt-1">
                     {printDayGroup.items[0]?.personel || 'Dağıtım Ekibi'}
                   </p>
-                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
+                  <div className="mt-3 pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase">Saha / Araç Sorumlusu</span>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase">Saha / Araç Sorumlusu</span>
                   <p className="text-xs font-black text-slate-800 mt-1">Yetkili Saha Amiri</p>
-                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
+                  <div className="mt-3 pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase">Vakıf Müdürü / Onay</span>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase">Vakıf Müdürü / Onay</span>
                   <p className="text-xs font-black text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
-                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza / Mühür</div>
+                  <div className="mt-3 pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza / Mühür</div>
                 </div>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="report-modal-footer p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 no-print">
+            {/* Modal Footer (Daima altta sabit ve görünür kalır) */}
+            <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-10 shadow-sm">
               <a
                 href={`/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}`}
                 download={`Edirne_SYDV_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}
-                className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs"
+                className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
               >
                 <Download className="w-4 h-4 text-emerald-700" />
                 <span>Excel Olarak İndir</span>
@@ -503,14 +535,15 @@ export default function DeliveryArchive({
                 <button
                   type="button"
                   onClick={() => setPrintDayGroup(null)}
-                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold transition-all active:scale-95 shadow-2xs"
                 >
-                  Kapat
+                  Kapat (ESC)
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                  title="Yazıcıdan çıktı al veya PDF olarak kaydet"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Yazdır / PDF Kaydet</span>
