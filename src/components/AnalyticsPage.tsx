@@ -513,17 +513,11 @@ export default function AnalyticsPage({
               RESMİ TUTANAK VE İMZA ONAY ALANI
             </h4>
 
-            <div className="grid grid-cols-3 gap-6 text-center text-xs text-slate-700 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-4">
               <div className="space-y-8">
                 <p className="font-bold text-slate-900">Dağıtım Sorumlusu Personel</p>
                 <div className="h-10 border-b border-dashed border-slate-300"></div>
                 <p className="text-[11px] text-slate-500">İmza / Tarih</p>
-              </div>
-
-              <div className="space-y-8">
-                <p className="font-bold text-slate-900">Kontrol Eden Saha Yetkilisi</p>
-                <div className="h-10 border-b border-dashed border-slate-300"></div>
-                <p className="text-[11px] text-slate-500">İmza / Mühür</p>
               </div>
 
               <div className="space-y-8">

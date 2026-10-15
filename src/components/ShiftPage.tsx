@@ -911,18 +911,21 @@ export default function ShiftPage({
       {/* RESMİ PERSONEL ÇALIŞMA SAATLERİ VE MESAİ RAPORU MODALI  */}
       {/* ======================================================== */}
       {showReportModal && (
-        <div 
-          className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
+        <div className="report-modal-overlay fixed inset-0 z-50">
+          {/* Karartılmış Arka Plan (Tıklayınca Kapanır) */}
+          <div 
+            className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs transition-opacity z-40"
+            onClick={() => {
               setShowReportModal(false);
               setReportTargetDate('ALL');
-            }
-          }}
-        >
-          <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl max-w-5xl w-full h-[90vh] max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="report-modal-header shrink-0 p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print z-10">
+            }}
+          />
+
+          {/* Modal Panel: Ekran sınırları içine kilitlenmiştir */}
+          <div className="fixed inset-2 sm:inset-4 md:inset-8 z-50 flex flex-col items-center pointer-events-none">
+            <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-full flex flex-col shadow-2xl border border-slate-300 overflow-hidden pointer-events-auto">
+              {/* Modal Header */}
+              <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <FileText className="w-5 h-5" />
@@ -1097,18 +1100,13 @@ export default function ShiftPage({
                 </table>
               </div>
 
-              {/* Sign-off area (3-box Official Institutional Signature Block) */}
-              <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-center print-signatures">
+              {/* Sign-off area (2-box Official Institutional Signature Block) */}
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto text-center print-signatures">
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-bold text-slate-500 uppercase">Görevi Yapan Personel</span>
                   <p className="text-xs font-black text-slate-800 mt-1">
                     {selectedPersonnel !== 'ALL' ? selectedPersonnel : (filteredReportShifts[0]?.personel_adi || 'Saha Personeli')}
                   </p>
-                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase">Saha / Araç Amiri</span>
-                  <p className="text-xs font-black text-slate-800 mt-1">Yetkili Saha Amiri</p>
                   <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
@@ -1120,14 +1118,15 @@ export default function ShiftPage({
             </div>
 
             {/* Modal Footer */}
-            <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-10 shadow-sm">
+            <div className="report-modal-footer shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-t border-slate-200 bg-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-20 shadow-sm">
               <a
                 href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}${reportTargetDate !== 'ALL' ? `&date=${reportTargetDate}` : ''}`}
                 download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
-                className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
               >
-                <Download className="w-4 h-4 text-emerald-700" />
-                <span>Excel Olarak İndir</span>
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Excel Olarak İndir</span>
+                <span className="sm:hidden">Excel</span>
               </a>
 
               <div className="flex items-center gap-2">
@@ -1137,7 +1136,7 @@ export default function ShiftPage({
                     setShowReportModal(false);
                     setReportTargetDate('ALL');
                   }}
-                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs font-bold transition-all active:scale-95 shadow-2xs"
                 >
                   Kapat (ESC)
                 </button>
@@ -1154,6 +1153,7 @@ export default function ShiftPage({
             </div>
           </div>
         </div>
+      </div>
       )}
     </div>
   );
