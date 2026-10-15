@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName } from '@/lib/normalizer';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * Sanitizes worksheet name to comply with strict Excel rules:
@@ -51,40 +53,165 @@ function buildContentDispositionHeader(filename: string): string {
 }
 
 /**
- * Creates an official state foundation standard worksheet with institutional header block
+ * Creates an official state foundation standard worksheet with:
+ * - Institutional state header with merged banner
+ * - Sleek dark navy table header with crisp white bold text
+ * - Zebra striped data rows (alternating #FFFFFF and #F8FAFC)
+ * - Subtle borders on all cells
+ * - Contextual status font coloring (Emerald green for delivered, Amber for partial, Rose for eliminated)
+ * - Auto-tailored column widths and frozen header panes
  */
-function createOfficialWorksheet(
+function addStyledWorksheet(
+  workbook: ExcelJS.Workbook,
   title: string,
   subtitle: string,
+  sheetName: string,
   data: any[],
-  colWidths: { wch: number }[]
+  colWidths?: { wch?: number; width?: number }[]
 ) {
-  const numCols = colWidths.length;
+  const numCols = colWidths ? colWidths.length : (data[0] ? Object.keys(data[0]).length : 10);
   const nowStr = new Date().toLocaleString('tr-TR');
 
-  const headerRows = [
-    ['T.C. EDİRNE VALİLİĞİ'],
-    ['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI'],
-    [title.toUpperCase()],
-    [`Rapor Kapsamı: ${subtitle} | Düzenleme Tarihi: ${nowStr} | Resmi Kömür Dağıtım Sistemi`],
-    [], // Boş ayırıcı satır
-  ];
+  const sheet = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: 6, showGridLines: true }],
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToWidth: 1 }
+  });
 
-  const worksheet = XLSX.utils.aoa_to_sheet(headerRows);
+  // 1. Kurumsal Resmi Başlık Satırları (1 - 4)
+  sheet.addRow(['T.C. EDİRNE VALİLİĞİ']);
+  sheet.addRow(['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI']);
+  sheet.addRow([title.toUpperCase()]);
+  sheet.addRow([`Rapor Kapsamı: ${subtitle} | Düzenleme Tarihi: ${nowStr} | Resmi Kömür Dağıtım Sistemi`]);
+  sheet.addRow([]); // 5. Satır: Boşluk ayırıcı
 
-  if (data && data.length > 0) {
-    XLSX.utils.sheet_add_json(worksheet, data, { origin: 'A6' });
+  for (let r = 1; r <= 4; r++) {
+    sheet.mergeCells(r, 1, r, numCols);
+    const row = sheet.getRow(r);
+    row.alignment = { vertical: 'middle', horizontal: 'center' };
+    if (r === 1) {
+      row.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF475569' } };
+      row.height = 18;
+    } else if (r === 2) {
+      row.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF0F172A' } };
+      row.height = 22;
+    } else if (r === 3) {
+      row.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FF1E3A8A' } };
+      row.height = 26;
+      row.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' }
+      };
+    } else if (r === 4) {
+      row.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF64748B' } };
+      row.height = 18;
+    }
+  }
+  sheet.getRow(5).height = 8;
+
+  if (!data || data.length === 0) return sheet;
+
+  // 2. Tablo Başlıkları (Row 6)
+  const headers = Object.keys(data[0]);
+  const headerRow = sheet.addRow(headers);
+  headerRow.height = 28;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' } // Koyu Kurumsal Lacivert/Arduvaz
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF0F172A' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+      left: { style: 'thin', color: { argb: 'FF334155' } },
+      right: { style: 'thin', color: { argb: 'FF334155' } },
+    };
+  });
+
+  // 3. Veri Satırları & Zebra Deseni (Rows 7+)
+  data.forEach((item, idx) => {
+    const isSummaryRow = (item['TC Kimlik No'] && String(item['TC Kimlik No']).startsWith('TOPLAM:')) ||
+                         (item['Sıra'] === '' && item['Teslim Tarihi / Saati'] === 'TOPLAM:');
+
+    const rowValues = headers.map(h => item[h] !== undefined && item[h] !== null ? item[h] : '');
+    const row = sheet.addRow(rowValues);
+    row.height = isSummaryRow ? 26 : 22;
+
+    const isEven = idx % 2 === 1;
+    const rowBg = isSummaryRow ? 'FFF1F5F9' : (isEven ? 'FFF8FAFC' : 'FFFFFFFF');
+
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const headerName = headers[colNumber - 1];
+      const valStr = String(cell.value || '');
+
+      cell.font = {
+        name: 'Segoe UI',
+        size: isSummaryRow ? 10.5 : 10,
+        bold: isSummaryRow || headerName === 'Adı Soyadı',
+        color: { argb: isSummaryRow ? 'FF0F172A' : 'FF1E293B' }
+      };
+
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: rowBg }
+      };
+
+      if (isSummaryRow) {
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF94A3B8' } },
+          bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        };
+      } else {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        };
+      }
+
+      // Sola yaslı geniş metin alanları
+      const leftAligned = [
+        'Adı Soyadı', 'Açık Adres', 'Cadde / Sokak', 'Mahalle',
+        'Açıklama / Not', 'Detay Açıklama', 'Hata / Elenme Nedeni', 'Başlık'
+      ];
+      if (leftAligned.includes(headerName)) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+
+      // Durum Vurguları (Renkler)
+      if (headerName === 'Teslimat Durumu' || headerName === 'Durum') {
+        if (valStr.includes('Teslim Edildi') || valStr.includes('Tamamlandı')) {
+          cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF047857' } };
+        } else if (valStr.includes('Eksik')) {
+          cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FFB45309' } };
+        } else if (valStr.includes('Bekliyor')) {
+          cell.font = { name: 'Segoe UI', size: 9.5, color: { argb: 'FF475569' } };
+        }
+      }
+
+      if (headerName === 'İşlem Sonucu' && valStr.includes('ELENDİ')) {
+        cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FFBE123C' } };
+      }
+    });
+  });
+
+  // 4. Kolon Genişlikleri
+  if (colWidths && colWidths.length > 0) {
+    sheet.columns = colWidths.map(cw => ({
+      width: Math.max(8, (cw.wch || cw.width || 12) + 3)
+    }));
   }
 
-  worksheet['!cols'] = colWidths;
-  worksheet['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(0, numCols - 1) } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: Math.max(0, numCols - 1) } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: Math.max(0, numCols - 1) } },
-    { s: { r: 3, c: 0 }, e: { r: 3, c: Math.max(0, numCols - 1) } },
-  ];
-
-  return worksheet;
+  return sheet;
 }
 
 export async function GET(request: NextRequest) {
@@ -92,14 +219,9 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type') || 'template';
 
-    const workbook = XLSX.utils.book_new();
-    workbook.Props = {
-      Title: 'Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı Kömür Dağıtım Raporu',
-      Subject: 'Resmi Kömür Dağıtım ve Saha Takip Çıktısı',
-      Author: 'Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı',
-      Company: 'T.C. Edirne Valiliği - Edirne SYDV',
-      CreatedDate: new Date(),
-    };
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı';
+    workbook.created = new Date();
 
     // 1. Örnek Yükleme Şablonu
     if (type === 'template') {
@@ -143,15 +265,16 @@ export async function GET(request: NextRequest) {
         { wch: 14 }, // Hane No
       ];
 
-      const worksheet = createOfficialWorksheet(
+      addStyledWorksheet(
+        workbook,
         'KÖMÜR YARDIMI HAK SAHİBİ LİSTESİ YÜKLEME ŞABLONU',
         'Toplu Excel Yükleme Formatı (TC, Ad Soyad, Telefon, Mahalle, Açık Adres, Hane No)',
+        'Hak Sahipleri',
         templateData,
         colWidths
       );
 
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
-      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buf = await workbook.xlsx.writeBuffer();
 
       return new NextResponse(new Uint8Array(buf), {
         headers: {
@@ -160,6 +283,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
+
 
     const { beneficiaries: benCol, importLogs: logsCol, deliveryHistory: histCol, activityLogs: actCol } = await getDbCollections();
 
@@ -226,15 +350,16 @@ export async function GET(request: NextRequest) {
         { wch: 30 }, // Not
       ];
 
-      const worksheet = createOfficialWorksheet(
+      addStyledWorksheet(
+        workbook,
         'KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI',
         `Dağıtım Tarihi: ${targetDate} | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`,
+        'Teslimat Listesi',
         exportData,
         colWidths
       );
 
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Teslimat Listesi');
-      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buf = await workbook.xlsx.writeBuffer();
 
       return new NextResponse(new Uint8Array(buf), {
         headers: {
@@ -296,15 +421,16 @@ export async function GET(request: NextRequest) {
         { wch: 20 }, // Personel
       ];
 
-      const worksheet = createOfficialWorksheet(
+      addStyledWorksheet(
+        workbook,
         'KÖMÜR YARDIMI TÜM HAK SAHİPLERİ VE DAĞITIM DURUM LİSTESİ',
         `Toplam Kayıt: ${records.length} Hane`,
+        'Hak Sahipleri',
         exportData,
         colWidths
       );
 
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Hak Sahipleri');
-      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buf = await workbook.xlsx.writeBuffer();
 
       return new NextResponse(new Uint8Array(buf), {
         headers: {
@@ -313,6 +439,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
+
 
     // 3.5. Yüklenen Excel Dosyası / Hak Sahipleri - Mahalle İsimlerine Göre Sekmelere Bölünmüş Çalışma Kitabı
     if (type === 'batch_by_mahalle' || type === 'beneficiaries_by_mahalle') {
@@ -469,15 +596,15 @@ export async function GET(request: NextRequest) {
         { wch: 18 }, // Oran
       ];
 
-      const summarySheet = createOfficialWorksheet(
+      const summarySheetName = sanitizeSheetName('Özet İcmal', seenSheetNames);
+      addStyledWorksheet(
+        workbook,
         'KÖMÜR YARDIMI MAHALLE BAZLI GENEL DAĞITIM VE İCMAL CETVELİ',
         `Dosya: ${dosyaAdi} | Toplam Yerleşim: ${sortedMahalles.length} | Toplam Hane: ${totalAllHanes} | Toplam Hedef: ${totalAllTargetBags} Torba (${(totalAllTargetBags * 0.025).toFixed(2)} Ton)`,
+        summarySheetName,
         summaryData,
         summaryColWidths
       );
-
-      const summarySheetName = sanitizeSheetName('Özet İcmal', seenSheetNames);
-      XLSX.utils.book_append_sheet(workbook, summarySheet, summarySheetName);
 
       // B) HER MAHALLE İÇİN AYRI SEKME
       for (const mahName of sortedMahalles) {
@@ -594,18 +721,18 @@ export async function GET(request: NextRequest) {
           { wch: 20 }, // İmza
         ];
 
-        const mahWorksheet = createOfficialWorksheet(
+        const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
+        addStyledWorksheet(
+          workbook,
           `KÖMÜR YARDIMI DAĞITIM VE İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`,
           `Dosya: ${dosyaAdi} | Mahalle/Köy: ${mahName} | Hane: ${group.length} | Hedef: ${groupTarget} Torba (${(groupTarget * 0.025).toFixed(2)} Ton)`,
+          safeSheetName,
           sheetRows,
           mahColWidths
         );
-
-        const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
-        XLSX.utils.book_append_sheet(workbook, mahWorksheet, safeSheetName);
       }
 
-      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buf = await workbook.xlsx.writeBuffer();
       const downloadFilename = `Edirne_SYDV_${cleanFileBase}_Mahalle_Sekmeli.xlsx`;
 
       return new NextResponse(new Uint8Array(buf), {
@@ -668,15 +795,16 @@ export async function GET(request: NextRequest) {
         : 'KÖMÜR YARDIMI YÜKLEME VE HANE DENETİMİ HATA RAPORU';
       const reportSub = `Mükerrer TC, Aynı Hane ve Hatalı/Elenen Kayıt Dökümü (${records.length} Kayıt)`;
 
-      const worksheet = createOfficialWorksheet(
+      addStyledWorksheet(
+        workbook,
         reportTitle,
         reportSub,
+        'Yukleme Hatalari',
         exportData,
         colWidths
       );
 
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Yukleme Hatalari');
-      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buf = await workbook.xlsx.writeBuffer();
       const filename = batchId 
         ? `Edirne_SYDV_Elenen_Kayitlar_${batchId}.xlsx`
         : 'Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx';
@@ -726,15 +854,16 @@ export async function GET(request: NextRequest) {
         { wch: 14 }, // Torba
       ];
 
-      const worksheet = createOfficialWorksheet(
+      addStyledWorksheet(
+        workbook,
         'KULLANICI VE SAHA İŞLEM DENETİM LOGLARI RAPORU',
         `Edirne SYDV Kömür Dağıtım Sistemi İşlem Geçmişi (${records.length} İşlem)`,
+        'Islem Loglari',
         exportData,
         colWidths
       );
 
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Islem Loglari');
-      const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buf = await workbook.xlsx.writeBuffer();
 
       return new NextResponse(new Uint8Array(buf), {
         headers: {
