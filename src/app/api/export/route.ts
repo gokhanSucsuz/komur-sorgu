@@ -3,8 +3,6 @@ import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName } from '@/lib/normalizer';
 
-export const dynamic = 'force-dynamic';
-
 /**
  * Sanitizes worksheet name to comply with strict Excel rules:
  * - Max 31 characters
