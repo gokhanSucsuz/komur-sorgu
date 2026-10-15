@@ -610,120 +610,49 @@ export async function GET(request: NextRequest) {
         // Sort within neighborhood naturally by order number
         group.sort(compareBySiraNo);
 
-        let groupTarget = 0;
-        let groupDelivered = 0;
-        let groupTamamlanan = 0;
-        let groupEksik = 0;
-        let groupBekleyen = 0;
-        let groupImzali = 0;
-
         const sheetRows = group.map((r: any, idx: number) => {
           const phones = extractPhoneNumbers(r.telefon, r.telefon2);
-          const target = Number(r.hedef_torba || 34);
-          const delivered = Number(r.torba_sayisi || 0);
-          const remaining = Math.max(0, target - delivered);
-
-          groupTarget += target;
-          groupDelivered += delivered;
-
-          if (r.imza_durumu === 'IMZALANDI') groupImzali++;
-          if (r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI') {
-            groupTamamlanan++;
-          } else if (r.teslimat_durumu === 'EKSIK') {
-            groupEksik++;
-          } else {
-            groupBekleyen++;
-          }
-
-          const kapiStr = r.kapi_no && r.kapi_no !== 999999 ? String(r.kapi_no) : '-';
-          const daireStr = r.daire_no && r.daire_no > 0 ? String(r.daire_no) : '-';
+          const phoneStr = phones.length > 0 ? phones.join(' / ') : (r.telefon || '-');
 
           return {
             'Sıra': idx + 1,
             'İmza Sırası': r.sira_no || r.mahalle_sira || idx + 1,
-            'Liste Türü': r.ek_liste_adi || (r.ek_liste_no ? `Ek ${r.ek_liste_no}` : 'Ana Liste'),
+            'Hane No': r.hane_no || '-',
             'TC Kimlik No': r.tc_no,
             'Adı Soyadı': r.ad_soyad,
-            'Telefon': phones[0] || r.telefon || '-',
-            'Telefon 2': phones[1] || r.telefon2 || '-',
-            'Cadde / Sokak': r.sokak || '-',
-            'Kapı No': kapiStr,
-            'Daire No': daireStr,
+            'Telefon': phoneStr,
             'Açık Adres': r.acik_adres || '-',
-            'Hane No': r.hane_no || '-',
-            'Hedef Torba': target,
-            'Teslim Edilen': delivered,
-            'Kalan Torba': remaining,
-            'Teslimat Durumu': r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI'
-              ? 'Teslim Edildi'
-              : r.teslimat_durumu === 'EKSIK'
-              ? `Eksik Teslimat (${delivered}/${target})`
-              : 'Bekliyor',
-            'İmza Durumu': r.imza_durumu === 'IMZALANDI' ? 'İmzalandı' : 'Bekliyor',
-            'Teslim Alan': r.teslim_alan || '-',
-            'Teslim Tarihi': r.teslimat_tarihi || '-',
-            'Teslim Eden Personel': r.teslim_eden_personel || '-',
-            'Hak Sahibi İmzası': '', // Boş imza kutusu
           };
         });
 
         // Add Mahalle summary footer row
         if (sheetRows.length > 0) {
-          const groupPending = Math.max(0, groupTarget - groupDelivered);
           sheetRows.push({
             'Sıra': '' as any,
             'İmza Sırası': '',
-            'Liste Türü': '',
+            'Hane No': '',
             'TC Kimlik No': `TOPLAM: ${group.length} Hane`,
             'Adı Soyadı': '',
             'Telefon': '',
-            'Telefon 2': '',
-            'Cadde / Sokak': '',
-            'Kapı No': '',
-            'Daire No': '',
             'Açık Adres': '',
-            'Hane No': '',
-            'Hedef Torba': groupTarget as any,
-            'Teslim Edilen': groupDelivered as any,
-            'Kalan Torba': groupPending as any,
-            'Teslimat Durumu': `${groupTamamlanan} Teslim, ${groupBekleyen} Bekleyen`,
-            'İmza Durumu': `${groupImzali} İmzalı`,
-            'Teslim Alan': '',
-            'Teslim Tarihi': '',
-            'Teslim Eden Personel': '',
-            'Hak Sahibi İmzası': '',
           });
         }
 
         const mahColWidths = [
-          { wch: 6 },  // Sıra
+          { wch: 8 },  // Sıra
           { wch: 14 }, // İmza Sırası
-          { wch: 13 }, // Liste Türü
-          { wch: 16 }, // TC
-          { wch: 24 }, // Adı Soyadı
-          { wch: 16 }, // Tel
-          { wch: 16 }, // Tel 2
-          { wch: 22 }, // Cadde/Sokak
-          { wch: 10 }, // Kapı
-          { wch: 10 }, // Daire
-          { wch: 40 }, // Adres
-          { wch: 12 }, // Hane
-          { wch: 13 }, // Hedef
-          { wch: 14 }, // Teslim
-          { wch: 13 }, // Kalan
-          { wch: 20 }, // Durum
-          { wch: 13 }, // İmza Durum
-          { wch: 22 }, // Teslim Alan
-          { wch: 18 }, // Teslim Tarih
-          { wch: 20 }, // Personel
-          { wch: 20 }, // İmza
+          { wch: 14 }, // Hane No
+          { wch: 18 }, // TC Kimlik No
+          { wch: 28 }, // Adı Soyadı
+          { wch: 20 }, // Telefon
+          { wch: 50 }, // Açık Adres
         ];
 
         const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
         addStyledWorksheet(
           workbook,
           `KÖMÜR YARDIMI DAĞITIM VE İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`,
-          `Dosya: ${dosyaAdi} | Mahalle/Köy: ${mahName} | Hane: ${group.length} | Hedef: ${groupTarget} Torba (${(groupTarget * 0.025).toFixed(2)} Ton)`,
+          `Dosya: ${dosyaAdi} | Mahalle/Köy: ${mahName} | Toplam: ${group.length} Hane`,
           safeSheetName,
           sheetRows,
           mahColWidths
