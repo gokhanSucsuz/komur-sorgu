@@ -5,19 +5,21 @@ import {
   BarChart3, Calendar, Printer, Filter, AlertTriangle, 
   CheckCircle2, Clock, Truck, Target, TrendingUp, Users, MapPin, 
   Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, 
-  Layers, ArrowUpDown, ChevronDown
+  Layers, ArrowUpDown, ChevronDown, Archive
 } from 'lucide-react';
 
 interface AnalyticsPageProps {
   onRefreshAll?: () => void;
   userRole?: 'ADMIN' | 'PERSONEL';
   onOpenQuotaModal?: () => void;
+  onOpenSeasonModal?: () => void;
 }
 
 export default function AnalyticsPage({
   onRefreshAll,
   userRole,
-  onOpenQuotaModal
+  onOpenQuotaModal,
+  onOpenSeasonModal
 }: AnalyticsPageProps) {
   // Navigation Subtab State
   const [subTab, setSubTab] = useState<'OVERVIEW' | 'MAHALLE' | 'SOKAK' | 'BATCHES'>('OVERVIEW');
@@ -166,13 +168,27 @@ export default function AnalyticsPage({
           </p>
         </div>
 
-        <button
-          onClick={handlePrint}
-          className="btn-primary lg:w-auto text-xs py-2.5 px-4 shadow-md shadow-amber-500/20 bg-gradient-to-r from-amber-500 to-orange-600 flex items-center gap-2 font-bold self-start sm:self-auto"
-        >
-          <Printer className="w-4 h-4 text-white" />
-          <span>Resmi PDF Raporu Yazdır</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {onOpenSeasonModal && (
+            <button
+              type="button"
+              onClick={onOpenSeasonModal}
+              className="px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold flex items-center gap-2 transition-all shadow-xs"
+              title="Kömür Dağıtım Dönemleri ve Arşivlenmiş Sezon Raporları"
+            >
+              <Archive className="w-4 h-4 text-blue-700" />
+              <span>Dönem & Arşiv Raporları</span>
+            </button>
+          )}
+
+          <button
+            onClick={handlePrint}
+            className="btn-primary lg:w-auto text-xs py-2.5 px-4 shadow-md shadow-amber-500/20 bg-gradient-to-r from-amber-500 to-orange-600 flex items-center gap-2 font-bold"
+          >
+            <Printer className="w-4 h-4 text-white" />
+            <span>Resmi PDF Raporu Yazdır</span>
+          </button>
+        </div>
       </div>
 
       {/* İSTATİSTİK VE RAPORLAMA ALT SEKMELERİ (MOBİL VE GENİŞ EKRAN) */}

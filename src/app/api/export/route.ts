@@ -283,7 +283,14 @@ export async function GET(request: NextRequest) {
     }
 
 
-    const { beneficiaries: benCol, importLogs: logsCol, deliveryHistory: histCol, activityLogs: actCol } = await getDbCollections();
+    const { 
+      beneficiaries: benCol, 
+      importLogs: logsCol, 
+      deliveryHistory: histCol, 
+      activityLogs: actCol,
+      seasonArchives: seasonCol,
+      archivedBeneficiaries: archBenCol
+    } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
     if (type === 'daily_deliveries') {
@@ -795,6 +802,149 @@ export async function GET(request: NextRequest) {
       return new NextResponse(new Uint8Array(buf), {
         headers: {
           'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx'),
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+    }
+
+    // =========================================================================
+    // 6. Arşivlenmiş Dönem Raporu (Özet İcmal + Arşiv Hak Sahipleri Listesi)
+    // =========================================================================
+    if (type === 'season_archive') {
+      const donemKodu = (searchParams.get('donem_kodu') || '').trim();
+      if (!donemKodu) {
+        return NextResponse.json({ success: false, error: 'Dönem kodu belirtilmedi' }, { status: 400 });
+      }
+
+      const archive = await seasonCol.findOne({ donem_kodu: donemKodu });
+      if (!archive) {
+        return NextResponse.json({ success: false, error: `"${donemKodu}" kodlu arşivlenmiş dönem bulunamadı.` }, { status: 404 });
+      }
+
+      // Fetch all beneficiaries archived for this period
+      const rawArchivedBens = await archBenCol
+        .find({ donem_kodu: donemKodu })
+        .sort({ sira_no: 1, mahalle: 1 })
+        .toArray();
+      const archivedBens = mapDocs(rawArchivedBens);
+
+      const seenSheetNames = new Set<string>();
+
+      // Tab 1: Mahalle Bazlı Dönem İcmali
+      const mahalleOzetleri = archive.mahalle_ozetleri || [];
+      const icmalData = mahalleOzetleri.map((m: any, idx: number) => ({
+        'Sıra': idx + 1,
+        'Mahalle / Köy Adı': m.mahalle,
+        'Yerleşim Tipi': m.tip || 'MAHALLE',
+        'Toplam Hane': m.toplam_hane,
+        'Hedef Kömür (Torba)': m.hedef_torba,
+        'Hedef Kömür (Ton)': `${m.hedef_ton || (m.hedef_torba * 0.025).toFixed(2)} Ton`,
+        'Dağıtılan (Torba)': m.dagitilan_torba,
+        'Dağıtılan (Ton)': `${m.dagitilan_ton || (m.dagitilan_torba * 0.025).toFixed(2)} Ton`,
+        'Kalan Kömür (Torba)': Math.max(0, m.hedef_torba - m.dagitilan_torba),
+        'Tamamlanan Hane': m.tamamlanan_hane,
+        'Eksik Hane': m.eksik_hane,
+        'Bekleyen Hane': m.bekleyen_hane,
+        'Tamamlanma Oranı': `%${m.tamamlanma_orani || 0}`,
+      }));
+
+      // Genel Toplam Satırı
+      const stats = archive.istatistikler || {};
+      if (icmalData.length > 0) {
+        icmalData.push({
+          'Sıra': '' as any,
+          'Mahalle / Köy Adı': 'GENEL TOPLAM:',
+          'Yerleşim Tipi': `${mahalleOzetleri.length} Yerleşim`,
+          'Toplam Hane': stats.toplam_hane || 0,
+          'Hedef Kömür (Torba)': stats.hedef_toplam_torba || 0,
+          'Hedef Kömür (Ton)': `${stats.hedef_toplam_ton || 0} Ton`,
+          'Dağıtılan (Torba)': stats.toplam_dagitilan_torba || 0,
+          'Dağıtılan (Ton)': `${stats.toplam_dagitilan_ton || 0} Ton`,
+          'Kalan Kömür (Torba)': Math.max(0, (stats.hedef_toplam_torba || 0) - (stats.toplam_dagitilan_torba || 0)),
+          'Tamamlanan Hane': stats.tamamlanan_hane || 0,
+          'Eksik Hane': stats.eksik_hane || 0,
+          'Bekleyen Hane': stats.bekleyen_hane || 0,
+          'Tamamlanma Oranı': `%${stats.tamamlanma_orani || 0}`,
+        });
+      }
+
+      const icmalColWidths = [
+        { wch: 6 },  // Sıra
+        { wch: 24 }, // Mahalle
+        { wch: 14 }, // Tip
+        { wch: 14 }, // Toplam Hane
+        { wch: 20 }, // Hedef Torba
+        { wch: 18 }, // Hedef Ton
+        { wch: 18 }, // Dağıtılan Torba
+        { wch: 16 }, // Dağıtılan Ton
+        { wch: 20 }, // Kalan Torba
+        { wch: 16 }, // Tamamlanan
+        { wch: 14 }, // Eksik
+        { wch: 14 }, // Bekleyen
+        { wch: 18 }, // Oran
+      ];
+
+      addStyledWorksheet(
+        workbook,
+        `${(archive.baslik || archive.donem_kodu).toUpperCase()} - DÖNEM SONU İCMAL VE DAĞITIM RAPORU`,
+        `Dönem: ${archive.donem_kodu} | Kapanış: ${archive.kapanis_tarihi || archive.arsivlenme_zamani} | Kapatan: ${archive.kapatan_kullanici || 'Yönetici'}`,
+        sanitizeSheetName('Dönem İcmali', seenSheetNames),
+        icmalData,
+        icmalColWidths
+      );
+
+      // Tab 2: Arşivlenen Hak Sahipleri Detay Listesi
+      const bensData = archivedBens.map((b: any, idx: number) => {
+        const target = Number(b.hedef_torba || 34);
+        const delivered = Number(b.torba_sayisi || 0);
+        return {
+          'Sıra': b.sira_no || idx + 1,
+          'Mahalle': b.mahalle || '-',
+          'Hane No': b.hane_no || '-',
+          'TC Kimlik No': b.tc_no || '-',
+          'Adı Soyadı': b.ad_soyad || '-',
+          'Telefon': b.telefon || '-',
+          'Açık Adres': b.acik_adres || '-',
+          'Hedef (Torba)': target,
+          'Teslim (Torba)': delivered,
+          'Durum': b.teslimat_durumu === 'TAMAMLANDI' ? 'TAMAMLANDI' : (b.teslimat_durumu === 'EKSIK' ? 'EKSİK' : 'BEKLİYOR'),
+          'Teslim Alan': b.teslim_alan || '-',
+          'Teslim Tarihi': b.teslim_tarihi || '-',
+          'İmza Durumu': b.imza_durumu === 'IMZALANDI' ? 'İMZALANDI' : 'İMZASIZ',
+        };
+      });
+
+      const bensColWidths = [
+        { wch: 8 },  // Sıra
+        { wch: 20 }, // Mahalle
+        { wch: 12 }, // Hane No
+        { wch: 16 }, // TC Kimlik No
+        { wch: 24 }, // Ad Soyad
+        { wch: 16 }, // Telefon
+        { wch: 45 }, // Açık Adres
+        { wch: 14 }, // Hedef
+        { wch: 14 }, // Teslim
+        { wch: 16 }, // Durum
+        { wch: 22 }, // Teslim Alan
+        { wch: 20 }, // Teslim Tarihi
+        { wch: 14 }, // İmza Durumu
+      ];
+
+      addStyledWorksheet(
+        workbook,
+        `${(archive.baslik || archive.donem_kodu).toUpperCase()} - ARŞİVLENEN HAK SAHİBİ LİSTESİ`,
+        `Toplam ${archivedBens.length} Kayıt Arşivlendi | Veritabanı Arşiv Güvencesi`,
+        sanitizeSheetName('Hak Sahipleri', seenSheetNames),
+        bensData,
+        bensColWidths
+      );
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const filename = `Edirne_SYDV_${archive.donem_kodu.replace(/[^a-zA-Z0-9_-]/g, '_')}_Donemi_Arsiv_Raporu.xlsx`;
+
+      return new NextResponse(new Uint8Array(buf), {
+        headers: {
+          'Content-Disposition': buildContentDispositionHeader(filename),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });

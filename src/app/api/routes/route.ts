@@ -9,9 +9,13 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action') || 'all';
 
-    // 1. Fetch Active Route (if any)
-    const activeRouteDoc = await routeCol.findOne({ durum: 'AKTIF' });
-    const activeRoute = activeRouteDoc ? mapDoc(activeRouteDoc) : null;
+    // 1. Fetch All Active Routes (Simultaneous multi-team & multi-vehicle support)
+    const activeRouteDocs = await routeCol
+      .find({ durum: 'AKTIF' })
+      .sort({ created_at: -1 })
+      .toArray();
+    const activeRoutes = mapDocs(activeRouteDocs);
+    const activeRoute = activeRoutes[0] || null;
 
     // 2. Fetch Archived / Completed Routes (sorted descending by date)
     const archivedDocs = await routeCol
@@ -35,7 +39,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      activeRoutes,
       activeRoute,
+      activeCount: activeRoutes.length,
       archivedRoutes,
       signedBeneficiaries,
       signedCount: signedBeneficiaries.length
@@ -74,12 +80,22 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir hane seçilmelidir' }, { status: 400 });
       }
 
-      // Check if an active route already exists
-      const existingActive = await routeCol.findOne({ durum: 'AKTIF' });
-      if (existingActive) {
+      // Multi-Route Support: Check if all selected beneficiaries are already assigned to an ongoing active route
+      const otherActiveRoutes = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      const activeAssignedMap = new Map<string, string>();
+      otherActiveRoutes.forEach((r: any) => {
+        (r.duraklar || []).forEach((d: any) => {
+          if (d.durum === 'BEKLIYOR') {
+            activeAssignedMap.set(String(d.beneficiary_id), r.rota_adi || 'Aktif Rota');
+          }
+        });
+      });
+
+      const conflicting = beneficiary_ids.filter((id: string) => activeAssignedMap.has(String(id)));
+      if (conflicting.length > 0 && conflicting.length === beneficiary_ids.length) {
         return NextResponse.json({
           success: false,
-          error: 'Halen devam eden aktif bir dağıtım rotası bulunmaktadır. Yeni rota açmadan önce mevcut rotayı tamamlayınız veya arşivleyiniz.'
+          error: `Seçtiğiniz hanelerin tamamı halen devam eden "${activeAssignedMap.get(String(conflicting[0]))}" rotasında yer almaktadır. Lütfen henüz rotaya atanmamış haneleri seçiniz.`
         }, { status: 400 });
       }
 
@@ -534,10 +550,10 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // If there is an active route with this beneficiary, sync the stop
-      const activeRouteDoc = await routeCol.findOne({ durum: 'AKTIF' });
-      if (activeRouteDoc) {
-        const stops = activeRouteDoc.duraklar || [];
+      // If there are active routes with this beneficiary, sync the stop across all active routes
+      const activeRouteDocs = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      for (const activeDoc of activeRouteDocs) {
+        const stops = activeDoc.duraklar || [];
         let modified = false;
         stops.forEach((s: any) => {
           if (String(s.beneficiary_id) === String(beneficiary_id)) {
@@ -548,7 +564,7 @@ export async function POST(request: NextRequest) {
           }
         });
         if (modified) {
-          await routeCol.updateOne(buildIdFilter(activeRouteDoc.id), {
+          await routeCol.updateOne(buildIdFilter(activeDoc.id || activeDoc._id), {
             $set: { duraklar: stops, updated_at: localTimeStr }
           });
         }

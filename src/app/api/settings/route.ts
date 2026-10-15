@@ -7,10 +7,19 @@ export async function GET() {
     const doc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const varsayilanHedefTorba = doc ? parseInt(doc.value, 10) : 34;
 
+    const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
+    let aktifDonem = { kod: '2026-2027', baslik: '2026-2027 Kömür Dağıtım Dönemi' };
+    if (seasonDoc?.value) {
+      try {
+        aktifDonem = JSON.parse(seasonDoc.value);
+      } catch {}
+    }
+
     return NextResponse.json({
       success: true,
       settings: {
         varsayilan_hedef_torba: varsayilanHedefTorba,
+        aktif_donem: aktifDonem,
       },
     });
   } catch (error: any) {

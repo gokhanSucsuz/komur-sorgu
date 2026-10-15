@@ -23,6 +23,7 @@ import ShiftPage from '@/components/ShiftPage';
 import RoutePage from '@/components/RoutePage';
 import AdminAuthModal from '@/components/AdminAuthModal';
 import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
+import SeasonManagementModal from '@/components/SeasonManagementModal';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 
 export default function Home() {
@@ -39,12 +40,14 @@ export default function Home() {
   const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false);
   const lastKnownSyncRef = useRef<string>('');
 
-  // Quota & Personnel & Audit Log modals state
+  // Quota & Personnel & Audit Log & Season modals state
   const [defaultQuota, setDefaultQuota] = useState<number>(34);
   const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
   const [showPersonnelModal, setShowPersonnelModal] = useState<boolean>(false);
   const [showAuditLogsModal, setShowAuditLogsModal] = useState<boolean>(false);
   const [showAdminAuthModal, setShowAdminAuthModal] = useState<boolean>(false);
+  const [showSeasonModal, setShowSeasonModal] = useState<boolean>(false);
+  const [activeSeasonCode, setActiveSeasonCode] = useState<string>('2026-2027');
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,40 +100,39 @@ export default function Home() {
   const [householdMembers, setHouseholdMembers] = useState<any[]>([]);
   const [editTarget, setEditTarget] = useState<any | null>(null);
 
-  // Load user role & session from localStorage on initial mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedLogin = localStorage.getItem('komur_logged_in');
-      const savedRole = localStorage.getItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
-      const savedName = localStorage.getItem('komur_user_name');
-      if (savedLogin === 'true' && savedRole && savedName) {
-        setIsLoggedIn(true);
-        setUserRole(savedRole);
-        setUserName(savedName);
-      } else {
-        setIsLoggedIn(false);
-      }
-      setIsAuthChecking(false);
+  const [sessionTerminatedReason, setSessionTerminatedReason] = useState<string | null>(null);
+
+  const handleLogout = useCallback((reason?: string) => {
+    if (reason) {
+      setSessionTerminatedReason(reason);
     }
-  }, []);
+    const savedUsername = typeof window !== 'undefined' ? localStorage.getItem('komur_username') : '';
+    const savedToken = typeof window !== 'undefined' ? localStorage.getItem('komur_session_token') : '';
 
-  const handleLoginSuccess = (user: { role: 'ADMIN' | 'PERSONEL'; name: string; username: string }) => {
-    setUserRole(user.role);
-    setUserName(user.name);
-    setIsLoggedIn(true);
-    localStorage.setItem('komur_logged_in', 'true');
-    localStorage.setItem('komur_user_role', user.role);
-    localStorage.setItem('komur_user_name', user.name);
-    localStorage.setItem('komur_username', user.username);
-  };
+    // If manual logout, clear active session on server
+    if (!reason && savedUsername && savedToken) {
+      try {
+        fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'logout',
+            username: savedUsername,
+            session_token: savedToken,
+          }),
+        }).catch(() => {});
+      } catch (e) {
+        // ignore
+      }
+    }
 
-  const handleLogout = () => {
     setIsLoggedIn(false);
-    localStorage.removeItem('komur_logged_in');
-    localStorage.removeItem('komur_user_role');
-    localStorage.removeItem('komur_user_name');
-    localStorage.removeItem('komur_username');
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('komur_logged_in');
+      localStorage.removeItem('komur_user_role');
+      localStorage.removeItem('komur_user_name');
+      localStorage.removeItem('komur_username');
+      localStorage.removeItem('komur_session_token');
       try {
         sessionStorage.removeItem('komur_beneficiaries_cache');
       } catch (e) {
@@ -144,14 +146,109 @@ export default function Home() {
     setArchiveGroupedDays([]);
     setTrucks([]);
     setOverallStats(null);
+  }, []);
+
+  // Single Device Session Heartbeat & Verification
+  const checkActiveSession = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const savedLogin = localStorage.getItem('komur_logged_in');
+    const savedUsername = localStorage.getItem('komur_username');
+    const savedToken = localStorage.getItem('komur_session_token');
+
+    if (savedLogin !== 'true' || !savedUsername || !savedToken) return;
+
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify',
+          username: savedUsername,
+          session_token: savedToken,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success || !data.valid) {
+        if (data.code === 'SESSION_TERMINATED') {
+          handleLogout(
+            data.error || 'Bu kullanıcı adı ile başka bir cihazdan oturum açıldı! Güvenlik gereği bu cihazdaki oturum sonlandırıldı.'
+          );
+        }
+      }
+    } catch (err) {
+      // network offline - preserve offline capability
+    }
+  }, [handleLogout]);
+
+  // Load user role & session from localStorage on initial mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedLogin = localStorage.getItem('komur_logged_in');
+      const savedRole = localStorage.getItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
+      const savedName = localStorage.getItem('komur_user_name');
+      if (savedLogin === 'true' && savedRole && savedName) {
+        setIsLoggedIn(true);
+        setUserRole(savedRole);
+        setUserName(savedName);
+        // Verify session validity on initial load
+        checkActiveSession();
+      } else {
+        setIsLoggedIn(false);
+      }
+      setIsAuthChecking(false);
+    }
+  }, [checkActiveSession]);
+
+  // Heartbeat timer for single device session checking
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const intervalId = setInterval(() => {
+      checkActiveSession();
+    }, 25000); // Check every 25 seconds
+
+    const handleWindowFocus = () => {
+      checkActiveSession();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [isLoggedIn, checkActiveSession]);
+
+  const handleLoginSuccess = (user: { role: 'ADMIN' | 'PERSONEL'; name: string; username: string; session_token?: string }) => {
+    setUserRole(user.role);
+    setUserName(user.name);
+    setIsLoggedIn(true);
+    setSessionTerminatedReason(null);
+    localStorage.setItem('komur_logged_in', 'true');
+    localStorage.setItem('komur_user_role', user.role);
+    localStorage.setItem('komur_user_name', user.name);
+    localStorage.setItem('komur_username', user.username);
+    if (user.session_token) {
+      localStorage.setItem('komur_session_token', user.session_token);
+    }
+  };
+
+  const handleUserUpdated = (updatedUser: { name: string; username: string }) => {
+    setUserName(updatedUser.name);
   };
 
   const fetchSettings = useCallback(async () => {
     try {
       const res = await fetch('/api/settings');
       const data = await res.json();
-      if (data.success && data.settings?.varsayilan_hedef_torba) {
-        setDefaultQuota(data.settings.varsayilan_hedef_torba);
+      if (data.success) {
+        if (data.settings?.varsayilan_hedef_torba) {
+          setDefaultQuota(data.settings.varsayilan_hedef_torba);
+        }
+        if (data.settings?.aktif_donem?.kod) {
+          setActiveSeasonCode(data.settings.aktif_donem.kod);
+        }
       }
     } catch (e) {
       console.error('Error fetching settings:', e);
@@ -286,11 +383,21 @@ export default function Home() {
     try {
       const res = await fetch('/api/routes');
       const data = await res.json();
-      if (data.success && data.activeRoute) {
-        const pending = (data.activeRoute.duraklar || []).filter(
-          (s: any) => !s.durum || s.durum === 'BEKLIYOR'
-        ).length;
-        setActiveRouteStopsCount(pending);
+      if (data.success) {
+        if (Array.isArray(data.activeRoutes) && data.activeRoutes.length > 0) {
+          let totalPending = 0;
+          data.activeRoutes.forEach((r: any) => {
+            totalPending += (r.duraklar || []).filter((s: any) => !s.durum || s.durum === 'BEKLIYOR').length;
+          });
+          setActiveRouteStopsCount(totalPending);
+        } else if (data.activeRoute) {
+          const pending = (data.activeRoute.duraklar || []).filter(
+            (s: any) => !s.durum || s.durum === 'BEKLIYOR'
+          ).length;
+          setActiveRouteStopsCount(pending);
+        } else {
+          setActiveRouteStopsCount(0);
+        }
       } else {
         setActiveRouteStopsCount(0);
       }
@@ -501,7 +608,12 @@ export default function Home() {
 
   // 2. Unauthenticated Gate: Show ONLY Login Page (No system info leaks!)
   if (!isLoggedIn) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <LoginPage 
+        onLoginSuccess={handleLoginSuccess} 
+        sessionTerminatedReason={sessionTerminatedReason} 
+      />
+    );
   }
 
   // 3. Authenticated: Render the Main Application
@@ -530,7 +642,10 @@ export default function Home() {
         onOpenQuotaModal={() => setShowQuotaModal(true)}
         onOpenPersonnelModal={() => setShowPersonnelModal(true)}
         onOpenAuditLogs={() => setShowAuditLogsModal(true)}
-        onLogout={handleLogout}
+        onOpenSeasonModal={() => setShowSeasonModal(true)}
+        activeSeasonCode={activeSeasonCode}
+        onLogout={() => handleLogout()}
+        onUserUpdated={handleUserUpdated}
         onRefresh={handleRefreshAll}
         isRefreshing={isRefreshing || isSyncingOffline}
       />
@@ -610,6 +725,7 @@ export default function Home() {
           <AnalyticsPage
             userRole={userRole}
             onOpenQuotaModal={() => setShowQuotaModal(true)}
+            onOpenSeasonModal={() => setShowSeasonModal(true)}
             onRefreshAll={handleRefreshAll}
           />
         )}
@@ -797,6 +913,19 @@ export default function Home() {
           }}
           title="Yönetici Yetkilendirmesi Gereklidir"
           description="Excel aktarımı ve toplu veri yönetimi işlemleri için lütfen Yönetici şifrenizi veya PIN kodunuzu giriniz."
+        />
+      )}
+
+      {/* 8. Kömür Dağıtım Dönemi & Arşiv Yönetimi Modalı */}
+      {showSeasonModal && (
+        <SeasonManagementModal
+          isOpen={showSeasonModal}
+          onClose={() => setShowSeasonModal(false)}
+          userRole={userRole}
+          userName={userName}
+          onSeasonChanged={() => {
+            handleRefreshAll();
+          }}
         />
       )}
     </main>

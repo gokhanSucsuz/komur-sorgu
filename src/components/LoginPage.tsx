@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Flame, Sparkles, Lock, Eye, EyeOff } from 'lucide-react';
 
 interface LoginPageProps {
-  onLoginSuccess: (user: { role: 'ADMIN' | 'PERSONEL'; name: string; username: string }) => void;
+  onLoginSuccess: (user: { role: 'ADMIN' | 'PERSONEL'; name: string; username: string; session_token?: string }) => void;
+  sessionTerminatedReason?: string | null;
 }
 
-export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
+export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: LoginPageProps) {
   const [activeTab, setActiveTab] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -16,7 +17,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [staffList, setStaffList] = useState<any[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState(sessionTerminatedReason || '');
 
   // Fetch registered staff on mount
   useEffect(() => {
@@ -72,7 +73,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       onLoginSuccess({
         role: data.user.rol,
         name: data.user.ad_soyad,
-        username: data.user.username
+        username: data.user.username,
+        session_token: data.session_token,
       });
     } catch (err: any) {
       setErrorMsg(err.message || 'Hatalı kullanıcı adı veya şifre! Lütfen kontrol ediniz.');
@@ -305,9 +307,14 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </form>
 
           {/* Security Notice Footer */}
-          <div className="p-3 bg-slate-50 border-t border-slate-100 text-center text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
-            <Lock className="w-3.5 h-3.5 text-slate-400" />
-            <span>Yetkisiz erişimler kayıt altına alınmaktadır. KVKK Uyumlu Güvenli Giriş.</span>
+          <div className="p-3 bg-slate-50 border-t border-slate-100 text-center text-[11px] text-slate-500 space-y-1">
+            <div className="flex items-center justify-center gap-1.5 font-bold text-slate-600">
+              <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Tek Cihaz Koruması Aktiftir</span>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Aynı kullanıcı adı ile aynı anda yalnızca 1 cihaz sisteme girebilir. Başka bir cihazdan giriş yapıldığında önceki oturum otomatik sonlandırılır.
+            </p>
           </div>
         </div>
       </div>

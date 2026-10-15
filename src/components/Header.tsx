@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi
+  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
+import ProfileModal from '@/components/ProfileModal';
 
 interface HeaderProps {
   userRole: 'ADMIN' | 'PERSONEL';
@@ -23,7 +24,10 @@ interface HeaderProps {
   onOpenQuotaModal?: () => void;
   onOpenPersonnelModal?: () => void;
   onOpenAuditLogs?: () => void;
+  onOpenSeasonModal?: () => void;
+  activeSeasonCode?: string;
   onLogout?: () => void;
+  onUserUpdated?: (user: { name: string; username: string }) => void;
   onRefresh: () => void;
   isRefreshing?: boolean;
 }
@@ -44,7 +48,10 @@ export default function Header({
   onOpenQuotaModal,
   onOpenPersonnelModal,
   onOpenAuditLogs,
+  onOpenSeasonModal,
+  activeSeasonCode = '2026-2027',
   onLogout,
+  onUserUpdated,
   onRefresh,
   isRefreshing = false
 }: HeaderProps) {
@@ -179,6 +186,19 @@ export default function Header({
                 </button>
               )}
 
+              {/* Season & Archive Management Button */}
+              {onOpenSeasonModal && (
+                <button
+                  onClick={onOpenSeasonModal}
+                  title={`Kömür Dağıtım Dönemi: ${activeSeasonCode} (Dönem & Arşiv Yönetimi)`}
+                  className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-xs font-bold text-blue-900 transition-all active:scale-95 shadow-sm shrink-0"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                  <span className="hidden sm:inline">{activeSeasonCode}</span>
+                  <span className="sm:hidden text-[11px]">Dönem</span>
+                </button>
+              )}
+
               {/* Target Quota - Only Admin Can Edit; Personnel Sees Read-Only */}
               {userRole === 'ADMIN' && onOpenQuotaModal ? (
                 <button
@@ -292,59 +312,15 @@ export default function Header({
         </div>
       </header>
 
-      {/* User Profile Info Modal (Read-Only, Role is Enforced by Account, No Self Escalation) */}
-      {showProfileModal && (
-        <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
-          <div className="modal-sheet max-w-md" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
-              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <User className="w-5 h-5 text-amber-600" />
-                Kullanıcı ve Oturum Bilgisi
-              </h3>
-              <button
-                onClick={() => setShowProfileModal(false)}
-                className="text-slate-400 hover:text-slate-700 text-sm p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500 font-bold uppercase">Giriş Yapan Kullanıcı</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                    userRole === 'ADMIN' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-sky-100 text-sky-900 border border-sky-300'
-                  }`}>
-                    {userRole === 'ADMIN' ? 'Yönetici' : 'Saha Personeli'}
-                  </span>
-                </div>
-                <div className="text-sm font-black text-slate-900">{userName}</div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 leading-relaxed font-medium">
-                🛡️ <strong>Güvenlik ve Yetki İlkesi:</strong> Sistem yetkileri hesap kaydınıza tanımlıdır. Normal personel kendini yönetici yapamaz, yönetici de kendini personele düşüremez. Personel kayıt ve rol işlemleri sadece Sistem Yöneticisi tarafından yürütülmektedir.
-              </div>
-
-              <div className="pt-2">
-                {onLogout && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowProfileModal(false);
-                      onLogout();
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-95 shadow-xs"
-                  >
-                    <LogOut className="w-4 h-4 text-rose-600" />
-                    Güvenli Oturumu Kapat (Çıkış Yap)
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* User Profile & Password Update Modal */}
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        userRole={userRole}
+        userName={userName}
+        onUserUpdated={onUserUpdated || (() => {})}
+        onLogout={onLogout}
+      />
     </>
   );
 }

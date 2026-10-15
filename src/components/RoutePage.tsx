@@ -24,7 +24,31 @@ export default function RoutePage({
   onNavigateToSearch
 }: RoutePageProps) {
   const [activeTab, setActiveTab] = useState<'ACTIVE_ROUTE' | 'ARCHIVE'>('ACTIVE_ROUTE');
-  const [activeRoute, setActiveRoute] = useState<any | null>(null);
+  const [activeRoutes, setActiveRoutes] = useState<any[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+
+  // Active route currently selected & being viewed/worked on
+  const activeRoute = useMemo(() => {
+    if (!activeRoutes || activeRoutes.length === 0) return null;
+    if (selectedRouteId) {
+      const found = activeRoutes.find((r) => String(r.id || r._id) === String(selectedRouteId));
+      if (found) return found;
+    }
+    return activeRoutes[0] || null;
+  }, [activeRoutes, selectedRouteId]);
+
+  // Set of beneficiary IDs currently assigned to an ongoing active route
+  const activeAssignedSet = useMemo(() => {
+    const set = new Set<string>();
+    activeRoutes.forEach((r) => {
+      (r.duraklar || []).forEach((d: any) => {
+        if (!d.durum || d.durum === 'BEKLIYOR') {
+          set.add(String(d.beneficiary_id));
+        }
+      });
+    });
+    return set;
+  }, [activeRoutes]);
   const [archivedRoutes, setArchivedRoutes] = useState<any[]>([]);
   const [signedBeneficiaries, setSignedBeneficiaries] = useState<any[]>([]);
   const [allPendingBeneficiaries, setAllPendingBeneficiaries] = useState<any[]>([]);
@@ -67,7 +91,14 @@ export default function RoutePage({
       const res = await fetch('/api/routes');
       const data = await res.json();
       if (data.success) {
-        setActiveRoute(data.activeRoute || null);
+        const routes = data.activeRoutes || (data.activeRoute ? [data.activeRoute] : []);
+        setActiveRoutes(routes);
+        setSelectedRouteId((prev) => {
+          if (prev && routes.some((r: any) => String(r.id || r._id) === String(prev))) {
+            return prev;
+          }
+          return routes[0] ? String(routes[0].id || routes[0]._id) : null;
+        });
         setArchivedRoutes(data.archivedRoutes || []);
         setSignedBeneficiaries(data.signedBeneficiaries || []);
       }
@@ -100,8 +131,9 @@ export default function RoutePage({
   // Open Create Route Modal
   const handleOpenCreateModal = async () => {
     const todayStr = new Date().toLocaleDateString('tr-TR');
-    setNewRouteName(`${todayStr} Kömür Dağıtım Rotası`);
-    setNewRouteStaff(userName || 'Personel');
+    const teamNum = (activeRoutes?.length || 0) + 1;
+    setNewRouteName(`Ekip ${teamNum} - ${todayStr} Dağıtım Rotası`);
+    setNewRouteStaff(userName || `Ekip ${teamNum}`);
     setNewRoutePlate('');
     setNewRouteNote('');
 
@@ -110,9 +142,13 @@ export default function RoutePage({
       const data = await res.json();
       if (data.success && data.signedBeneficiaries) {
         setSignedBeneficiaries(data.signedBeneficiaries);
-        if (data.signedBeneficiaries.length > 0) {
+        // Exclude beneficiaries that are already assigned to an ongoing active route
+        const availableSigned = (data.signedBeneficiaries || []).filter(
+          (b: any) => !activeAssignedSet.has(String(b.id))
+        );
+        if (availableSigned.length > 0) {
           setCreateSelectionTab('SIGNED');
-          setSelectedBeneficiaryIds(data.signedBeneficiaries.map((b: any) => String(b.id)));
+          setSelectedBeneficiaryIds(availableSigned.map((b: any) => String(b.id)));
         } else {
           setCreateSelectionTab('ALL');
           setSelectedBeneficiaryIds([]);
@@ -169,6 +205,9 @@ export default function RoutePage({
       if (data.success) {
         setShowCreateModal(false);
         await fetchRoutes();
+        if (data.route && (data.route.id || data.route._id)) {
+          setSelectedRouteId(String(data.route.id || data.route._id));
+        }
         if (onRefreshAll) onRefreshAll();
       } else {
         alert(data.error || 'Rota oluşturulamadı');
@@ -192,10 +231,15 @@ export default function RoutePage({
     updatedStops[targetIndex] = temp;
 
     // Optimistic UI update
-    setActiveRoute({
-      ...activeRoute,
-      duraklar: updatedStops.map((s, idx) => ({ ...s, sira: idx + 1 }))
-    });
+    const reindexedStops = updatedStops.map((s, idx) => ({ ...s, sira: idx + 1 }));
+    setActiveRoutes((prev) =>
+      prev.map((r) => {
+        if (String(r.id || r._id) === String(activeRoute.id || activeRoute._id)) {
+          return { ...r, duraklar: reindexedStops };
+        }
+        return r;
+      })
+    );
 
     try {
       await fetch('/api/routes', {
@@ -289,8 +333,14 @@ export default function RoutePage({
       const data = await res.json();
       if (data.success) {
         setShowFinalizeModal(false);
-        setActiveRoute(null);
-        setActiveTab('ARCHIVE');
+        const remaining = activeRoutes.filter(r => String(r.id || r._id) !== String(activeRoute.id || activeRoute._id));
+        setActiveRoutes(remaining);
+        if (remaining.length > 0) {
+          setSelectedRouteId(String(remaining[0].id || remaining[0]._id));
+        } else {
+          setSelectedRouteId(null);
+          setActiveTab('ARCHIVE');
+        }
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
@@ -321,7 +371,13 @@ export default function RoutePage({
       const data = await res.json();
       if (data.success) {
         setShowDeleteConfirm(false);
-        setActiveRoute(null);
+        const remaining = activeRoutes.filter(r => String(r.id || r._id) !== String(activeRoute.id || activeRoute._id));
+        setActiveRoutes(remaining);
+        if (remaining.length > 0) {
+          setSelectedRouteId(String(remaining[0].id || remaining[0]._id));
+        } else {
+          setSelectedRouteId(null);
+        }
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
@@ -451,8 +507,8 @@ export default function RoutePage({
             }`}
           >
             <Navigation className="w-4 h-4 text-sky-600" />
-            <span>Aktif Rota</span>
-            {activeRoute && (
+            <span>Aktif Rotalar ({activeRoutes.length})</span>
+            {activeRoutes.length > 0 && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" />
             )}
           </button>
@@ -520,6 +576,71 @@ export default function RoutePage({
                   <Plus className="w-5 h-5" />
                   <span>Yeni Dağıtım Rotası Başlat</span>
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ÇOKLU EKİP ROTA SEÇİCİ & YENİ ROTA EKLEME ÇUBUĞU */}
+          {activeRoutes.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-3 space-y-2.5 no-print">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-emerald-600" />
+                    Sahadaki Dağıtım Ekipleri ({activeRoutes.length} Aktif Rota)
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Yeni Ekip / Rota Başlat</span>
+                </button>
+              </div>
+
+              {/* Rota Butonları Listesi */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                {activeRoutes.map((r, idx) => {
+                  const isSelected = String(r.id || r._id) === String(activeRoute?.id || activeRoute?._id);
+                  const total = r.toplam_hane || 0;
+                  const handled = (r.tamamlanan_hane || 0) + (r.eksik_hane || 0) + (r.teslim_edilemeyen_hane || 0);
+                  const percent = total > 0 ? Math.round((handled / total) * 100) : 0;
+
+                  return (
+                    <button
+                      key={r.id || r._id || idx}
+                      type="button"
+                      onClick={() => setSelectedRouteId(String(r.id || r._id))}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-left border transition-all shrink-0 active:scale-95 ${
+                        isSelected
+                          ? 'bg-sky-50 border-sky-400 text-sky-950 shadow-xs font-bold ring-2 ring-sky-400/20'
+                          : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                      }`}
+                    >
+                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${isSelected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black truncate max-w-[170px] sm:max-w-[220px]">
+                            {r.rota_adi}
+                          </span>
+                          {r.arac_plaka && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-800 font-mono font-bold shrink-0">
+                              {r.arac_plaka}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium mt-0.5">
+                          <span>{r.dagitim_personeli || 'Personel'}</span>
+                          <span>•</span>
+                          <span className="font-bold text-slate-700">{handled}/{total} Hane (%{percent})</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

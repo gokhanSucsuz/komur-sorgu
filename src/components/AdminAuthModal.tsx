@@ -43,7 +43,8 @@ export default function AdminAuthModal({
         body: JSON.stringify({
           role: 'ADMIN',
           username: username.trim() || 'admin',
-          password: password.trim()
+          password: password.trim(),
+          is_elevation: true,
         })
       });
 

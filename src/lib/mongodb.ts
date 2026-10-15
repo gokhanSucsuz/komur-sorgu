@@ -420,6 +420,8 @@ export async function getDbCollections() {
         importBatches: db.collection<any>('import_batches'),
         deliveryRoutes: db.collection<any>('delivery_routes'),
         activityLogs: db.collection<any>('activity_logs'),
+        seasonArchives: db.collection<any>('season_archives'),
+        archivedBeneficiaries: db.collection<any>('archived_beneficiaries'),
       };
     } catch (err) {
       console.warn('[MongoDB] Atlas connection warning, using memory fallback:', err);
@@ -444,6 +446,8 @@ export async function getDbCollections() {
     importBatches: new InMemoryCollection('import_batches') as any,
     deliveryRoutes: new InMemoryCollection('delivery_routes') as any,
     activityLogs: new InMemoryCollection('activity_logs') as any,
+    seasonArchives: new InMemoryCollection('season_archives') as any,
+    archivedBeneficiaries: new InMemoryCollection('archived_beneficiaries') as any,
   };
 }
 
@@ -494,15 +498,35 @@ async function initializeIndexesAndSeed(db: Db) {
       activityLogs.createIndex({ islem_tipi: 1 }),
       activityLogs.createIndex({ kullanici_adi: 1 }),
       activityLogs.createIndex({ gun_tarihi: -1 }),
+
+      // Kömür Dönemleri ve Arşiv İndeksleri
+      db.collection('season_archives').createIndex({ donem_kodu: 1 }, { unique: true }),
+      db.collection('season_archives').createIndex({ kapanis_tarihi: -1 }),
+      db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1 }),
+      db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1, tc_hash: 1 }),
+      db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1, mahalle: 1 }),
     ]);
   } catch (err) {
     console.warn('[MongoDB] Index initialization notice:', err);
   }
 
-  // 1. Seed Settings
+  // 1. Seed Settings (Quota & Active Season)
   const existingSetting = await settings.findOne({ key: 'varsayilan_hedef_torba' });
   if (!existingSetting) {
     await settings.insertOne({ key: 'varsayilan_hedef_torba', value: '34' });
+  }
+
+  const existingSeason = await settings.findOne({ key: 'aktif_donem' });
+  if (!existingSeason) {
+    await settings.insertOne({
+      key: 'aktif_donem',
+      value: JSON.stringify({
+        kod: '2026-2027',
+        baslik: '2026-2027 Kömür Dağıtım Dönemi',
+        baslangic_tarihi: '2026-10-01',
+        durum: 'AKTIF',
+      }),
+    });
   }
 
   // 2. Initial Admin User if none exists (AES-256-GCM encrypted)
@@ -549,6 +573,8 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.work_shifts = [];
   store.activity_logs = [];
   store.import_logs = [];
+  store.season_archives = [];
+  store.archived_beneficiaries = [];
 }
 
 export function getSeedBeneficiaries(nowStr?: string): any[] {
