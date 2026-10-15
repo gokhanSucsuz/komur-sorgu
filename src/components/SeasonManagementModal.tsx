@@ -778,7 +778,7 @@ export default function SeasonManagementModal({
       {selectedArchiveDetail && (
         <div className="modal-overlay z-60" onClick={() => setSelectedArchiveDetail(null)}>
           <div
-            className="modal-sheet max-w-3xl max-h-[85vh] flex flex-col"
+            className="modal-sheet max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
@@ -798,7 +798,7 @@ export default function SeasonManagementModal({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto my-3 pr-1">
+            <div className="flex-1 min-h-0 overflow-y-auto my-3 pr-1">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">

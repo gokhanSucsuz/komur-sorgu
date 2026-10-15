@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin, Printer, X, FileText, CheckCircle2, Settings } from 'lucide-react';
 import { turkishRecordMatches } from '@/lib/normalizer';
 
@@ -381,7 +382,7 @@ export default function DeliveryArchive({
       )}
 
       {/* Günlük Teslimat Tutanağı ve Yazdırma Modalı */}
-      {printDayGroup && (
+      {printDayGroup && typeof document !== 'undefined' && createPortal(
         <div 
           className="report-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
           onClick={(e) => {
@@ -556,7 +557,8 @@ export default function DeliveryArchive({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

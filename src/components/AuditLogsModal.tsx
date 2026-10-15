@@ -154,7 +154,7 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal-sheet max-w-4xl max-h-[90vh] flex flex-col"
+        className="modal-sheet max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -333,7 +333,7 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
         </div>
 
         {/* Logs List Area */}
-        <div className="flex-1 overflow-y-auto pt-2 space-y-2.5 pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto pt-2 space-y-2.5 pr-1">
           {isLoading ? (
             <div className="p-12 text-center text-slate-500 text-xs font-semibold space-y-2">
               <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />

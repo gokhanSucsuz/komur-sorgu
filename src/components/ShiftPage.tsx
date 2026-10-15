@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Clock,
   Calendar,
@@ -910,7 +911,7 @@ export default function ShiftPage({
       {/* ======================================================== */}
       {/* RESMİ PERSONEL ÇALIŞMA SAATLERİ VE MESAİ RAPORU MODALI  */}
       {/* ======================================================== */}
-      {showReportModal && (
+      {showReportModal && typeof document !== 'undefined' && createPortal(
         <div 
           className="report-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
           onClick={(e) => {
@@ -1154,7 +1155,8 @@ export default function ShiftPage({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
