@@ -22,8 +22,8 @@ import {
   hashHane,
   hashAddress,
   isEncrypted,
-  getIstanbulDate,
 } from './crypto';
+import { getIstanbulDate } from './dateUtils';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'komur_db';

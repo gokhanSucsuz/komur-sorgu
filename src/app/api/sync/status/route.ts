@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections } from '@/lib/mongodb';
-import { getIstanbulDate } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 
 export async function GET(request: NextRequest) {
   try {

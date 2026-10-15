@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
-import { encryptShift, encryptField, getIstanbulDate } from '@/lib/crypto';
+import { encryptShift, encryptField } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 
 function calculateMinutes(start: string, end: string): number {

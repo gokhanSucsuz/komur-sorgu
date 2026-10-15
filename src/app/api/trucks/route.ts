@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
-import { encryptTruck, getIstanbulDate } from '@/lib/crypto';
+import { encryptTruck } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 

@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
-import { getIstanbulDate } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 
 export async function GET(request: NextRequest) {
   try {

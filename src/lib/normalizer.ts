@@ -587,33 +587,15 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
 } {
   if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, daireNo: 0 };
 
-  // Defensive decryption if record contains encrypted fields in Node.js server environment
+  // Defensive check: If encrypted ciphertext is passed, ignore to prevent leaking ciphertext
   let rawSokak = record.sokak;
   if (typeof rawSokak === 'string' && (rawSokak.startsWith('ENC:GCM:v1:') || rawSokak.startsWith('ENC:'))) {
-    if (typeof window === 'undefined') {
-      try {
-        const { decryptField } = require('./crypto');
-        rawSokak = decryptField(rawSokak);
-      } catch {
-        rawSokak = '';
-      }
-    } else {
-      rawSokak = '';
-    }
+    rawSokak = '';
   }
 
   let rawAdres = record.acik_adres;
   if (typeof rawAdres === 'string' && (rawAdres.startsWith('ENC:GCM:v1:') || rawAdres.startsWith('ENC:'))) {
-    if (typeof window === 'undefined') {
-      try {
-        const { decryptField } = require('./crypto');
-        rawAdres = decryptField(rawAdres);
-      } catch {
-        rawAdres = '';
-      }
-    } else {
-      rawAdres = '';
-    }
+    rawAdres = '';
   }
 
   if (rawSokak && !rawSokak.startsWith('ENC:') && record.kapi_no !== undefined && record.kapi_no !== null) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { encryptField, hashPassword, verifyPassword, getIstanbulDate } from '@/lib/crypto';
+import { encryptField, hashPassword, verifyPassword } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { sanitizeUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
@@ -74,7 +75,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error fetching auth users:', error);
-    return NextResponse.json({ success: false, error: 'Kullanıcı listesi alınamadı.' }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      error: error?.message || 'Kullanıcı listesi alınamadı.'
+    }, { status: 500 });
   }
 }
 
@@ -183,14 +187,18 @@ export async function POST(request: NextRequest) {
     if (rawUser) {
       if (rawUser.sifre_hash) {
         isPasswordCorrect = verifyPassword(trimmedPass, rawUser.sifre_hash);
-      } else {
-        // Transparent fallback & automatic zero-downtime hash upgrade
+      }
+      // Transparent fallback: if hash was false/not present, check decrypted/plaintext password
+      if (!isPasswordCorrect) {
         const decUser = mapDoc(rawUser);
         if (decUser.sifre === trimmedPass || rawUser.sifre === trimmedPass) {
           isPasswordCorrect = true;
-          // Upgrade immediately in database to secure salted scrypt hash
-          const newHash = hashPassword(trimmedPass);
-          await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash } });
+          try {
+            const newHash = hashPassword(trimmedPass);
+            await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash } });
+          } catch (e) {
+            console.error('Notice: Could not upgrade password hash:', e);
+          }
         }
       }
     }
@@ -274,7 +282,10 @@ export async function POST(request: NextRequest) {
     return res;
   } catch (error: any) {
     console.error('Error during login:', error);
-    return NextResponse.json({ success: false, error: 'Giriş yapılırken sunucu hatası oluştu.' }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      error: error?.message || 'Giriş yapılırken sunucu hatası oluştu.'
+    }, { status: 500 });
   }
 }
 
@@ -321,7 +332,8 @@ export async function PUT(request: NextRequest) {
     let isCurrentPassValid = false;
     if (rawUser.sifre_hash) {
       isCurrentPassValid = verifyPassword(trimmedCurrentPass, rawUser.sifre_hash);
-    } else {
+    }
+    if (!isCurrentPassValid) {
       isCurrentPassValid = decUser.sifre === trimmedCurrentPass || rawUser.sifre === trimmedCurrentPass;
     }
 

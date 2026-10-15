@@ -10,7 +10,7 @@ import {
 } from '@/lib/mongodb';
 import { normalizeMahalleName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
-import { getIstanbulDate } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 
 export async function GET(request: NextRequest) {
   try {

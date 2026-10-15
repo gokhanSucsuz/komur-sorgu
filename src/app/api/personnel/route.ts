@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
-import { encryptUser, encryptField, hashPassword, getIstanbulDate } from '@/lib/crypto';
+import { encryptUser, encryptField, hashPassword } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession, sanitizeUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {

@@ -19,8 +19,8 @@ import {
   hashAddress,
   encryptField,
   encryptBeneficiary,
-  getIstanbulDate,
 } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {

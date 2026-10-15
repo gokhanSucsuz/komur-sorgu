@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, recordActivityLog, mapDocs, touchSyncPulse } from '@/lib/mongodb';
-import { encryptBeneficiary, encryptImportLog, getIstanbulDate } from '@/lib/crypto';
+import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { 
   cleanTcNo, 
