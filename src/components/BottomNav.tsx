@@ -1,8 +1,8 @@
 'use client';
 
-import { Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, BookOpen } from 'lucide-react';
 
-export type NavTab = 'search' | 'route' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import';
+export type NavTab = 'search' | 'route' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import' | 'guide';
 
 interface BottomNavProps {
   currentTab: NavTab;
@@ -66,6 +66,11 @@ export default function BottomNav({
       icon: FileSpreadsheet,
       badge: importErrorsCount && importErrorsCount > 0 ? importErrorsCount : undefined,
       badgeColor: 'bg-rose-600 text-white'
+    },
+    {
+      id: 'guide' as NavTab,
+      label: 'Kılavuz',
+      icon: BookOpen
     }
   ];
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar
+  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 import ProfileModal from '@/components/ProfileModal';
@@ -100,6 +100,11 @@ export default function Header({
       icon: FileSpreadsheet,
       badge: importErrorsCount && importErrorsCount > 0 ? importErrorsCount : undefined,
       badgeColor: 'bg-rose-600 text-white'
+    },
+    {
+      id: 'guide' as NavTab,
+      label: 'Kullanım Kılavuzu',
+      icon: BookOpen
     }
   ];
 
@@ -217,6 +222,22 @@ export default function Header({
                   <span className="text-xs">🎯</span>
                   <span className="text-[11px] sm:text-xs font-bold">{defaultQuota || 34}</span>
                 </div>
+              )}
+
+              {/* Quick Guide Shortcut */}
+              {onTabChange && (
+                <button
+                  onClick={() => onTabChange('guide')}
+                  title="Resmi Sistem Kullanım Kılavuzu & Yardım"
+                  className={`flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm shrink-0 ${
+                    currentTab === 'guide'
+                      ? 'bg-emerald-600 text-white border-emerald-700'
+                      : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Kılavuz</span>
+                </button>
               )}
 
               <button

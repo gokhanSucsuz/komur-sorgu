@@ -24,6 +24,7 @@ import RoutePage from '@/components/RoutePage';
 import AdminAuthModal from '@/components/AdminAuthModal';
 import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
 import SeasonManagementModal from '@/components/SeasonManagementModal';
+import GuidePage from '@/components/GuidePage';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 
 export default function Home() {
@@ -755,6 +756,14 @@ export default function Home() {
             userRole={userRole}
             onSwitchToAdmin={() => setShowAdminAuthModal(true)}
             onRefreshAll={handleRefreshAll}
+          />
+        )}
+
+        {/* Tab 6: Resmi Kullanım Kılavuzu & Yardım */}
+        {currentTab === 'guide' && (
+          <GuidePage
+            userRole={userRole}
+            onNavigateTab={(tab) => setCurrentTab(tab)}
           />
         )}
 
