@@ -911,21 +911,19 @@ export default function ShiftPage({
       {/* RESMİ PERSONEL ÇALIŞMA SAATLERİ VE MESAİ RAPORU MODALI  */}
       {/* ======================================================== */}
       {showReportModal && (
-        <div className="report-modal-overlay fixed inset-0 z-[100]">
-          {/* Karartılmış Arka Plan (Tıklayınca Kapanır) */}
-          <div 
-            className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs transition-opacity z-[100]"
-            onClick={() => {
+        <div 
+          className="report-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
               setShowReportModal(false);
               setReportTargetDate('ALL');
-            }}
-          />
-
-          {/* Modal Panel: Ekran sınırları içine kilitlenmiştir */}
-          <div className="fixed inset-2 sm:inset-4 md:inset-6 z-[101] flex flex-col items-center pointer-events-none">
-            <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-full flex flex-col shadow-2xl border border-slate-300 overflow-hidden pointer-events-auto">
-              {/* Modal Header */}
-              <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print">
+            }
+          }}
+        >
+          {/* Modal Panel: Sabit %92 ekran yüksekliği ve flex düzeni ile tüm içerik scroll edilir */}
+          <div className="report-modal-card relative bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] max-h-[92vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden z-10">
+            {/* Modal Header */}
+            <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <FileText className="w-5 h-5" />
@@ -961,7 +959,11 @@ export default function ShiftPage({
             </div>
 
             {/* Modal Body / Printable Content */}
-            <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" id="printableShiftReport">
+            <div 
+              className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" 
+              id="printableShiftReport"
+              style={{ overscrollBehavior: 'contain' }}
+            >
               {/* Official Institutional Header */}
               <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
@@ -1153,7 +1155,6 @@ export default function ShiftPage({
             </div>
           </div>
         </div>
-      </div>
       )}
     </div>
   );
