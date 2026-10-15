@@ -1151,12 +1151,12 @@ export default function BeneficiaryList({
                   <thead>
                     <tr>
                       <th className="w-16 text-center">Sıra No</th>
-                      <th>Hak Sahibi (Ad Soyad)</th>
-                      <th>T.C. Kimlik No</th>
-                      <th>Telefon Numarası</th>
+                      <th className="min-w-[190px]">Hak Sahibi (Ad Soyad)</th>
+                      <th className="min-w-[130px] whitespace-nowrap">T.C. Kimlik No</th>
+                      <th className="min-w-[140px] whitespace-nowrap">Telefon Numarası</th>
                       <th>Adres & Yerleşim Bilgisi</th>
-                      <th>Kömür Durumu</th>
-                      <th className="text-right">Hızlı İşlem</th>
+                      <th className="min-w-[130px] whitespace-nowrap">Kömür Durumu</th>
+                      <th className="text-right whitespace-nowrap">Hızlı İşlem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1180,24 +1180,51 @@ export default function BeneficiaryList({
                           </td>
 
                           {/* Adı Soyadı */}
-                          <td>
-                            <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                              <span>{person.ad_soyad}</span>
-                              {hasHouseholdDuplicate && (
-                                <span className="badge badge-household text-[10px] py-0 px-1.5 shrink-0">
-                                  Aynı Hane
-                                </span>
-                              )}
-                              {person.uyari_notu && (
-                                <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-300 shrink-0 font-bold" title={person.uyari_notu}>
-                                  ⚠️ {person.uyari_notu}
-                                </span>
+                          <td className="max-w-[280px]">
+                            <div className="flex flex-col gap-1 py-0.5 min-w-0">
+                              <div className="font-extrabold text-slate-900 text-sm leading-tight flex items-center gap-1.5 flex-wrap">
+                                <span>{person.ad_soyad}</span>
+                                {hasHouseholdDuplicate && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onOpenHousehold(person);
+                                    }}
+                                    className="badge badge-household text-[10px] py-0 px-1.5 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition-transform"
+                                    title="Aynı adreste başka hak sahibi kayıtlı (Görüntülemek için tıklayın)"
+                                  >
+                                    Aynı Hane
+                                  </button>
+                                )}
+                              </div>
+                              {(person.uyari_notu || person.fiili_adres_guncellendi) && (
+                                <div className="flex flex-wrap items-center gap-1 min-w-0">
+                                  {person.fiili_adres_guncellendi && (
+                                    <span
+                                      className="text-[10px] font-bold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 inline-flex items-center gap-0.5 shrink-0"
+                                      title="Fiili ikamet adresi güncellendi"
+                                    >
+                                      <MapPin className="w-2.5 h-2.5 text-sky-600 shrink-0" />
+                                      <span>Fiili İkamet</span>
+                                    </span>
+                                  )}
+                                  {person.uyari_notu && (
+                                    <span
+                                      className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300 font-bold inline-flex items-center gap-1 max-w-[250px] truncate shadow-2xs"
+                                      title={person.uyari_notu}
+                                    >
+                                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                      <span className="truncate">{person.uyari_notu}</span>
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </td>
 
                           {/* T.C. Kimlik No */}
-                          <td className="font-mono text-xs font-bold text-slate-700 whitespace-nowrap">
+                          <td className="font-mono text-xs font-bold text-slate-700 whitespace-nowrap min-w-[130px]">
                             {person.tc_no}
                           </td>
 
@@ -1355,7 +1382,7 @@ export default function BeneficiaryList({
                     {/* Top Row: Name + Status Badge */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           {isBulkSignMode && (
                             <button
                               type="button"
@@ -1375,14 +1402,22 @@ export default function BeneficiaryList({
                           <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
                             #{person.sira_no || person.mahalle_sira || person.id}
                           </span>
-                          <h4 className="text-base font-extrabold text-slate-900 leading-tight truncate">
+                          <h4 className="text-base font-extrabold text-slate-900 leading-tight">
                             {person.ad_soyad}
                           </h4>
-                          {person.uyari_notu && (
-                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 inline-flex items-center gap-0.5 shrink-0" title={person.uyari_notu}>
-                              <AlertTriangle className="w-3 h-3 text-amber-600" />
-                              <span>{person.uyari_notu}</span>
-                            </span>
+                          {hasHouseholdDuplicate && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenHousehold(person);
+                              }}
+                              title="Aynı adreste başka kişi kayıtlı! (Görüntüle)"
+                              className="badge badge-household shrink-0 text-[10px] py-0.5 px-2 cursor-pointer active:scale-95"
+                            >
+                              <Users className="w-3 h-3" />
+                              Aynı Hane
+                            </button>
                           )}
                           {person.fiili_adres_guncellendi && (
                             <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 inline-flex items-center gap-0.5 shrink-0" title="Fiili ikamet adresi güncellendi">
@@ -1390,18 +1425,14 @@ export default function BeneficiaryList({
                               <span>Fiili İkamet</span>
                             </span>
                           )}
-                          {hasHouseholdDuplicate && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenHousehold(person);
-                              }}
-                              title="Aynı adreste başka kişi kayıtlı!"
-                              className="badge badge-household shrink-0 text-[10px] py-0.5 px-2 cursor-pointer active:scale-95"
+                          {person.uyari_notu && (
+                            <span 
+                              className="text-[10px] font-bold text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 inline-flex items-center gap-1 max-w-[240px] truncate" 
+                              title={person.uyari_notu}
                             >
-                              <Users className="w-3 h-3" />
-                              Aynı Hane
-                            </button>
+                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span className="truncate">{person.uyari_notu}</span>
+                            </span>
                           )}
                         </div>
 
