@@ -506,6 +506,25 @@ export default function ExcelImportPage({
                   )}
                 </div>
               )}
+
+              {/* Sekmeli Excel İndirme Butonu */}
+              {uploadResult.insertedCount > 0 && (
+                <div className="pt-2.5 border-t border-emerald-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-900 font-semibold">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>Bu dosyadan sisteme eklenen {uploadResult.insertedCount} hak sahibini mahallelere göre ayrı sekmelerde indirin:</span>
+                  </div>
+                  <a
+                    href={`/api/export?type=batch_by_mahalle&batchId=${encodeURIComponent(uploadResult.batchId)}`}
+                    download={`Edirne_SYDV_${(uploadResult.dosyaAdi || 'Yuklenen_Excel').replace(/\.[^/.]+$/, '')}_Mahalle_Sekmeli.xlsx`}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95"
+                    title="Yüklenen dosyayı mahalle isimlerine göre sekmelere bölünmüş Excel çalışma kitabı olarak indirin"
+                  >
+                    <Download className="w-3.5 h-3.5 text-white" />
+                    <span>Mahallelere Göre İndir</span>
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
@@ -544,16 +563,29 @@ export default function ExcelImportPage({
         </form>
 
         {/* Export All Beneficiaries Button */}
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
+        <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500 font-medium">
           <span>Veritabanındaki güncel listeyi dışa aktarın:</span>
-          <a
-            href="/api/export?type=beneficiaries"
-            download="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"
-            className="flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Tüm Listeyi Excel İndir
-          </a>
+          <div className="flex items-center gap-3 flex-wrap">
+            <a
+              href="/api/export?type=batch_by_mahalle&batchId=ALL"
+              download="Edirne_SYDV_Tum_Mahalleler_Sekmeli_Dagitim_Listesi.xlsx"
+              className="flex items-center gap-1.5 text-emerald-800 hover:text-emerald-900 font-extrabold underline"
+              title="Tüm hak sahiplerini mahalle mahalle ayrı sekmelerde indirin"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+              <span>Mahallelere Göre Sekmeli İndir</span>
+            </a>
+            <span className="text-slate-300">•</span>
+            <a
+              href="/api/export?type=beneficiaries"
+              download="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"
+              className="flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline"
+              title="Tüm hak sahiplerini tek liste halinde indirin"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Tek Liste İndir</span>
+            </a>
+          </div>
         </div>
       </div>
 
@@ -650,6 +682,15 @@ export default function ExcelImportPage({
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto flex-wrap">
+                  <a
+                    href={`/api/export?type=batch_by_mahalle&batchId=${encodeURIComponent(batch.batch_id || batch.id)}`}
+                    download={`Edirne_SYDV_${(batch.dosya_adi || 'Dosya').replace(/\.[^/.]+$/, '')}_Mahalle_Sekmeli.xlsx`}
+                    className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                    title="Bu Excel dosyasındaki hak sahiplerini mahalle isimlerine göre sekmelere ayrılmış çalışma kitabı olarak indirin"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                    <span>Mahallelere Göre İndir</span>
+                  </a>
                   {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
                     <>
                       <button
@@ -870,7 +911,7 @@ export default function ExcelImportPage({
                       {item.durum === 'MUKERRER_TC'
                         ? 'Mükerrer TC'
                         : item.durum === 'MUKERRER_HANE'
-                        ? 'Aynı Hane'
+                        ? 'Mükerrer Hane'
                         : 'Hatalı Bilgi'}
                     </span>
 

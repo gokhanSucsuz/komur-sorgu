@@ -29,6 +29,7 @@ interface ExistingRecordInfo {
   teslimat_tarihi?: string | null;
   teslim_alan?: string | null;
   teslim_eden_personel?: string | null;
+  hasValidTc?: boolean;
 }
 
 interface BatchRecordInfo {
@@ -36,6 +37,9 @@ interface BatchRecordInfo {
   ad_soyad: string;
   tc_no: string;
   hane_no?: string | null;
+  mahalle?: string;
+  acik_adres?: string;
+  hasValidTc?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -112,9 +116,10 @@ export async function POST(request: NextRequest) {
 
     const existingTcMap = new Map<string, ExistingRecordInfo>();
     const existingHaneMap = new Map<string, ExistingRecordInfo>();
-    const existingAddressMap = new Map<string, ExistingRecordInfo>();
+    const existingAddressMap = new Map<string, ExistingRecordInfo[]>();
 
     for (const b of existingList) {
+      const hasValidTc = Boolean(b.tc_no && b.tc_no.length === 11 && !b.tc_no.startsWith('EKSİK_TC'));
       const info: ExistingRecordInfo = {
         ad_soyad: b.ad_soyad || 'Bilinmiyor',
         tc_no: b.tc_no || '',
@@ -127,9 +132,10 @@ export async function POST(request: NextRequest) {
         teslimat_tarihi: b.teslimat_tarihi || null,
         teslim_alan: b.teslim_alan || null,
         teslim_eden_personel: b.teslim_eden_personel || null,
+        hasValidTc,
       };
 
-      if (b.tc_no) {
+      if (b.tc_no && hasValidTc) {
         existingTcMap.set(b.tc_no, info);
       }
 
@@ -141,13 +147,26 @@ export async function POST(request: NextRequest) {
       }
 
       if (b.norm_adres) {
-        existingAddressMap.set(b.norm_adres, info);
+        if (!existingAddressMap.has(b.norm_adres)) {
+          existingAddressMap.set(b.norm_adres, []);
+        }
+        existingAddressMap.get(b.norm_adres)!.push(info);
+      }
+
+      if (b.mahalle && b.acik_adres) {
+        const physicalNorm = normalizeAddress(b.mahalle, b.acik_adres);
+        if (physicalNorm && physicalNorm !== b.norm_adres && physicalNorm.length > 5) {
+          if (!existingAddressMap.has(physicalNorm)) {
+            existingAddressMap.set(physicalNorm, []);
+          }
+          existingAddressMap.get(physicalNorm)!.push(info);
+        }
       }
     }
 
     const seenTcsInBatch = new Map<string, BatchRecordInfo>();
     const seenHanesInBatch = new Map<string, BatchRecordInfo>();
-    const seenAddressesInBatch = new Map<string, BatchRecordInfo>();
+    const seenAddressesInBatch = new Map<string, BatchRecordInfo[]>();
 
     const toInsertBeneficiaries: any[] = [];
     const toInsertLogs: any[] = [];
@@ -387,10 +406,14 @@ export async function POST(request: NextRequest) {
       }
 
       // ==========================================
-      // CHECK 6: AYNI HANE NUMARALI KAYIT KONTROLÜ
+      // CHECK 6 & 7: AYNI ADRES VE HANE KONTROLÜ
+      // ==========================================
+      // CHECK 6: AYNI HANE NUMARASI KONTROLÜ
+      // KURAL: Hane numarası sistemde TC kimlik gibi yalnızca BİR ADET olabilir.
+      // Aynı hane numarası ikinci kez gelirse sisteme eklenmez ve elenir!
       // ==========================================
 
-      // 6A: Yüklenen Excel dosyası içerisinde aynı hane numarası
+      // 6A: Yüklenen Excel dosyası içerisinde (Aynı batch'te) tekrarlanan hane numarası
       if (cleanHane && seenHanesInBatch.has(cleanHane)) {
         elenenCount++;
         const prev = seenHanesInBatch.get(cleanHane)!;
@@ -403,7 +426,7 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || 'Merkez',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo,
-          hata_nedeni: `Mükerrer Hane No: Yüklenen Excel dosyası içerisinde aynı hane numarası (Hane No: ${haneNo}) birden fazla satırda tekrarlanıyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} (TC: ${prev.tc_no}) | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Aynı haneye mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
+          hata_nedeni: `Mükerrer Hane Numarası: Yüklenen Excel dosyası içerisinde aynı hane numarası (Hane No: ${haneNo}) birden fazla satırda tekrarlanıyor. Sistemde her hane numarası TC kimlik gibi yalnızca 1 adet bulunabilir. [Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} - TC: ${prev.tc_no} | Kömür Teslim Durumu: BEKLİYOR]. Aynı haneye mükerrer kömür yardımı tahsis edilmemesi için bu kayıt sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_HANE',
           islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: 'BEKLIYOR',
@@ -415,12 +438,13 @@ export async function POST(request: NextRequest) {
           cakisan_ad_soyad: prev.ad_soyad,
           cakisan_tc: prev.tc_no,
           cakisan_satir: prev.rowNum,
+          cakisan_hane_no: haneNo,
           tarih: nowStr,
         });
         continue;
       }
 
-      // 6B: Sistemde (Veritabanında) Aynı Hane Numarası ile Zaten Kayıtlı Hak Sahibi
+      // 6B: Sistemde (Veritabanında) Zaten Kayıtlı Olan Hane Numarası
       if (cleanHane && existingHaneMap.has(cleanHane)) {
         elenenCount++;
         const existing = existingHaneMap.get(cleanHane)!;
@@ -434,7 +458,7 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || existing.mahalle || 'Merkez',
           acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
           hane_no: haneNo,
-          hata_nedeni: `Mükerrer Hane No: Sistemde bu hane numarasına (Hane No: ${haneNo}) ait hak sahibi zaten kayıtlıdır. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Mahalle: ${existing.mahalle || '-'}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
+          hata_nedeni: `Mükerrer Hane Numarası: Sistemde bu hane numarası (Hane No: ${haneNo}) ile kayıtlı hane zaten mevcuttur. Sistemde her hane numarası TC kimlik gibi yalnızca 1 adet bulunabilir. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Mahalle: ${existing.mahalle || '-'}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kömür yardımı tahsis edilmemesi için bu kayıt sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_HANE',
           islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: existing.teslimat_durumu || 'BEKLIYOR',
@@ -445,97 +469,170 @@ export async function POST(request: NextRequest) {
           teslimat_durumu_ozeti: statusSummary,
           cakisan_ad_soyad: existing.ad_soyad,
           cakisan_tc: existing.tc_no,
-          cakisan_hane_no: existing.hane_no || null,
+          cakisan_hane_no: existing.hane_no || haneNo,
           tarih: nowStr,
         });
         continue;
       }
 
       // ==========================================
-      // CHECK 7: AYNI ADRES / NORM ADRES KONTROLÜ
+      // CHECK 7: AYNI FİZİKSEL ADRES KONTROLÜ
+      // KURAL: Aynı adreste farklı TC kimlik ve farklı hane no var ise sisteme eklenir.
+      // Sadece aynı TC (Check 5), aynı hane no (Check 6) veya TC'siz mükerrer aynı isim varsa elenir.
       // ==========================================
-      const normAdres = normalizeAddress(mahalle || 'Merkez', acikAdres || 'Adres Belirtilmedi', haneNo);
+      const normAdres = normalizeAddress(mahalle || 'Merkez', acikAdres || 'Adres Belirtilmedi');
 
-      // 7A: Yüklenen Excel dosyası içerisinde aynı adres
+      const batchAddressMatches: BatchRecordInfo[] = [];
       if (normAdres && normAdres.length > 5 && seenAddressesInBatch.has(normAdres)) {
-        elenenCount++;
-        const prev = seenAddressesInBatch.get(normAdres)!;
+        batchAddressMatches.push(...seenAddressesInBatch.get(normAdres)!);
+      }
+
+      const dbAddressMatches: ExistingRecordInfo[] = [];
+      if (normAdres && normAdres.length > 5 && existingAddressMap.has(normAdres)) {
+        dbAddressMatches.push(...existingAddressMap.get(normAdres)!);
+      }
+
+      const cleanCurrentName = cleanTurkishText(adSoyad).replace(/[^a-z0-9]/g, '');
+
+      // 7A: Sadece TC eksik/geçersiz olduğunda ve aynı adreste aynı isim varsa mükerrer kabul edilir.
+      // Eğer geçerli bir TC kimlik numarası varsa, isim aynı olsa dahi farklı birey kabul edilir ve sisteme eklenir!
+      if (!hasValidTc) {
+        const duplicateNameInBatch = batchAddressMatches.find(prev => {
+          const cleanPrevName = cleanTurkishText(prev.ad_soyad).replace(/[^a-z0-9]/g, '');
+          return cleanCurrentName && cleanPrevName && cleanCurrentName === cleanPrevName;
+        });
+
+        if (duplicateNameInBatch) {
+          elenenCount++;
+          toInsertLogs.push({
+            batch_id: batchId,
+            satir_no: rowNum,
+            tc_no: tcNo || 'Eksik',
+            ad_soyad: adSoyad,
+            telefon: displayPhoneLog,
+            mahalle: mahalle || 'Merkez',
+            acik_adres: acikAdres || 'Belirtilmedi',
+            hane_no: haneNo || null,
+            hata_nedeni: `Mükerrer Kayıt (Eksik TC): Yüklenen Excel dosyası içerisinde aynı adreste aynı isimle (${adSoyad}) kayıt tekrarlanıyor ve satırda geçerli bir TC bulunmadığından mükerrer kabul edildi (Önceki Satır #${duplicateNameInBatch.rowNum}). Mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
+            durum: 'MUKERRER_HANE',
+            islem_sonucu: 'EKLENMEDİ',
+            teslimat_durumu: 'BEKLIYOR',
+            torba_sayisi: 0,
+            hedef_torba: defaultQuota,
+            teslimat_tarihi: null,
+            teslim_alan: null,
+            teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı (Aynı Dosyada Yeni Yüklenen Satır)',
+            cakisan_ad_soyad: duplicateNameInBatch.ad_soyad,
+            cakisan_tc: duplicateNameInBatch.tc_no,
+            cakisan_satir: duplicateNameInBatch.rowNum,
+            tarih: nowStr,
+          });
+          continue;
+        }
+
+        // 7B: Veritabanında aynı adreste aynı isimle ve eksik TC ile mükerrer kayıt kontrolü
+        const duplicateNameInDb = dbAddressMatches.find(existing => {
+          const cleanDbName = cleanTurkishText(existing.ad_soyad).replace(/[^a-z0-9]/g, '');
+          return cleanCurrentName && cleanDbName && cleanCurrentName === cleanDbName;
+        });
+
+        if (duplicateNameInDb) {
+          elenenCount++;
+          const statusSummary = formatDeliveryStatusSummary(duplicateNameInDb);
+          toInsertLogs.push({
+            batch_id: batchId,
+            satir_no: rowNum,
+            tc_no: tcNo || 'Eksik',
+            ad_soyad: adSoyad,
+            telefon: displayPhoneLog,
+            mahalle: mahalle || duplicateNameInDb.mahalle || 'Merkez',
+            acik_adres: acikAdres || duplicateNameInDb.acik_adres || 'Belirtilmedi',
+            hane_no: haneNo || null,
+            hata_nedeni: `Mükerrer Kayıt (Eksik TC): Sistemde bu adreste aynı isimle (${duplicateNameInDb.ad_soyad}) hak sahibi zaten mevcuttur ve bu satırda geçerli bir TC bulunmadığından mükerrer kabul edildi [Mevcut TC: ${duplicateNameInDb.tc_no} | Durum: ${statusSummary}]. Mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
+            durum: 'MUKERRER_HANE',
+            islem_sonucu: 'EKLENMEDİ',
+            teslimat_durumu: duplicateNameInDb.teslimat_durumu || 'BEKLIYOR',
+            torba_sayisi: duplicateNameInDb.torba_sayisi || 0,
+            hedef_torba: duplicateNameInDb.hedef_torba || defaultQuota,
+            teslimat_tarihi: duplicateNameInDb.teslimat_tarihi || null,
+            teslim_alan: duplicateNameInDb.teslim_alan || null,
+            teslimat_durumu_ozeti: statusSummary,
+            cakisan_ad_soyad: duplicateNameInDb.ad_soyad,
+            cakisan_tc: duplicateNameInDb.tc_no,
+            cakisan_hane_no: duplicateNameInDb.hane_no || null,
+            tarih: nowStr,
+          });
+          continue;
+        }
+      }
+
+      // AYNI FİZİKSEL ADRESTE DİĞER HAK SAHİBİ BİLGİLENDİRMESİ
+      const otherMemberAtAddress = batchAddressMatches[0] || dbAddressMatches[0];
+
+      if (otherMemberAtAddress) {
+        const isSameName = cleanCurrentName && cleanTurkishText(otherMemberAtAddress.ad_soyad).replace(/[^a-z0-9]/g, '') === cleanCurrentName;
+        const otherTcDisplay = otherMemberAtAddress.tc_no?.startsWith('EKSİK_TC')
+          ? 'TC Belirtilmemiş'
+          : otherMemberAtAddress.tc_no;
+
+        const warningLabel = isSameName
+          ? `Aynı Adreste Aynı İsimli Diğer Hak Sahibi (${otherMemberAtAddress.ad_soyad})`
+          : `Aynı Adreste Diğer Hak Sahibi (${otherMemberAtAddress.ad_soyad})`;
+
+        rowWarnings.push(warningLabel);
+        uyariliCount++;
+
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
           tc_no: tcNo || 'Eksik',
           ad_soyad: adSoyad,
           telefon: displayPhoneLog,
-          mahalle: mahalle || 'Merkez',
-          acik_adres: acikAdres || 'Belirtilmedi',
+          mahalle: mahalle || otherMemberAtAddress.mahalle || 'Merkez',
+          acik_adres: acikAdres || otherMemberAtAddress.acik_adres || 'Belirtilmedi',
           hane_no: haneNo || null,
-          hata_nedeni: `Aynı Hanede/Adreste Birden Fazla Kayıt: Bu Excel dosyası içinde aynı adreste başka kişi de bulunuyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} (TC: ${prev.tc_no}) | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Kayıt sisteme eklenmedi ve elendi.`,
-          durum: 'MUKERRER_HANE',
-          islem_sonucu: 'EKLENMEDİ',
+          hata_nedeni: isSameName
+            ? `Aynı Adreste Aynı İsimli Diğer Hak Sahibi: Bu adreste aynı isimle (${otherMemberAtAddress.ad_soyad} - TC: ${otherTcDisplay}) kayıt bulunmaktadır. Farklı TC kimlik numarasına (${tcNo}) sahip olduğu için kayıt başarıyla sisteme eklendi.`
+            : `Aynı Adreste Diğer Hak Sahibi: Bu adreste kayıtlı diğer hak sahibi: ${otherMemberAtAddress.ad_soyad} (${otherTcDisplay}). Farklı TC kimlik numarasına sahip olduğu için kayıt sisteme başarıyla eklendi.`,
+          durum: 'BILGI',
+          islem_sonucu: 'EKLENDİ_UYARILI',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
           teslimat_tarihi: null,
           teslim_alan: null,
-          teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı (Aynı Dosyada Yeni Yüklenen Satır)',
-          cakisan_ad_soyad: prev.ad_soyad,
-          cakisan_tc: prev.tc_no,
-          cakisan_satir: prev.rowNum,
+          teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı',
+          cakisan_ad_soyad: otherMemberAtAddress.ad_soyad,
+          cakisan_tc: otherMemberAtAddress.tc_no,
+          cakisan_hane_no: otherMemberAtAddress.hane_no || null,
           tarih: nowStr,
         });
-        continue;
-      }
-
-      // 7B: Sistemde (Veritabanında) Aynı Adreste Zaten Kayıtlı Hak Sahibi
-      if (normAdres && normAdres.length > 5 && existingAddressMap.has(normAdres)) {
-        elenenCount++;
-        const existing = existingAddressMap.get(normAdres)!;
-        const statusSummary = formatDeliveryStatusSummary(existing);
-        toInsertLogs.push({
-          batch_id: batchId,
-          satir_no: rowNum,
-          tc_no: tcNo || 'Eksik',
-          ad_soyad: adSoyad,
-          telefon: displayPhoneLog,
-          mahalle: mahalle || existing.mahalle || 'Merkez',
-          acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
-          hane_no: haneNo || existing.hane_no || null,
-          hata_nedeni: `Aynı Hanede/Adreste Zaten Kayıt Var: Sistemde bu adreste ikamet eden başka hak sahibi bulunmaktadır. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Adres: ${existing.mahalle || ''} ${existing.acik_adres || ''}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
-          durum: 'MUKERRER_HANE',
-          islem_sonucu: 'EKLENMEDİ',
-          teslimat_durumu: existing.teslimat_durumu || 'BEKLIYOR',
-          torba_sayisi: existing.torba_sayisi || 0,
-          hedef_torba: existing.hedef_torba || defaultQuota,
-          teslimat_tarihi: existing.teslimat_tarihi || null,
-          teslim_alan: existing.teslim_alan || null,
-          teslimat_durumu_ozeti: statusSummary,
-          cakisan_ad_soyad: existing.ad_soyad,
-          cakisan_tc: existing.tc_no,
-          cakisan_hane_no: existing.hane_no || null,
-          tarih: nowStr,
-        });
-        continue;
       }
 
       // Passed all checks!
+      const targetMahalle = mahalle || 'Merkez Mah.';
       const batchItem: BatchRecordInfo = {
         rowNum,
         ad_soyad: adSoyad,
         tc_no: tcNo,
         hane_no: haneNo || null,
+        mahalle: targetMahalle,
+        acik_adres: acikAdres || '',
+        hasValidTc,
       };
 
       const recordInfo: ExistingRecordInfo = {
         ad_soyad: adSoyad,
         tc_no: tcNo,
         hane_no: haneNo || null,
-        mahalle: mahalle || 'Merkez Mah.',
+        mahalle: targetMahalle,
         acik_adres: acikAdres || '',
         teslimat_durumu: 'BEKLIYOR',
         torba_sayisi: 0,
         hedef_torba: defaultQuota,
         teslimat_tarihi: null,
         teslim_alan: null,
+        hasValidTc,
       };
 
       if (hasValidTc) {
@@ -547,12 +644,14 @@ export async function POST(request: NextRequest) {
         existingHaneMap.set(cleanHane, recordInfo);
       }
       if (normAdres) {
-        seenAddressesInBatch.set(normAdres, batchItem);
-        existingAddressMap.set(normAdres, recordInfo);
+        if (!seenAddressesInBatch.has(normAdres)) seenAddressesInBatch.set(normAdres, []);
+        seenAddressesInBatch.get(normAdres)!.push(batchItem);
+
+        if (!existingAddressMap.has(normAdres)) existingAddressMap.set(normAdres, []);
+        existingAddressMap.get(normAdres)!.push(recordInfo);
       }
 
       // Mahalle bazında sıra numarası belirleme (Her mahalle kendi içinde 1'den başlar; önceden kayıt varsa Ek1 - 1, Ek1 - 2...)
-      const targetMahalle = mahalle || 'Merkez Mah.';
       const counter = (mahalleCounters.get(targetMahalle) || 0) + 1;
       mahalleCounters.set(targetMahalle, counter);
 

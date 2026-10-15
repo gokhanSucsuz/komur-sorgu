@@ -6,7 +6,7 @@ import {
   CheckCircle2, Clock, Filter, AlertCircle, ChevronRight, ChevronDown, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid
+  List, LayoutGrid, Edit3
 } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo } from '@/lib/normalizer';
 
@@ -24,6 +24,7 @@ interface BeneficiaryListProps {
   onOpenDelivery: (person: any) => void;
   onOpenHousehold: (person: any) => void;
   onOpenCancel?: (person: any) => void;
+  onOpenEdit?: (person: any) => void;
   onToggleSignature?: (person: any) => void;
   onNavigateToRoute?: () => void;
   defaultQuota?: number;
@@ -44,6 +45,7 @@ export default function BeneficiaryList({
   onOpenDelivery,
   onOpenHousehold,
   onOpenCancel,
+  onOpenEdit,
   onToggleSignature,
   onNavigateToRoute,
   defaultQuota = 34,
@@ -980,6 +982,11 @@ export default function BeneficiaryList({
                                 <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
                                 <span>{stInfo.sokak} No: {stInfo.kapiNo !== 999999 ? stInfo.kapiNo : (person.hane_no || '-')}</span>
                                 {stInfo.daireNo > 0 && <span className="text-sky-700">D: {stInfo.daireNo}</span>}
+                                {person.fiili_adres_guncellendi && (
+                                  <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 ml-1 shrink-0" title="Fiili ikamet adresi güncellendi">
+                                    Fiili İkamet
+                                  </span>
+                                )}
                               </div>
                               <span className="text-slate-500 block text-[11px] truncate mt-0.5" title={person.acik_adres}>
                                 {person.acik_adres}
@@ -1029,6 +1036,17 @@ export default function BeneficiaryList({
                                   <span>Teslim Et ({hedef})</span>
                                 </button>
                               ) : null}
+                              {onOpenEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenEdit(person)}
+                                  className="px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                                  title="Adres ve Telefon Bilgilerini Düzenle"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                  <span className="hidden xl:inline">Adres/Tel</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => onOpenHousehold(person)}
@@ -1115,6 +1133,12 @@ export default function BeneficiaryList({
                             <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 inline-flex items-center gap-0.5 shrink-0" title={person.uyari_notu}>
                               <AlertTriangle className="w-3 h-3 text-amber-600" />
                               <span>{person.uyari_notu}</span>
+                            </span>
+                          )}
+                          {person.fiili_adres_guncellendi && (
+                            <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 inline-flex items-center gap-0.5 shrink-0" title="Fiili ikamet adresi güncellendi">
+                              <MapPin className="w-3 h-3 text-sky-600" />
+                              <span>Fiili İkamet</span>
                             </span>
                           )}
                           {hasHouseholdDuplicate && (
@@ -1263,18 +1287,53 @@ export default function BeneficiaryList({
                           <span>{isExpanded ? 'Açık Adresi Gizle' : 'Açık Adres Göster'}</span>
                         </button>
 
-                        <button
-                          onClick={() => onOpenHousehold(person)}
-                          className="text-xs text-sky-700 hover:text-sky-900 font-bold flex items-center gap-0.5"
-                        >
-                          <span>Hane & Detay</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {onOpenEdit && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenEdit(person);
+                              }}
+                              className="text-xs text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-300 font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
+                              title="Resmi adreste yaşamayan vatandaşlar için fiili ikametgah adresi veya telefon güncelle"
+                            >
+                              <Edit3 className="w-3 h-3 text-amber-700" />
+                              <span>Adres / Tel</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenHousehold(person);
+                            }}
+                            className="text-xs text-sky-700 hover:text-sky-900 font-bold flex items-center gap-0.5"
+                          >
+                            <span>Hane & Detay</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {isExpanded && (
                         <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 leading-relaxed animate-in fade-in duration-200">
                           <p className="font-semibold">{person.acik_adres}</p>
+                          {person.fiili_adres_guncellendi && (
+                            <div className="mt-1 text-[11px] font-bold text-sky-800 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-sky-600" />
+                              <span>Fiili İkametgah Adresi Güncellenmiştir</span>
+                              {person.son_adres_guncelleme_tarihi && (
+                                <span className="text-slate-400 font-normal">({person.son_adres_guncelleme_tarihi})</span>
+                              )}
+                            </div>
+                          )}
+                          {person.adres_guncelleme_notu && (
+                            <p className="mt-1 text-[11px] text-amber-900 bg-amber-50 p-1.5 rounded border border-amber-200 font-medium">
+                              Saha Notu: {person.adres_guncelleme_notu}
+                            </p>
+                          )}
                           {person.hane_no && (
                             <span className="inline-block mt-1 text-[11px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">
                               Hane / Kapı No: {person.hane_no}

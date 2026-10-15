@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, buildIdFilter, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
 import {
   cleanTcNo,
   normalizeAddress,
@@ -9,12 +9,15 @@ import {
   extractPhoneNumbers,
   detectSettlement,
   extractStreetAndDoor,
+  cleanHaneNo,
   cleanHaneKey,
+  formatDeliveryStatusSummary,
 } from '@/lib/normalizer';
 import {
   hashTc,
   hashHane,
   hashAddress,
+  encryptField,
   encryptBeneficiary,
 } from '@/lib/crypto';
 
@@ -322,29 +325,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const cleanedHaneNo = cleanHaneNo(hane_no);
+    const cleanHane = cleanHaneKey(cleanedHaneNo);
+
+    // Hane numarası kontrolü: Sistemde TC kimlik gibi yalnızca 1 adet olabilir.
+    // İkinci kez girilirse sisteme eklenmez ve detaylı hata gösterilir.
+    if (cleanHane) {
+      const haneHash = hashHane(cleanHane);
+      const existingHaneDoc = await benCol.findOne({
+        $or: [
+          ...(haneHash ? [{ hane_hash: haneHash }] : []),
+          { hane_no: cleanedHaneNo },
+          { hane_no: hane_no.trim() },
+        ],
+      });
+
+      if (existingHaneDoc) {
+        const decHane = mapDoc(existingHaneDoc);
+        const statusSummary = formatDeliveryStatusSummary(decHane);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Bu Hane Numarası (${cleanedHaneNo}) sistemde zaten kayıtlıdır! Sistemde her hane numarası TC kimlik gibi yalnızca 1 adet bulunabilir. Mevcut Hak Sahibi: ${decHane.ad_soyad} (TC: ${decHane.tc_no || 'Belirtilmemiş'}) | Mahalle: ${decHane.mahalle || '-'}, Adres: ${decHane.acik_adres || '-'} | Kömür Teslim Durumu: ${statusSummary}. Mükerrer kömür yardımı tahsis edilmemesi için bu kayıt sisteme eklenemez.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const settlement = detectSettlement(mahalle, body.koy, acik_adres);
-    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, hane_no, settlement.name);
-    const normAdres = normalizeAddress(settlement.name, acik_adres, hane_no);
+    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, cleanedHaneNo, settlement.name);
+    const normAdres = normalizeAddress(settlement.name, acik_adres);
     const normHash = hashAddress(normAdres);
-    const haneHash = hane_no ? hashHane(hane_no) : null;
 
-    // Check duplicate household with blind index
-    const haneOrList: any[] = [];
-    if (normHash) haneOrList.push({ adres_hash: normHash });
-    if (normAdres) haneOrList.push({ norm_adres: normAdres });
-    if (haneHash) haneOrList.push({ hane_hash: haneHash });
-    if (hane_no) haneOrList.push({ hane_no: hane_no.trim() });
+    let householdWarning: string | null = null;
+    if (normHash || normAdres) {
+      const addressOrList: any[] = [];
+      if (normHash) addressOrList.push({ adres_hash: normHash });
+      if (normAdres) addressOrList.push({ norm_adres: normAdres });
 
-    const existingHane = await benCol.findOne({ $or: haneOrList });
-    if (existingHane) {
-      const decHane = mapDoc(existingHane);
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Bu adreste/hanede zaten kayıt bulunmaktadır! Kayıtlı Kişi: ${decHane.ad_soyad} (TC: ${decHane.tc_no})`,
-        },
-        { status: 400 }
-      );
+      const existingAddressDoc = await benCol.findOne({ $or: addressOrList });
+      if (existingAddressDoc) {
+        const decAddress = mapDoc(existingAddressDoc);
+        const cleanExistingName = cleanTurkishText(decAddress.ad_soyad).replace(/[^a-z0-9]/g, '');
+        const cleanNewName = cleanTurkishText(ad_soyad).replace(/[^a-z0-9]/g, '');
+        const isSameName = cleanExistingName && cleanNewName && cleanExistingName === cleanNewName;
+
+        householdWarning = isSameName
+          ? `Aynı Adreste Aynı İsimli Birey: ${decAddress.ad_soyad} (TC: ${decAddress.tc_no})`
+          : `Aynı Adreste Diğer Birey: ${decAddress.ad_soyad} (TC: ${decAddress.tc_no})`;
+      }
     }
 
     const phones = extractPhoneNumbers(telefon, telefon2);
@@ -365,7 +395,7 @@ export async function POST(request: NextRequest) {
       kapi_no: streetInfo.kapiNo,
       daire_no: streetInfo.daireNo,
       acik_adres: acik_adres.trim(),
-      hane_no: hane_no ? hane_no.trim() : null,
+      hane_no: cleanedHaneNo || null,
       norm_adres: normAdres,
       hedef_torba: targetQuota,
       teslimat_durumu: 'BEKLIYOR',
@@ -374,6 +404,8 @@ export async function POST(request: NextRequest) {
       teslim_alan: null,
       teslim_eden_personel: null,
       teslimat_notu: null,
+      uyarilar: householdWarning ? [householdWarning] : [],
+      uyari_notu: householdWarning,
       created_at: nowStr,
       updated_at: nowStr,
     };
@@ -408,3 +440,205 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { beneficiaries: benCol } = await getDbCollections();
+    const body = await request.json();
+    const {
+      id,
+      mahalle,
+      acik_adres,
+      sokak,
+      kapi_no,
+      daire_no,
+      telefon,
+      telefon2,
+      hane_no,
+      guncelleme_notu,
+      updated_by,
+    } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Güncellenecek hak sahibi ID bilgisi zorunludur' },
+        { status: 400 }
+      );
+    }
+
+    const rawBeneficiary = await benCol.findOne(buildIdFilter(id));
+    if (!rawBeneficiary) {
+      return NextResponse.json(
+        { success: false, error: 'Hak sahibi sistemde bulunamadı' },
+        { status: 404 }
+      );
+    }
+
+    const existing = mapDoc(rawBeneficiary);
+    const nowStr = new Date().toLocaleString('tr-TR');
+
+    // 1. Hane Numarası Kontrolü
+    let newCleanHane: string | null = existing.hane_no || null;
+    if (hane_no !== undefined) {
+      const inputHane = cleanHaneNo(hane_no);
+      const cleanHaneKeyVal = cleanHaneKey(inputHane);
+
+      // Eğer mevcut hane numarasından farklı bir hane numarası verilmişse, mükerrerlik kontrolü yap
+      const existingCleanKey = cleanHaneKey(existing.hane_no);
+      if (cleanHaneKeyVal && cleanHaneKeyVal !== existingCleanKey) {
+        const haneHash = hashHane(cleanHaneKeyVal);
+        const duplicateHaneDoc = await benCol.findOne({
+          $and: [
+            {
+              $or: [
+                ...(haneHash ? [{ hane_hash: haneHash }] : []),
+                { hane_no: inputHane },
+                { hane_no: String(hane_no).trim() },
+              ],
+            },
+            {
+              _id: { $ne: rawBeneficiary._id },
+            },
+          ],
+        });
+
+        if (duplicateHaneDoc) {
+          const decDup = mapDoc(duplicateHaneDoc);
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Bu Hane Numarası (${inputHane}) sistemde başka bir vatandaşa (${decDup.ad_soyad} - TC: ${decDup.tc_no || 'Belirtilmemiş'}) aittir! Her hane numarası sistemde yalnızca 1 adet olabilir.`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+      newCleanHane = inputHane || null;
+    }
+
+    // 2. Adres & Yerleşim Tespiti ve Normalizasyonu
+    const newMahalle = mahalle ? mahalle.trim() : existing.mahalle;
+    const newAcikAdres = acik_adres ? acik_adres.trim() : existing.acik_adres;
+    const settlement = detectSettlement(newMahalle, body.koy, newAcikAdres);
+    const streetInfo = extractStreetAndDoor(
+      newAcikAdres,
+      sokak !== undefined ? sokak : existing.sokak,
+      kapi_no !== undefined ? kapi_no : (existing.kapi_no || newCleanHane),
+      settlement.name
+    );
+    const normAdres = normalizeAddress(settlement.name, newAcikAdres);
+    const normHash = hashAddress(normAdres);
+
+    // 3. Telefon Numaraları Ayıklama
+    const phones = extractPhoneNumbers(
+      telefon !== undefined ? telefon : existing.telefon,
+      telefon2 !== undefined ? telefon2 : existing.telefon2
+    );
+    const newPhone1 = phones[0] || '';
+    const newPhone2 = phones[1] || '';
+
+    // 4. Değişiklik Tespiti ve Raporlama
+    const isAddressChanged =
+      existing.mahalle !== settlement.name ||
+      existing.acik_adres !== newAcikAdres ||
+      (sokak !== undefined && existing.sokak !== streetInfo.sokak) ||
+      (kapi_no !== undefined && existing.kapi_no !== streetInfo.kapiNo);
+
+    const isPhoneChanged =
+      (existing.telefon || '') !== newPhone1 ||
+      (existing.telefon2 || '') !== newPhone2;
+
+    const isHaneChanged = (existing.hane_no || '') !== (newCleanHane || '');
+
+    const changeSummaryParts: string[] = [];
+    if (isAddressChanged) {
+      changeSummaryParts.push(
+        `Adres: [${existing.mahalle || '-'} - ${existing.acik_adres || '-'}] -> [${settlement.name} - ${newAcikAdres}]`
+      );
+    }
+    if (isPhoneChanged) {
+      changeSummaryParts.push(
+        `Tel: [${existing.telefon || 'Yok'} / ${existing.telefon2 || 'Yok'}] -> [${newPhone1 || 'Yok'} / ${newPhone2 || 'Yok'}]`
+      );
+    }
+    if (isHaneChanged) {
+      changeSummaryParts.push(`Hane No: [${existing.hane_no || '-'}] -> [${newCleanHane || '-'}]`);
+    }
+    if (guncelleme_notu) {
+      changeSummaryParts.push(`Gerekçe: ${guncelleme_notu}`);
+    }
+
+    // 5. Uyarılar & Fiili İkamet Notu
+    const updatedWarnings = Array.isArray(existing.uyarilar) ? [...existing.uyarilar] : [];
+    if (isAddressChanged) {
+      const fiiliTag = `Fiili İkamet Güncellendi (${nowStr.split(' ')[0]})`;
+      if (!updatedWarnings.includes(fiiliTag)) {
+        updatedWarnings.unshift(fiiliTag);
+      }
+    }
+
+    const updateSet: any = {
+      mahalle: settlement.name,
+      yerlesim_tipi: settlement.type,
+      acik_adres: encryptField(newAcikAdres),
+      norm_adres: encryptField(normAdres),
+      adres_hash: normHash,
+      sokak: encryptField(streetInfo.sokak || ''),
+      kapi_no: streetInfo.kapiNo,
+      daire_no: daire_no !== undefined ? (Number(daire_no) || 0) : streetInfo.daireNo,
+      telefon: encryptField(newPhone1),
+      telefon2: encryptField(newPhone2),
+      hane_no: encryptField(newCleanHane || ''),
+      hane_hash: newCleanHane ? hashHane(newCleanHane) : null,
+      fiili_adres_guncellendi: isAddressChanged || Boolean(existing.fiili_adres_guncellendi),
+      son_adres_guncelleme_tarihi: isAddressChanged || isPhoneChanged ? nowStr : existing.son_adres_guncelleme_tarihi,
+      son_guncelleyen_personel: updated_by || 'Sistem Kullanıcısı',
+      uyarilar: updatedWarnings,
+      updated_at: nowStr,
+    };
+
+    if (guncelleme_notu) {
+      updateSet.adres_guncelleme_notu = encryptField(guncelleme_notu);
+      updateSet.uyari_notu = guncelleme_notu;
+    }
+
+    // Veritabanı güncellemesi
+    await benCol.updateOne(buildIdFilter(id), { $set: updateSet });
+
+    // 6. Denetim ve Faaliyet Kaydı (Audit Log)
+    await recordActivityLog({
+      islem_tipi: 'ADRES_VE_ILETISIM_GUNCELLEME',
+      kullanici_adi: updated_by || 'Sistem Kullanıcısı',
+      baslik: `İkamet / Telefon Güncellendi (${existing.ad_soyad})`,
+      detay: `${existing.ad_soyad} (TC: ${existing.tc_no}) adlı hak sahibinin ikamet/iletişim bilgileri güncellendi. ${changeSummaryParts.join(' | ')}`,
+      hedef_kisi: existing.ad_soyad,
+      hedef_tc: existing.tc_no,
+      mahalle: settlement.name,
+      ek_bilgi: {
+        beneficiary_id: id,
+        eski_mahalle: existing.mahalle,
+        yeni_mahalle: settlement.name,
+        eski_adres: existing.acik_adres,
+        yeni_adres: newAcikAdres,
+        eski_telefon: existing.telefon,
+        yeni_telefon: newPhone1,
+        yeni_telefon2: newPhone2,
+        degisen_alanlar: changeSummaryParts,
+        guncelleme_notu: guncelleme_notu || null,
+      },
+    });
+
+    const updatedRaw = await benCol.findOne(buildIdFilter(id));
+    const updatedDoc = mapDoc(updatedRaw);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Adres ve iletişim bilgileri başarıyla güncellendi',
+      data: updatedDoc,
+    });
+  } catch (error: any) {
+    console.error('Error updating beneficiary:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+

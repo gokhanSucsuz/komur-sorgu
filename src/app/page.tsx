@@ -22,6 +22,7 @@ import ShiftEndModal from '@/components/ShiftEndModal';
 import ShiftPage from '@/components/ShiftPage';
 import RoutePage from '@/components/RoutePage';
 import AdminAuthModal from '@/components/AdminAuthModal';
+import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 
 export default function Home() {
@@ -94,6 +95,7 @@ export default function Home() {
   const [cancelTarget, setCancelTarget] = useState<any | null>(null);
   const [householdTarget, setHouseholdTarget] = useState<any | null>(null);
   const [householdMembers, setHouseholdMembers] = useState<any[]>([]);
+  const [editTarget, setEditTarget] = useState<any | null>(null);
 
   // Load user role & session from localStorage on initial mount
   useEffect(() => {
@@ -532,6 +534,7 @@ export default function Home() {
               onOpenDelivery={(person) => setDeliveryTarget(person)}
               onOpenHousehold={handleOpenHousehold}
               onOpenCancel={(person) => setCancelTarget(person)}
+              onOpenEdit={(person) => setEditTarget(person)}
               onNavigateToRoute={() => setCurrentTab('route')}
               defaultQuota={defaultQuota}
               isLoading={isLoadingBeneficiaries}
@@ -673,6 +676,24 @@ export default function Home() {
           onOpenCancel={(person) => {
             setHouseholdTarget(null);
             setCancelTarget(person);
+          }}
+          onOpenEdit={(person) => {
+            setHouseholdTarget(null);
+            setEditTarget(person);
+          }}
+        />
+      )}
+
+      {/* 3.1 İkametgah Adresi & Telefon Güncelleme Modalı */}
+      {editTarget && (
+        <EditBeneficiaryModal
+          beneficiary={editTarget}
+          mahalleler={mahalleler}
+          currentStaff={userName}
+          onClose={() => setEditTarget(null)}
+          onSuccess={(updatedBeneficiary) => {
+            setEditTarget(null);
+            handleRefreshAll();
           }}
         />
       )}
