@@ -29,15 +29,25 @@ export async function GET() {
           }
         }
 
-        const hataliKayitSayisi = await logsCol.countDocuments({ batch_id: batchId });
+        const rawBatchLogs = await logsCol.find({ batch_id: batchId }).toArray();
+        const batchLogs = mapDocs(rawBatchLogs);
+        const elenenSayisi = batchLogs.filter(
+          (l: any) => l.islem_sonucu === 'EKLENMEDİ' || l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE'
+        ).length;
+        const uyariliSayisi = batchLogs.filter(
+          (l: any) => l.islem_sonucu === 'EKLENDİ_UYARILI'
+        ).length;
 
         return {
           ...b,
           mevcut_kisi: mevcutKisi,
+          eklenen_kisi: b.eklenen_kisi || mevcutKisi,
+          elenen_kisi: elenenSayisi || b.elenen_kisi || b.hatali_kisi || 0,
+          uyarili_kisi: uyariliSayisi || b.uyarili_kisi || 0,
           teslim_edilen: teslimEdilen,
           bekleyen: bekleyen,
           dagitilan_torba: dagitilanTorba,
-          hata_kayit_sayisi: hataliKayitSayisi || b.hatali_kisi || 0,
+          hata_kayit_sayisi: elenenSayisi || b.hatali_kisi || 0,
         };
       })
     );

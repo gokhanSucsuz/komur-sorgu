@@ -269,17 +269,25 @@ export async function GET(request: NextRequest) {
 
     // 4. Excel Yükleme Hata & Mükerrer Kayıt Raporu
     if (type === 'errors') {
+      const batchId = (searchParams.get('batchId') || '').trim();
+      const filter: any = {};
+      if (batchId && batchId !== 'ALL') {
+        filter.batch_id = batchId;
+      }
+
       const rawRecords = await logsCol
-        .find({})
-        .sort({ _id: -1 })
+        .find(filter)
+        .sort({ satir_no: 1, _id: -1 })
         .toArray();
 
       const records = mapDocs(rawRecords);
 
       const exportData = records.map((r: any, idx: number) => ({
         'Sıra': idx + 1,
-        'Hata / Mükerrerlik Nedeni': r.hata_nedeni,
-        'Kayıt Durumu': r.durum === 'MUKERRER_TC' ? 'Mükerrer TC' : (r.durum === 'MUKERRER_HANE' ? 'Mükerrer Hane' : 'Hatalı / Eksik'),
+        'Excel Satır No': r.satir_no ? `Satır #${r.satir_no}` : '-',
+        'Hata / Elenme Nedeni': r.hata_nedeni,
+        'Kayıt Durumu': r.durum === 'MUKERRER_TC' ? 'Mükerrer TC' : (r.durum === 'MUKERRER_HANE' ? 'Mükerrer Hane/Adres' : 'Hatalı / Eksik'),
+        'İşlem Sonucu': r.islem_sonucu || (r.durum === 'HATALI' && r.hata_nedeni?.includes('Kayıt Sisteme Eklendi') ? 'Eklendi (Uyarılı)' : 'EKLENMEDİ (ELENDİ)'),
         'Mevcut Kömür Teslim Durumu': r.teslimat_durumu_ozeti || (r.teslimat_durumu ? `${r.teslimat_durumu} (${r.torba_sayisi || 0} Torba)` : 'BEKLİYOR'),
         'TC Kimlik No': r.tc_no || '-',
         'Adı Soyadı': r.ad_soyad || '-',
@@ -292,8 +300,10 @@ export async function GET(request: NextRequest) {
 
       const colWidths = [
         { wch: 6 },  // Sıra
-        { wch: 50 }, // Hata Nedeni
-        { wch: 18 }, // Durum
+        { wch: 15 }, // Excel Satır No
+        { wch: 55 }, // Hata Nedeni
+        { wch: 20 }, // Durum
+        { wch: 22 }, // İşlem Sonucu
         { wch: 35 }, // Teslim Durumu
         { wch: 16 }, // TC
         { wch: 24 }, // Ad Soyad
@@ -304,19 +314,27 @@ export async function GET(request: NextRequest) {
         { wch: 18 }, // Tarih
       ];
 
+      const reportTitle = batchId 
+        ? `KÖMÜR YARDIMI YÜKLEME VE HANE DENETİMİ HATA RAPORU (${batchId})`
+        : 'KÖMÜR YARDIMI YÜKLEME VE HANE DENETİMİ HATA RAPORU';
+      const reportSub = `Mükerrer TC, Aynı Hane ve Hatalı/Elenen Kayıt Dökümü (${records.length} Kayıt)`;
+
       const worksheet = createOfficialWorksheet(
-        'KÖMÜR YARDIMI YÜKLEME VE HANE DENETİMİ HATA RAPORU',
-        `Mükerrer TC, Aynı Hane ve Hatalı Kayıt Dökümü (${records.length} Kayıt)`,
+        reportTitle,
+        reportSub,
         exportData,
         colWidths
       );
 
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Yukleme Hatalari');
       const buf = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const filename = batchId 
+        ? `Edirne_SYDV_Elenen_Kayitlar_${batchId}.xlsx`
+        : 'Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx';
 
       return new NextResponse(buf, {
         headers: {
-          'Content-Disposition': 'attachment; filename="Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx"',
+          'Content-Disposition': `attachment; filename="${filename}"`,
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });

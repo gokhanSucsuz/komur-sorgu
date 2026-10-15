@@ -13,7 +13,8 @@ import {
   extractStreetAndDoor,
   cleanHaneNo,
   cleanHaneKey,
-  formatDeliveryStatusSummary
+  formatDeliveryStatusSummary,
+  normalizeMahalleName
 } from '@/lib/normalizer';
 
 interface ExistingRecordInfo {
@@ -77,7 +78,8 @@ export async function POST(request: NextRequest) {
 
     let totalRows = 0;
     let insertedCount = 0;
-    let failedCount = 0;
+    let elenenCount = 0;
+    let uyariliCount = 0;
 
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const defaultQuota = settingDoc ? parseInt(settingDoc.value, 10) : 34;
@@ -89,8 +91,9 @@ export async function POST(request: NextRequest) {
     // Check which neighborhoods already have records in DB and determine their highest ek_liste_no
     const existingMahalleEkMap = new Map<string, { maxEkNo: number; hasRecords: boolean }>();
     for (const b of existingList) {
-      const m = b.mahalle ? b.mahalle.trim() : '';
-      if (!m) continue;
+      const rawM = b.mahalle ? b.mahalle.trim() : '';
+      if (!rawM) continue;
+      const m = normalizeMahalleName(rawM);
       if (!existingMahalleEkMap.has(m)) {
         existingMahalleEkMap.set(m, { maxEkNo: 0, hasRecords: true });
       }
@@ -228,7 +231,7 @@ export async function POST(request: NextRequest) {
       // Check 1: TC Kimlik
       const hasValidTc = Boolean(tcNo && tcNo.length === 11);
       if (!hasValidTc) {
-        failedCount++;
+        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -238,8 +241,9 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || 'Adres Eksik',
           acik_adres: acikAdres || 'Adres Eksik',
           hane_no: haneNo || null,
-          hata_nedeni: 'Geçersiz veya Eksik TC Kimlik Numarası (Kayıt Sisteme Eklendi)',
+          hata_nedeni: 'Geçersiz veya Eksik TC Kimlik Numarası (Kayıt Geçici TC ile Sisteme Eklendi)',
           durum: 'HATALI',
+          islem_sonucu: 'EKLENDİ_UYARILI',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
@@ -267,7 +271,7 @@ export async function POST(request: NextRequest) {
 
       // Check 3: Address Missing (still insert into system, record warning)
       if (!mahalle && !acikAdres) {
-        failedCount++;
+        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -279,6 +283,7 @@ export async function POST(request: NextRequest) {
           hane_no: haneNo || null,
           hata_nedeni: 'Mahalle veya Açık Adres Bilgisi Eksik (Kayıt Sisteme Eklendi)',
           durum: 'HATALI',
+          islem_sonucu: 'EKLENDİ_UYARILI',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
@@ -292,6 +297,7 @@ export async function POST(request: NextRequest) {
 
       // Check 4: Phone Missing (still insert into system, record warning)
       if (!telefon && !telefon2) {
+        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -303,6 +309,7 @@ export async function POST(request: NextRequest) {
           hane_no: haneNo || null,
           hata_nedeni: 'Telefon Numarası Eksik (Kayıt Sisteme Eklendi)',
           durum: 'HATALI',
+          islem_sonucu: 'EKLENDİ_UYARILI',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
@@ -320,7 +327,7 @@ export async function POST(request: NextRequest) {
 
       // 5A: Yüklenen Excel dosyası içerisinde (Aynı batch'te) tekrarlanan TC
       if (hasValidTc && seenTcsInBatch.has(tcNo)) {
-        failedCount++;
+        elenenCount++;
         const prev = seenTcsInBatch.get(tcNo)!;
         toInsertLogs.push({
           batch_id: batchId,
@@ -331,14 +338,18 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || 'Merkez',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo || null,
-          hata_nedeni: `Mükerrer TC: Yüklenen Excel dosyası içerisinde aynı TC kimlik numarası (${tcNo}) birden fazla satırda tekrarlanıyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Kayıt yeniden eklenmedi ve atlandı.`,
+          hata_nedeni: `Mükerrer TC: Yüklenen Excel dosyası içerisinde aynı TC kimlik numarası (${tcNo}) birden fazla satırda tekrarlanıyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Kayıt sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_TC',
+          islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
           teslimat_tarihi: null,
           teslim_alan: null,
           teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı (Aynı Dosyada Yeni Yüklenen Satır)',
+          cakisan_ad_soyad: prev.ad_soyad,
+          cakisan_tc: prev.tc_no,
+          cakisan_satir: prev.rowNum,
           tarih: nowStr,
         });
         continue;
@@ -346,7 +357,7 @@ export async function POST(request: NextRequest) {
 
       // 5B: Sistemde (Veritabanında) Zaten Kayıtlı Olan TC
       if (hasValidTc && existingTcMap.has(tcNo)) {
-        failedCount++;
+        elenenCount++;
         const existing = existingTcMap.get(tcNo)!;
         const statusSummary = formatDeliveryStatusSummary(existing);
         toInsertLogs.push({
@@ -358,14 +369,18 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || existing.mahalle || 'Merkez',
           acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
           hane_no: haneNo || existing.hane_no || null,
-          hata_nedeni: `Mükerrer TC: Sistemde bu TC kimlik numarası (${tcNo}) ile kayıtlı hak sahibi zaten mevcuttur. [Mevcut Hak Sahibi: ${existing.ad_soyad} - Hane No: ${existing.hane_no || 'Belirtilmemiş'}] | Kömür Teslim Durumu: ${statusSummary}. Kayıt yeniden eklenmedi ve atlandı.`,
+          hata_nedeni: `Mükerrer TC: Sistemde bu TC kimlik numarası (${tcNo}) ile kayıtlı hak sahibi zaten mevcuttur. [Mevcut Hak Sahibi: ${existing.ad_soyad} - Hane No: ${existing.hane_no || 'Belirtilmemiş'}] | Kömür Teslim Durumu: ${statusSummary}. Kayıt sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_TC',
+          islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: existing.teslimat_durumu || 'BEKLIYOR',
           torba_sayisi: existing.torba_sayisi || 0,
           hedef_torba: existing.hedef_torba || defaultQuota,
           teslimat_tarihi: existing.teslimat_tarihi || null,
           teslim_alan: existing.teslim_alan || null,
           teslimat_durumu_ozeti: statusSummary,
+          cakisan_ad_soyad: existing.ad_soyad,
+          cakisan_tc: existing.tc_no,
+          cakisan_hane_no: existing.hane_no || null,
           tarih: nowStr,
         });
         continue;
@@ -377,7 +392,7 @@ export async function POST(request: NextRequest) {
 
       // 6A: Yüklenen Excel dosyası içerisinde aynı hane numarası
       if (cleanHane && seenHanesInBatch.has(cleanHane)) {
-        failedCount++;
+        elenenCount++;
         const prev = seenHanesInBatch.get(cleanHane)!;
         toInsertLogs.push({
           batch_id: batchId,
@@ -388,14 +403,18 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || 'Merkez',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo,
-          hata_nedeni: `Mükerrer Hane No: Yüklenen Excel dosyası içerisinde aynı hane numarası (Hane No: ${haneNo}) birden fazla satırda tekrarlanıyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} (TC: ${prev.tc_no}) | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Aynı haneye mükerrer kayıt oluşturulmaması için bu satır yeniden eklenmedi ve atlandı.`,
+          hata_nedeni: `Mükerrer Hane No: Yüklenen Excel dosyası içerisinde aynı hane numarası (Hane No: ${haneNo}) birden fazla satırda tekrarlanıyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} (TC: ${prev.tc_no}) | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Aynı haneye mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_HANE',
+          islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
           teslimat_tarihi: null,
           teslim_alan: null,
           teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı (Aynı Dosyada Yeni Yüklenen Satır)',
+          cakisan_ad_soyad: prev.ad_soyad,
+          cakisan_tc: prev.tc_no,
+          cakisan_satir: prev.rowNum,
           tarih: nowStr,
         });
         continue;
@@ -403,7 +422,7 @@ export async function POST(request: NextRequest) {
 
       // 6B: Sistemde (Veritabanında) Aynı Hane Numarası ile Zaten Kayıtlı Hak Sahibi
       if (cleanHane && existingHaneMap.has(cleanHane)) {
-        failedCount++;
+        elenenCount++;
         const existing = existingHaneMap.get(cleanHane)!;
         const statusSummary = formatDeliveryStatusSummary(existing);
         toInsertLogs.push({
@@ -415,14 +434,18 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || existing.mahalle || 'Merkez',
           acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
           hane_no: haneNo,
-          hata_nedeni: `Mükerrer Hane No: Sistemde bu hane numarasına (Hane No: ${haneNo}) ait hak sahibi zaten kayıtlıdır. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Mahalle: ${existing.mahalle || '-'}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kayıt oluşturulmaması için bu satır yeniden eklenmedi ve atlandı.`,
+          hata_nedeni: `Mükerrer Hane No: Sistemde bu hane numarasına (Hane No: ${haneNo}) ait hak sahibi zaten kayıtlıdır. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Mahalle: ${existing.mahalle || '-'}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_HANE',
+          islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: existing.teslimat_durumu || 'BEKLIYOR',
           torba_sayisi: existing.torba_sayisi || 0,
           hedef_torba: existing.hedef_torba || defaultQuota,
           teslimat_tarihi: existing.teslimat_tarihi || null,
           teslim_alan: existing.teslim_alan || null,
           teslimat_durumu_ozeti: statusSummary,
+          cakisan_ad_soyad: existing.ad_soyad,
+          cakisan_tc: existing.tc_no,
+          cakisan_hane_no: existing.hane_no || null,
           tarih: nowStr,
         });
         continue;
@@ -435,7 +458,7 @@ export async function POST(request: NextRequest) {
 
       // 7A: Yüklenen Excel dosyası içerisinde aynı adres
       if (normAdres && normAdres.length > 5 && seenAddressesInBatch.has(normAdres)) {
-        failedCount++;
+        elenenCount++;
         const prev = seenAddressesInBatch.get(normAdres)!;
         toInsertLogs.push({
           batch_id: batchId,
@@ -446,14 +469,18 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || 'Merkez',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo || null,
-          hata_nedeni: `Aynı Hanede/Adreste Birden Fazla Kayıt: Bu Excel dosyası içinde aynı adreste başka kişi de bulunuyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} (TC: ${prev.tc_no}) | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Kayıt yeniden eklenmedi ve atlandı.`,
+          hata_nedeni: `Aynı Hanede/Adreste Birden Fazla Kayıt: Bu Excel dosyası içinde aynı adreste başka kişi de bulunuyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} (TC: ${prev.tc_no}) | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Kayıt sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_HANE',
+          islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           hedef_torba: defaultQuota,
           teslimat_tarihi: null,
           teslim_alan: null,
           teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı (Aynı Dosyada Yeni Yüklenen Satır)',
+          cakisan_ad_soyad: prev.ad_soyad,
+          cakisan_tc: prev.tc_no,
+          cakisan_satir: prev.rowNum,
           tarih: nowStr,
         });
         continue;
@@ -461,7 +488,7 @@ export async function POST(request: NextRequest) {
 
       // 7B: Sistemde (Veritabanında) Aynı Adreste Zaten Kayıtlı Hak Sahibi
       if (normAdres && normAdres.length > 5 && existingAddressMap.has(normAdres)) {
-        failedCount++;
+        elenenCount++;
         const existing = existingAddressMap.get(normAdres)!;
         const statusSummary = formatDeliveryStatusSummary(existing);
         toInsertLogs.push({
@@ -473,14 +500,18 @@ export async function POST(request: NextRequest) {
           mahalle: mahalle || existing.mahalle || 'Merkez',
           acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
           hane_no: haneNo || existing.hane_no || null,
-          hata_nedeni: `Aynı Hanede/Adreste Zaten Kayıt Var: Sistemde bu adreste ikamet eden başka hak sahibi bulunmaktadır. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Adres: ${existing.mahalle || ''} ${existing.acik_adres || ''}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kayıt oluşturulmaması için bu satır yeniden eklenmedi ve atlandı.`,
+          hata_nedeni: `Aynı Hanede/Adreste Zaten Kayıt Var: Sistemde bu adreste ikamet eden başka hak sahibi bulunmaktadır. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Adres: ${existing.mahalle || ''} ${existing.acik_adres || ''}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
           durum: 'MUKERRER_HANE',
+          islem_sonucu: 'EKLENMEDİ',
           teslimat_durumu: existing.teslimat_durumu || 'BEKLIYOR',
           torba_sayisi: existing.torba_sayisi || 0,
           hedef_torba: existing.hedef_torba || defaultQuota,
           teslimat_tarihi: existing.teslimat_tarihi || null,
           teslim_alan: existing.teslim_alan || null,
           teslimat_durumu_ozeti: statusSummary,
+          cakisan_ad_soyad: existing.ad_soyad,
+          cakisan_tc: existing.tc_no,
+          cakisan_hane_no: existing.hane_no || null,
           tarih: nowStr,
         });
         continue;
@@ -601,6 +632,13 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    const elenenKayitlar = toInsertLogs.filter(
+      l => l.islem_sonucu === 'EKLENMEDİ' || l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE'
+    );
+    const uyariliKayitlar = toInsertLogs.filter(
+      l => l.islem_sonucu === 'EKLENDİ_UYARILI'
+    );
+
     // Record batch metadata in import_batches
     await batchesCol.insertOne({
       batch_id: batchId,
@@ -608,7 +646,9 @@ export async function POST(request: NextRequest) {
       dosya_boyutu: file.size,
       toplam_satir: totalRows,
       eklenen_kisi: insertedCount,
-      hatali_kisi: failedCount,
+      elenen_kisi: elenenKayitlar.length,
+      hatali_kisi: elenenKayitlar.length,
+      uyarili_kisi: uyariliKayitlar.length,
       mahalle_ozet: mahalleOzet,
       created_at: nowStr,
       tarih_iso: new Date().toISOString(),
@@ -619,26 +659,29 @@ export async function POST(request: NextRequest) {
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'EXCEL_YUKLEME',
       baslik: 'Excel Dosyası Yüklendi',
-      detay: `"${file.name}" dosyasından ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${failedCount} mükerrer/hatalı kayıt elendi.`,
-      ek_bilgi: { batch_id: batchId, totalRows, insertedCount, failedCount },
+      detay: `"${file.name}" dosyasından ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${elenenKayitlar.length} mükerrer kayıt elendi.`,
+      ek_bilgi: { batch_id: batchId, totalRows, insertedCount, elenenCount: elenenKayitlar.length, uyariliCount: uyariliKayitlar.length },
     });
 
     const mukerrerTcCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_TC').length;
     const mukerrerHaneCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_HANE').length;
     const hataliCount = toInsertLogs.filter(l => l.durum === 'HATALI').length;
-    const duplicateWarnings = toInsertLogs.filter(l => l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE');
 
     return NextResponse.json({
       success: true,
       batchId,
+      dosyaAdi: file.name,
       totalRows,
       insertedCount,
-      failedCount,
+      failedCount: elenenKayitlar.length,
+      elenenCount: elenenKayitlar.length,
+      uyariliCount: uyariliKayitlar.length,
       mukerrerTcCount,
       mukerrerHaneCount,
       hataliCount,
-      duplicateWarnings: duplicateWarnings.slice(0, 100),
-      message: `${totalRows} satırdan ${insertedCount} hak sahibi başarıyla sisteme aktarıldı. ${failedCount} kayıt mükerrer veya eksik bilgi nedeniyle elendi ve yeniden eklenmedi.`,
+      elenenKayitlar, // Full array of eliminated records
+      duplicateWarnings: elenenKayitlar, // backwards compatibility
+      message: `${totalRows} satırdan ${insertedCount} hak sahibi başarıyla sisteme aktarıldı. ${elenenKayitlar.length} mükerrer kayıt elendi ve sisteme eklenmedi.`,
     });
   } catch (error: any) {
     console.error('Error processing Excel import:', error);

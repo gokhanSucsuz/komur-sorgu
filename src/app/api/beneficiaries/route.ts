@@ -105,10 +105,20 @@ export async function GET(request: NextRequest) {
         .split(',')
         .map((m) => m.trim())
         .filter(Boolean);
-      if (mahalleList.length === 1) {
-        filter.mahalle = mahalleList[0];
-      } else if (mahalleList.length > 1) {
-        filter.mahalle = { $in: mahalleList };
+      
+      const expandedMahalleList: string[] = [];
+      for (const m of mahalleList) {
+        if (/100\.\s*Yıl/i.test(m) || /Yıl\s+Mah/i.test(m) || m.toLowerCase() === 'yıl') {
+          expandedMahalleList.push('100. Yıl Mah.', '100. Yıl Mahallesi', 'Yıl Mah.', 'Yıl Mahallesi', '100.Yıl Mah.', '100 Yıl Mah.', 'Yıl');
+        } else {
+          expandedMahalleList.push(m);
+        }
+      }
+      const uniqueMahalleList = Array.from(new Set(expandedMahalleList));
+      if (uniqueMahalleList.length === 1) {
+        filter.mahalle = uniqueMahalleList[0];
+      } else if (uniqueMahalleList.length > 1) {
+        filter.mahalle = { $in: uniqueMahalleList };
       }
     }
 
@@ -312,7 +322,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const normAdres = normalizeAddress(mahalle, acik_adres, hane_no);
+    const settlement = detectSettlement(mahalle, body.koy, acik_adres);
+    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, hane_no, settlement.name);
+    const normAdres = normalizeAddress(settlement.name, acik_adres, hane_no);
     const normHash = hashAddress(normAdres);
     const haneHash = hane_no ? hashHane(hane_no) : null;
 
@@ -336,8 +348,6 @@ export async function POST(request: NextRequest) {
     }
 
     const phones = extractPhoneNumbers(telefon, telefon2);
-    const settlement = detectSettlement(mahalle, body.koy, acik_adres);
-    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, hane_no, settlement.name);
 
     // Default target quota from settings
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });

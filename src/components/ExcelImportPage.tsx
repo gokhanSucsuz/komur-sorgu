@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
-  Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck
+  Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
+  Eye, Phone, MapPin, Copy, Check, Users, Info, Hash
 } from 'lucide-react';
 
 interface ExcelImportPageProps {
@@ -37,6 +38,81 @@ export default function ExcelImportPage({
   const [batchDeleteTarget, setBatchDeleteTarget] = useState<any | null>(null);
   const [deleteDeliveredChoice, setDeleteDeliveredChoice] = useState<boolean>(false);
   const [isDeletingBatch, setIsDeletingBatch] = useState<boolean>(false);
+
+  // Eliminated / Duplicate Records Detail Modal State
+  const [eliminatedModalBatch, setEliminatedModalBatch] = useState<{
+    batchId?: string;
+    dosyaAdi?: string;
+    records?: any[];
+    title?: string;
+  } | null>(null);
+  const [modalRecords, setModalRecords] = useState<any[]>([]);
+  const [isLoadingModalRecords, setIsLoadingModalRecords] = useState(false);
+  const [modalSearch, setModalSearch] = useState('');
+  const [modalFilter, setModalFilter] = useState<'ALL' | 'MUKERRER_TC' | 'MUKERRER_HANE' | 'HATALI'>('ALL');
+  const [copiedTc, setCopiedTc] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedTc(text);
+    setTimeout(() => setCopiedTc(null), 2000);
+  };
+
+  const openEliminatedModal = async (target: {
+    batchId?: string;
+    dosyaAdi?: string;
+    records?: any[];
+    title?: string;
+  }) => {
+    setEliminatedModalBatch(target);
+    setModalSearch('');
+    setModalFilter('ALL');
+
+    if (target.records && target.records.length > 0) {
+      setModalRecords(target.records);
+      return;
+    }
+
+    if (target.batchId) {
+      setIsLoadingModalRecords(true);
+      try {
+        const res = await fetch(`/api/import/logs?batchId=${encodeURIComponent(target.batchId)}&islemSonucu=EKLENMEDI`);
+        const data = await res.json();
+        if (data.success) {
+          setModalRecords(data.logs || []);
+        } else {
+          setModalRecords([]);
+        }
+      } catch (err) {
+        console.error('Error fetching eliminated records:', err);
+        setModalRecords([]);
+      } finally {
+        setIsLoadingModalRecords(false);
+      }
+    } else {
+      setModalRecords([]);
+    }
+  };
+
+  const filteredModalRecords = modalRecords.filter((item) => {
+    if (modalFilter !== 'ALL' && item.durum !== modalFilter) {
+      return false;
+    }
+    if (modalSearch.trim()) {
+      const qClean = modalSearch.toLowerCase().trim();
+      const matchName = item.ad_soyad && item.ad_soyad.toLowerCase().includes(qClean);
+      const matchTc = item.tc_no && String(item.tc_no).includes(qClean);
+      const matchReason = item.hata_nedeni && item.hata_nedeni.toLowerCase().includes(qClean);
+      const matchMahalle = item.mahalle && item.mahalle.toLowerCase().includes(qClean);
+      const matchAdres = item.acik_adres && item.acik_adres.toLowerCase().includes(qClean);
+      const matchHane = item.hane_no && String(item.hane_no).toLowerCase().includes(qClean);
+      if (!matchName && !matchTc && !matchReason && !matchMahalle && !matchAdres && !matchHane) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,6 +178,7 @@ export default function ExcelImportPage({
     setErrorMsg('');
     setUploadResult(null);
 
+    const uploadedFileName = selectedFile.name;
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('userRole', userRole);
@@ -127,6 +204,16 @@ export default function ExcelImportPage({
       fetchLogs();
       fetchUploadedBatches();
       onRefreshAll();
+
+      // If there are eliminated / duplicate records, open modal immediately to inspect them in detail!
+      if (data.elenenKayitlar && data.elenenKayitlar.length > 0) {
+        openEliminatedModal({
+          batchId: data.batchId,
+          dosyaAdi: data.dosyaAdi || uploadedFileName,
+          records: data.elenenKayitlar,
+          title: `"${data.dosyaAdi || uploadedFileName}" Dosyasından Elenen Kayıtlar (${data.elenenKayitlar.length} Kayıt)`
+        });
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Dosya yükleme başarısız');
     } finally {
@@ -312,7 +399,7 @@ export default function ExcelImportPage({
               </div>
 
               {/* Duplicate Breakdown Chips */}
-              {(uploadResult.mukerrerTcCount > 0 || uploadResult.mukerrerHaneCount > 0) && (
+              {(uploadResult.mukerrerTcCount > 0 || uploadResult.mukerrerHaneCount > 0 || uploadResult.hataliCount > 0) && (
                 <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-bold">
                   {uploadResult.mukerrerTcCount > 0 && (
                     <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
@@ -321,71 +408,102 @@ export default function ExcelImportPage({
                   )}
                   {uploadResult.mukerrerHaneCount > 0 && (
                     <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-300">
-                      Mükerrer Hane: {uploadResult.mukerrerHaneCount} adet (Yeniden Eklenmedi)
+                      Mükerrer Hane / Adres: {uploadResult.mukerrerHaneCount} adet (Yeniden Eklenmedi)
                     </span>
                   )}
-                  {uploadResult.hataliCount > 0 && (
-                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 border border-rose-300">
-                      Eksik/Geçersiz: {uploadResult.hataliCount} adet
+                  {uploadResult.uyariliCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 border border-blue-300">
+                      Uyarılı Eklenen: {uploadResult.uyariliCount} adet
                     </span>
                   )}
                 </div>
               )}
 
-              {/* Duplicate Warnings with Coal Delivery Status List */}
-              {uploadResult.duplicateWarnings && uploadResult.duplicateWarnings.length > 0 && (
-                <div className="mt-2 p-3 rounded-xl bg-amber-50/95 border border-amber-300 text-amber-950 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>Mükerrer Kayıt & Kömür Teslimat Durumu Uyarıları ({uploadResult.duplicateWarnings.length} Kayıt Yeniden Eklenmedi)</span>
-                    </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 font-extrabold border border-rose-200">
-                      Yeniden Eklenmedi
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-900 leading-tight">
-                    Aynı TC Kimlik No veya aynı Hane Numarası sistemde/dosyada zaten kayıtlı olduğu için bu kayıtlar <strong>atlandı ve tekrar eklenmedi</strong>. İlgili hanelerin mevcut kömür teslimat durumları aşağıdadır:
-                  </p>
-                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 pt-1">
-                    {uploadResult.duplicateWarnings.map((dup: any, idx: number) => (
-                      <div key={idx} className="p-2.5 rounded-lg bg-white border border-amber-200 text-xs shadow-xs space-y-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="font-extrabold text-slate-900">{dup.ad_soyad}</span>
-                            <span className="text-slate-500 font-mono text-[11px] ml-2">TC: {dup.tc_no}</span>
-                            {dup.hane_no && <span className="text-amber-800 text-[11px] font-bold ml-2">• Hane No: {dup.hane_no}</span>}
-                            {dup.satir_no && <span className="text-slate-400 text-[11px] ml-1.5">• Satır #{dup.satir_no}</span>}
-                          </div>
-                          <span className={`badge text-[9px] py-0.5 px-2 shrink-0 ${
-                            dup.teslimat_durumu === 'TAMAMLANDI'
-                              ? 'badge-completed'
-                              : dup.teslimat_durumu === 'EKSIK'
-                              ? 'badge-pending'
-                              : dup.teslimat_durumu === 'IPTAL'
-                              ? 'badge-cancelled'
-                              : 'badge-draft'
-                          }`}>
-                            {dup.teslimat_durumu === 'TAMAMLANDI' ? '✅ Teslim Edildi' :
-                             dup.teslimat_durumu === 'EKSIK' ? '⚠️ Eksik Teslimat' :
-                             dup.teslimat_durumu === 'IPTAL' ? '❌ İptal' : '⏳ Bekliyor'}
-                          </span>
-                        </div>
-
-                        {dup.teslimat_durumu_ozeti && (
-                          <div className="flex items-center gap-1.5 p-1.5 rounded-md bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-800">
-                            <PackageCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <span>Kömür Durumu:</span>
-                            <span className="text-amber-900 font-black">{dup.teslimat_durumu_ozeti}</span>
-                          </div>
-                        )}
-
-                        <div className="text-[11px] text-slate-700 bg-amber-50/70 p-1.5 rounded border border-amber-200 font-medium">
-                          {dup.hata_nedeni}
-                        </div>
+              {/* Prominent Action Callout for Eliminated Records */}
+              {uploadResult.failedCount > 0 && (
+                <div className="mt-2 p-3.5 rounded-xl bg-amber-500/10 border-2 border-amber-400 text-amber-950 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <AlertTriangle className="w-5 h-5 text-white" />
                       </div>
-                    ))}
+                      <div>
+                        <h4 className="text-xs font-black text-amber-950 leading-tight">
+                          {uploadResult.failedCount} Adet Kayıt Elendi (Sisteme Eklenmedi)
+                        </h4>
+                        <p className="text-[11px] text-amber-900 font-medium">
+                          Mükerrer TC veya aynı hane çakışması nedeniyle atlanan hak sahipleri
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => openEliminatedModal({
+                          batchId: uploadResult.batchId,
+                          dosyaAdi: uploadResult.dosyaAdi,
+                          records: uploadResult.elenenKayitlar,
+                          title: `"${uploadResult.dosyaAdi || 'Yüklenen Dosya'}" Dosyasından Elenen Kayıtlar (${uploadResult.failedCount} Kayıt)`
+                        })}
+                        className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95"
+                      >
+                        <Eye className="w-4 h-4 text-white" />
+                        <span>Elenen Kayıtları Detaylı İncele</span>
+                      </button>
+
+                      <a
+                        href={`/api/export?type=errors&batchId=${encodeURIComponent(uploadResult.batchId)}`}
+                        download={`Edirne_SYDV_Elenen_Kayitlar_${uploadResult.batchId}.xlsx`}
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all active:scale-95"
+                        title="Elenen kayıtları Excel olarak indir"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Excel İndir</span>
+                      </a>
+                    </div>
                   </div>
+
+                  {/* Inline preview of first few eliminated records */}
+                  {uploadResult.elenenKayitlar && uploadResult.elenenKayitlar.length > 0 && (
+                    <div className="space-y-1.5 pt-2 border-t border-amber-300/80">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
+                        <span>Elenen Kayıtlardan Özet (İlk {Math.min(3, uploadResult.elenenKayitlar.length)} Kayıt):</span>
+                        <button
+                          type="button"
+                          onClick={() => openEliminatedModal({
+                            batchId: uploadResult.batchId,
+                            dosyaAdi: uploadResult.dosyaAdi,
+                            records: uploadResult.elenenKayitlar,
+                            title: `"${uploadResult.dosyaAdi || 'Yüklenen Dosya'}" Dosyasından Elenen Kayıtlar (${uploadResult.failedCount} Kayıt)`
+                          })}
+                          className="text-amber-800 hover:text-amber-950 underline font-black"
+                        >
+                          Tüm {uploadResult.failedCount} Elenen Kaydı Gör ({uploadResult.failedCount}) →
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {uploadResult.elenenKayitlar.slice(0, 3).map((item: any, idx: number) => (
+                          <div key={idx} className="p-2.5 rounded-lg bg-white border border-amber-200 text-xs shadow-2xs space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-extrabold text-slate-900 truncate">
+                                {item.satir_no && <span className="text-slate-500 font-mono mr-1.5">Satır #{item.satir_no}:</span>}
+                                <span>{item.ad_soyad}</span>
+                                <span className="font-mono text-slate-500 text-[11px] ml-2 font-normal">TC: {item.tc_no}</span>
+                              </div>
+                              <span className="badge text-[9px] py-0.5 px-2 bg-rose-50 text-rose-700 border border-rose-200 shrink-0 font-bold">
+                                {item.durum === 'MUKERRER_TC' ? 'Mükerrer TC' : 'Mükerrer Hane'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-700 bg-amber-50/70 p-1 rounded font-medium leading-relaxed">
+                              {item.hata_nedeni}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -499,6 +617,11 @@ export default function ExcelImportPage({
                     <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
                       {batch.mevcut_kisi} Hak Sahibi Sistemde
                     </span>
+                    {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
+                      <span className="font-extrabold text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200">
+                        {batch.elenen_kisi || batch.hata_kayit_sayisi} Elenen / Mükerrer
+                      </span>
+                    )}
                     <span className="font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
                       {batch.bekleyen} Bekliyor
                     </span>
@@ -526,17 +649,47 @@ export default function ExcelImportPage({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBatchDeleteTarget(batch);
-                    setDeleteDeliveredChoice(false);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs shrink-0 self-stretch sm:self-auto"
-                >
-                  <Trash2 className="w-4 h-4 text-rose-600" />
-                  <span>Dosyayı ve Kayıtları Geri Al (Sil)</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto flex-wrap">
+                  {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openEliminatedModal({
+                          batchId: batch.batch_id || batch.id,
+                          dosyaAdi: batch.dosya_adi,
+                          title: `"${batch.dosya_adi}" Dosyasından Elenen Kayıtlar (${batch.elenen_kisi || batch.hata_kayit_sayisi} Kayıt)`
+                        })}
+                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                        title="Bu dosyadan elenen kayıtları detaylı incele"
+                      >
+                        <Eye className="w-4 h-4 text-amber-700" />
+                        <span>Elenenleri Gör ({batch.elenen_kisi || batch.hata_kayit_sayisi})</span>
+                      </button>
+
+                      <a
+                        href={`/api/export?type=errors&batchId=${encodeURIComponent(batch.batch_id || batch.id)}`}
+                        download={`Edirne_SYDV_Elenen_Kayitlar_${batch.batch_id || batch.id}.xlsx`}
+                        className="px-2.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-2xs"
+                        title="Bu dosyanın elenen kayıtlarını Excel indir"
+                      >
+                        <Download className="w-4 h-4 text-emerald-700" />
+                        <span className="hidden sm:inline">Excel</span>
+                      </a>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchDeleteTarget(batch);
+                      setDeleteDeliveredChoice(false);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span>Geri Al</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -561,12 +714,13 @@ export default function ExcelImportPage({
             {logs.length > 0 && (
               <>
                 <a
-                  href="/api/export?type=errors"
+                  href={`/api/export?type=errors${selectedBatch ? `&batchId=${encodeURIComponent(selectedBatch)}` : ''}`}
                   download="Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx"
-                  className="p-2 rounded-xl bg-white hover:bg-slate-100 text-amber-700 border border-slate-200 shadow-xs"
+                  className="p-2 rounded-xl bg-white hover:bg-slate-100 text-amber-700 border border-slate-200 shadow-xs flex items-center gap-1.5 text-xs font-bold"
                   title="Hata Raporunu Excel İndir"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-4 h-4 text-emerald-700" />
+                  <span className="hidden sm:inline">Excel İndir</span>
                 </a>
                 <button
                   onClick={handleClearLogs}
@@ -622,28 +776,44 @@ export default function ExcelImportPage({
         )}
 
         {/* Filter & Search Bar */}
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
             <input
               type="text"
               value={searchLog}
               onChange={(e) => setSearchLog(e.target.value)}
-              placeholder="Hatalı kayıtlarda ara..."
+              placeholder="Hak sahibi, TC, adres veya hata nedeninde ara..."
               className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-amber-500 font-medium"
             />
           </div>
 
-          <select
-            value={selectedDurum}
-            onChange={(e) => setSelectedDurum(e.target.value)}
-            className="px-2.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500"
-          >
-            <option value="HEPSI">Tüm Hata Tipleri</option>
-            <option value="MUKERRER_TC">Mükerrer TC</option>
-            <option value="MUKERRER_HANE">Mükerrer Hane/Adres</option>
-            <option value="HATALI">Eksik/Geçersiz</option>
-          </select>
+          <div className="flex gap-2 shrink-0">
+            <select
+              value={selectedBatch}
+              onChange={(e) => setSelectedBatch(e.target.value)}
+              className="px-2.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500 max-w-[180px] truncate"
+              title="Excel Dosyasına Göre Filtrele"
+            >
+              <option value="">Tüm Dosyalar</option>
+              {uploadedBatches.map((b) => (
+                <option key={b.batch_id || b.id} value={b.batch_id || b.id}>
+                  {b.dosya_adi} ({b.elenen_kisi || b.hata_kayit_sayisi || 0} Elenen)
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedDurum}
+              onChange={(e) => setSelectedDurum(e.target.value)}
+              className="px-2.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500"
+            >
+              <option value="HEPSI">Tüm Durumlar</option>
+              <option value="MUKERRER_TC">Mükerrer TC</option>
+              <option value="MUKERRER_HANE">Mükerrer Hane/Adres</option>
+              <option value="HATALI">Eksik/Geçersiz</option>
+            </select>
+          </div>
         </div>
 
         {/* Logs List - Light Mode */}
@@ -663,10 +833,27 @@ export default function ExcelImportPage({
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h5 className="text-sm font-extrabold text-slate-900">{item.ad_soyad}</h5>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 flex-wrap">
                       <span className="font-mono font-bold text-amber-800">TC: {item.tc_no}</span>
+                      {item.tc_no && item.tc_no.length === 11 && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(item.tc_no)}
+                          className="text-slate-400 hover:text-slate-700 p-0.5 rounded transition-colors"
+                          title="TC Kopyala"
+                        >
+                          {copiedTc === item.tc_no ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600 inline" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 inline" />
+                          )}
+                        </button>
+                      )}
                       {item.hane_no && <span className="font-bold text-indigo-700">• Hane No: {item.hane_no}</span>}
-                      {item.satir_no && <span>• Satır #{item.satir_no}</span>}
+                      {item.telefon && item.telefon !== 'Eksik' && (
+                        <span className="text-slate-600 font-semibold">• Tel: {item.telefon}</span>
+                      )}
+                      {item.satir_no && <span className="font-mono text-slate-400">• Satır #{item.satir_no}</span>}
                     </div>
                   </div>
 
@@ -849,6 +1036,267 @@ export default function ExcelImportPage({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ELENEN VE MÜKERRER KAYITLAR DETAYLI İNCELEME MODALI */}
+      {eliminatedModalBatch && (
+        <div className="modal-overlay" onClick={() => setEliminatedModalBatch(null)}>
+          <div 
+            className="modal-sheet max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden bg-slate-50" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-white border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center border border-rose-200 shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">
+                    {eliminatedModalBatch.title || 'Elenen ve Mükerrer Kayıtlar Listesi'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Sistemde mükerrerlik veya adres çakışması tespit edildiği için aktarılmayan kayıtlar
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={`/api/export?type=errors${eliminatedModalBatch.batchId ? `&batchId=${encodeURIComponent(eliminatedModalBatch.batchId)}` : ''}`}
+                  download={`Edirne_SYDV_Elenen_Kayitlar.xlsx`}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+                  title="Elenen Kayıtları Excel Olarak İndir"
+                >
+                  <Download className="w-4 h-4 text-emerald-700" />
+                  <span className="hidden sm:inline">Excel İndir</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setEliminatedModalBatch(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="p-3 sm:p-4 bg-white border-b border-slate-200 flex flex-col sm:flex-row gap-2.5 shrink-0">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={modalSearch}
+                  onChange={(e) => setModalSearch(e.target.value)}
+                  placeholder="İsim, TC kimlik, mahalle veya elenme nedenine göre ara..."
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-amber-500 font-medium"
+                />
+                {modalSearch && (
+                  <button
+                    onClick={() => setModalSearch('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                  >
+                    Temizle
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setModalFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                    modalFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Tümü ({modalRecords.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalFilter('MUKERRER_TC')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                    modalFilter === 'MUKERRER_TC'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  Mükerrer TC ({modalRecords.filter(r => r.durum === 'MUKERRER_TC').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalFilter('MUKERRER_HANE')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                    modalFilter === 'MUKERRER_HANE'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'
+                  }`}
+                >
+                  Mükerrer Hane ({modalRecords.filter(r => r.durum === 'MUKERRER_HANE').length})
+                </button>
+              </div>
+            </div>
+
+            {/* Content List */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+              {isLoadingModalRecords ? (
+                <div className="py-12 text-center text-xs font-semibold text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
+                  <span>Elenen kayıtlar getiriliyor...</span>
+                </div>
+              ) : filteredModalRecords.length === 0 ? (
+                <div className="py-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-500 text-xs font-medium space-y-1">
+                  <p className="font-bold text-slate-700">Kayıt bulunamadı</p>
+                  <p className="text-[11px] text-slate-400">
+                    Arama kriterinize veya filtrenize uygun elenen kayıt bulunmuyor.
+                  </p>
+                </div>
+              ) : (
+                filteredModalRecords.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-slate-300 transition-all space-y-3"
+                  >
+                    {/* Top Row: Row Num + Badges */}
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {item.satir_no && (
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[11px] font-black tracking-wide shadow-2xs flex items-center gap-1">
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                            Excel Satır #{item.satir_no}
+                          </span>
+                        )}
+                        <span
+                          className={`badge text-[10px] py-1 px-2.5 font-bold ${
+                            item.durum === 'MUKERRER_TC'
+                              ? 'badge-pending'
+                              : item.durum === 'MUKERRER_HANE'
+                              ? 'badge-household'
+                              : 'badge-cancelled'
+                          }`}
+                        >
+                          {item.durum === 'MUKERRER_TC'
+                            ? 'Mükerrer TC Kimlik'
+                            : item.durum === 'MUKERRER_HANE'
+                            ? 'Aynı Hane / Adres'
+                            : 'Eksik / Geçersiz'}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-extrabold border border-rose-200">
+                          Sisteme Eklenmedi (Elendi)
+                        </span>
+                      </div>
+
+                      {/* Coal Delivery Status Badge */}
+                      <span className={`badge text-[10px] py-1 px-2.5 font-bold shrink-0 ${
+                        item.teslimat_durumu === 'TAMAMLANDI'
+                          ? 'badge-completed'
+                          : item.teslimat_durumu === 'EKSIK'
+                          ? 'badge-pending'
+                          : item.teslimat_durumu === 'IPTAL'
+                          ? 'badge-cancelled'
+                          : 'badge-draft'
+                      }`}>
+                        {item.teslimat_durumu === 'TAMAMLANDI' ? '✅ Mevcut Kömür Teslim Edildi' :
+                         item.teslimat_durumu === 'EKSIK' ? '⚠️ Eksik Teslimat' :
+                         item.teslimat_durumu === 'IPTAL' ? '❌ İptal' : '⏳ Kömür Bekliyor'}
+                      </span>
+                    </div>
+
+                    {/* Citizen Info from Excel */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 p-3 rounded-xl bg-slate-50/80 border border-slate-200/80 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-600 block">Hak Sahibi Adı Soyadı</span>
+                        <span className="text-sm font-black text-slate-900">{item.ad_soyad || 'Bilinmiyor'}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-600 block">TC Kimlik Numarası</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono font-black text-amber-900 text-xs">{item.tc_no || 'Eksik'}</span>
+                          {item.tc_no && item.tc_no.length === 11 && (
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(item.tc_no)}
+                              className="text-slate-400 hover:text-slate-700 p-0.5 rounded"
+                              title="TC Kopyala"
+                            >
+                              {copiedTc === item.tc_no ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-600 block">Telefon Bilgisi</span>
+                        <div className="flex items-center gap-1 font-semibold text-slate-800 mt-0.5">
+                          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{item.telefon || 'Belirtilmemiş'}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-600 block">Hane No</span>
+                        <span className="font-bold text-indigo-700 mt-0.5 block">
+                          {item.hane_no ? `Hane No: ${item.hane_no}` : 'Belirtilmemiş'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Address Line */}
+                    {(item.mahalle || item.acik_adres) && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-600 px-1 font-medium">
+                        <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span className="font-bold text-slate-800">{item.mahalle || 'Merkez'}:</span>
+                        <span className="truncate">{item.acik_adres || 'Adres belirtilmedi'}</span>
+                      </div>
+                    )}
+
+                    {/* Collision & Elimination Reason Callout */}
+                    <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 text-xs text-amber-950 space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-black text-amber-900">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Elenme ve Çakışma Nedeni:</span>
+                      </div>
+                      <p className="font-medium text-slate-800 leading-relaxed text-[11px] sm:text-xs">
+                        {item.hata_nedeni}
+                      </p>
+
+                      {/* Delivery summary pill if exists */}
+                      {item.teslimat_durumu_ozeti && (
+                        <div className="flex items-center gap-1.5 pt-1 mt-1 border-t border-amber-200/80 text-[11px] font-bold">
+                          <PackageCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span className="text-slate-600">Çakışan Hanenin Kömür Durumu:</span>
+                          <span className="text-amber-950 font-black">{item.teslimat_durumu_ozeti}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 sm:p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                ⚡ Elenen kayıtlar sistemde mükerrer teslimat ve çakışma olmaması için korunmuştur.
+              </span>
+              <button
+                type="button"
+                onClick={() => setEliminatedModalBatch(null)}
+                className="btn-secondary py-2 px-5 text-xs font-bold w-full sm:w-auto"
+              >
+                Kapat
+              </button>
             </div>
           </div>
         </div>

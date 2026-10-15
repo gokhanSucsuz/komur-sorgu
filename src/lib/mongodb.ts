@@ -1,5 +1,5 @@
 import { MongoClient, Db, ObjectId, ServerApiVersion } from 'mongodb';
-import { normalizeAddress } from './normalizer';
+import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName } from './normalizer';
 import {
   encryptBeneficiary,
   decryptBeneficiary,
@@ -30,6 +30,7 @@ const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'komur_db';
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 let indexesInitialized = false;
+let mahalleMigrationDone = false;
 
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;
@@ -401,6 +402,10 @@ export async function getDbCollections() {
   if (isMongoConfigured()) {
     try {
       const db = await getMongoDb();
+      if (!mahalleMigrationDone) {
+        mahalleMigrationDone = true;
+        await migrateMahalleNames(db);
+      }
       return {
         isFallback: false,
         db,
@@ -421,6 +426,10 @@ export async function getDbCollections() {
   }
 
   // Local / dev fallback when MONGODB_URI is not set
+  if (!mahalleMigrationDone) {
+    mahalleMigrationDone = true;
+    await migrateMahalleNames(null);
+  }
   return {
     isFallback: true,
     db: null as any,
@@ -513,6 +522,9 @@ async function initializeIndexesAndSeed(db: Db) {
 
   // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler ve kişisel verileri AES-256-GCM ile şifrele
   await migrateAndEncryptExistingData(db);
+
+  // 4. Mahalle İsimleri İyileştirme Migrasyonu: "Yıl Mahallesi", "Yıl Mah." -> "100. Yıl Mah."
+  await migrateMahalleNames(db);
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
@@ -818,6 +830,120 @@ export async function migrateAndEncryptExistingData(db: Db) {
     }
   } catch (err) {
     console.error('[AES-256-GCM] Migration error:', err);
+  }
+}
+
+/**
+ * Migrates and normalizes neighborhood names in MongoDB Atlas and in-memory store.
+ * Specifically repairs "Yıl Mahallesi", "Yıl Mah.", "Yıl", "100.Yıl Mah." etc. into canonical "100. Yıl Mah."
+ * and updates norm_adres and adres_hash accordingly.
+ */
+export async function migrateMahalleNames(db?: Db | null) {
+  const targetVariants = [
+    'Yıl Mahallesi',
+    'Yıl Mah.',
+    'Yıl',
+    'yil',
+    'yıl',
+    '100.Yıl Mah.',
+    '100 Yıl Mah.',
+    '100. Yıl Mahallesi',
+    '100.Yıl Mahallesi',
+    '100 Yıl Mahallesi',
+    '100.Yıl',
+    '100 Yıl',
+  ];
+
+  if (db) {
+    try {
+      const beneficiaries = db.collection('beneficiaries');
+      const history = db.collection('delivery_history');
+      const logs = db.collection('import_logs');
+      const routes = db.collection('delivery_routes');
+      const shifts = db.collection('work_shifts');
+      const activityLogs = db.collection('activity_logs');
+
+      // 1. Beneficiaries
+      const badBens = await beneficiaries.find({
+        mahalle: { $in: targetVariants }
+      }).toArray();
+
+      for (const b of badBens) {
+        const plainAdres = isEncrypted(b.acik_adres) ? decryptField(b.acik_adres) : b.acik_adres;
+        const plainHane = isEncrypted(b.hane_no) ? decryptField(b.hane_no) : b.hane_no;
+        const newNorm = normalizeAddress('100. Yıl Mah.', plainAdres, plainHane);
+        const streetInfo = extractStreetAndDoor(plainAdres, null, plainHane, '100. Yıl Mah.');
+
+        const updateSet: any = {
+          mahalle: '100. Yıl Mah.',
+          norm_adres: encryptField(newNorm),
+          adres_hash: hashAddress(newNorm),
+        };
+        if (streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş') {
+          updateSet.sokak = encryptField(streetInfo.sokak);
+          updateSet.kapi_no = streetInfo.kapiNo;
+          updateSet.daire_no = streetInfo.daireNo;
+        }
+        await beneficiaries.updateOne({ _id: b._id }, { $set: updateSet });
+      }
+
+      // 2. Delivery History
+      await history.updateMany(
+        { mahalle: { $in: targetVariants } },
+        { $set: { mahalle: '100. Yıl Mah.' } }
+      );
+
+      // 3. Import Logs
+      await logs.updateMany(
+        { mahalle: { $in: targetVariants } },
+        { $set: { mahalle: '100. Yıl Mah.' } }
+      );
+
+      // 4. Delivery Routes
+      await routes.updateMany(
+        { mahalle: { $in: targetVariants } },
+        { $set: { mahalle: '100. Yıl Mah.' } }
+      );
+
+      // 5. Activity Logs
+      await activityLogs.updateMany(
+        { mahalle: { $in: targetVariants } },
+        { $set: { mahalle: '100. Yıl Mah.' } }
+      );
+    } catch (err) {
+      console.error('[Migration] 100. Yıl Mah migration error:', err);
+    }
+  }
+
+  // Also migrate in-memory store if active
+  if (global._inMemoryMongoStore) {
+    const store = global._inMemoryMongoStore;
+    if (store.beneficiaries) {
+      for (const b of store.beneficiaries) {
+        if (targetVariants.includes(b.mahalle) || (b.mahalle && /^(?:100\s*\.?\s*)?y[ıi]l(?:\s*mah.*)?$/i.test(b.mahalle))) {
+          b.mahalle = '100. Yıl Mah.';
+          const plainAdres = isEncrypted(b.acik_adres) ? decryptField(b.acik_adres) : b.acik_adres;
+          const plainHane = isEncrypted(b.hane_no) ? decryptField(b.hane_no) : b.hane_no;
+          const newNorm = normalizeAddress('100. Yıl Mah.', plainAdres, plainHane);
+          b.norm_adres = encryptField(newNorm);
+          b.adres_hash = hashAddress(newNorm);
+        }
+      }
+    }
+    if (store.delivery_history) {
+      for (const h of store.delivery_history) {
+        if (targetVariants.includes(h.mahalle) || (h.mahalle && /^(?:100\s*\.?\s*)?y[ıi]l(?:\s*mah.*)?$/i.test(h.mahalle))) {
+          h.mahalle = '100. Yıl Mah.';
+        }
+      }
+    }
+    if (store.import_logs) {
+      for (const l of store.import_logs) {
+        if (targetVariants.includes(l.mahalle) || (l.mahalle && /^(?:100\s*\.?\s*)?y[ıi]l(?:\s*mah.*)?$/i.test(l.mahalle))) {
+          l.mahalle = '100. Yıl Mah.';
+        }
+      }
+    }
   }
 }
 

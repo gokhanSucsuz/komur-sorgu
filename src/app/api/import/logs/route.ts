@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { buildTurkishSearchFilter } from '@/lib/normalizer';
+import { cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,11 +8,12 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const batchId = (searchParams.get('batchId') || '').trim();
     const durum = (searchParams.get('durum') || '').trim();
+    const islemSonucu = (searchParams.get('islemSonucu') || '').trim();
     const q = (searchParams.get('q') || '').trim();
 
     const filter: any = {};
 
-    if (batchId) {
+    if (batchId && batchId !== 'ALL') {
       filter.batch_id = batchId;
     }
 
@@ -20,41 +21,53 @@ export async function GET(request: NextRequest) {
       filter.durum = durum;
     }
 
-    if (q) {
-      const searchFilter = buildTurkishSearchFilter(q, [
-        'tc_no',
-        'ad_soyad',
-        'mahalle',
-        'acik_adres',
-        'hata_nedeni',
-        'hane_no',
-        'telefon',
-      ]);
-      if (searchFilter.$and) {
-        filter.$and = searchFilter.$and;
-      } else if (searchFilter.$or) {
-        filter.$or = searchFilter.$or;
-      }
-    }
-
     const rawLogs = await logsCol
       .find(filter)
-      .sort({ _id: -1 })
-      .limit(500)
+      .sort({ satir_no: 1, _id: -1 })
       .toArray();
 
-    const logs = mapDocs(rawLogs);
+    let logs = mapDocs(rawLogs);
+
+    if (islemSonucu === 'EKLENMEDI') {
+      logs = logs.filter(
+        (l: any) => l.islem_sonucu === 'EKLENMEDİ' || l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE'
+      );
+    } else if (islemSonucu === 'EKLENDI_UYARILI') {
+      logs = logs.filter((l: any) => l.islem_sonucu === 'EKLENDİ_UYARILI');
+    }
+
+    if (q) {
+      const qClean = cleanTurkishText(q);
+      const qDigits = q.replace(/\D/g, '');
+      logs = logs.filter((r: any) => {
+        if (qClean && turkishIncludes(r.ad_soyad || '', qClean)) return true;
+        if (qClean && turkishIncludes(r.hata_nedeni || '', qClean)) return true;
+        if (qClean && turkishIncludes(r.mahalle || '', qClean)) return true;
+        if (qClean && turkishIncludes(r.acik_adres || '', qClean)) return true;
+        if (qClean && r.hane_no && turkishIncludes(String(r.hane_no), qClean)) return true;
+        if (qDigits && qDigits.length >= 3) {
+          if (r.tc_no && String(r.tc_no).includes(qDigits)) return true;
+          if (r.telefon && String(r.telefon).includes(qDigits)) return true;
+        }
+        return false;
+      });
+    }
 
     // Get list of batches
-    const allLogs = await logsCol.find({}).toArray();
-    const batchMap = new Map<string, { batch_id: string; tarih: string; hata_sayisi: number }>();
+    const rawAllLogs = await logsCol.find({}).toArray();
+    const allLogs = mapDocs(rawAllLogs);
+    const batchMap = new Map<string, { batch_id: string; tarih: string; hata_sayisi: number; elenen_sayisi: number }>();
 
     for (const log of allLogs) {
       const bId = log.batch_id || 'Bilinmeyen Batch';
       if (!batchMap.has(bId)) {
-        batchMap.set(bId, { batch_id: bId, tarih: log.tarih || '', hata_sayisi: 0 });
+        batchMap.set(bId, { batch_id: bId, tarih: log.tarih || '', hata_sayisi: 0, elenen_sayisi: 0 });
       }
-      batchMap.get(bId)!.hata_sayisi += 1;
+      const b = batchMap.get(bId)!;
+      b.hata_sayisi += 1;
+      if (log.islem_sonucu === 'EKLENMEDİ' || log.durum === 'MUKERRER_TC' || log.durum === 'MUKERRER_HANE') {
+        b.elenen_sayisi += 1;
+      }
     }
 
     const batches = Array.from(batchMap.values()).reverse();
@@ -63,11 +76,25 @@ export async function GET(request: NextRequest) {
     let mukerrerTc = 0;
     let mukerrerHane = 0;
     let eksikHatali = 0;
+    let elenenToplam = 0;
 
-    for (const log of allLogs) {
-      if (log.durum === 'MUKERRER_TC') mukerrerTc++;
-      else if (log.durum === 'MUKERRER_HANE') mukerrerHane++;
-      else if (log.durum === 'HATALI') eksikHatali++;
+    const targetListForStats = batchId && batchId !== 'ALL' 
+      ? allLogs.filter((l: any) => l.batch_id === batchId) 
+      : allLogs;
+
+    for (const log of targetListForStats) {
+      if (log.durum === 'MUKERRER_TC') {
+        mukerrerTc++;
+        elenenToplam++;
+      } else if (log.durum === 'MUKERRER_HANE') {
+        mukerrerHane++;
+        elenenToplam++;
+      } else if (log.durum === 'HATALI') {
+        eksikHatali++;
+        if (log.islem_sonucu === 'EKLENMEDİ') {
+          elenenToplam++;
+        }
+      }
     }
 
     return NextResponse.json({
@@ -75,7 +102,8 @@ export async function GET(request: NextRequest) {
       logs,
       batches,
       stats: {
-        toplamHata: allLogs.length,
+        toplamHata: targetListForStats.length,
+        elenenToplam,
         mukerrerTc,
         mukerrerHane,
         eksikHatali,

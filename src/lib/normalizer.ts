@@ -165,8 +165,22 @@ export function normalizeAddress(mahalle: string, acikAdres: string, haneNo?: st
     return `hane_${cleanTurkishText(haneNo).replace(/[^a-z0-9]/g, '')}`;
   }
 
-  const combined = `${mahalle || ''} ${acikAdres || ''}`;
-  const cleaned = cleanTurkishText(combined);
+  // Canonicalize neighborhood name if it refers to 100. Yıl or legacy "Yıl"
+  let normMahalle = mahalle || '';
+  if (
+    normMahalle.toLocaleLowerCase('tr-TR').includes('yıl') ||
+    normMahalle.toLocaleLowerCase('tr-TR').includes('yil')
+  ) {
+    normMahalle = normalizeMahalleName(normMahalle);
+  }
+
+  const combined = `${normMahalle} ${acikAdres || ''}`;
+  let cleaned = cleanTurkishText(combined);
+
+  // Unify 100. Yıl / Yıl variants to '100 yil' in normalized address
+  cleaned = cleaned
+    .replace(/(?:100\s*\.?\s*yil|yuzuncu\s*yil|\byil\b)/g, '100 yil')
+    .replace(/\s+/g, ' ');
 
   // Remove common filler words that differ by data entry
   const stripped = cleaned
@@ -339,6 +353,68 @@ export function cleanPhone(phone: string | number | null | undefined): string {
 }
 
 /**
+ * Converts text into clean Turkish title-case (e.g. "CUMHURİYET" -> "Cumhuriyet", "100. YIL" -> "100. Yıl")
+ */
+export function toTitleCaseTurkish(str: string): string {
+  return str
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      if (word.length === 0) return '';
+      if (/^\d+\.?$/.test(word)) return word;
+      return word.charAt(0).toLocaleUpperCase('tr-TR') + word.slice(1).toLocaleLowerCase('tr-TR');
+    })
+    .join(' ');
+}
+
+/**
+ * Normalizes neighborhood name ensuring standard canonical format:
+ * - "100. Yıl Mahallesi", "100.Yıl Mah.", "100 Yıl", "Yıl Mahallesi", "Yıl Mah.", "Yıl" -> "100. Yıl Mah."
+ * - "Cumhuriyet Mahallesi", "Cumhuriyet" -> "Cumhuriyet Mah."
+ * - "Dereköy Köyü", "Dereköy" (if village) -> "Dereköy Köyü"
+ */
+export function normalizeMahalleName(name: string | null | undefined): string {
+  if (!name) return 'Merkez Mah.';
+  let clean = name.toString().trim();
+
+  // If village
+  if (/(?:Köyü|Koy|Koyu)$/i.test(clean)) {
+    const cleanK = clean.replace(/\s+(?:Köyü|Koy|Koyu)$/i, '').trim();
+    return toTitleCaseTurkish(cleanK) + ' Köyü';
+  }
+
+  // Remove existing suffix (supporting both Turkish İ/I and English i/I)
+  clean = clean.replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)$/i, '').trim();
+
+  // Check 100. Yıl variants (including when entered as "Yıl" or "Yıl Mahallesi")
+  const lower = clean.toLocaleLowerCase('tr-TR');
+  if (
+    lower === 'yıl' ||
+    lower === 'yil' ||
+    lower === '100.yıl' ||
+    lower === '100.yil' ||
+    lower === '100 yıl' ||
+    lower === '100 yil' ||
+    lower === '100. yıl' ||
+    lower === '100. yil' ||
+    lower === '100yıl' ||
+    lower === '100yil' ||
+    lower === 'yüzüncü yıl' ||
+    lower === 'yuzuncu yil' ||
+    lower === 'yıl mahallesi' ||
+    lower === 'yil mahallesi' ||
+    /(?:^|\b)(?:100\s*\.?\s*y[ıi]l|y[uü]z[uü]nc[uü]\s*y[ıi]l|y[ıi]l)(?:\b|$)/i.test(clean)
+  ) {
+    return '100. Yıl Mah.';
+  }
+
+  // Normalize other numbered neighborhoods spacing, e.g. "1.Murat" -> "1. Murat"
+  clean = clean.replace(/^(\d+)\.([A-Za-zÇŞĞÜÖİçşğüöı])/, '$1. $2');
+
+  return toTitleCaseTurkish(clean) + ' Mah.';
+}
+
+/**
  * Detects whether a location is a Mahalle or a Köy, and formats its standard name.
  * Handles inputs from separate columns or embedded within the address.
  */
@@ -355,7 +431,7 @@ export function detectSettlement(
   if (k) {
     let cleanK = k.replace(/\s+(?:Köyü|Koy|Koyu)$/i, '').trim();
     if (cleanK) {
-      return { name: cleanK + ' Köyü', type: 'KOY' };
+      return { name: toTitleCaseTurkish(cleanK) + ' Köyü', type: 'KOY' };
     }
   }
 
@@ -363,22 +439,38 @@ export function detectSettlement(
   if (m) {
     if (/(?:Köyü|Koy|Koyu)$/i.test(m)) {
       let cleanK = m.replace(/\s+(?:Köyü|Koy|Koyu)$/i, '').trim();
-      return { name: cleanK + ' Köyü', type: 'KOY' };
+      return { name: toTitleCaseTurkish(cleanK) + ' Köyü', type: 'KOY' };
     }
-    let cleanM = m.replace(/\s+(?:Mahallesi|Mah\.|Mh\.?|Mah)$/i, '').trim();
-    return { name: cleanM + ' Mah.', type: 'MAHALLE' };
+    return { name: normalizeMahalleName(m), type: 'MAHALLE' };
   }
 
   // 3. Inspect open address
   if (addr) {
-    const koyMatch = addr.match(/([A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:Köyü|Koyu|Köy\b)/i);
-    if (koyMatch && koyMatch[1].trim().length > 1) {
-      return { name: koyMatch[1].trim() + ' Köyü', type: 'KOY' };
+    // 3a. Specifically check 100. Yıl or Yıl Mahallesi in open address
+    if (
+      /(?:100\s*\.?\s*y[ıi]l|y[uü]z[uü]nc[uü]\s*y[ıi]l)\s*(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)?/i.test(addr) ||
+      /\b(?:y[ıi]l)\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)/i.test(addr)
+    ) {
+      return { name: '100. Yıl Mah.', type: 'MAHALLE' };
     }
 
-    const mahMatch = addr.match(/([A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:Mahallesi|Mah\.|Mh\.?)/i);
+    // 3b. Village check in open address
+    const koyMatch = addr.match(/([A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:Köyü|Koyu|Köy\b)/i);
+    if (koyMatch && koyMatch[1].trim().length > 1) {
+      return { name: toTitleCaseTurkish(koyMatch[1].trim()) + ' Köyü', type: 'KOY' };
+    }
+
+    // 3c. Numbered neighborhood check in open address e.g. "1. Murat Mah.", "50. Yıl Mah."
+    const numMahMatch = addr.match(/(?:^|[,\s;])(\d{1,3}\.?\s+[A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)\b/i);
+    if (numMahMatch && numMahMatch[1].trim().length > 1) {
+      return { name: normalizeMahalleName(numMahMatch[1].trim()), type: 'MAHALLE' };
+    }
+
+    // 3d. General neighborhood check in open address
+    const mahMatch = addr.match(/(?:^|[,\s;])([A-Za-z0-9ÇŞĞÜÖİçşğüöı\s.]+?)\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)\b/i);
     if (mahMatch && mahMatch[1].trim().length > 1) {
-      return { name: mahMatch[1].trim() + ' Mah.', type: 'MAHALLE' };
+      const candidate = mahMatch[1].trim().replace(/^[,\s.-]+/, '');
+      return { name: normalizeMahalleName(candidate), type: 'MAHALLE' };
     }
   }
 
@@ -414,12 +506,17 @@ export function extractStreetAndDoor(
   } else if (addr) {
     let clean = addr;
     if (mahalleName) {
-      const cleanM = mahalleName.replace(/(?:Mahallesi|Mah\.|Mh\.|Köyü|Koy|Koyu)$/i, '').trim();
-      if (cleanM.length > 2) {
-        clean = clean.replace(new RegExp(cleanM + '\\s*(?:Mahallesi|Mah\\.|Mh\\.|Köyü|Koy|Koyu)?', 'gi'), '');
+      if (/100\.\s*Yıl/i.test(mahalleName) || /Yıl\s+Mah/i.test(mahalleName)) {
+        clean = clean.replace(/(?:100\s*\.?\s*y[ıi]l|y[uü]z[uü]nc[uü]\s*y[ıi]l|y[ıi]l)\s*(?:mahallesi|mah\.?|mh\.?)?\s*/gi, '').trim();
+      } else {
+        const cleanM = mahalleName.replace(/(?:Mahallesi|Mah\.|Mh\.|Köyü|Koy|Koyu)$/i, '').trim();
+        if (cleanM.length > 2) {
+          const escapedM = cleanM.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+          clean = clean.replace(new RegExp(escapedM + '\\s*(?:Mahallesi|Mah\\.|Mh\\.|Köyü|Koy|Koyu)?', 'gi'), '');
+        }
       }
     }
-    clean = clean.replace(/^[A-Za-zÇŞĞÜÖİçşğüöı\s.]+?\s+(?:Mahallesi|Mah\.|Mh\.|Köyü|Koy|Koyu)\s*/i, '').trim();
+    clean = clean.replace(/^[A-Za-z0-9ÇŞĞÜÖİçşğüöı\s.]+?\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?|[Kk][öo]y[uü]?)\s*/i, '').trim();
 
     const regex = /(?:^|[\s,;])([A-Za-zÇŞĞÜÖİçşğüöı0-9\s.]+?)\s+(Caddesi|Cad\.|Cad|Cd\.|Cd|Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Bulvarı|Bulvar|Blv\.|Blv|Küme\s+Evleri|Kume\s+Evleri|Mevkii|Mevki|Meydanı|Meydani|Yolu|Yol|Kümesi|Kumesi)\b/i;
     const sm = clean.match(regex);
