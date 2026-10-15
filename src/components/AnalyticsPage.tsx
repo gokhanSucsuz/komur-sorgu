@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   BarChart3, Calendar, Printer, Filter, AlertTriangle, 
   CheckCircle2, Clock, Truck, Target, TrendingUp, Users, MapPin, 
   Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, 
-  Layers, ArrowUpDown, ChevronDown, Archive
+  Layers, ArrowUpDown, ChevronDown, Archive, X, FileText, Download
 } from 'lucide-react';
 
 interface AnalyticsPageProps {
@@ -23,6 +24,7 @@ export default function AnalyticsPage({
 }: AnalyticsPageProps) {
   // Navigation Subtab State
   const [subTab, setSubTab] = useState<'OVERVIEW' | 'MAHALLE' | 'SOKAK' | 'BATCHES'>('OVERVIEW');
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Date filters
   const [startDate, setStartDate] = useState('');
@@ -98,8 +100,19 @@ export default function AnalyticsPage({
   };
 
   const handlePrint = () => {
-    window.print();
+    setShowPrintModal(true);
   };
+
+  // ESC key listener to close report modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showPrintModal) {
+        setShowPrintModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showPrintModal]);
 
   const summary = reportData?.summary;
   const donemStats = reportData?.donemStats;
@@ -994,6 +1007,325 @@ export default function AnalyticsPage({
             ))
           )}
         </div>
+      )}
+      {/* ======================================================== */}
+      {/* RESMİ KÖMÜR DAĞITIM VE İSTATİSTİKİ İCMAL RAPORU MODALI    */}
+      {/* ======================================================== */}
+      {showPrintModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="report-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPrintModal(false);
+            }
+          }}
+        >
+          {/* Modal Panel: Sabit %92 ekran yüksekliği ve flex düzeni ile tüm içerik scroll edilir */}
+          <div className="report-modal-card relative bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] max-h-[92vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden z-10">
+            
+            {/* Modal Header: Daima üstte sabit kalır */}
+            <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div className="truncate">
+                  <h3 className="text-xs sm:text-sm md:text-base font-black text-slate-900 truncate">
+                    Kömür Dağıtım ve İstatistiki İcmal Raporu
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+                    <span>Filtre: <strong className="text-slate-800">{activePreset === 'ALL' ? 'Tüm Dağıtım Süreci' : `${startDate || 'Başlangıç'} - ${endDate || 'Bugün'}`}</strong></span>
+                    <span>•</span>
+                    <span>Bölge: <strong className="text-slate-800">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalleler' : selectedMahalle}</strong></span>
+                    <span>•</span>
+                    <span>Toplam: <strong className="text-emerald-700">{summary?.toplamHane || 0} Hane</strong></span>
+                    <span>•</span>
+                    <span><strong className="text-amber-800">{summary?.dagitilanTonaj || 0} Ton Dağıtıldı</strong></span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-rose-100 hover:text-rose-700 text-slate-700 text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                  title="Pencereyi Kapat (ESC)"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">Kapat (ESC)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable Content (Yalnızca içerik kayar, başlık ve butonlar asla kaybolmaz) */}
+            <div 
+              className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-auto p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" 
+              id="printableAnalyticsReport"
+              style={{ overscrollBehavior: 'contain' }}
+            >
+              {/* Institutional Official Header */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+                    <img
+                      src="/edirne-sydv-logo.png"
+                      alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                      width={48}
+                      height={48}
+                      className="print-logo-img"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  </div>
+                  <div className="text-center flex-1 px-1 sm:px-3 min-w-0">
+                    <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                      T.C. EDİRNE VALİLİĞİ
+                    </p>
+                    <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide mt-0.5">
+                      SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+                    </h4>
+                    <div className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-300">
+                      <span className="text-[10px] sm:text-xs font-extrabold text-slate-900">
+                        KÖMÜR YARDIMI DAĞITIM VE İSTATİSTİKİ İCMAL RAPORU
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
+                    <span className="text-[9px] font-mono text-slate-400 block">KOD: SYDV-IST</span>
+                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{new Date().toLocaleDateString('tr-TR')}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between text-[11px] text-slate-600 gap-2 font-medium">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span>Dönem / Kapsam: <strong className="text-slate-900">{activePreset === 'ALL' ? 'Tüm Dağıtım Süreci' : `${startDate || 'Başlangıç'} - ${endDate || 'Bugün'}`}</strong></span>
+                    <span>•</span>
+                    <span>Mahalle Kapsamı: <strong className="text-slate-900">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalle ve Köyler' : selectedMahalle}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>Rapor Tarihi: <strong className="text-slate-900">{new Date().toLocaleDateString('tr-TR')} {new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Cards / Tonaj İcmali */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-300 shadow-2xs space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  Genel Dağıtım ve Tonaj İcmali
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">Toplam Hak Sahibi</span>
+                    <div className="text-lg font-black text-slate-900 mt-0.5">{summary?.toplamHane || 0} Kişi</div>
+                    <span className="text-[10px] text-slate-500 font-medium">Hedef: {summary?.hedefTorba || 0} Torba</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <span className="text-[10px] text-emerald-800 font-bold uppercase block">Dağıtılan Kömür</span>
+                    <div className="text-lg font-black text-emerald-700 mt-0.5">{summary?.dagitilanTonaj || 0} Ton</div>
+                    <span className="text-[10px] text-emerald-800 font-bold">{summary?.dagitilanTorba || 0} Torba Teslim</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="text-[10px] text-amber-800 font-bold uppercase block">Kalan Kömür İhtiyacı</span>
+                    <div className="text-lg font-black text-amber-700 mt-0.5">{summary?.eksikTonaj || 0} Ton</div>
+                    <span className="text-[10px] text-amber-800 font-bold">{summary?.eksikTorba || 0} Torba Bekliyor</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-sky-50 border border-sky-200">
+                    <span className="text-[10px] text-sky-800 font-bold uppercase block">Tamamlanma Oranı</span>
+                    <div className="text-lg font-black text-sky-700 mt-0.5">%{summary?.tamamlamaYuzdesi || 0}</div>
+                    <span className="text-[10px] text-sky-700 font-bold">{summary?.tamHane || 0} Hane Tamamlandı</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center">
+                  <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase block">Tam Teslim Yapılan</span>
+                    <span className="text-sm font-black text-emerald-700">{summary?.tamHane || 0} Hane</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="text-[10px] font-bold text-amber-800 uppercase block">Eksik / Kısmi Verilen</span>
+                    <span className="text-sm font-black text-amber-700">{summary?.eksikHane || 0} Hane</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-600 uppercase block">Bekleyen (Teslim Almayan)</span>
+                    <span className="text-sm font-black text-slate-800">{summary?.bekleyenHane || 0} Hane</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Depo / Stok Durumu (Varsa) */}
+              {donemStats && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 flex flex-wrap items-center justify-between text-xs gap-2">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Depo / Kömür Stok Takibi:</span>
+                    <span className="font-bold text-slate-800">
+                      Gelen Toplam: <strong className="text-amber-800">{donemStats.gelenNetTonaj || 0} Ton</strong> ({donemStats.toplamSevkiyat || 0} Sevkiyat)
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Depoda Kalan Güncel Stok:</span>
+                    <span className="font-black text-sky-700 text-sm">{summary?.kalanStokTonaj || 0} Ton</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Mahalle & Köy İcmali Tablosu */}
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  Mahalle ve Köy Bazlı Dağıtım İcmali ({mahalleStats.length} Bölge)
+                </h4>
+                <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
+                        <th className="p-2 text-center w-10">#</th>
+                        <th className="p-2">Mahalle / Köy Adı</th>
+                        <th className="p-2 text-center">Toplam Hane</th>
+                        <th className="p-2 text-center">Tam Teslim</th>
+                        <th className="p-2 text-center">Eksik Hane</th>
+                        <th className="p-2 text-center">Kalan Hane</th>
+                        <th className="p-2 text-center">Dağıtılan Torba</th>
+                        <th className="p-2 text-center">Dağıtılan Ton</th>
+                        <th className="p-2 text-center">Tamamlanma</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {mahalleStats.map((m: any, idx: number) => {
+                        const pct = m.toplamKayit > 0 ? Math.round((m.teslimEdilen / m.toplamKayit) * 100) : 0;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                            <td className="p-2 font-bold text-slate-900">{m.mahalle}</td>
+                            <td className="p-2 text-center font-semibold text-slate-800">{m.toplamKayit}</td>
+                            <td className="p-2 text-center font-bold text-emerald-700">{m.teslimEdilen}</td>
+                            <td className="p-2 text-center font-bold text-amber-700">{m.eksikHane || 0}</td>
+                            <td className="p-2 text-center font-medium text-slate-500">{m.teslimEdilmeyen || 0}</td>
+                            <td className="p-2 text-center font-bold text-slate-900">{m.dagitilanTorba || 0}</td>
+                            <td className="p-2 text-center font-mono font-bold text-amber-800">{((m.dagitilanTorba || 0) * 0.025).toFixed(2)}</td>
+                            <td className="p-2 text-center">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                pct === 100 ? 'bg-emerald-100 text-emerald-800' : pct > 50 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                %{pct}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                        <td colSpan={2} className="p-2 text-right uppercase">GENEL TOPLAM:</td>
+                        <td className="p-2 text-center">{totalMahalleKayit}</td>
+                        <td className="p-2 text-center text-emerald-700">{totalMahalleTeslim}</td>
+                        <td className="p-2 text-center text-amber-700">{totalMahalleEksik}</td>
+                        <td className="p-2 text-center text-slate-600">{totalMahalleKalan}</td>
+                        <td className="p-2 text-center">{summary?.dagitilanTorba || 0}</td>
+                        <td className="p-2 text-center text-amber-800">{summary?.dagitilanTonaj || 0}</td>
+                        <td className="p-2 text-center">%{summary?.tamamlamaYuzdesi || 0}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Eksik Kömür Alan Haneler (Özet Tablosu) */}
+              {eksikHaneler.length > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-800">
+                    Eksik / Kısmi Kömür Alan Haneler Listesi ({eksikHaneler.length} Hane)
+                  </h4>
+                  <div className="border border-amber-300 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-amber-50 text-amber-950 border-b border-amber-200 font-bold">
+                          <th className="p-2 text-center w-10">#</th>
+                          <th className="p-2">Hak Sahibi</th>
+                          <th className="p-2">TC Kimlik No</th>
+                          <th className="p-2">Mahalle</th>
+                          <th className="p-2 text-center">Alınan Torba</th>
+                          <th className="p-2 text-center">Kalan Eksik</th>
+                          <th className="p-2">Açıklama</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-100">
+                        {eksikHaneler.slice(0, 50).map((h: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-amber-50/50">
+                            <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                            <td className="p-2 font-bold text-slate-900">{h.ad_soyad}</td>
+                            <td className="p-2 font-mono text-slate-700">{h.tc_no}</td>
+                            <td className="p-2 text-slate-700">{h.mahalle}</td>
+                            <td className="p-2 text-center font-bold text-emerald-700">{h.verilen_torba} Torba</td>
+                            <td className="p-2 text-center font-bold text-amber-800">{h.eksik_torba} Torba</td>
+                            <td className="p-2 text-[11px] text-slate-500">{h.aciklama || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 2-Column Official Signatures Block */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 space-y-4 print-signatures shadow-2xs">
+                <h4 className="text-[10px] sm:text-xs font-bold text-center uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
+                  RESMİ TUTANAK VE İMZA ONAY ALANI
+                </h4>
+                <div className="grid grid-cols-2 gap-4 sm:gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
+                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                    <div>
+                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">DAĞITIM SORUMLUSU PERSONEL</p>
+                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Saha / Rapor Sorumlusu</p>
+                    </div>
+                    <div className="h-10 flex items-center justify-center">
+                      <span className="text-[10px] text-slate-400 italic">İmza / Tarih</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                    <div>
+                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
+                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Edirne SYDV Başkanlığı</p>
+                    </div>
+                    <div className="h-10 flex items-center justify-center">
+                      <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer: Butonlar daima sabit kalır */}
+            <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print gap-2">
+              <a
+                href="/api/export?type=analytics"
+                download={`Edirne_SYDV_Istatistik_Raporu_${new Date().toLocaleDateString('en-CA')}.xlsx`}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Excel İndir</span>
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+                >
+                  Kapat (ESC)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all active:scale-95"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Yazdır / PDF Kaydet</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -3821,4 +3821,48 @@ img[src*="edirne-sydv-logo"] {
     }
   }
 
+
+  /* Modal Report Utilities */
+  .bg-slate-50\/50 {
+    background-color: rgba(248, 250, 252, 0.5) !important;
+  }
+  .hover\:bg-amber-50\/50:hover {
+    background-color: rgba(254, 243, 199, 0.5) !important;
+  }
+  .hover\:border-amber-300:hover {
+    border-color: #fcd34d !important;
+  }
+  :where(.divide-amber-100 > :not(:last-child)) {
+    border-color: #fef3c7 !important;
+  }
+  :where(.divide-slate-200 > :not(:last-child)) {
+    border-color: #e2e8f0 !important;
+  }
+  .w-24 {
+    width: 6rem !important;
+  }
+  @media (min-width: 640px) {
+    .sm\:gap-8 {
+      gap: 2rem !important;
+    }
+    :where(.sm\:space-y-8 > :not(:last-child)) {
+      --tw-space-y-reverse: 0;
+      margin-block-start: calc(2rem * var(--tw-space-y-reverse)) !important;
+      margin-block-end: calc(2rem * calc(1 - var(--tw-space-y-reverse))) !important;
+    }
+  }
+
+
+  /* Tonnage Modal Utilities */
+  .bg-amber-100\/50 {
+    background-color: rgba(254, 243, 198, 0.5) !important;
+  }
+  .bg-amber-50\/40 {
+    background-color: rgba(255, 251, 235, 0.4) !important;
+  }
+  .mx-2 {
+    margin-left: 0.5rem !important;
+    margin-right: 0.5rem !important;
+  }
+
 /* ==== END GENERATED UTILITIES ==== */

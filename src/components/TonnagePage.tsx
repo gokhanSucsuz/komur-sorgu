@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter } from 'lucide-react';
 
 interface TonnagePageProps {
   trucks: any[];
@@ -27,6 +28,72 @@ export default function TonnagePage({
   const [tirSirasi, setTirSirasi] = useState<number>(stats?.sonrakiTirSirasi || (trucks.length + 1));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Tonnage Report Modal State & Filters
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportPreset, setReportPreset] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH'>('ALL');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportSearchQuery, setReportSearchQuery] = useState('');
+
+  const applyReportPreset = (preset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH') => {
+    setReportPreset(preset);
+    const today = new Date();
+    const formatDate = (d: Date) => d.toLocaleDateString('en-CA');
+
+    if (preset === 'TODAY') {
+      const todayStr = formatDate(today);
+      setReportStartDate(todayStr);
+      setReportEndDate(todayStr);
+    } else if (preset === 'WEEK') {
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      setReportStartDate(formatDate(weekAgo));
+      setReportEndDate(formatDate(today));
+    } else if (preset === 'MONTH') {
+      const monthAgo = new Date(today);
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      setReportStartDate(formatDate(monthAgo));
+      setReportEndDate(formatDate(today));
+    } else {
+      setReportStartDate('');
+      setReportEndDate('');
+    }
+  };
+
+  // ESC key listener to close report modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showReportModal) {
+        setShowReportModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showReportModal]);
+
+  // Filtered trucks for report
+  const filteredReportTrucks = useMemo(() => {
+    return trucks.filter((t: any) => {
+      if (reportStartDate && t.tarih < reportStartDate) return false;
+      if (reportEndDate && t.tarih > reportEndDate) return false;
+      if (reportSearchQuery) {
+        const q = reportSearchQuery.toLocaleLowerCase('tr');
+        const plaka = (t.plaka || '').toLocaleLowerCase('tr');
+        const sofor = (t.sofor_adi || '').toLocaleLowerCase('tr');
+        const irsaliye = (t.irsaliye_no || '').toLocaleLowerCase('tr');
+        const notlar = (t.notlar || '').toLocaleLowerCase('tr');
+        if (!plaka.includes(q) && !sofor.includes(q) && !irsaliye.includes(q) && !notlar.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [trucks, reportStartDate, reportEndDate, reportSearchQuery]);
+
+  const reportTotalBrut = filteredReportTrucks.reduce((acc: number, t: any) => acc + (Number(t.brut_tonaj) || 0), 0);
+  const reportTotalNet = filteredReportTrucks.reduce((acc: number, t: any) => acc + (Number(t.net_tonaj) || 0), 0);
+  const reportTotalTara = filteredReportTrucks.reduce((acc: number, t: any) => acc + (Number(t.tara_tonaj) || (Number(t.brut_tonaj) - Number(t.net_tonaj)) || 0), 0);
 
   const netVal = parseFloat(netTonaj) || 0;
   const brutVal = parseFloat(brutTonaj) || 0;
@@ -114,16 +181,28 @@ export default function TonnagePage({
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
-              setShowAddModal(true);
-            }}
-            className="btn-primary text-xs py-2 px-3 shadow-md"
-          >
-            <Plus className="w-4 h-4 text-white" />
-            Yeni Tır Girişi
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowReportModal(true)}
+              className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all active:scale-95"
+              title="Kömür Sevkiyatı ve Kantar Tonaj Raporunu Önizle ve Yazdır"
+            >
+              <Printer className="w-4 h-4 text-amber-600" />
+              <span>Tonaj Raporunu Yazdır</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
+                setShowAddModal(true);
+              }}
+              className="btn-primary text-xs py-2 px-3 shadow-md"
+            >
+              <Plus className="w-4 h-4 text-white" />
+              Yeni Tır Girişi
+            </button>
+          </div>
         </div>
 
         {/* 4 Stats Cards - Light Mode */}
@@ -425,6 +504,367 @@ export default function TonnagePage({
             </form>
           </div>
         </div>
+      )}
+      {/* ======================================================== */}
+      {/* RESMİ KÖMÜR SEVKİYATI VE KANTAR TONAJ RAPORU MODALI      */}
+      {/* ======================================================== */}
+      {showReportModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="report-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowReportModal(false);
+            }
+          }}
+        >
+          {/* Modal Panel: Sabit %92 ekran yüksekliği ve flex düzeni ile tüm içerik scroll edilir */}
+          <div className="report-modal-card relative bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] max-h-[92vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden z-10">
+            
+            {/* Modal Header: Daima üstte sabit kalır */}
+            <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div className="truncate">
+                  <h3 className="text-xs sm:text-sm md:text-base font-black text-slate-900 truncate">
+                    Kömür Sevkiyatı ve Saha Kantar Tonaj Raporu
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+                    <span>Kapsam: <strong className="text-slate-800">{reportStartDate && reportEndDate ? `${reportStartDate} - ${reportEndDate}` : 'Tüm Sevkiyatlar'}</strong></span>
+                    <span>•</span>
+                    <span>Gelen Tır: <strong className="text-emerald-700">{filteredReportTrucks.length} Adet</strong></span>
+                    <span>•</span>
+                    <span>Net Kömür: <strong className="text-amber-800">{reportTotalNet.toFixed(3)} Ton</strong></span>
+                    <span>•</span>
+                    <span>Brüt Ağırlık: <strong className="text-slate-800">{reportTotalBrut.toFixed(3)} Ton</strong></span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReportModal(false)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-rose-100 hover:text-rose-700 text-slate-700 text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                  title="Pencereyi Kapat (ESC)"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">Kapat (ESC)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable Content (Yalnızca içerik kayar, başlık ve butonlar asla kaybolmaz) */}
+            <div 
+              className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-auto p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" 
+              id="printableTonnageReport"
+              style={{ overscrollBehavior: 'contain' }}
+            >
+              {/* Tarih Aralığı ve Arama Filtre Paneli (Baskıda Görünmez) */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 no-print">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Calendar className="w-4 h-4 text-amber-600" />
+                    Rapor Tarih Aralığı ve Filtreleme
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Filtrelenen: <strong>{filteredReportTrucks.length}</strong> / {trucks.length} Tır
+                  </span>
+                </div>
+
+                {/* Hızlı Tarih Butonları */}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'ALL', label: 'Tüm Sevkiyatlar' },
+                    { id: 'TODAY', label: 'Bugün' },
+                    { id: 'WEEK', label: 'Son 7 Gün' },
+                    { id: 'MONTH', label: 'Son 30 Gün' }
+                  ].map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyReportPreset(preset.id as any)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        reportPreset === preset.id
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tarih Girişleri ve Plaka / Şoför Arama */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Başlangıç Tarihi
+                    </label>
+                    <input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => {
+                        setReportStartDate(e.target.value);
+                        setReportPreset('CUSTOM' as any);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Bitiş Tarihi
+                    </label>
+                    <input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => {
+                        setReportEndDate(e.target.value);
+                        setReportPreset('CUSTOM' as any);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Plaka / İrsaliye / Şoför Ara
+                    </label>
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={reportSearchQuery}
+                        onChange={(e) => setReportSearchQuery(e.target.value)}
+                        placeholder="Örn: 06 KMR, Vural, IRS-2026..."
+                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Institutional Official Header */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+                    <img
+                      src="/edirne-sydv-logo.png"
+                      alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                      width={48}
+                      height={48}
+                      className="print-logo-img"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  </div>
+                  <div className="text-center flex-1 px-1 sm:px-3 min-w-0">
+                    <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                      T.C. EDİRNE VALİLİĞİ
+                    </p>
+                    <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide mt-0.5">
+                      SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+                    </h4>
+                    <div className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-300">
+                      <span className="text-[10px] sm:text-xs font-extrabold text-slate-900">
+                        KÖMÜR SEVKİYATI, SAHA KANTAR TARTIM VE TONAJ RAPORU
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
+                    <span className="text-[9px] font-mono text-slate-400 block">KOD: SYDV-TNJ</span>
+                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{new Date().toLocaleDateString('tr-TR')}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between text-[11px] text-slate-600 gap-2 font-medium">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span>Rapor Kapsamı: <strong className="text-slate-900">{reportStartDate && reportEndDate ? `${reportStartDate} - ${reportEndDate}` : 'Tüm Kömür Sevkiyatı Dönemi'}</strong></span>
+                    {reportSearchQuery && (
+                      <>
+                        <span>•</span>
+                        <span>Filtre: <strong className="text-slate-900">&ldquo;{reportSearchQuery}&rdquo;</strong></span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>Rapor Tarihi: <strong className="text-slate-900">{new Date().toLocaleDateString('tr-TR')} {new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Summary KPI Metric Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Gelen Tır Sayısı</span>
+                  <div className="text-lg font-black text-slate-900 mt-0.5">
+                    {filteredReportTrucks.length} <span className="text-xs font-normal text-slate-500">Adet</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                  <span className="text-[10px] font-bold text-amber-800 uppercase block">Gelen Net Kömür</span>
+                  <div className="text-lg font-black text-amber-800 mt-0.5">
+                    {reportTotalNet.toFixed(3)} <span className="text-xs font-normal text-slate-500">Ton</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Brüt Ağırlık</span>
+                  <div className="text-lg font-black text-slate-900 mt-0.5">
+                    {reportTotalBrut.toFixed(3)} <span className="text-xs font-normal text-slate-500">Ton</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Dara / Tara</span>
+                  <div className="text-lg font-black text-slate-700 mt-0.5">
+                    {reportTotalTara.toFixed(3)} <span className="text-xs font-normal text-slate-500">Ton</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sahadaki Kömür Stok & Dağıtım Dengesi */}
+              <div className="p-3 sm:p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Genel Kömür Stok & Dağıtım Bilançosu</span>
+                  <p className="text-slate-700 font-medium">
+                    Sahaya Giren Toplam: <strong className="text-amber-800 font-bold">{stats?.toplamNetTonaj || '0'} Ton</strong> ({stats?.toplamTirSayisi || 0} Tır)
+                    <span className="mx-2">•</span>
+                    Vatandaşa Dağıtılan: <strong className="text-emerald-700 font-bold">{stats?.dagitilanNetTonaj || '0'} Ton</strong> ({stats?.toplamDagitilanTorba || 0} Torba)
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Sahada Kalan Güncel Stok:</span>
+                  <span className="text-base font-black text-sky-800">{stats?.kalanStokTonaj || '0'} Ton</span>
+                </div>
+              </div>
+
+              {/* Sevkiyat ve Tır Tartım Dökümü Tablosu */}
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  Sevkiyat ve Kantar Tartım Kayıtları ({filteredReportTrucks.length} Tır)
+                </h4>
+
+                {filteredReportTrucks.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-500 text-xs font-medium">
+                    Seçilen tarih aralığı veya filtre kriterlerine uygun tır kaydı bulunamadı.
+                  </div>
+                ) : (
+                  <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
+                          <th className="p-2.5 text-center w-12">Sıra</th>
+                          <th className="p-2.5 w-24">Geliş Tarihi</th>
+                          <th className="p-2.5 w-28">Tır Plakası</th>
+                          <th className="p-2.5 w-28">İrsaliye / Fiş No</th>
+                          <th className="p-2.5">Şoför Adı</th>
+                          <th className="p-2.5 text-right w-24">Brüt (Ton)</th>
+                          <th className="p-2.5 text-right w-24">Dara (Ton)</th>
+                          <th className="p-2.5 text-right w-24">Net (Ton)</th>
+                          <th className="p-2.5">Açıklama / Menşe</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {filteredReportTrucks.map((t: any, index: number) => {
+                          const brut = Number(t.brut_tonaj) || 0;
+                          const net = Number(t.net_tonaj) || 0;
+                          const tara = Number(t.tara_tonaj) || (brut > net ? brut - net : 0);
+
+                          return (
+                            <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-2.5 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
+                              <td className="p-2.5 font-mono text-slate-700">{t.tarih}</td>
+                              <td className="p-2.5 font-mono font-bold text-slate-900">{t.plaka}</td>
+                              <td className="p-2.5 font-mono text-slate-600 font-semibold">{t.irsaliye_no}</td>
+                              <td className="p-2.5 font-bold text-slate-800">{t.sofor_adi || '-'}</td>
+                              <td className="p-2.5 text-right font-mono text-slate-700">{brut.toFixed(3)}</td>
+                              <td className="p-2.5 text-right font-mono text-slate-500">{tara.toFixed(3)}</td>
+                              <td className="p-2.5 text-right font-mono font-black text-amber-800 bg-amber-50/40">
+                                {net.toFixed(3)}
+                              </td>
+                              <td className="p-2.5 text-slate-600 text-[11px]">{t.notlar || '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                          <td colSpan={5} className="p-2.5 text-right uppercase">GENEL TOPLAM ({filteredReportTrucks.length} TIR):</td>
+                          <td className="p-2.5 text-right font-mono">{reportTotalBrut.toFixed(3)} Ton</td>
+                          <td className="p-2.5 text-right font-mono text-slate-600">{reportTotalTara.toFixed(3)} Ton</td>
+                          <td className="p-2.5 text-right font-mono text-amber-800 bg-amber-100/50">{reportTotalNet.toFixed(3)} Ton</td>
+                          <td className="p-2.5"></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 2-Kolonlu Resmi İmza & Onay Alanı */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 space-y-4 print-signatures shadow-2xs">
+                <h4 className="text-[10px] sm:text-xs font-bold text-center uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
+                  RESMİ TUTANAK VE İMZA ONAY ALANI
+                </h4>
+                <div className="grid grid-cols-2 gap-4 sm:gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
+                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                    <div>
+                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">KANTAR / DEPO KABUL GÖREVLİSİ</p>
+                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Saha Kabul & Tartım Sorumlusu</p>
+                    </div>
+                    <div className="h-10 flex items-center justify-center">
+                      <span className="text-[10px] text-slate-400 italic">İmza / Tarih</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                    <div>
+                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
+                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Edirne SYDV Başkanlığı</p>
+                    </div>
+                    <div className="h-10 flex items-center justify-center">
+                      <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer: Butonlar daima sabit kalır */}
+            <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print gap-2">
+              <a
+                href={`/api/export?type=trucks&startDate=${reportStartDate}&endDate=${reportEndDate}`}
+                download={`Edirne_SYDV_Komur_Tonaj_Raporu_${reportStartDate || 'Baslangic'}_${reportEndDate || 'Bitis'}.xlsx`}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Excel İndir</span>
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReportModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+                >
+                  Kapat (ESC)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all active:scale-95"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Yazdır / PDF Kaydet</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

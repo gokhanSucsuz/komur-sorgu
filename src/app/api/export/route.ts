@@ -302,7 +302,8 @@ export async function GET(request: NextRequest) {
       activityLogs: actCol,
       seasonArchives: seasonCol,
       archivedBeneficiaries: archBenCol,
-      workShifts: shiftsCol
+      workShifts: shiftsCol,
+      truckDeliveries: trucksCol
     } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
@@ -496,6 +497,87 @@ export async function GET(request: NextRequest) {
       return new NextResponse(new Uint8Array(buf), {
         headers: {
           'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Personel_Mesai_Raporu_${safeMonth}_${safeStaff}.xlsx`),
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+    }
+
+
+    // 2.6. Kömür Sevkiyatı ve Saha Kantar Tonaj Listesi
+    if (type === 'trucks') {
+      const startDate = searchParams.get('startDate');
+      const endDate = searchParams.get('endDate');
+
+      const filter: any = {};
+      if (startDate && endDate) {
+        filter.tarih = { $gte: startDate, $lte: endDate };
+      } else if (startDate) {
+        filter.tarih = { $gte: startDate };
+      } else if (endDate) {
+        filter.tarih = { $lte: endDate };
+      }
+
+      const rawTrucks = await trucksCol
+        .find(filter)
+        .sort({ tir_sirasi: 1, tarih: 1 })
+        .toArray();
+
+      const records = mapDocs(rawTrucks);
+
+      let totalBrut = 0;
+      let totalNet = 0;
+      let totalTara = 0;
+
+      const exportData = records.map((t: any, idx: number) => {
+        const brut = Number(t.brut_tonaj) || 0;
+        const net = Number(t.net_tonaj) || 0;
+        const tara = Number(t.tara_tonaj) || (brut > net ? brut - net : 0);
+
+        totalBrut += brut;
+        totalNet += net;
+        totalTara += tara;
+
+        return {
+          'Tır Sırası': t.tir_sirasi || idx + 1,
+          'Geliş Tarihi': t.tarih || '-',
+          'Tır Plakası': t.plaka || '-',
+          'İrsaliye / Fiş No': t.irsaliye_no || '-',
+          'Şoför Adı': t.sofor_adi || '-',
+          'Brüt Tonaj (Ton)': Number(brut.toFixed(3)),
+          'Dara / Tara (Ton)': Number(tara.toFixed(3)),
+          'Net Tonaj (Ton)': Number(net.toFixed(3)),
+          'Açıklama / Menşe': t.notlar || '-'
+        };
+      });
+
+      const dateLabel = startDate && endDate ? `${startDate} - ${endDate}` : (startDate ? `${startDate} Sonrası` : (endDate ? `${endDate} Öncesi` : 'Tüm Dönem'));
+
+      addStyledWorksheet(
+        workbook,
+        'KÖMÜR SEVKİYATI VE SAHA KANTAR TARTIM TONAJ LİSTESİ',
+        `Kapsam: ${dateLabel} | Toplam Tır: ${records.length} Adet | Net Kömür: ${totalNet.toFixed(3)} Ton | Brüt: ${totalBrut.toFixed(3)} Ton`,
+        'Kantar Tonaj',
+        exportData,
+        [
+          { wch: 12 },
+          { wch: 14 },
+          { wch: 16 },
+          { wch: 20 },
+          { wch: 22 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 30 }
+        ]
+      );
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const safeStart = (startDate || 'Baslangic').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeEnd = (endDate || 'Bitis').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      return new NextResponse(new Uint8Array(buf), {
+        headers: {
+          'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Komur_Tonaj_Raporu_${safeStart}_${safeEnd}.xlsx`),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });
