@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
-import { encryptTruck } from '@/lib/crypto';
+import { encryptTruck, getIstanbulDate } from '@/lib/crypto';
 import { cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
+import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { truckDeliveries: trucksCol, beneficiaries: benCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const q = (searchParams.get('q') || '').trim();
@@ -42,8 +48,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calculate distributed coal tonnage
-    // 1 bag = 25 kg = 0.025 tons
+    // Calculate distributed coal tonnage (1 bag = 25 kg = 0.025 tons)
     const allBeneficiaries = await benCol.find({}).toArray();
     let toplamDagitilanTorba = 0;
     for (const b of allBeneficiaries) {
@@ -76,6 +81,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Tır kaydı ekleme yetkisi sadece Yöneticilere aittir.' },
+        { status: 401 }
+      );
+    }
+
     const { truckDeliveries: trucksCol } = await getDbCollections();
     const body = await request.json();
     const { tir_sirasi, plaka, irsaliye_no, tarih, net_tonaj, brut_tonaj, sofor_adi, notlar } = body;
@@ -108,7 +121,7 @@ export async function POST(request: NextRequest) {
       orderNum = maxSira + 1;
     }
 
-    const nowStr = new Date().toLocaleString('tr-TR');
+    const { nowLocaleTr } = getIstanbulDate();
     const newDoc = {
       tir_sirasi: orderNum,
       plaka: plaka.toUpperCase().trim(),
@@ -119,7 +132,7 @@ export async function POST(request: NextRequest) {
       tara_tonaj: taraVal,
       sofor_adi: sofor_adi ? sofor_adi.trim() : null,
       notlar: notlar ? notlar.trim() : null,
-      created_at: nowStr,
+      created_at: nowLocaleTr,
     };
 
     // Encrypt driver name, plate, waybill, and notes with AES-256-GCM
@@ -140,6 +153,14 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Tır kaydı silme yetkisi sadece Yöneticilere aittir.' },
+        { status: 401 }
+      );
+    }
+
     const { truckDeliveries: trucksCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');

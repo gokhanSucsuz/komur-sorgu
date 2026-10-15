@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
-import { encryptShift, encryptField } from '@/lib/crypto';
+import { encryptShift, encryptField, getIstanbulDate } from '@/lib/crypto';
+import { verifySession } from '@/lib/auth';
 
 function calculateMinutes(start: string, end: string): number {
   if (!start || !end) return 0;
@@ -43,6 +44,11 @@ function timeToMinutes(t: string): number {
 // GET /api/shifts - List shifts, active shift & calculated overtime stats with carryover
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { workShifts: shiftsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const personel = (searchParams.get('personel') || '').trim();
@@ -347,14 +353,19 @@ export async function GET(request: NextRequest) {
 // POST /api/shifts - Start, End, or Create shift record
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { workShifts: shiftsCol, deliveryHistory: histCol } = await getDbCollections();
     const body = await request.json();
     const { action, personel_adi, baslama_saati, bitis_saati, tarih, mahalleler, notlar, shiftId } = body;
 
-    const now = new Date();
-    const localToday = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
-    const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const nowStr = now.toLocaleString('tr-TR');
+    const { nowIso, nowLocaleTr, nowEnCa, nowTimeHHmm } = getIstanbulDate();
+    const localToday = nowEnCa; // YYYY-MM-DD
+    const localTime = nowTimeHHmm;
+    const nowStr = nowLocaleTr;
 
     if (action === 'START') {
       if (!personel_adi) {
@@ -559,6 +570,11 @@ export async function POST(request: NextRequest) {
 // PUT /api/shifts - Update shift details
 export async function PUT(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { workShifts: shiftsCol } = await getDbCollections();
     const body = await request.json();
     const { id, personel_adi, tarih, baslama_saati, bitis_saati, mahalleler, teslim_edilen_torba, teslim_edilen_hane, notlar, durum } = body;
@@ -567,16 +583,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
     }
 
-    const callerRole = request.headers.get('x-user-role') || body.callerRole;
-    const callerName = request.headers.get('x-user-name') || body.callerName;
-
     const existingShift = await shiftsCol.findOne(buildIdFilter(id));
     if (!existingShift) {
       return NextResponse.json({ success: false, error: 'Mesai kaydı bulunamadı' }, { status: 404 });
     }
 
-    if (callerRole && callerRole !== 'ADMIN' && callerName) {
-      if (existingShift.personel_adi?.trim().toLowerCase() !== callerName.trim().toLowerCase()) {
+    if (session.rol !== 'ADMIN') {
+      const staffName = (existingShift.personel_adi || '').trim().toLowerCase();
+      const userName = (session.ad_soyad || session.username || '').trim().toLowerCase();
+      if (staffName !== userName) {
         return NextResponse.json(
           { success: false, error: 'Yetkisiz işlem! Personeller diğer personellerin mesai kayıtlarını değiştiremez.' },
           { status: 403 }
@@ -589,8 +604,9 @@ export async function PUT(request: NextRequest) {
       totalMinutes = calculateMinutes(baslama_saati, bitis_saati);
     }
 
+    const { nowLocaleTr } = getIstanbulDate();
     const updateFields: any = {
-      updated_at: new Date().toLocaleString('tr-TR'),
+      updated_at: nowLocaleTr,
     };
 
     if (personel_adi) updateFields.personel_adi = personel_adi;
@@ -621,11 +637,14 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/shifts - Delete shift
 export async function DELETE(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { workShifts: shiftsCol } = await getDbCollections();
     const body = await request.json();
-    const { id, callerRole } = body;
-    const reqRole = request.headers.get('x-user-role') || callerRole;
-    const reqName = request.headers.get('x-user-name') || body.callerName;
+    const { id } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
@@ -636,8 +655,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Mesai kaydı bulunamadı' }, { status: 404 });
     }
 
-    if (reqRole !== 'ADMIN') {
-      if (!reqName || existing.personel_adi?.trim().toLowerCase() !== reqName.trim().toLowerCase()) {
+    if (session.rol !== 'ADMIN') {
+      const staffName = (existing.personel_adi || '').trim().toLowerCase();
+      const userName = (session.ad_soyad || session.username || '').trim().toLowerCase();
+      if (staffName !== userName) {
         return NextResponse.json(
           { success: false, error: 'Yetkisiz işlem! Personeller sadece kendi girdikleri çalışma saatlerini silebilir.' },
           { status: 403 }

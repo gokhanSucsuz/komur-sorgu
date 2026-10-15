@@ -9,6 +9,8 @@ import {
   touchSyncPulse 
 } from '@/lib/mongodb';
 import { normalizeMahalleName } from '@/lib/normalizer';
+import { verifySession } from '@/lib/auth';
+import { getIstanbulDate } from '@/lib/crypto';
 
 export async function GET(request: NextRequest) {
   try {
@@ -90,10 +92,20 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Kömür dönemi ve arşiv işlemlerini sadece Sistem Yöneticisi yapabilir.' },
+        { status: 401 }
+      );
+    }
+
     const { 
       systemSettings, 
       seasonArchives, 
       archivedBeneficiaries, 
+      archivedTruckDeliveries,
+      archivedDeliveryHistory,
       beneficiaries: benCol, 
       truckDeliveries: truckCol,
       deliveryRoutes: routeCol,
@@ -101,20 +113,11 @@ export async function POST(request: NextRequest) {
     } = await getDbCollections();
 
     const body = await request.json();
-    const { action, callerRole } = body;
-    const reqRole = request.headers.get('x-user-role') || callerRole;
+    const { action } = body;
 
-    if (reqRole !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Yetkisiz erişim! Kömür dönemi ve arşiv işlemlerini sadece Sistem Yöneticisi yapabilir.' },
-        { status: 403 }
-      );
-    }
-
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const localToday = now.toLocaleDateString('en-CA');
-    const localTimeStr = now.toLocaleString('tr-TR');
+    const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
+    const localToday = nowEnCa;
+    const localTimeStr = nowLocaleTr;
 
     // =========================================================================
     // ACTION 1: SET_ACTIVE_SEASON (Dönem Bilgilerini Güncelle / Belirle)
@@ -151,7 +154,7 @@ export async function POST(request: NextRequest) {
       }
 
       await recordActivityLog({
-        kullanici_adi: 'Sistem Yöneticisi',
+        kullanici_adi: session.ad_soyad || session.username || 'Sistem Yöneticisi',
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'DONEM_GUNCELLEME',
         baslik: 'Aktif Kömür Dağıtım Dönemi Güncellendi',
@@ -175,11 +178,11 @@ export async function POST(request: NextRequest) {
         new_season_kod,
         new_season_baslik,
         notlar = '',
-        kapatan_kullanici = 'Sistem Yöneticisi',
       } = body;
 
       const closingCode = (closing_season_kod || '').trim();
       const newCode = (new_season_kod || '').trim();
+      const kapatanKullanici = session.ad_soyad || session.username || 'Sistem Yöneticisi';
 
       if (!closingCode || !newCode) {
         return NextResponse.json(
@@ -296,7 +299,7 @@ export async function POST(request: NextRequest) {
         baslik: closing_season_baslik || `${closingCode} Kömür Dağıtım Dönemi`,
         kapanis_tarihi: localToday,
         kapanis_tarihi_iso: nowIso,
-        kapatan_kullanici: kapatan_kullanici.trim(),
+        kapatan_kullanici: kapatanKullanici,
         varsayilan_hedef_torba: currentQuota,
         notlar: notlar.trim(),
         istatistikler: {
@@ -322,7 +325,6 @@ export async function POST(request: NextRequest) {
       await seasonArchives.insertOne(archiveDoc);
 
       // 5. Transfer active beneficiaries to archived_beneficiaries collection in safe 500-doc chunks
-      // This prevents memory spikes or Atlas timeout issues
       if (allActiveDocs.length > 0) {
         const CHUNK_SIZE = 500;
         for (let i = 0; i < allActiveDocs.length; i += CHUNK_SIZE) {
@@ -340,16 +342,61 @@ export async function POST(request: NextRequest) {
             console.warn(`[Archive Batch ${i}] Notice:`, chunkErr);
           }
         }
+
+        // Verification before deleting active beneficiaries (Fixes K6)
+        const archivedBenCount = await archivedBeneficiaries.countDocuments({ donem_kodu: closingCode });
+        if (archivedBenCount < allActiveDocs.length) {
+          throw new Error(`Arşivleme doğrulama hatası: Beklenen ${allActiveDocs.length} hak sahibinden yalnızca ${archivedBenCount} tanesi arşivlendi. Aktif liste silinmedi!`);
+        }
       }
 
-      // 6. Reset active beneficiaries table for the brand new season!
+      // Reset active beneficiaries table for the brand new season!
       await benCol.deleteMany({});
 
-      // 7. Complete and archive all remaining active routes
+      // 6. User Rule H: Stok yeni döneme devretmeyecek, tüm tırlar ve sevkiyatlar arşivlenip sıfırlanacak
+      if (trucks.length > 0) {
+        const archivedTrucksList = trucks.map((t: any) => ({
+          ...t,
+          _id: new ObjectId(),
+          original_id: t.id || (t._id ? t._id.toString() : ''),
+          donem_kodu: closingCode,
+          arsivlenme_tarihi: localToday,
+        }));
+        await archivedTruckDeliveries.insertMany(archivedTrucksList, { ordered: false });
+
+        const archivedTruckCount = await archivedTruckDeliveries.countDocuments({ donem_kodu: closingCode });
+        if (archivedTruckCount < trucks.length) {
+          throw new Error(`Arşivleme doğrulama hatası: Tır sevkiyatları eksik arşivlendi. Aktif tır kayıtları silinmedi!`);
+        }
+        // Reset trucks so coal stock resets to 0 for the brand new season
+        await truckCol.deleteMany({});
+      }
+
+      // 7. Teslimat geçmişini de kapanan dönem koduyla arşivle ve yeni dönem için sıfırla
+      const activeHist = await histCol.find({}).toArray();
+      if (activeHist.length > 0) {
+        const archivedHistList = activeHist.map((h: any) => ({
+          ...h,
+          _id: new ObjectId(),
+          original_id: h.id || (h._id ? h._id.toString() : ''),
+          donem_kodu: closingCode,
+          arsivlenme_tarihi: localToday,
+        }));
+        await archivedDeliveryHistory.insertMany(archivedHistList, { ordered: false });
+
+        const archivedHistCount = await archivedDeliveryHistory.countDocuments({ donem_kodu: closingCode });
+        if (archivedHistCount < activeHist.length) {
+          throw new Error(`Arşivleme doğrulama hatası: Teslimat geçmişi eksik arşivlendi. Aktif geçmiş silinmedi!`);
+        }
+        await histCol.deleteMany({});
+      }
+
+      // 8. Complete and archive all remaining active routes
       await routeCol.updateMany(
         { durum: 'AKTIF' },
         { 
-          $set: { 
+          $set: 
+          { 
             durum: 'ARSIVLENDI', 
             donem_kodu: closingCode,
             completed_at: localTimeStr,
@@ -358,7 +405,7 @@ export async function POST(request: NextRequest) {
         }
       );
 
-      // 8. Start the Brand New Season
+      // 9. Start the Brand New Season
       const newSeasonObj = {
         kod: newCode,
         baslik: new_season_baslik || `${newCode} Kömür Dağıtım Dönemi`,
@@ -376,19 +423,19 @@ export async function POST(request: NextRequest) {
       // Invalidate sync pulse across all connected devices
       await touchSyncPulse(`Dönem Arşivlendi: ${closingCode} -> ${newCode}`);
 
-      // 9. Record comprehensive audit activity log
+      // 10. Record comprehensive audit activity log
       await recordActivityLog({
-        kullanici_adi: kapatan_kullanici.trim(),
+        kullanici_adi: kapatanKullanici,
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'DONEM_ARSIVLEME',
         baslik: 'Kömür Dağıtım Dönemi Arşivlendi & Yeni Dönem Başlatıldı',
-        detay: `"${closingCode}" dönemi (${totalHanes} hane, ${totalDeliveredBags} torba) başarıyla arşivlendi. Yeni dağıtım dönemi "${newCode}" başlatıldı ve aktif listeler yeni dönem için sıfırlandı.`,
-        ek_bilgi: { closingCode, newCode, totalHanes, totalDeliveredBags, overallCompletionRate },
+        detay: `"${closingCode}" dönemi (${totalHanes} hane, ${totalDeliveredBags} torba, ${trucks.length} tır) başarıyla arşivlendi. Yeni dağıtım dönemi "${newCode}" başlatıldı; kömür stoğu ve listeler yeni dönem için sıfırlandı.`,
+        ek_bilgi: { closingCode, newCode, totalHanes, totalDeliveredBags, trucksCount: trucks.length, overallCompletionRate },
       });
 
       return NextResponse.json({
         success: true,
-        message: `"${closingCode}" dönemi tüm verileri ve mahalle raporlarıyla başarıyla arşivlendi. Yeni dönem ("${newCode}") başlatıldı ve listeler hazırlandı.`,
+        message: `"${closingCode}" dönemi tüm verileri, tır sevkiyatları ve mahalle raporlarıyla başarıyla arşivlendi. Yeni dönem ("${newCode}") başlatıldı ve kömür stoğu sıfırlandı.`,
         archivedSeason: archiveDoc,
         newActiveSeason: newSeasonObj,
       });

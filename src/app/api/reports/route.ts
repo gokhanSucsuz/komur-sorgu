@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { getRecordStreetInfo } from '@/lib/normalizer';
+import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const {
       beneficiaries: benCol,
       deliveryHistory: histCol,

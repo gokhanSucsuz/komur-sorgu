@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
-import { encryptField, encryptDeliveryHistory } from '@/lib/crypto';
+import { encryptField, encryptDeliveryHistory, getIstanbulDate } from '@/lib/crypto';
+import { verifySession } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Oturum süresi dolmuş veya yetkisiz istek. Lütfen tekrar giriş yapınız.' },
+        { status: 401 }
+      );
+    }
+
     const { beneficiaries: benCol, deliveryHistory: histCol } = await getDbCollections();
     const body = await request.json();
-    const { action, beneficiary_id, torba_sayisi, eklenen_torba, teslim_alan, personel, notlar, iptal_nedeni } = body;
+    const { action, beneficiary_id, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;
 
     if (!beneficiary_id) {
       return NextResponse.json({ success: false, error: 'Kayıt ID zorunludur' }, { status: 400 });
@@ -19,10 +28,9 @@ export async function POST(request: NextRequest) {
     }
 
     const beneficiary = mapDoc(rawBeneficiary);
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const localToday = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
-    const localTimeStr = now.toLocaleString('tr-TR');
+    const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
+    const localToday = nowEnCa;
+    const localTimeStr = nowLocaleTr;
 
     if (action === 'TESLIMAT') {
       const hedef = beneficiary.hedef_torba || 34;
@@ -60,16 +68,22 @@ export async function POST(request: NextRequest) {
       let deliveredThisTime = 0;
 
       if (eklenen_torba !== undefined && eklenen_torba !== null) {
-        deliveredThisTime = parseInt(eklenen_torba, 10) || 0;
+        deliveredThisTime = parseInt(eklenen_torba, 10);
+        if (isNaN(deliveredThisTime) || deliveredThisTime <= 0 || deliveredThisTime > 150) {
+          return NextResponse.json({ success: false, error: 'Geçersiz teslim edilecek torba miktarı (1-150 arası olmalıdır)' }, { status: 400 });
+        }
         newTotalBags = currentBags + deliveredThisTime;
       } else {
         newTotalBags = parseInt(torba_sayisi || String(hedef), 10);
+        if (isNaN(newTotalBags) || newTotalBags <= 0 || newTotalBags > 200) {
+          return NextResponse.json({ success: false, error: 'Geçersiz toplam torba miktarı' }, { status: 400 });
+        }
         deliveredThisTime = newTotalBags - currentBags;
         if (deliveredThisTime <= 0) deliveredThisTime = newTotalBags;
       }
 
       const recipient = (teslim_alan || beneficiary.ad_soyad).trim();
-      const staff = (personel || 'Personel').trim();
+      const staff = session.ad_soyad || session.username || 'Personel';
       const note = (notlar || '').trim();
 
       // Determine status: TAMAMLANDI vs EKSIK
@@ -136,7 +150,7 @@ export async function POST(request: NextRequest) {
       // Record Activity Log for Admin Audit
       await recordActivityLog({
         kullanici_adi: staff,
-        kullanici_rolu: 'PERSONEL',
+        kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: newStatus === 'TAMAMLANDI' ? 'TESLIMAT' : 'EKSIK_TESLIMAT',
         baslik: newStatus === 'TAMAMLANDI' ? 'Kömür Teslimatı Tamamlandı' : 'Eksik Kömür Teslimatı Yapıldı',
         detay: `${recipient} (${beneficiary.tc_no}) hanesine ${deliveredThisTime} torba kömür teslim edildi. Toplam: ${newTotalBags}/${hedef} torba.${newStatus === 'EKSIK' ? ` Kalan ${eksikKalan} torba tamamlanmayı bekliyor.` : ''} ${note ? 'Not: ' + note : ''}`,
@@ -162,8 +176,15 @@ export async function POST(request: NextRequest) {
         },
       });
     } else if (action === 'IPTAL') {
+      if (session.rol !== 'ADMIN') {
+        return NextResponse.json(
+          { success: false, error: 'Yetkisiz erişim! Teslimat iptali sadece Sistem Yöneticisi tarafından yapılabilir.' },
+          { status: 403 }
+        );
+      }
+
       const cancelReason = (iptal_nedeni || 'Hatalı teslimat kaydı').trim();
-      const staff = (personel || 'Yönetici').trim();
+      const staff = session.ad_soyad || session.username || 'Sistem Yöneticisi';
 
       // Revert beneficiary status to BEKLIYOR
       await benCol.updateOne(buildIdFilter(beneficiary.id), {

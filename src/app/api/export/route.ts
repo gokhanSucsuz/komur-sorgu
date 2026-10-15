@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName } from '@/lib/normalizer';
+import { verifySession } from '@/lib/auth';
 
 /**
  * Sanitizes worksheet name to comply with strict Excel rules:
@@ -216,6 +217,17 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type') || 'template';
+
+    // Public download only allowed for empty template; all data exports require active session
+    if (type !== 'template') {
+      const session = await verifySession(request);
+      if (!session.valid) {
+        return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+      }
+      if (type === 'activity_logs' && session.rol !== 'ADMIN') {
+        return NextResponse.json({ success: false, error: 'Yetkisiz erişim' }, { status: 403 });
+      }
+    }
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı';

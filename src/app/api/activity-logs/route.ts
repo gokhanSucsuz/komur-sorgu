@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { buildTurkishSearchFilter } from '@/lib/normalizer';
+import { verifySession } from '@/lib/auth';
 
 // GET /api/activity-logs - Query user activity/audit logs
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Güvenlik ve denetim loglarını sadece Sistem Yöneticisi görüntüleyebilir.' },
+        { status: 401 }
+      );
+    }
+
     const { activityLogs } = await getDbCollections();
 
     const searchParams = request.nextUrl.searchParams;

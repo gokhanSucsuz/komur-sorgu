@@ -22,6 +22,7 @@ import {
   hashHane,
   hashAddress,
   isEncrypted,
+  getIstanbulDate,
 } from './crypto';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
@@ -199,6 +200,10 @@ function getInMemoryStore() {
       import_batches: [],
       delivery_routes: [],
       activity_logs: [],
+      season_archives: [],
+      archived_beneficiaries: [],
+      archived_truck_deliveries: [],
+      archived_delivery_history: [],
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
@@ -422,13 +427,16 @@ export async function getDbCollections() {
         activityLogs: db.collection<any>('activity_logs'),
         seasonArchives: db.collection<any>('season_archives'),
         archivedBeneficiaries: db.collection<any>('archived_beneficiaries'),
+        archivedTruckDeliveries: db.collection<any>('archived_truck_deliveries'),
+        archivedDeliveryHistory: db.collection<any>('archived_delivery_history'),
       };
     } catch (err) {
-      console.warn('[MongoDB] Atlas connection warning, using memory fallback:', err);
+      console.error('[MongoDB] Atlas connection failure:', err);
+      throw new Error(`Canlı MongoDB Atlas veritabanına bağlanılamadı: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // Local / dev fallback when MONGODB_URI is not set
+  // Local / dev fallback ONLY when MONGODB_URI is not set at all
   if (!mahalleMigrationDone) {
     mahalleMigrationDone = true;
     await migrateMahalleNames(null);
@@ -448,6 +456,8 @@ export async function getDbCollections() {
     activityLogs: new InMemoryCollection('activity_logs') as any,
     seasonArchives: new InMemoryCollection('season_archives') as any,
     archivedBeneficiaries: new InMemoryCollection('archived_beneficiaries') as any,
+    archivedTruckDeliveries: new InMemoryCollection('archived_truck_deliveries') as any,
+    archivedDeliveryHistory: new InMemoryCollection('archived_delivery_history') as any,
   };
 }
 
@@ -505,6 +515,8 @@ async function initializeIndexesAndSeed(db: Db) {
       db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1 }),
       db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1, tc_hash: 1 }),
       db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1, mahalle: 1 }),
+      db.collection('archived_truck_deliveries').createIndex({ donem_kodu: 1 }),
+      db.collection('archived_delivery_history').createIndex({ donem_kodu: 1 }),
     ]);
   } catch (err) {
     console.warn('[MongoDB] Index initialization notice:', err);
@@ -553,7 +565,7 @@ async function initializeIndexesAndSeed(db: Db) {
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
-  const nowStr = new Date().toLocaleString('tr-TR');
+  const { nowLocaleTr } = getIstanbulDate();
   store.system_settings = [{ key: 'varsayilan_hedef_torba', value: '34' }];
   store.users = [
     encryptUser({
@@ -564,7 +576,7 @@ function seedInMemoryStore(store: Record<string, any[]>) {
       sifre: '784512Gg.',
       telefon: '05551112233',
       aktif: 1,
-      created_at: nowStr,
+      created_at: nowLocaleTr,
     }),
   ];
   store.beneficiaries = [];
@@ -575,26 +587,8 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.import_logs = [];
   store.season_archives = [];
   store.archived_beneficiaries = [];
-}
-
-export function getSeedBeneficiaries(nowStr?: string): any[] {
-  return [];
-}
-
-export function getSeedHistory(): any[] {
-  return [];
-}
-
-export function getSeedTrucks(nowStr?: string): any[] {
-  return [];
-}
-
-export function getSeedShifts(nowStr?: string): any[] {
-  return [];
-}
-
-export function getSeedActivityLogs(nowStr?: string): any[] {
-  return [];
+  store.archived_truck_deliveries = [];
+  store.archived_delivery_history = [];
 }
 
 /**
@@ -616,13 +610,13 @@ export async function recordActivityLog(item: {
 }) {
   try {
     const { activityLogs } = await getDbCollections();
-    const now = new Date();
+    const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
     const doc = {
       ...item,
       kullanici_rolu: item.kullanici_rolu || (item.kullanici_adi?.toLowerCase().includes('admin') || item.kullanici_adi?.toLowerCase().includes('yönetici') ? 'ADMIN' : 'PERSONEL'),
-      tarih: item.tarih || now.toLocaleString('tr-TR'),
-      tarih_iso: item.tarih_iso || now.toISOString(),
-      gun_tarihi: now.toLocaleDateString('en-CA'),
+      tarih: item.tarih || nowLocaleTr,
+      tarih_iso: item.tarih_iso || nowIso,
+      gun_tarihi: item.ek_bilgi?.gun_tarihi || nowEnCa,
     };
     // Encrypt sensitive details before writing to MongoDB Atlas
     const encryptedDoc = encryptActivityLog(doc);
@@ -641,6 +635,12 @@ export async function recordActivityLog(item: {
  */
 export async function migrateAndEncryptExistingData(db: Db) {
   try {
+    const settings = db.collection('system_settings');
+    const migFlag = await settings.findOne({ key: 'migrations_complete_v1' });
+    if (migFlag?.value === 'true') {
+      return;
+    }
+
     const beneficiaries = db.collection('beneficiaries');
     const history = db.collection('delivery_history');
     const logs = db.collection('import_logs');
@@ -855,6 +855,13 @@ export async function migrateAndEncryptExistingData(db: Db) {
         await shiftsCol.updateOne({ _id: s._id }, { $set: updateFields });
       }
     }
+
+    // Mark migration complete in system_settings so subsequent cold starts skip this check
+    await settings.updateOne(
+      { key: 'migrations_complete_v1' },
+      { $set: { key: 'migrations_complete_v1', value: 'true', completed_at: new Date().toISOString() } },
+      { upsert: true }
+    );
   } catch (err) {
     console.error('[AES-256-GCM] Migration error:', err);
   }
@@ -978,7 +985,7 @@ export async function migrateMahalleNames(db?: Db | null) {
  * Update sync pulse in systemSettings so all active browsers and workers auto-detect dataset changes
  */
 export async function touchSyncPulse(updatedBy: string = 'Sistem'): Promise<string> {
-  const nowIso = new Date().toISOString();
+  const { nowIso } = getIstanbulDate();
   try {
     const { systemSettings } = await getDbCollections();
     await systemSettings.updateOne(

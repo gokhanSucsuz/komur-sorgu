@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
+import { verifySession } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const { systemSettings } = await getDbCollections();
     const doc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
@@ -30,21 +31,21 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { systemSettings, beneficiaries } = await getDbCollections();
-    const body = await request.json();
-    const { varsayilan_hedef_torba, updateExisting, userRole } = body;
-    const reqRole = request.headers.get('x-user-role') || userRole;
-
-    if (reqRole && reqRole !== 'ADMIN') {
-      return NextResponse.json(
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
         { success: false, error: 'Yetkisiz erişim! Kömür kotasını sadece Sistem Yöneticisi belirleyebilir veya değiştirebilir.' },
-        { status: 403 }
+        { status: 401 }
       );
     }
 
+    const { systemSettings, beneficiaries } = await getDbCollections();
+    const body = await request.json();
+    const { varsayilan_hedef_torba, updateExisting } = body;
+
     const bagVal = parseInt(varsayilan_hedef_torba, 10);
-    if (isNaN(bagVal) || bagVal <= 0) {
-      return NextResponse.json({ success: false, error: 'Geçersiz torba miktarı' }, { status: 400 });
+    if (isNaN(bagVal) || bagVal <= 0 || bagVal > 200) {
+      return NextResponse.json({ success: false, error: 'Geçersiz torba miktarı (1-200 arası olmalıdır)' }, { status: 400 });
     }
 
     // Upsert system setting in MongoDB
@@ -83,8 +84,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const adminName = session.ad_soyad || session.username || 'Sistem Yöneticisi';
+
     await recordActivityLog({
-      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_adi: adminName,
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'KOTA_DEGISTIRME',
       baslik: 'Varsayılan Hedef Kömür Kotası Güncellendi',

@@ -34,7 +34,10 @@ export default function PersonnelManagementModal({
   const fetchPersonnel = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/personnel');
+      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const res = await fetch('/api/personnel', {
+        headers: { 'x-session-token': sessionToken }
+      });
       const data = await res.json();
       if (data.success) {
         setPersonnelList(data.users || []);
@@ -72,7 +75,7 @@ export default function PersonnelManagementModal({
     setEditingOriginalRole(person.rol);
     setAdSoyad(person.ad_soyad);
     setUsername(person.username);
-    setSifre(person.sifre);
+    setSifre(''); // Don't prefill password
     setTelefon(person.telefon || '');
     setRol(person.rol);
     setShowForm(true);
@@ -89,21 +92,26 @@ export default function PersonnelManagementModal({
     try {
       const url = '/api/personnel';
       const method = editingId ? 'PUT' : 'POST';
-      const payload = {
+      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const payload: any = {
         id: editingId || undefined,
         ad_soyad: adSoyad.trim(),
         username: username.trim().toLowerCase(),
-        sifre: sifre.trim(),
         telefon: telefon.trim(),
         rol,
-        callerRole: 'ADMIN'
       };
+
+      if (sifre.trim()) {
+        payload.sifre = sifre.trim();
+      } else if (!editingId) {
+        throw new Error('Yeni personel için şifre / PIN zorunludur!');
+      }
 
       const res = await fetch(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
-          'x-user-role': 'ADMIN'
+          'x-session-token': sessionToken,
         },
         body: JSON.stringify(payload)
       });
@@ -130,9 +138,10 @@ export default function PersonnelManagementModal({
     if (!confirm(`${name} isimli personeli silmek istediğinize emin misiniz?`)) return;
 
     try {
-      const res = await fetch(`/api/personnel?id=${id}&callerRole=ADMIN`, { 
+      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const res = await fetch(`/api/personnel?id=${id}`, { 
         method: 'DELETE',
-        headers: { 'x-user-role': 'ADMIN' }
+        headers: { 'x-session-token': sessionToken }
       });
       const data = await res.json();
       if (!data.success) {
@@ -252,16 +261,16 @@ export default function PersonnelManagementModal({
             <div className="grid grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Şifre / PIN Kodu
+                  {editingId ? 'Yeni Şifre / PIN (Değiştirmeyecekseniz boş bırakın)' : 'Şifre / PIN Kodu'}
                 </label>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={sifre}
                     onChange={(e) => setSifre(e.target.value)}
-                    placeholder="Örn: 1234"
+                    placeholder={editingId ? 'Yeni PIN (opsiyonel)' : 'Örn: 1234'}
                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500 pr-8"
-                    required
+                    required={!editingId}
                   />
                   <button
                     type="button"
@@ -377,9 +386,9 @@ export default function PersonnelManagementModal({
                   <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 font-medium">
                     <span className="font-mono text-slate-700">@{person.username}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-1 font-mono text-amber-800 font-bold bg-slate-50 px-1.5 py-0.2 rounded border border-slate-200">
-                      <Key className="w-3 h-3 text-slate-400" />
-                      PIN: {person.sifre}
+                    <span className="flex items-center gap-1 font-mono text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px]">
+                      <Key className="w-3 h-3 text-emerald-600" />
+                      PIN Korumalı
                     </span>
                     {person.telefon && (
                       <>

@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
+import { verifySession } from '@/lib/auth';
+import { getIstanbulDate } from '@/lib/crypto';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { deliveryRoutes: routeCol, beneficiaries: benCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action') || 'all';
@@ -54,14 +61,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { deliveryRoutes: routeCol, beneficiaries: benCol, deliveryHistory: histCol } = await getDbCollections();
     const body = await request.json();
     const { action } = body;
 
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const localToday = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
-    const localTimeStr = now.toLocaleString('tr-TR');
+    const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
+    const localToday = nowEnCa; // YYYY-MM-DD
+    const localTimeStr = nowLocaleTr;
 
     // ==========================================
     // ACTION 1: CREATE_ROUTE

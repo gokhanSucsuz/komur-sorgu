@@ -5,9 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    volumes:
-      # Persistent SQLite database storage on the host server
-      - ./data:/app/data
+    env_file:
+      - .env.local
     environment:
       - NODE_ENV=production
       - PORT=3000

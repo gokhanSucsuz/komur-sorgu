@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { getDbCollections, recordActivityLog, mapDocs, touchSyncPulse } from '@/lib/mongodb';
-import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
+import { encryptBeneficiary, encryptImportLog, getIstanbulDate } from '@/lib/crypto';
+import { verifySession } from '@/lib/auth';
 import { 
   cleanTcNo, 
   normalizeAddress, 
@@ -44,15 +45,15 @@ interface BatchRecordInfo {
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const userRole = request.headers.get('x-user-role') || (formData.get('userRole') as string | null);
-    if (userRole !== 'ADMIN') {
-      return NextResponse.json(
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
         { success: false, error: 'Yetkisiz erişim! Excel aktarımı ve yükleme işlemleri sadece Yönetici (Admin) yetkisiyle yapılabilir.' },
-        { status: 403 }
+        { status: 401 }
       );
     }
 
+    const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
     if (!file) {
@@ -62,23 +63,51 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Read Excel workbook
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
+    // Read Excel workbook with ExcelJS
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında sayfa bulunamadı' }, { status: 400 });
     }
 
-    const worksheet = workbook.Sheets[sheetName];
-    const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+    const headerRow = worksheet.getRow(1);
+    const headers: Record<number, string> = {};
+    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      headers[colNumber] = String(cell.value || '').trim();
+    });
 
-    if (!rawRows || rawRows.length === 0) {
+    const rawRows: any[] = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const rowObj: Record<string, any> = {};
+      let hasData = false;
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header) {
+          let cellVal = cell.value;
+          if (cellVal !== null && typeof cellVal === 'object') {
+            if ('text' in cellVal) cellVal = (cellVal as any).text;
+            else if ('result' in cellVal) cellVal = (cellVal as any).result;
+          }
+          const strVal = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+          rowObj[header] = strVal;
+          if (strVal) hasData = true;
+        }
+      });
+      if (hasData) {
+        rawRows.push(rowObj);
+      }
+    });
+
+    if (rawRows.length === 0) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında veri satırı bulunamadı' }, { status: 400 });
     }
 
     const { beneficiaries: benCol, importLogs: logsCol, importBatches: batchesCol, systemSettings } = await getDbCollections();
+    const { nowIso, nowLocaleTr } = getIstanbulDate();
     const batchId = `BATCH-${Date.now()}`;
-    const nowStr = new Date().toLocaleString('tr-TR');
+    const nowStr = nowLocaleTr;
 
     let totalRows = 0;
     let insertedCount = 0;
@@ -750,11 +779,11 @@ export async function POST(request: NextRequest) {
       uyarili_kisi: uyariliKayitlar.length,
       mahalle_ozet: mahalleOzet,
       created_at: nowStr,
-      tarih_iso: new Date().toISOString(),
+      tarih_iso: nowIso,
     });
 
     await recordActivityLog({
-      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_adi: session.ad_soyad || session.username || 'Sistem Yöneticisi',
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'EXCEL_YUKLEME',
       baslik: 'Excel Dosyası Yüklendi',

@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections } from '@/lib/mongodb';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const {
+      isFallback,
       beneficiaries: benCol,
       deliveryHistory: histCol,
       truckDeliveries: trucksCol,
@@ -15,47 +16,115 @@ export async function GET() {
     const settingDoc = await settingsCol.findOne({ key: 'varsayilan_hedef_torba' });
     const varsayilanHedefTorba = settingDoc ? parseInt(settingDoc.value, 10) : 34;
 
-    // Beneficiaries Stats
-    const allBeneficiaries = await benCol.find({}).toArray();
+    let toplamVatandas = 0;
     let tamHane = 0;
     let eksikHane = 0;
     let bekleyenHane = 0;
     let toplamDagitilanTorba = 0;
     let toplamHedefTorba = 0;
-
-    for (const b of allBeneficiaries) {
-      const d = b.teslimat_durumu;
-      if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
-        tamHane += 1;
-      } else if (d === 'EKSIK') {
-        eksikHane += 1;
-      } else {
-        bekleyenHane += 1;
-      }
-
-      toplamDagitilanTorba += Number(b.torba_sayisi || 0);
-      toplamHedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
-    }
-
-    const toplamVatandas = allBeneficiaries.length;
-    const eksikKalanTorba = Math.max(0, toplamHedefTorba - toplamDagitilanTorba);
-
-    // Cancellations count
-    const iptalSayisi = await histCol.countDocuments({ islem_tipi: 'IPTAL' });
-
-    // Trucks Stats
-    const allTrucks = await trucksCol.find({}).toArray();
+    let iptalSayisi = 0;
+    let toplamTirSayisi = 0;
     let gelenNetTonaj = 0;
     let gelenBrutTonaj = 0;
+    let toplamHataSayisi = 0;
 
-    for (const t of allTrucks) {
-      gelenNetTonaj += Number(t.net_tonaj || 0);
-      gelenBrutTonaj += Number(t.brut_tonaj || 0);
+    if (!isFallback && typeof benCol.aggregate === 'function') {
+      // High-performance MongoDB Atlas native aggregation pipelines
+      const [benAggResult, truckAggResult, iptalCount, hataCount] = await Promise.all([
+        benCol.aggregate([
+          {
+            $group: {
+              _id: null,
+              toplamVatandas: { $sum: 1 },
+              tamHane: {
+                $sum: {
+                  $cond: [{ $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI']] }, 1, 0]
+                }
+              },
+              eksikHane: {
+                $sum: {
+                  $cond: [{ $eq: ['$teslimat_durumu', 'EKSIK'] }, 1, 0]
+                }
+              },
+              bekleyenHane: {
+                $sum: {
+                  $cond: [
+                    {
+                      $not: [{ $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              },
+              toplamDagitilanTorba: { $sum: { $ifNull: ['$torba_sayisi', 0] } },
+              toplamHedefTorba: { $sum: { $ifNull: ['$hedef_torba', varsayilanHedefTorba] } },
+            }
+          }
+        ]).toArray(),
+        trucksCol.aggregate([
+          {
+            $group: {
+              _id: null,
+              toplamTirSayisi: { $sum: 1 },
+              gelenNetTonaj: { $sum: { $ifNull: ['$net_tonaj', 0] } },
+              gelenBrutTonaj: { $sum: { $ifNull: ['$brut_tonaj', 0] } },
+            }
+          }
+        ]).toArray(),
+        histCol.countDocuments({ islem_tipi: 'IPTAL' }),
+        logsCol.countDocuments({}),
+      ]);
+
+      if (benAggResult.length > 0) {
+        const b = benAggResult[0];
+        toplamVatandas = b.toplamVatandas || 0;
+        tamHane = b.tamHane || 0;
+        eksikHane = b.eksikHane || 0;
+        bekleyenHane = b.bekleyenHane || 0;
+        toplamDagitilanTorba = b.toplamDagitilanTorba || 0;
+        toplamHedefTorba = b.toplamHedefTorba || 0;
+      }
+
+      if (truckAggResult.length > 0) {
+        const t = truckAggResult[0];
+        toplamTirSayisi = t.toplamTirSayisi || 0;
+        gelenNetTonaj = t.gelenNetTonaj || 0;
+        gelenBrutTonaj = t.gelenBrutTonaj || 0;
+      }
+
+      iptalSayisi = iptalCount;
+      toplamHataSayisi = hataCount;
+    } else {
+      // In-Memory Fallback
+      const allBeneficiaries = await benCol.find({}).toArray();
+      for (const b of allBeneficiaries) {
+        const d = b.teslimat_durumu;
+        if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
+          tamHane += 1;
+        } else if (d === 'EKSIK') {
+          eksikHane += 1;
+        } else {
+          bekleyenHane += 1;
+        }
+        toplamDagitilanTorba += Number(b.torba_sayisi || 0);
+        toplamHedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
+      }
+      toplamVatandas = allBeneficiaries.length;
+
+      iptalSayisi = await histCol.countDocuments({ islem_tipi: 'IPTAL' });
+
+      const allTrucks = await trucksCol.find({}).toArray();
+      toplamTirSayisi = allTrucks.length;
+      for (const t of allTrucks) {
+        gelenNetTonaj += Number(t.net_tonaj || 0);
+        gelenBrutTonaj += Number(t.brut_tonaj || 0);
+      }
+
+      toplamHataSayisi = await logsCol.countDocuments({});
     }
 
-    // Import errors count
-    const toplamHataSayisi = await logsCol.countDocuments({});
-
+    const eksikKalanTorba = Math.max(0, toplamHedefTorba - toplamDagitilanTorba);
     const dagitilanTonaj = parseFloat((toplamDagitilanTorba * 0.025).toFixed(3));
     const hedefTonaj = parseFloat((toplamHedefTorba * 0.025).toFixed(3));
     const eksikTonaj = parseFloat((eksikKalanTorba * 0.025).toFixed(3));
@@ -84,7 +153,7 @@ export async function GET() {
         hedefTonaj,
         eksikTonaj,
         tamamlamaYuzdesi,
-        toplamTirSayisi: allTrucks.length,
+        toplamTirSayisi,
         gelenNetTonaj: netTonajFixed,
         gelenBrutTonaj: parseFloat(gelenBrutTonaj.toFixed(3)),
         kalanStokTonaj,

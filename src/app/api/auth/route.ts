@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { encryptField } from '@/lib/crypto';
+import { encryptField, hashPassword, verifyPassword, getIstanbulDate } from '@/lib/crypto';
+import { sanitizeUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,13 +58,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. Return all active staff members for login screen
+    // 2. Return active staff members for login screen (SECURITY: Strip passwords and session tokens!)
     const rawUsers = await usersCol
       .find({ aktif: 1 })
       .sort({ rol: 1, ad_soyad: 1 })
       .toArray();
 
-    const users = mapDocs(rawUsers);
+    const users = mapDocs(rawUsers).map(sanitizeUser);
 
     return NextResponse.json({
       success: true,
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error fetching auth users:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Kullanıcı listesi alınamadı.' }, { status: 500 });
   }
 }
 
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
             active_session_token: targetToken,
           },
           {
-            $set: { active_session_token: null, last_logout_at: new Date().toISOString() },
+            $set: { active_session_token: null, last_logout_at: getIstanbulDate().iso },
           }
         );
 
@@ -154,10 +155,16 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      return NextResponse.json({ success: true, message: 'Oturum başarıyla sonlandırıldı' });
+      const res = NextResponse.json({ success: true, message: 'Oturum başarıyla sonlandırıldı' });
+      res.cookies.set('komur_session_token', '', {
+        httpOnly: true,
+        path: '/',
+        expires: new Date(0),
+      });
+      return res;
     }
 
-    // 3. User Login Process (Single Device Enforcement)
+    // 3. User Login Process (Single Device Enforcement & scrypt Hash Verification)
     const trimmedPass = (password || '').trim();
     if (!trimmedPass) {
       return NextResponse.json({ success: false, error: 'Lütfen şifre / PIN giriniz' }, { status: 400 });
@@ -166,19 +173,29 @@ export async function POST(request: NextRequest) {
     const escapedUser = trimmedUser.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
     const userRegex = new RegExp(`^${escapedUser}$`, 'i');
 
-    let rawUser = await usersCol.findOne({
+    const rawUser = await usersCol.findOne({
       $or: [{ username: userRegex }, { ad_soyad: userRegex }],
       aktif: 1,
     });
 
+    let isPasswordCorrect = false;
+
     if (rawUser) {
-      const decUser = mapDoc(rawUser);
-      if (decUser.sifre !== trimmedPass && rawUser.sifre !== trimmedPass) {
-        rawUser = null;
+      if (rawUser.sifre_hash) {
+        isPasswordCorrect = verifyPassword(trimmedPass, rawUser.sifre_hash);
+      } else {
+        // Transparent fallback & automatic zero-downtime hash upgrade
+        const decUser = mapDoc(rawUser);
+        if (decUser.sifre === trimmedPass || rawUser.sifre === trimmedPass) {
+          isPasswordCorrect = true;
+          // Upgrade immediately in database to secure salted scrypt hash
+          const newHash = hashPassword(trimmedPass);
+          await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash } });
+        }
       }
     }
 
-    if (!rawUser) {
+    if (!rawUser || !isPasswordCorrect) {
       return NextResponse.json(
         {
           success: false,
@@ -188,7 +205,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = mapDoc(rawUser);
+    const user = sanitizeUser(mapDoc(rawUser));
 
     // If it's a temporary admin elevation dialog (e.g. AdminAuthModal), verify credentials without overriding active device session
     if (is_elevation) {
@@ -209,6 +226,7 @@ export async function POST(request: NextRequest) {
     const newSessionToken = crypto.randomUUID();
     const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz / Tarayıcı';
     const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
+    const { iso: nowIso } = getIstanbulDate();
 
     // Store new session token on user document (immediately invalidates any previous device session)
     await usersCol.updateOne(
@@ -216,7 +234,7 @@ export async function POST(request: NextRequest) {
       {
         $set: {
           active_session_token: newSessionToken,
-          last_login_at: new Date().toISOString(),
+          last_login_at: nowIso,
           last_device: userAgent.substring(0, 150),
           last_ip: clientIp.split(',')[0].trim(),
         },
@@ -232,7 +250,7 @@ export async function POST(request: NextRequest) {
       detay: `"${user.ad_soyad}" (${user.username}) sisteme giriş yaptı. Bu cihaz tek yetkili aktif oturum olarak kaydedildi.`,
     });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       message: 'Giriş başarılı',
       session_token: newSessionToken,
@@ -244,9 +262,19 @@ export async function POST(request: NextRequest) {
         telefon: user.telefon,
       },
     });
+
+    // Set HttpOnly Secure session cookie
+    res.cookies.set('komur_session_token', newSessionToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
+
+    return res;
   } catch (error: any) {
     console.error('Error during login:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Giriş yapılırken sunucu hatası oluştu.' }, { status: 500 });
   }
 }
 
@@ -289,8 +317,15 @@ export async function PUT(request: NextRequest) {
 
     const decUser = mapDoc(rawUser);
 
-    // Verify current password
-    if (decUser.sifre !== trimmedCurrentPass && rawUser.sifre !== trimmedCurrentPass) {
+    // Verify current password with scrypt or legacy fallback
+    let isCurrentPassValid = false;
+    if (rawUser.sifre_hash) {
+      isCurrentPassValid = verifyPassword(trimmedCurrentPass, rawUser.sifre_hash);
+    } else {
+      isCurrentPassValid = decUser.sifre === trimmedCurrentPass || rawUser.sifre === trimmedCurrentPass;
+    }
+
+    if (!isCurrentPassValid) {
       return NextResponse.json(
         { success: false, error: 'Mevcut şifrenizi / PIN kodunuzu hatalı girdiniz! Değişiklik kaydedilemedi.' },
         { status: 400 }
@@ -298,7 +333,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const updateFields: any = {
-      updated_at: new Date().toLocaleString('tr-TR'),
+      updated_at: getIstanbulDate().fullStr,
     };
 
     let usernameChanged = false;
@@ -346,6 +381,7 @@ export async function PUT(request: NextRequest) {
       if (trimmedNewPass.length < 4) {
         return NextResponse.json({ success: false, error: 'Yeni şifre / PIN en az 4 karakter veya rakamdan oluşmalıdır.' }, { status: 400 });
       }
+      updateFields.sifre_hash = hashPassword(trimmedNewPass);
       updateFields.sifre = encryptField(trimmedNewPass);
       passwordChanged = true;
     }

@@ -19,10 +19,17 @@ import {
   hashAddress,
   encryptField,
   encryptBeneficiary,
+  getIstanbulDate,
 } from '@/lib/crypto';
+import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { beneficiaries: benCol, systemSettings } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const q = (searchParams.get('q') || '').trim();
@@ -298,6 +305,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { beneficiaries: benCol, systemSettings } = await getDbCollections();
     const body = await request.json();
     const { tc_no, ad_soyad, telefon, telefon2, mahalle, acik_adres, hane_no, hedef_torba } = body;
@@ -448,6 +460,11 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { beneficiaries: benCol } = await getDbCollections();
     const body = await request.json();
     const {
@@ -480,7 +497,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const existing = mapDoc(rawBeneficiary);
-    const nowStr = new Date().toLocaleString('tr-TR');
+    const { nowLocaleTr } = getIstanbulDate();
+    const nowStr = nowLocaleTr;
 
     // 1. Hane Numarası Kontrolü
     let newCleanHane: string | null = existing.hane_no || null;
@@ -649,4 +667,51 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Hak sahibi silme yetkisi sadece Yöneticilere aittir.' },
+        { status: 403 }
+      );
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const id = searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Kayıt ID belirtilmedi' }, { status: 400 });
+    }
+
+    const { beneficiaries: benCol } = await getDbCollections();
+    const rawBen = await benCol.findOne(buildIdFilter(id));
+    if (!rawBen) {
+      return NextResponse.json({ success: false, error: 'Kayıt bulunamadı' }, { status: 404 });
+    }
+
+    const ben = mapDoc(rawBen);
+    await benCol.deleteOne(buildIdFilter(id));
+
+    const adminName = session.ad_soyad || session.username || 'Sistem Yöneticisi';
+    await touchSyncPulse(adminName);
+
+    await recordActivityLog({
+      kullanici_adi: adminName,
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'HAK_SAHIBI_SILME',
+      baslik: 'Hak Sahibi Kaydı Silindi',
+      detay: `${ben.ad_soyad} (TC: ${ben.tc_no || 'Belirtilmemiş'}, Mahalle: ${ben.mahalle}) kaydı sistemden silindi.`,
+      hedef_kisi: ben.ad_soyad,
+      hedef_tc: ben.tc_no,
+      mahalle: ben.mahalle,
+    });
+
+    return NextResponse.json({ success: true, message: 'Hak sahibi kaydı başarıyla silindi' });
+  } catch (error: any) {
+    console.error('Error deleting beneficiary:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
 

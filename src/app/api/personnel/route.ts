@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
-import { encryptUser, encryptField } from '@/lib/crypto';
+import { encryptUser, encryptField, hashPassword, getIstanbulDate } from '@/lib/crypto';
+import { verifySession, sanitizeUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!auth.valid) return auth.response!;
+
     const { users: usersCol } = await getDbCollections();
     const rawUsers = await usersCol
       .find({})
       .sort({ rol: 1, ad_soyad: 1 })
       .toArray();
 
-    const users = mapDocs(rawUsers);
+    // Security: Sanitize all users, never expose raw/decrypted password or token
+    const users = mapDocs(rawUsers).map(sanitizeUser);
 
     return NextResponse.json({
       success: true,
@@ -19,19 +24,18 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error fetching personnel:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Personel listesi alınırken hata oluştu.' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!auth.valid) return auth.response!;
+
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
-    const { username, ad_soyad, rol, sifre, telefon, callerRole } = body;
-    const reqRole = request.headers.get('x-user-role') || callerRole;
-    if (reqRole !== 'ADMIN') {
-      return NextResponse.json({ success: false, error: 'Yetkisiz erişim! Personel kayıt işlemlerini sadece Yönetici yapabilir.' }, { status: 403 });
-    }
+    const { username, ad_soyad, rol, sifre, telefon } = body;
 
     const trimmedUser = (username || '').trim().toLowerCase();
     const trimmedName = (ad_soyad || '').trim();
@@ -43,6 +47,16 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: 'Kullanıcı adı, Ad Soyad ve Şifre/PIN zorunludur',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (trimmedPass.length < 4) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Şifre / PIN en az 4 karakterden oluşmalıdır.',
         },
         { status: 400 }
       );
@@ -65,9 +79,10 @@ export async function POST(request: NextRequest) {
       ad_soyad: trimmedName,
       rol: trimmedRole,
       sifre: trimmedPass,
+      sifre_hash: hashPassword(trimmedPass),
       telefon: (telefon || '').trim(),
       aktif: 1,
-      created_at: new Date().toLocaleString('tr-TR'),
+      created_at: getIstanbulDate().fullStr,
     };
 
     // Encrypt sensitive personnel info with AES-256-GCM
@@ -76,7 +91,7 @@ export async function POST(request: NextRequest) {
     const newId = result.insertedId ? result.insertedId.toString() : '';
 
     await recordActivityLog({
-      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_adi: auth.user.ad_soyad || auth.user.username,
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'PERSONEL_ISLEM',
       baslik: 'Yeni Personel Tanımlandı',
@@ -91,19 +106,18 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error adding personnel:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Personel eklenirken hata oluştu.' }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
+    const auth = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!auth.valid) return auth.response!;
+
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
-    const { id, username, ad_soyad, rol, sifre, telefon, aktif, callerRole } = body;
-    const reqRole = request.headers.get('x-user-role') || callerRole;
-    if (reqRole !== 'ADMIN') {
-      return NextResponse.json({ success: false, error: 'Yetkisiz erişim! Personel düzenleme işlemlerini sadece Yönetici yapabilir.' }, { status: 403 });
-    }
+    const { id, username, ad_soyad, rol, sifre, telefon, aktif } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Personel ID zorunludur' }, { status: 400 });
@@ -113,20 +127,26 @@ export async function PUT(request: NextRequest) {
     const trimmedName = (ad_soyad || '').trim();
     const trimmedPass = (sifre || '').trim();
     const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : 'PERSONEL';
-
-    // Prevent demoting an admin account to personnel: "yönetici de kendini normal personel olarak kaydedemez"
-    const targetUser = await usersCol.findOne(buildIdFilter(id));
-    if (targetUser && targetUser.rol === 'ADMIN' && trimmedRole === 'PERSONEL') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Güvenlik kuralı: Bir Yönetici (Admin) hesabı normal personele düşürülemez!',
-        },
-        { status: 400 }
-      );
-    }
-
     const isActive = aktif === 0 ? 0 : 1;
+
+    // Prevent demoting OR deactivating the last active Admin account
+    const targetUser = await usersCol.findOne(buildIdFilter(id));
+    if (targetUser && targetUser.rol === 'ADMIN' && (trimmedRole === 'PERSONEL' || isActive === 0)) {
+      const otherAdminCount = await usersCol.countDocuments({
+        rol: 'ADMIN',
+        aktif: 1,
+        _id: { $ne: targetUser._id },
+      });
+      if (otherAdminCount < 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Güvenlik kuralı: Sistemdeki tek aktif Yönetici (Admin) hesabı pasife alınamaz veya rolü düşürülemez!',
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Check unique username excluding current
     if (trimmedUser) {
@@ -148,22 +168,33 @@ export async function PUT(request: NextRequest) {
     const updateFields: any = {
       rol: trimmedRole,
       aktif: isActive,
-      updated_at: new Date().toLocaleString('tr-TR'),
+      updated_at: getIstanbulDate().fullStr,
     };
 
     if (trimmedUser) updateFields.username = trimmedUser;
     if (trimmedName) updateFields.ad_soyad = encryptField(trimmedName);
-    if (trimmedPass) updateFields.sifre = encryptField(trimmedPass);
+    if (trimmedPass) {
+      if (trimmedPass.length < 4) {
+        return NextResponse.json({ success: false, error: 'Şifre / PIN en az 4 karakter olmalıdır.' }, { status: 400 });
+      }
+      updateFields.sifre_hash = hashPassword(trimmedPass);
+      updateFields.sifre = encryptField(trimmedPass);
+    }
     if (telefon !== undefined) updateFields.telefon = encryptField((telefon || '').trim());
+
+    // If deactivated, terminate active session immediately
+    if (isActive === 0) {
+      updateFields.active_session_token = null;
+    }
 
     await usersCol.updateOne(buildIdFilter(id), { $set: updateFields });
 
     await recordActivityLog({
-      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_adi: auth.user.ad_soyad || auth.user.username,
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'PERSONEL_ISLEM',
       baslik: 'Personel Bilgileri Güncellendi',
-      detay: `Personel "${trimmedName || id}" bilgileri güncellendi.`,
+      detay: `Personel "${trimmedName || id}" bilgileri güncellendi.${trimmedPass ? ' (Şifre yenilendi)' : ''}`,
       ek_bilgi: { id, username: trimmedUser, rol: trimmedRole },
     });
 
@@ -173,19 +204,17 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error updating personnel:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Personel güncellenirken hata oluştu.' }, { status: 500 });
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
+    const auth = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!auth.valid) return auth.response!;
+
     const { users: usersCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const reqRole = request.headers.get('x-user-role') || searchParams.get('callerRole');
-    if (reqRole && reqRole !== 'ADMIN') {
-      return NextResponse.json({ success: false, error: 'Yetkisiz erişim! Personel silme işlemlerini sadece Yönetici yapabilir.' }, { status: 403 });
-    }
-
     const id = searchParams.get('id');
 
     if (!id) {
@@ -195,12 +224,12 @@ export async function DELETE(request: NextRequest) {
     // Prevent deleting the last Admin
     const target = await usersCol.findOne(buildIdFilter(id));
     if (target && target.rol === 'ADMIN') {
-      const adminCount = await usersCol.countDocuments({ rol: 'ADMIN' });
+      const adminCount = await usersCol.countDocuments({ rol: 'ADMIN', aktif: 1 });
       if (adminCount <= 1) {
         return NextResponse.json(
           {
             success: false,
-            error: 'Sistemdeki tek yönetici silinemez!',
+            error: 'Sistemdeki tek aktif yönetici silinemez!',
           },
           { status: 400 }
         );
@@ -209,12 +238,20 @@ export async function DELETE(request: NextRequest) {
 
     await usersCol.deleteOne(buildIdFilter(id));
 
+    await recordActivityLog({
+      kullanici_adi: auth.user.ad_soyad || auth.user.username,
+      kullanici_rolu: 'ADMIN',
+      islem_tipi: 'PERSONEL_ISLEM',
+      baslik: 'Personel Kaydı Silindi',
+      detay: `"${target?.username || id}" kullanıcısı sistemden kalıcı olarak silindi.`,
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Personel kaydı silindi',
     });
   } catch (error: any) {
     console.error('Error deleting personnel:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Personel silinirken hata oluştu.' }, { status: 500 });
   }
 }

@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
+import { verifySession } from '@/lib/auth';
 
 // GET /api/import/batches - List all uploaded Excel batches with live delivery stats
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { importBatches: batchesCol, beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
 
     const rawBatches = await batchesCol.find({}).sort({ _id: -1 }).toArray();
@@ -71,15 +77,15 @@ export async function GET() {
 // DELETE /api/import/batches - Delete an imported Excel batch and rollback its beneficiaries
 export async function DELETE(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const reqRole = request.headers.get('x-user-role') || searchParams.get('callerRole');
-    if (reqRole !== 'ADMIN') {
-      return NextResponse.json(
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
         { success: false, error: 'Yetkisiz erişim! Excel dosyası ve hak sahiplerini silme yetkisi sadece Yöneticilere aittir.' },
-        { status: 403 }
+        { status: 401 }
       );
     }
 
+    const searchParams = request.nextUrl.searchParams;
     const { importBatches: batchesCol, beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
     let batchId = searchParams.get('batchId');
     let forceDelivered = searchParams.get('force') === 'true';
