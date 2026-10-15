@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { getRecordStreetInfo } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
+import { decryptField, isEncrypted } from '@/lib/crypto';
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,7 +34,8 @@ export async function GET(request: NextRequest) {
       benFilter.mahalle = mahalle;
     }
 
-    const filteredBeneficiaries = await benCol.find(benFilter).toArray();
+    const rawFiltered = await benCol.find(benFilter).toArray();
+    const filteredBeneficiaries = mapDocs(rawFiltered);
     let toplamHane = filteredBeneficiaries.length;
     let tamHane = 0;
     let eksikHane = 0;
@@ -116,7 +118,8 @@ export async function GET(request: NextRequest) {
     }));
 
     // 5. Neighborhood Completion Comparison
-    const allBeneficiaries = await benCol.find({}).toArray();
+    const rawAllBeneficiaries = await benCol.find({}).toArray();
+    const allBeneficiaries = mapDocs(rawAllBeneficiaries);
     const mahMap = new Map<string, any>();
 
     for (const b of allBeneficiaries) {
@@ -175,7 +178,17 @@ export async function GET(request: NextRequest) {
     for (const b of allBeneficiaries) {
       const m = b.mahalle || 'Belirtilmemiş';
       const stInfo = getRecordStreetInfo(b);
-      const sName = stInfo.sokak || 'Sokak Belirtilmemiş';
+      let sName = stInfo.sokak || 'Sokak Belirtilmemiş';
+      if (typeof sName === 'string' && isEncrypted(sName)) {
+        try {
+          sName = decryptField(sName) || 'Sokak Belirtilmemiş';
+        } catch {
+          sName = 'Sokak Belirtilmemiş';
+        }
+      }
+      if (typeof sName === 'string' && (sName.startsWith('ENC:GCM:v1:') || sName.startsWith('ENC:'))) {
+        sName = 'Sokak Belirtilmemiş';
+      }
       const key = `${m}:::${sName}`;
 
       if (!sokakMap.has(key)) {

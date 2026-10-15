@@ -143,20 +143,35 @@ export default function DeliveryArchive({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="w-full sm:w-auto flex flex-wrap sm:flex-nowrap items-center gap-2 justify-end">
             <button
               type="button"
               onClick={() => setSelectedDay(todayStr)}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+              className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 text-xs font-bold transition-all active:scale-95 shadow-2xs whitespace-nowrap"
             >
               Listede Filtrele
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const todayGroup = groupedDays.find((g) => g.gun_tarihi === todayStr) || {
+                  gun_tarihi: todayStr,
+                  items: todayRecords,
+                };
+                setPrintDayGroup(todayGroup);
+              }}
+              className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs whitespace-nowrap"
+              title="Bugünün teslimat tutanağını resmi rapor formatında görüntüle ve yazdır"
+            >
+              <Printer className="w-3.5 h-3.5 shrink-0" />
+              <span>Günün Tutanağını Yazdır</span>
             </button>
             <a
               href={`/api/export?type=daily_deliveries&date=${todayStr}`}
               download={`Bugunku_Komur_Teslimat_Listesi_${todayStr}.xlsx`}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+              className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs whitespace-nowrap"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 shrink-0" />
               <span>Günün Listesini İndir (Excel)</span>
             </a>
           </div>
@@ -348,10 +363,10 @@ export default function DeliveryArchive({
 
       {/* Günlük Teslimat Tutanağı ve Yazdırma Modalı */}
       {printDayGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="report-modal-card bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="report-modal-header p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
                   <FileText className="w-5 h-5" />
@@ -375,7 +390,7 @@ export default function DeliveryArchive({
             </div>
 
             {/* Modal Body / Printable Content */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs text-slate-800" id="printableDeliveryReport">
+            <div className="report-modal-body p-4 sm:p-6 overflow-y-auto space-y-4 text-xs text-slate-800" id="printableDeliveryReport">
               {/* Official Institutional Header */}
               <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
@@ -451,8 +466,8 @@ export default function DeliveryArchive({
                 </table>
               </div>
 
-              {/* Sign-off area */}
-              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 gap-4 text-center">
+              {/* Sign-off area (3-box Official Institutional Signature Block) */}
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-center print-signatures">
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-bold text-slate-500 uppercase">Dağıtımı Yapan Personel</span>
                   <p className="text-xs font-black text-slate-800 mt-1">
@@ -462,14 +477,19 @@ export default function DeliveryArchive({
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-bold text-slate-500 uppercase">Saha / Araç Sorumlusu</span>
-                  <p className="text-xs font-black text-slate-800 mt-1">Yetkili Amiri</p>
+                  <p className="text-xs font-black text-slate-800 mt-1">Yetkili Saha Amiri</p>
                   <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Vakıf Müdürü / Onay</span>
+                  <p className="text-xs font-black text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
+                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza / Mühür</div>
                 </div>
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+            <div className="report-modal-footer p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 no-print">
               <a
                 href={`/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}`}
                 download={`Edirne_SYDV_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}

@@ -142,8 +142,83 @@ export default function Header({
               </div>
             </div>
 
-            {/* User Role Badge & Actions */}
+            {/* Header Right Actions */}
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
+              {/* DESKTOP ONLY: Management Shortcuts (Hidden on mobile, moved to sub-ribbon) */}
+              <div className="hidden sm:flex items-center gap-1 sm:gap-1.5">
+                {/* Admin Personnel Management Shortcut - Admin Only */}
+                {userRole === 'ADMIN' && onOpenPersonnelModal && (
+                  <button
+                    onClick={onOpenPersonnelModal}
+                    title="Personel & Şifre Yönetimi (Sadece Yönetici)"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold text-purple-900 transition-all active:scale-95 shadow-sm shrink-0"
+                  >
+                    <Users className="w-3.5 h-3.5 text-purple-700" />
+                    <span>Personel</span>
+                  </button>
+                )}
+
+                {/* Admin Audit Logs Shortcut - Admin Only */}
+                {userRole === 'ADMIN' && onOpenAuditLogs && (
+                  <button
+                    onClick={onOpenAuditLogs}
+                    title="Kullanıcı İşlem & Denetim Logları (Sadece Yönetici)"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold text-indigo-900 transition-all active:scale-95 shadow-sm shrink-0"
+                  >
+                    <FileClock className="w-3.5 h-3.5 text-indigo-700" />
+                    <span>İşlem Logları</span>
+                  </button>
+                )}
+
+                {/* Season & Archive Management Button */}
+                {onOpenSeasonModal && (
+                  <button
+                    onClick={onOpenSeasonModal}
+                    title={`Kömür Dağıtım Dönemi: ${activeSeasonCode} (Dönem & Arşiv Yönetimi)`}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-xs font-bold text-blue-900 transition-all active:scale-95 shadow-sm shrink-0"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                    <span>{activeSeasonCode}</span>
+                  </button>
+                )}
+
+                {/* Target Quota - Only Admin Can Edit; Personnel Sees Read-Only */}
+                {userRole === 'ADMIN' && onOpenQuotaModal ? (
+                  <button
+                    onClick={onOpenQuotaModal}
+                    title="Hane Kömür Kotası Ayarla (Yönetici Yetkisi)"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-900 transition-all active:scale-95 shadow-sm shrink-0"
+                  >
+                    <span className="text-xs">🎯</span>
+                    <span>{defaultQuota || 34}</span>
+                  </button>
+                ) : (
+                  <div
+                    title={`Hedef Hane Kotası: ${defaultQuota || 34} Torba (Yönetici Tarafından Belirlenir)`}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 shrink-0 cursor-default"
+                  >
+                    <span className="text-xs">🎯</span>
+                    <span>{defaultQuota || 34}</span>
+                  </div>
+                )}
+
+                {/* Quick Guide Shortcut */}
+                {onTabChange && (
+                  <button
+                    onClick={() => onTabChange('guide')}
+                    title="Resmi Sistem Kullanım Kılavuzu & Yardım"
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm shrink-0 ${
+                      currentTab === 'guide'
+                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Kılavuz</span>
+                  </button>
+                )}
+              </div>
+
               {/* Pending Offline Sync Badge */}
               {pendingSyncCount > 0 && onTriggerSync && (
                 <button
@@ -165,79 +240,7 @@ export default function Header({
                 </span>
               )}
 
-              {/* Admin Personnel Management Shortcut - Admin Only */}
-              {userRole === 'ADMIN' && onOpenPersonnelModal && (
-                <button
-                  onClick={onOpenPersonnelModal}
-                  title="Personel & Şifre Yönetimi (Sadece Yönetici)"
-                  className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold text-purple-900 transition-all active:scale-95 shadow-sm shrink-0"
-                >
-                  <Users className="w-3.5 h-3.5 text-purple-700" />
-                  <span className="hidden sm:inline">Personel</span>
-                </button>
-              )}
-
-              {/* Admin Audit Logs Shortcut - Admin Only */}
-              {userRole === 'ADMIN' && onOpenAuditLogs && (
-                <button
-                  onClick={onOpenAuditLogs}
-                  title="Kullanıcı İşlem & Denetim Logları (Sadece Yönetici)"
-                  className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold text-indigo-900 transition-all active:scale-95 shadow-sm shrink-0"
-                >
-                  <FileClock className="w-3.5 h-3.5 text-indigo-700" />
-                  <span className="hidden sm:inline">İşlem Logları</span>
-                </button>
-              )}
-
-              {/* Season & Archive Management Button */}
-              {onOpenSeasonModal && (
-                <button
-                  onClick={onOpenSeasonModal}
-                  title={`Kömür Dağıtım Dönemi: ${activeSeasonCode} (Dönem & Arşiv Yönetimi)`}
-                  className="flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-xs font-bold text-blue-900 transition-all active:scale-95 shadow-sm shrink-0"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-blue-700" />
-                  <span className="hidden sm:inline">{activeSeasonCode}</span>
-                  <span className="sm:hidden text-[11px]">Dönem</span>
-                </button>
-              )}
-
-              {/* Target Quota - Only Admin Can Edit; Personnel Sees Read-Only */}
-              {userRole === 'ADMIN' && onOpenQuotaModal ? (
-                <button
-                  onClick={onOpenQuotaModal}
-                  title="Hane Kömür Kotası Ayarla (Yönetici Yetkisi)"
-                  className="flex items-center gap-0.5 sm:gap-1 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-900 transition-all active:scale-95 shadow-sm shrink-0"
-                >
-                  <span className="text-xs">🎯</span>
-                  <span className="text-[11px] sm:text-xs font-bold">{defaultQuota || 34}</span>
-                </button>
-              ) : (
-                <div
-                  title={`Hedef Hane Kotası: ${defaultQuota || 34} Torba (Yönetici Tarafından Belirlenir)`}
-                  className="flex items-center gap-1 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 shrink-0 cursor-default"
-                >
-                  <span className="text-xs">🎯</span>
-                  <span className="text-[11px] sm:text-xs font-bold">{defaultQuota || 34}</span>
-                </div>
-              )}
-
-              {/* Quick Guide Shortcut */}
-              {onTabChange && (
-                <button
-                  onClick={() => onTabChange('guide')}
-                  title="Resmi Sistem Kullanım Kılavuzu & Yardım"
-                  className={`flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm shrink-0 ${
-                    currentTab === 'guide'
-                      ? 'bg-emerald-600 text-white border-emerald-700'
-                      : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Kılavuz</span>
-                </button>
-              )}
-
+              {/* Refresh Button */}
               <button
                 onClick={onRefresh}
                 title="Yenile"
@@ -252,7 +255,7 @@ export default function Header({
               {/* User Profile Badge (Clicking Opens Profile Info, No Arbitrary Role Change) */}
               <button
                 onClick={() => setShowProfileModal(true)}
-                className="flex items-center gap-1 sm:gap-1.5 px-1.5 py-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[85px] xs:max-w-[105px] sm:max-w-[130px] shrink-0"
+                className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[95px] xs:max-w-[110px] sm:max-w-[130px] shrink-0"
                 title="Kullanıcı Oturum Bilgisi"
               >
                 {userRole === 'ADMIN' ? (
@@ -280,6 +283,81 @@ export default function Header({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* MOBILE ONLY: Quick Management Ribbon (Horizontal scrollable, zero overflow or overlap) */}
+          <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 pb-0.5 border-t border-slate-100/90 w-full">
+            {/* Target Quota */}
+            {userRole === 'ADMIN' && onOpenQuotaModal ? (
+              <button
+                onClick={onOpenQuotaModal}
+                title="Hane Kömür Kotası Ayarla"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-[11px] font-extrabold text-amber-900 shrink-0 shadow-2xs active:scale-95"
+              >
+                <span>🎯 Kota:</span>
+                <span>{defaultQuota || 34}</span>
+              </button>
+            ) : (
+              <div
+                title={`Hedef Hane Kotası: ${defaultQuota || 34} Torba`}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-600 shrink-0"
+              >
+                <span>🎯 Kota:</span>
+                <span>{defaultQuota || 34}</span>
+              </div>
+            )}
+
+            {/* Season & Archive Management Button */}
+            {onOpenSeasonModal && (
+              <button
+                onClick={onOpenSeasonModal}
+                title={`Kömür Dağıtım Dönemi: ${activeSeasonCode}`}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[11px] font-extrabold text-blue-900 shrink-0 shadow-2xs active:scale-95"
+              >
+                <Calendar className="w-3 h-3 text-blue-700" />
+                <span>{activeSeasonCode}</span>
+              </button>
+            )}
+
+            {/* Admin Personnel Management Shortcut - Admin Only */}
+            {userRole === 'ADMIN' && onOpenPersonnelModal && (
+              <button
+                onClick={onOpenPersonnelModal}
+                title="Personel & Şifre Yönetimi"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[11px] font-extrabold text-purple-900 shrink-0 shadow-2xs active:scale-95"
+              >
+                <Users className="w-3 h-3 text-purple-700" />
+                <span>Personel</span>
+              </button>
+            )}
+
+            {/* Admin Audit Logs Shortcut - Admin Only */}
+            {userRole === 'ADMIN' && onOpenAuditLogs && (
+              <button
+                onClick={onOpenAuditLogs}
+                title="İşlem ve Denetim Logları"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-extrabold text-indigo-900 shrink-0 shadow-2xs active:scale-95"
+              >
+                <FileClock className="w-3 h-3 text-indigo-700" />
+                <span>Loglar</span>
+              </button>
+            )}
+
+            {/* Quick Guide Shortcut */}
+            {onTabChange && (
+              <button
+                onClick={() => onTabChange('guide')}
+                title="Kullanım Kılavuzu"
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-extrabold shrink-0 shadow-2xs active:scale-95 ${
+                  currentTab === 'guide'
+                    ? 'bg-emerald-600 text-white border-emerald-700'
+                    : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+                }`}
+              >
+                <BookOpen className="w-3 h-3" />
+                <span>Kılavuz</span>
+              </button>
+            )}
           </div>
 
           {/* Desktop Navigation Bar */}

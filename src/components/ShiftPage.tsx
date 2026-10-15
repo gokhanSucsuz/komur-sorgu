@@ -17,7 +17,9 @@ import {
   ChevronDown,
   X,
   History,
-  Sparkles
+  Sparkles,
+  Download,
+  FileText
 } from 'lucide-react';
 
 interface ShiftPageProps {
@@ -64,6 +66,10 @@ export default function ShiftPage({
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
   const [availableMonths, setAvailableMonths] = useState<any[]>([]);
   const [availableStaff, setAvailableStaff] = useState<string[]>([]);
+
+  // Reporting Modal States
+  const [showReportModal, setShowReportModal] = useState<boolean>(false);
+  const [reportTargetDate, setReportTargetDate] = useState<string>('ALL');
 
   // Entry Form States (Retrospective or Same Day)
   const [entryDate, setEntryDate] = useState<string>(todayStr);
@@ -257,6 +263,43 @@ export default function ShiftPage({
     return dates.size;
   }, [shifts]);
 
+  // Today's Work Shifts
+  const todayShifts = useMemo(() => {
+    return shifts.filter((s) => s.tarih === todayStr);
+  }, [shifts, todayStr]);
+
+  const todayMinutes = useMemo(() => {
+    return todayShifts.reduce((acc, s) => acc + (s.toplam_dakika || 0), 0);
+  }, [todayShifts]);
+
+  // Filtered Shifts for Official Report Modal
+  const filteredReportShifts = useMemo(() => {
+    if (reportTargetDate !== 'ALL') {
+      return shifts.filter((s) => s.tarih === reportTargetDate);
+    }
+    return shifts;
+  }, [shifts, reportTargetDate]);
+
+  const reportTotalMinutes = useMemo(() => {
+    return filteredReportShifts.reduce((acc, s) => acc + (s.toplam_dakika || 0), 0);
+  }, [filteredReportShifts]);
+
+  const reportUniqueDays = useMemo(() => {
+    const dates = new Set<string>();
+    filteredReportShifts.forEach((s) => {
+      if (s.tarih) dates.add(s.tarih);
+    });
+    return dates.size;
+  }, [filteredReportShifts]);
+
+  const reportUniqueStaff = useMemo(() => {
+    const st = new Set<string>();
+    filteredReportShifts.forEach((s) => {
+      if (s.personel_adi) st.add(s.personel_adi);
+    });
+    return Array.from(st);
+  }, [filteredReportShifts]);
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-16">
       {/* Page Header */}
@@ -271,16 +314,88 @@ export default function ShiftPage({
           </p>
         </div>
 
-        <button
-          onClick={fetchShifts}
-          disabled={isLoading}
-          className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 self-start sm:self-auto"
-          title="Listeyi Yenile"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
-          <span>Yenile</span>
-        </button>
+        <div className="w-full sm:w-auto flex flex-wrap sm:flex-nowrap items-center gap-2">
+          {/* Resmi Raporlama / Tutanak Butonu (Teslimat Arşivi Tarzı) */}
+          <button
+            type="button"
+            onClick={() => {
+              setReportTargetDate('ALL');
+              setShowReportModal(true);
+            }}
+            className="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 whitespace-nowrap"
+            title="Resmi Mesai Takip Tutanağını Görüntüle ve Yazdır"
+          >
+            <Printer className="w-4 h-4 shrink-0" />
+            <span>Rapor / Yazdır</span>
+          </button>
+
+          {/* Excel Raporu İndirme Butonu */}
+          <a
+            href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}`}
+            download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
+            className="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-md whitespace-nowrap"
+            title="Seçili filtredeki mesai kayıtlarını Excel olarak indir"
+          >
+            <Download className="w-4 h-4 shrink-0" />
+            <span>Excel İndir</span>
+          </a>
+
+          <button
+            onClick={fetchShifts}
+            disabled={isLoading}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shrink-0"
+            title="Listeyi Yenile"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
+            <span className="sm:hidden xs:inline">Yenile</span>
+          </button>
+        </div>
       </div>
+
+      {/* Today's Work Shift Fast Actions Banner (Teslimat Arşivi Tarzı Gün Özeti) */}
+      {todayShifts.length > 0 && (
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-200/70 px-2 py-0.2 rounded-md">
+                  Günün Mesai Özeti
+                </span>
+                <span className="text-xs font-bold text-slate-500">{todayStr}</span>
+              </div>
+              <h4 className="text-sm font-black text-slate-900 mt-0.5">
+                Bugün <span className="text-emerald-700">{todayShifts.length} Personel</span> Görev Yaptı ({formatMinutes(todayMinutes)})
+              </h4>
+            </div>
+          </div>
+
+          <div className="w-full sm:w-auto flex flex-wrap sm:flex-nowrap items-center gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setReportTargetDate(todayStr);
+                setShowReportModal(true);
+              }}
+              className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs whitespace-nowrap"
+              title="Bugünün mesai tutanağını resmi rapor formatında görüntüle ve yazdır"
+            >
+              <Printer className="w-3.5 h-3.5 shrink-0" />
+              <span>Günün Tutanağını Yazdır</span>
+            </button>
+            <a
+              href={`/api/export?type=shifts&date=${todayStr}`}
+              download={`Bugunku_Personel_Mesai_Listesi_${todayStr}.xlsx`}
+              className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>Günün Listesini İndir (Excel)</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* QUICK ENTRY FORM CARD: Same Day or Retrospective Work Hours Logging */}
       <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
@@ -538,9 +653,32 @@ export default function ShiftPage({
           )}
         </div>
 
-        <span className="text-xs text-slate-500 font-medium">
-          Toplam <strong>{shifts.length}</strong> çalışma saati listeleniyor
-        </span>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+            Toplam <strong>{shifts.length}</strong> çalışma saati
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setReportTargetDate('ALL');
+              setShowReportModal(true);
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+            title="Seçili filtredeki mesaileri tutanak olarak görüntüle ve yazdır"
+          >
+            <Printer className="w-3.5 h-3.5 text-amber-600" />
+            <span>Tutanak / Yazdır</span>
+          </button>
+          <a
+            href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}`}
+            download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+            title="Seçili listeyi Excel olarak indir"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Excel</span>
+          </a>
+        </div>
       </div>
 
       {/* WORK HOURS RECORDS LIST / TABLE */}
@@ -745,6 +883,237 @@ export default function ShiftPage({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* RESMİ PERSONEL ÇALIŞMA SAATLERİ VE MESAİ RAPORU MODALI  */}
+      {/* ======================================================== */}
+      {showReportModal && (
+        <div className="report-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="report-modal-card bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="report-modal-header p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Personel Çalışma Saatleri & Mesai Takip Cetveli
+                  </h3>
+                  <p className="text-xs text-slate-500 font-semibold">
+                    Dönem: <strong className="text-slate-800">{reportTargetDate !== 'ALL' ? reportTargetDate : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong> • Personel: <strong className="text-slate-800">{selectedPersonnel === 'ALL' ? 'Tüm Personeller' : selectedPersonnel}</strong> • Toplam: <strong className="text-emerald-700">{reportUniqueDays} Gün ({filteredReportShifts.length} Mesai)</strong> • <strong className="text-amber-800">{formatMinutes(reportTotalMinutes)}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReportModal(false);
+                  setReportTargetDate('ALL');
+                }}
+                className="w-9 h-9 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body / Printable Content */}
+            <div className="report-modal-body p-4 sm:p-6 overflow-y-auto space-y-4 text-xs text-slate-800" id="printableShiftReport">
+              {/* Official Institutional Header */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
+                  <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200" style={{ width: '52px', height: '52px', minWidth: '52px', minHeight: '52px' }}>
+                    <img
+                      src="/edirne-sydv-logo.png"
+                      alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                      width={48}
+                      height={48}
+                      className="print-logo-img"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  </div>
+                  <div className="text-center flex-1 px-3">
+                    <p className="text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                      T.C. EDİRNE VALİLİĞİ
+                    </p>
+                    <h2 className="text-sm font-black text-slate-900 uppercase">
+                      EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+                    </h2>
+                    <h3 className="text-xs font-bold text-amber-800 uppercase mt-0.5">
+                      PERSONEL ÇALIŞMA SAATLERİ VE SAHA MESAİ TAKİP CETVELİ
+                    </h3>
+                  </div>
+                  <div className="w-14 h-14 shrink-0 flex flex-col items-center justify-center border-2 border-slate-400 rounded-lg text-[8px] font-black text-slate-700 leading-tight">
+                    <span>RESMİ</span>
+                    <span>ÇİZELGE</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600 pt-1">
+                  Bu tutanak ve çalışma cetveli, <strong>{reportTargetDate !== 'ALL' ? reportTargetDate : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong> kapsamında Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde kömür dağıtım ve saha faaliyetlerinde görev alan personelin çalışma saatlerini, görev alanlarını ve mesai sürelerini resmi olarak tevsik eder.
+                </p>
+              </div>
+
+              {/* Rapor İçi Özet Bilgi Şeridi */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Kayıtlı Çalışma Günü</span>
+                  <span className="text-base font-black text-slate-900">{reportUniqueDays} Gün</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 block">Toplam Çalışma Süresi</span>
+                  <span className="text-base font-black text-emerald-800">{formatMinutes(reportTotalMinutes)}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-center">
+                  <span className="text-[10px] uppercase font-bold text-blue-800 block">Kayıtlı Mesai Sayısı</span>
+                  <span className="text-base font-black text-blue-900">{filteredReportShifts.length} Kayıt</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-center">
+                  <span className="text-[10px] uppercase font-bold text-purple-800 block">Kapsanan Personel</span>
+                  <span className="text-base font-black text-purple-900 truncate">
+                    {selectedPersonnel === 'ALL' ? `${reportUniqueStaff.length} Personel` : selectedPersonnel}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tablo */}
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
+                      <th className="py-2 px-2 text-center w-8">#</th>
+                      <th className="py-2 px-2">Tarih & Gün</th>
+                      <th className="py-2 px-2">Personel Adı</th>
+                      <th className="py-2 px-2 text-center">Mesai Saatleri</th>
+                      <th className="py-2 px-2 text-center">Toplam Süre</th>
+                      <th className="py-2 px-2">Çalışılan Bölge / Mahalle</th>
+                      <th className="py-2 px-2">Faaliyet / Saha Notu</th>
+                      <th className="py-2 px-2 text-center">Personel İmzası</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredReportShifts.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-6 text-center text-slate-400 font-medium">
+                          Seçili kriterlerde kayıtlı mesai verisi bulunamadı.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredReportShifts.map((shift: any, idx: number) => {
+                        const sDate = new Date(shift.tarih + 'T00:00:00');
+                        const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[sDate.getDay()];
+                        return (
+                          <tr key={shift.id || shift._id || idx} className="hover:bg-slate-50/80">
+                            <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
+                            <td className="py-2 px-2 whitespace-nowrap">
+                              <span className="font-extrabold text-slate-900 block">{shift.tarih}</span>
+                              <span className="text-[10px] text-slate-500 font-medium">{dayName}</span>
+                            </td>
+                            <td className="py-2 px-2 font-bold text-slate-900 whitespace-nowrap">{shift.personel_adi}</td>
+                            <td className="py-2 px-2 text-center whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-800 text-[11px]">
+                                {shift.baslama_saati} — {shift.bitis_saati}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-center whitespace-nowrap">
+                              <span className="font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded text-[11px]">
+                                {formatMinutes(shift.toplam_dakika || 0)}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-slate-700 max-w-[160px] truncate" title={shift.mahalleler}>
+                              {shift.mahalleler ? (
+                                <span className="font-medium text-slate-800">📍 {shift.mahalleler}</span>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-slate-600 max-w-[180px] truncate" title={shift.notlar}>
+                              {shift.notlar || '-'}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <div className="w-16 h-6 border-b border-dashed border-slate-400 mx-auto"></div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {filteredReportShifts.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-slate-50 font-black text-slate-900 border-t-2 border-slate-300">
+                        <td colSpan={4} className="py-2.5 px-3 text-right uppercase tracking-wider">
+                          GENEL TOPLAM ({filteredReportShifts.length} Mesai Kaydı / {reportUniqueDays} Gün):
+                        </td>
+                        <td className="py-2.5 px-2 text-center">
+                          <span className="font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded text-xs">
+                            {formatMinutes(reportTotalMinutes)}
+                          </span>
+                        </td>
+                        <td colSpan={3} className="py-2.5 px-2 text-slate-500 font-medium text-[11px]">
+                          Resmi onay ve denetim için geçerlidir
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+
+              {/* Sign-off area (3-box Official Institutional Signature Block) */}
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-center print-signatures">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Görevi Yapan Personel</span>
+                  <p className="text-xs font-black text-slate-800 mt-1">
+                    {selectedPersonnel !== 'ALL' ? selectedPersonnel : (filteredReportShifts[0]?.personel_adi || 'Saha Personeli')}
+                  </p>
+                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Saha / Araç Amiri</span>
+                  <p className="text-xs font-black text-slate-800 mt-1">Yetkili Saha Amiri</p>
+                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Vakıf Müdürü / Onay</span>
+                  <p className="text-xs font-black text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
+                  <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza / Mühür</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="report-modal-footer p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 no-print">
+              <a
+                href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}${reportTargetDate !== 'ALL' ? `&date=${reportTargetDate}` : ''}`}
+                download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
+                className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs"
+              >
+                <Download className="w-4 h-4 text-emerald-700" />
+                <span>Excel Olarak İndir</span>
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReportModal(false);
+                    setReportTargetDate('ALL');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold transition-all"
+                >
+                  Kapat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Yazdır / PDF Kaydet</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

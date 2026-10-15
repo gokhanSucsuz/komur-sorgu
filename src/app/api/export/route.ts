@@ -301,7 +301,8 @@ export async function GET(request: NextRequest) {
       deliveryHistory: histCol, 
       activityLogs: actCol,
       seasonArchives: seasonCol,
-      archivedBeneficiaries: archBenCol
+      archivedBeneficiaries: archBenCol,
+      workShifts: shiftsCol
     } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
@@ -381,6 +382,120 @@ export async function GET(request: NextRequest) {
       return new NextResponse(new Uint8Array(buf), {
         headers: {
           'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx`),
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+    }
+
+    // 2.5. Personel Mesai ve Günlük Çalışma Saatleri Listesi
+    if (type === 'shifts') {
+      const month = searchParams.get('month') || 'ALL'; // 'YYYY-MM' or 'ALL'
+      const personel = searchParams.get('personel') || 'ALL';
+      const targetDate = searchParams.get('date');
+
+      const filter: any = {};
+      if (targetDate && targetDate !== 'ALL') {
+        filter.tarih = targetDate;
+      } else if (month && month !== 'ALL') {
+        filter.tarih = { $regex: `^${month}` };
+      }
+
+      const rawRecords = await shiftsCol
+        .find(filter)
+        .sort({ tarih: 1, baslama_saati: 1 })
+        .toArray();
+
+      let records = mapDocs(rawRecords);
+      if (personel && personel !== 'ALL') {
+        records = records.filter((s: any) => s.personel_adi === personel);
+      }
+
+      const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+      let totalMinutes = 0;
+      const uniqueDays = new Set<string>();
+
+      const exportData = records.map((s: any, idx: number) => {
+        const mins = Number(s.toplam_dakika) || 0;
+        totalMinutes += mins;
+        if (s.tarih) uniqueDays.add(s.tarih);
+
+        const sDate = new Date(s.tarih + 'T00:00:00');
+        const dayName = isNaN(sDate.getTime()) ? '-' : (dayNames[sDate.getDay()] || '-');
+
+        const hours = Math.floor(mins / 60);
+        const remMins = mins % 60;
+        const durationFmt = hours > 0 ? (remMins > 0 ? `${hours} sa ${remMins} dk` : `${hours} sa`) : `${remMins} dk`;
+
+        return {
+          'Sıra': idx + 1,
+          'Çalışma Tarihi': s.tarih || '-',
+          'Gün': dayName,
+          'Personel Adı': s.personel_adi || '-',
+          'Başlama Saati': s.baslama_saati || '-',
+          'Bitiş Saati': s.bitis_saati || '-',
+          'Toplam Süre': durationFmt,
+          'Toplam Dakika': mins,
+          'Çalışılan Mahalle / Bölge': s.mahalleler || '-',
+          'Açıklama / Saha Notu': s.notlar || '-',
+        };
+      });
+
+      // Summary row at the bottom
+      if (exportData.length > 0) {
+        const totHours = Math.floor(totalMinutes / 60);
+        const totRemMins = totalMinutes % 60;
+        const totDurationFmt = totHours > 0 ? (totRemMins > 0 ? `${totHours} sa ${totRemMins} dk` : `${totHours} sa`) : `${totRemMins} dk`;
+
+        exportData.push({
+          'Sıra': '' as any,
+          'Çalışma Tarihi': 'TOPLAM:',
+          'Gün': `${uniqueDays.size} Gün`,
+          'Personel Adı': `${records.length} Mesai Kaydı`,
+          'Başlama Saati': '',
+          'Bitiş Saati': '',
+          'Toplam Süre': totDurationFmt,
+          'Toplam Dakika': totalMinutes,
+          'Çalışılan Mahalle / Bölge': '',
+          'Açıklama / Saha Notu': '',
+        });
+      }
+
+      const colWidths = [
+        { wch: 6 },  // Sıra
+        { wch: 15 }, // Tarih
+        { wch: 14 }, // Gün
+        { wch: 22 }, // Personel
+        { wch: 14 }, // Başlama
+        { wch: 14 }, // Bitiş
+        { wch: 16 }, // Toplam Süre
+        { wch: 14 }, // Toplam Dakika
+        { wch: 32 }, // Mahalleler
+        { wch: 40 }, // Not
+      ];
+
+      const periodLabel = targetDate && targetDate !== 'ALL'
+        ? `Tarih: ${targetDate}`
+        : (month && month !== 'ALL' ? `Dönem/Ay: ${month}` : 'Tüm Dönemler');
+      const staffLabel = personel && personel !== 'ALL' ? `Personel: ${personel}` : 'Tüm Personeller';
+      const hoursAll = Math.floor(totalMinutes / 60);
+      const minsRemAll = totalMinutes % 60;
+
+      addStyledWorksheet(
+        workbook,
+        'PERSONEL ÇALIŞMA SAATLERİ VE SAHA MESAİ TAKİP CETVELİ',
+        `${periodLabel} | ${staffLabel} | Toplam: ${records.length} Kayıt (${uniqueDays.size} Gün, ${hoursAll} Saat ${minsRemAll} Dk)`,
+        'Mesai Cetveli',
+        exportData,
+        colWidths
+      );
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const safeMonth = (month || 'Genel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeStaff = (personel || 'Tum_Personel').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      return new NextResponse(new Uint8Array(buf), {
+        headers: {
+          'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Personel_Mesai_Raporu_${safeMonth}_${safeStaff}.xlsx`),
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       });

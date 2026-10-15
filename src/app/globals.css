@@ -149,9 +149,7 @@ button {
   border-bottom: 1px solid var(--border-subtle);
   padding: 8px 10px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  flex-direction: column;
   box-shadow: var(--shadow-sm);
   width: 100%;
   box-sizing: border-box;
@@ -160,7 +158,6 @@ button {
 @media (min-width: 640px) {
   .app-header {
     padding: 10px 16px;
-    gap: 12px;
   }
 }
 
@@ -174,6 +171,18 @@ button {
   max-width: 1440px;
   margin: 0 auto;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Hide scrollbars for native-feeling horizontal ribbons */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* App Container */
@@ -1117,6 +1126,57 @@ button {
 
   .print-signatures * {
     color: #111827 !important;
+  }
+
+  /* ====================================================
+     KURUMSAL RESMİ RAPOR VE TUTANAK MODAL BASKI DÜZENİ
+     ==================================================== */
+  body:has(.report-modal-overlay) .app-container,
+  body:has(.report-modal-overlay) .app-header,
+  body:has(.report-modal-overlay) footer,
+  body:has(.report-modal-overlay) .mobile-nav-bar {
+    display: none !important;
+  }
+
+  .report-modal-overlay {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    inset: auto !important;
+    backdrop-filter: none !important;
+    z-index: auto !important;
+  }
+
+  .report-modal-card {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .report-modal-header,
+  .report-modal-footer {
+    display: none !important;
+  }
+
+  .report-modal-body {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 }
 

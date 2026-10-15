@@ -494,6 +494,14 @@ export function extractStreetAndDoor(
   let explicitStreet = (rawStreet || '').toString().trim();
   let addr = (acikAdres || '').toString().trim();
 
+  // Defensive check: If explicit street or address is encrypted with AES-256-GCM, sanitize
+  if (explicitStreet.startsWith('ENC:GCM:v1:') || explicitStreet.startsWith('ENC:')) {
+    explicitStreet = '';
+  }
+  if (addr.startsWith('ENC:GCM:v1:') || addr.startsWith('ENC:')) {
+    addr = '';
+  }
+
   let street = '';
 
   if (explicitStreet) {
@@ -578,14 +586,44 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
   daireNo: number;
 } {
   if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, daireNo: 0 };
-  if (record.sokak && record.kapi_no !== undefined && record.kapi_no !== null) {
+
+  // Defensive decryption if record contains encrypted fields in Node.js server environment
+  let rawSokak = record.sokak;
+  if (typeof rawSokak === 'string' && (rawSokak.startsWith('ENC:GCM:v1:') || rawSokak.startsWith('ENC:'))) {
+    if (typeof window === 'undefined') {
+      try {
+        const { decryptField } = require('./crypto');
+        rawSokak = decryptField(rawSokak);
+      } catch {
+        rawSokak = '';
+      }
+    } else {
+      rawSokak = '';
+    }
+  }
+
+  let rawAdres = record.acik_adres;
+  if (typeof rawAdres === 'string' && (rawAdres.startsWith('ENC:GCM:v1:') || rawAdres.startsWith('ENC:'))) {
+    if (typeof window === 'undefined') {
+      try {
+        const { decryptField } = require('./crypto');
+        rawAdres = decryptField(rawAdres);
+      } catch {
+        rawAdres = '';
+      }
+    } else {
+      rawAdres = '';
+    }
+  }
+
+  if (rawSokak && !rawSokak.startsWith('ENC:') && record.kapi_no !== undefined && record.kapi_no !== null) {
     return {
-      sokak: record.sokak,
+      sokak: rawSokak,
       kapiNo: typeof record.kapi_no === 'number' ? record.kapi_no : (parseInt(record.kapi_no, 10) || 999999),
       daireNo: record.daire_no || 0,
     };
   }
-  return extractStreetAndDoor(record.acik_adres, record.sokak, record.hane_no, record.mahalle);
+  return extractStreetAndDoor(rawAdres, rawSokak, record.hane_no, record.mahalle);
 }
 
 /**

@@ -118,9 +118,14 @@ export default function AnalyticsPage({
     });
   }, [mahalleStats, mahalleSearch, mahalleFilterTip]);
 
-  // Filtered Sokak Stats
+  // Filtered Sokak Stats (guarantee clean, human-readable street names)
   const filteredSokakStats = useMemo(() => {
-    return sokakStats.filter((s) => {
+    return sokakStats.map((s) => {
+      const cleanSokak = s.sokak && !s.sokak.startsWith('ENC:GCM:v1:') && !s.sokak.startsWith('ENC:')
+        ? s.sokak
+        : 'Sokak / Mevkii Belirtilmemiş';
+      return { ...s, sokak: cleanSokak };
+    }).filter((s) => {
       const matchSearch = (s.sokak || '').toLocaleLowerCase('tr').includes(sokakSearch.toLocaleLowerCase('tr')) ||
         (s.mahalle || '').toLocaleLowerCase('tr').includes(sokakSearch.toLocaleLowerCase('tr'));
       const matchMahalle = selectedSokakMahalle === 'HEPSI' || s.mahalle === selectedSokakMahalle;
@@ -168,24 +173,24 @@ export default function AnalyticsPage({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="w-full sm:w-auto flex flex-wrap sm:flex-nowrap items-center gap-2">
           {onOpenSeasonModal && (
             <button
               type="button"
               onClick={onOpenSeasonModal}
-              className="px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold flex items-center gap-2 transition-all shadow-xs"
+              className="flex-1 sm:flex-initial justify-center px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold flex items-center gap-2 transition-all shadow-xs active:scale-95"
               title="Kömür Dağıtım Dönemleri ve Arşivlenmiş Sezon Raporları"
             >
-              <Archive className="w-4 h-4 text-blue-700" />
+              <Archive className="w-4 h-4 text-blue-700 shrink-0" />
               <span>Dönem & Arşiv Raporları</span>
             </button>
           )}
 
           <button
             onClick={handlePrint}
-            className="btn-primary lg:w-auto text-xs py-2.5 px-4 shadow-md shadow-amber-500/20 bg-gradient-to-r from-amber-500 to-orange-600 flex items-center gap-2 font-bold"
+            className="flex-1 sm:flex-initial justify-center btn-primary text-xs py-2.5 px-4 shadow-md shadow-amber-500/20 bg-gradient-to-r from-amber-500 to-orange-600 flex items-center gap-2 font-bold active:scale-95"
           >
-            <Printer className="w-4 h-4 text-white" />
+            <Printer className="w-4 h-4 text-white shrink-0" />
             <span>Resmi PDF Raporu Yazdır</span>
           </button>
         </div>
