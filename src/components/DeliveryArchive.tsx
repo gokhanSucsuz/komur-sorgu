@@ -382,15 +382,15 @@ export default function DeliveryArchive({
 
       {/* Günlük Teslimat Tutanağı ve Yazdırma Modalı */}
       {printDayGroup && (
-        <div className="report-modal-overlay fixed inset-0 z-50">
+        <div className="report-modal-overlay fixed inset-0 z-[100]">
           {/* Karartılmış Arka Plan (Tıklayınca Kapanır) */}
           <div 
-            className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs transition-opacity z-40"
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs transition-opacity z-[100]"
             onClick={() => setPrintDayGroup(null)}
           />
 
           {/* Modal Panel: Ekran sınırları içine (inset) kilitlenmiştir, asla yukarı veya aşağı taşamaz */}
-          <div className="fixed inset-2 sm:inset-4 md:inset-8 z-50 flex flex-col items-center pointer-events-none">
+          <div className="fixed inset-2 sm:inset-4 md:inset-6 z-[101] flex flex-col items-center pointer-events-none">
             <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-full flex flex-col shadow-2xl border border-slate-300 overflow-hidden pointer-events-auto">
               
               {/* Modal Header: Daima üstte sabit kalır */}
@@ -427,7 +427,7 @@ export default function DeliveryArchive({
               </div>
 
               {/* Modal Body / Printable Content (Yalnızca içerik kayar, başlık ve butonlar asla kaybolmaz) */}
-              <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-auto p-3.5 sm:p-6 space-y-4 text-xs text-slate-800 bg-white" id="printableDeliveryReport">
+              <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-auto p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" id="printableDeliveryReport">
                 {/* Official Institutional Header */}
                 <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                   <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">

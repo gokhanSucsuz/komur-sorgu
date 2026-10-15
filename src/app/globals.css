@@ -1204,19 +1204,48 @@ button {
 }
 
 /* Screen Modal Taşma Önleme & Kilitlenme Karşıtı Kesin Kurallar */
+/* Ekrandayken rapor modalı açıkken alttaki mobil gezinme çubuğunu gizle ki modalın butonlarını ve tablosunu örtmesin */
+body:has(.report-modal-overlay) .mobile-nav-bar {
+  display: none !important;
+}
+
 .report-modal-overlay {
+  z-index: 100 !important;
   overscroll-behavior: contain;
 }
 
 .report-modal-card {
   display: flex !important;
   flex-direction: column !important;
+  z-index: 101 !important;
 }
 
 .report-modal-body {
   flex: 1 1 0% !important;
   min-height: 0 !important;
   overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin !important;
+  scrollbar-color: #d97706 #f1f5f9 !important;
+}
+
+.report-modal-body::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.report-modal-body::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 4px !important;
+}
+
+.report-modal-body::-webkit-scrollbar-thumb {
+  background: #d97706 !important;
+  border-radius: 4px !important;
+}
+
+.report-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #b45309 !important;
 }
 
 .report-modal-header,

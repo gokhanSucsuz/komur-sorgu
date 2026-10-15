@@ -911,10 +911,10 @@ export default function ShiftPage({
       {/* RESMİ PERSONEL ÇALIŞMA SAATLERİ VE MESAİ RAPORU MODALI  */}
       {/* ======================================================== */}
       {showReportModal && (
-        <div className="report-modal-overlay fixed inset-0 z-50">
+        <div className="report-modal-overlay fixed inset-0 z-[100]">
           {/* Karartılmış Arka Plan (Tıklayınca Kapanır) */}
           <div 
-            className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs transition-opacity z-40"
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs transition-opacity z-[100]"
             onClick={() => {
               setShowReportModal(false);
               setReportTargetDate('ALL');
@@ -922,7 +922,7 @@ export default function ShiftPage({
           />
 
           {/* Modal Panel: Ekran sınırları içine kilitlenmiştir */}
-          <div className="fixed inset-2 sm:inset-4 md:inset-8 z-50 flex flex-col items-center pointer-events-none">
+          <div className="fixed inset-2 sm:inset-4 md:inset-6 z-[101] flex flex-col items-center pointer-events-none">
             <div className="report-modal-card bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-full flex flex-col shadow-2xl border border-slate-300 overflow-hidden pointer-events-auto">
               {/* Modal Header */}
               <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print">
@@ -961,7 +961,7 @@ export default function ShiftPage({
             </div>
 
             {/* Modal Body / Printable Content */}
-            <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 space-y-4 text-xs text-slate-800" id="printableShiftReport">
+            <div className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" id="printableShiftReport">
               {/* Official Institutional Header */}
               <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
