@@ -507,6 +507,40 @@ export default function ExcelImportPage({
                 </div>
               )}
 
+              {/* Mahallelere Göre Ayrıştırılan Kayıtlar (İki Sütun) */}
+              {uploadResult.mahalleOzet && uploadResult.mahalleOzet.length > 0 && (
+                <div className="pt-2.5 border-t border-emerald-200/90 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-extrabold text-emerald-950">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                      <span>Mahallelere Göre Ayrıştırılan Kayıtlar ({uploadResult.mahalleOzet.length} Mahalle):</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-emerald-800">
+                      Toplam {uploadResult.insertedCount} Hak Sahibi
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto pr-1">
+                    {uploadResult.mahalleOzet.map((mo: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="p-1.5 px-2.5 rounded-lg bg-white border border-emerald-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs"
+                      >
+                        <strong className="text-slate-900 truncate" title={mo.mahalle}>
+                          {mo.mahalle}:
+                        </strong>
+                        <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                          <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                          <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
+                            ({mo.sira_araligi})
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Sekmeli Excel İndirme Butonu */}
               {uploadResult.insertedCount > 0 && (
                 <div className="pt-2.5 border-t border-emerald-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -632,105 +666,126 @@ export default function ExcelImportPage({
             {uploadedBatches.map((batch) => (
               <div
                 key={batch.batch_id || batch.id}
-                className="p-4 rounded-xl bg-slate-50/80 border border-slate-200 hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+                className="p-4 rounded-xl bg-slate-50/80 border border-slate-200 hover:border-slate-300 transition-all flex flex-col gap-3 shadow-2xs"
               >
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span className="truncate max-w-[240px] sm:max-w-none">{batch.dosya_adi}</span>
-                    </span>
-                    <span className="text-[11px] font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                      {batch.created_at}
-                    </span>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="truncate max-w-[240px] sm:max-w-none">{batch.dosya_adi}</span>
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        {batch.created_at}
+                      </span>
+                    </div>
 
-                  <div className="flex items-center gap-2 flex-wrap text-xs">
-                    <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
-                      {batch.mevcut_kisi} Hak Sahibi Sistemde
-                    </span>
-                    {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
-                      <span className="font-extrabold text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200">
-                        {batch.elenen_kisi || batch.hata_kayit_sayisi} Elenen / Mükerrer
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                        {batch.mevcut_kisi} Hak Sahibi Sistemde
                       </span>
-                    )}
-                    <span className="font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                      {batch.bekleyen} Bekliyor
-                    </span>
-                    {batch.teslim_edilen > 0 ? (
-                      <span className="font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
-                        {batch.teslim_edilen} Hanesine Teslimat Yapılmış
-                      </span>
-                    ) : (
-                      <span className="font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                        Henüz teslimat yapılmadı
-                      </span>
-                    )}
-                  </div>
-
-                  {batch.mahalle_ozet && batch.mahalle_ozet.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {batch.mahalle_ozet.map((mo: any, moIdx: number) => (
-                        <span key={moIdx} className="text-[11px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-2xs">
-                          <strong className="text-slate-900">{mo.mahalle}:</strong>
-                          <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
-                          <span className="text-emerald-700 font-mono font-bold">({mo.sira_araligi})</span>
+                      {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
+                        <span className="font-extrabold text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200">
+                          {batch.elenen_kisi || batch.hata_kayit_sayisi} Elenen / Mükerrer
                         </span>
+                      )}
+                      <span className="font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        {batch.bekleyen} Bekliyor
+                      </span>
+                      {batch.teslim_edilen > 0 ? (
+                        <span className="font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                          {batch.teslim_edilen} Hanesine Teslimat Yapılmış
+                        </span>
+                      ) : (
+                        <span className="font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                          Henüz teslimat yapılmadı
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto flex-wrap">
+                    <a
+                      href={`/api/export?type=batch_by_mahalle&batchId=${encodeURIComponent(batch.batch_id || batch.id)}`}
+                      download={`Edirne_SYDV_${(batch.dosya_adi || 'Dosya').replace(/\.[^/.]+$/, '')}_Mahalle_Sekmeli.xlsx`}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                      title="Bu Excel dosyasındaki hak sahiplerini mahalle isimlerine göre sekmelere ayrılmış çalışma kitabı olarak indirin"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Mahallelere Göre İndir</span>
+                    </a>
+                    {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openEliminatedModal({
+                            batchId: batch.batch_id || batch.id,
+                            dosyaAdi: batch.dosya_adi,
+                            title: `"${batch.dosya_adi}" Dosyasından Elenen Kayıtlar (${batch.elenen_kisi || batch.hata_kayit_sayisi} Kayıt)`
+                          })}
+                          className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                          title="Bu dosyadan elenen kayıtları detaylı incele"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Elenenler ({batch.elenen_kisi || batch.hata_kayit_sayisi})</span>
+                        </button>
+
+                        <a
+                          href={`/api/export?type=errors&batchId=${encodeURIComponent(batch.batch_id || batch.id)}`}
+                          download={`Edirne_SYDV_Elenen_Kayitlar_${batch.batch_id || batch.id}.xlsx`}
+                          className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-2xs"
+                          title="Bu dosyanın elenen kayıtlarını Excel indir"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-700" />
+                          <span className="hidden sm:inline">Excel</span>
+                        </a>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchDeleteTarget(batch);
+                        setDeleteDeliveredChoice(false);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Geri Al</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mahalle Dağılımı (İki Sütun Alanı) */}
+                {batch.mahalle_ozet && batch.mahalle_ozet.length > 0 && (
+                  <div className="pt-2 border-t border-slate-200/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700">
+                      <span className="flex items-center gap-1 text-slate-800">
+                        <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>Mahallelere Göre Dağılım ({batch.mahalle_ozet.length} Mahalle):</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto pr-1">
+                      {batch.mahalle_ozet.map((mo: any, moIdx: number) => (
+                        <div
+                          key={moIdx}
+                          className="p-1.5 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs hover:border-slate-300 transition-colors"
+                        >
+                          <strong className="text-slate-900 truncate" title={mo.mahalle}>
+                            {mo.mahalle}:
+                          </strong>
+                          <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                            <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                            <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
+                              ({mo.sira_araligi})
+                            </span>
+                          </div>
+                        </div>
                       ))}
                     </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto flex-wrap">
-                  <a
-                    href={`/api/export?type=batch_by_mahalle&batchId=${encodeURIComponent(batch.batch_id || batch.id)}`}
-                    download={`Edirne_SYDV_${(batch.dosya_adi || 'Dosya').replace(/\.[^/.]+$/, '')}_Mahalle_Sekmeli.xlsx`}
-                    className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                    title="Bu Excel dosyasındaki hak sahiplerini mahalle isimlerine göre sekmelere ayrılmış çalışma kitabı olarak indirin"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
-                    <span>Mahallelere Göre İndir</span>
-                  </a>
-                  {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => openEliminatedModal({
-                          batchId: batch.batch_id || batch.id,
-                          dosyaAdi: batch.dosya_adi,
-                          title: `"${batch.dosya_adi}" Dosyasından Elenen Kayıtlar (${batch.elenen_kisi || batch.hata_kayit_sayisi} Kayıt)`
-                        })}
-                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                        title="Bu dosyadan elenen kayıtları detaylı incele"
-                      >
-                        <Eye className="w-4 h-4 text-amber-700" />
-                        <span>Elenenleri Gör ({batch.elenen_kisi || batch.hata_kayit_sayisi})</span>
-                      </button>
-
-                      <a
-                        href={`/api/export?type=errors&batchId=${encodeURIComponent(batch.batch_id || batch.id)}`}
-                        download={`Edirne_SYDV_Elenen_Kayitlar_${batch.batch_id || batch.id}.xlsx`}
-                        className="px-2.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-2xs"
-                        title="Bu dosyanın elenen kayıtlarını Excel indir"
-                      >
-                        <Download className="w-4 h-4 text-emerald-700" />
-                        <span className="hidden sm:inline">Excel</span>
-                      </a>
-                    </>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBatchDeleteTarget(batch);
-                      setDeleteDeliveredChoice(false);
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                  >
-                    <Trash2 className="w-4 h-4 text-rose-600" />
-                    <span>Geri Al</span>
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

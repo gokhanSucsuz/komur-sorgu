@@ -469,7 +469,7 @@ export default function DeliveryArchive({
 
               {/* Table of households */}
               <div className="overflow-x-auto rounded-xl sm:rounded-2xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse table-fixed min-w-[700px]">
+                <table className="w-full text-left text-xs border-collapse table-auto">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
                       <th className="py-2 px-2 text-center w-8">#</th>

@@ -795,7 +795,7 @@ export default function RoutePage({
                   </div>
                 </div>
 
-                {/* Günü Bitir & Listeyi İndir Butonları */}
+                {/* Rotayı Tamamla & Listeyi İndir Butonları */}
                 <div className="pt-2 flex flex-col gap-2">
                   <button
                     type="button"
@@ -803,7 +803,7 @@ export default function RoutePage({
                     className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Günü Bitir • Rotayı Tamamla ve Arşivle</span>
+                    <span>Rotayı Tamamla ve Arşivle</span>
                   </button>
 
                   <div className="flex items-center gap-2">
@@ -1820,7 +1820,7 @@ export default function RoutePage({
                   <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-900">Günlük Dağıtımı Bitir</h3>
+                  <h3 className="text-base font-extrabold text-slate-900">Rotayı Tamamla</h3>
                   <p className="text-xs text-slate-500">Rotayı tamamla ve arşive kaldır</p>
                 </div>
               </div>
@@ -1833,7 +1833,7 @@ export default function RoutePage({
               </button>
             </div>
 
-            {/* Gün Sonu Özeti */}
+            {/* Rota Özeti */}
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 mb-3">
               <h4 className="text-xs font-black uppercase text-slate-700">Dağıtım Sonuçları:</h4>
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -1889,7 +1889,7 @@ export default function RoutePage({
               <textarea
                 value={finalizeNote}
                 onChange={(e) => setFinalizeNote(e.target.value)}
-                placeholder="Örn: Günlük dağıtım tamamlandı. Kamyonda 15 torba kömür kaldı."
+                placeholder="Örn: Rota dağıtımı tamamlandı. Araçta 15 torba kömür kaldı."
                 rows={2}
                 className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-900 focus:outline-none focus:border-sky-500"
               />

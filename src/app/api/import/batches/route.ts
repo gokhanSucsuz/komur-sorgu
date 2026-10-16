@@ -44,6 +44,22 @@ export async function GET(request: NextRequest) {
           (l: any) => l.islem_sonucu === 'EKLENDİ_UYARILI'
         ).length;
 
+        let mahalleOzet = b.mahalle_ozet;
+        if ((!mahalleOzet || mahalleOzet.length === 0) && matchingBeneficiaries.length > 0) {
+          const mCounters = new Map<string, number>();
+          for (const item of matchingBeneficiaries) {
+            const m = item.mahalle || 'Merkez';
+            mCounters.set(m, (mCounters.get(m) || 0) + 1);
+          }
+          mahalleOzet = Array.from(mCounters.entries()).map(([m, cnt]) => ({
+            mahalle: m,
+            kayit_sayisi: cnt,
+            ek_liste_no: 0,
+            ek_liste_adi: 'Ana Liste',
+            sira_araligi: `1 - ${cnt}`,
+          }));
+        }
+
         return {
           ...b,
           mevcut_kisi: mevcutKisi,
@@ -54,6 +70,7 @@ export async function GET(request: NextRequest) {
           bekleyen: bekleyen,
           dagitilan_torba: dagitilanTorba,
           hata_kayit_sayisi: elenenSayisi || b.hatali_kisi || 0,
+          mahalle_ozet: mahalleOzet || [],
         };
       })
     );

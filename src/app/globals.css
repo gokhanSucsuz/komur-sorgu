@@ -1062,16 +1062,20 @@ body:has(.modal-overlay) .mobile-nav-bar {
    ==================================================== */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 8mm 6mm 10mm 6mm;
+    size: A4 landscape;
+    margin: 8mm 6mm 8mm 6mm;
   }
 
-  body {
+  html, body {
     background: #ffffff !important;
-    color: #111827 !important;
-    font-size: 10pt !important;
+    color: #0f172a !important;
+    font-size: 8.5pt !important;
     padding: 0 !important;
     margin: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -1083,6 +1087,9 @@ body:has(.modal-overlay) .mobile-nav-bar {
   nav,
   button {
     display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .app-container {
@@ -1097,7 +1104,7 @@ body:has(.modal-overlay) .mobile-nav-bar {
     color: #000000 !important;
     box-shadow: none !important;
     padding: 0 !important;
-    margin-bottom: 20px !important;
+    margin-bottom: 10px !important;
   }
 
   .print-only-header h1,
@@ -1117,65 +1124,140 @@ body:has(.modal-overlay) .mobile-nav-bar {
     color: #111827 !important;
   }
 
+  /* ====================================================
+     KURUMSAL RESMİ TABLO & BASKI DÜZENİ
+     Sütunların sıkışmasını ve başlıkların birbirine girmesini önler
+     ==================================================== */
   table {
     width: 100% !important;
     max-width: 100% !important;
-    table-layout: fixed !important;
+    min-width: 0 !important;
+    table-layout: auto !important;
     border-collapse: collapse !important;
     page-break-inside: auto !important;
+    break-inside: auto !important;
+    margin-bottom: 6px !important;
   }
 
   tr {
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
     page-break-after: auto !important;
+    break-after: auto !important;
   }
 
   thead {
     display: table-header-group !important;
   }
 
+  tbody {
+    display: table-row-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Sütun Başlıkları - Sıkışmayı ve kelime kırılmasını engeller */
   th {
-    background: #e5e7eb !important;
-    color: #111827 !important;
-    border-bottom: 2px solid #9ca3af !important;
-    font-weight: bold !important;
-    word-break: break-word !important;
-    overflow-wrap: break-word !important;
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+    border: 1px solid #94a3b8 !important;
+    font-weight: 800 !important;
+    font-size: 8pt !important;
+    padding: 4px 6px !important;
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    text-align: left;
+    vertical-align: middle !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  th.text-center, td.text-center {
+    text-align: center !important;
+  }
+
+  th.text-right, td.text-right {
+    text-align: right !important;
   }
 
   td {
-    border-bottom: 1px solid #e5e7eb !important;
-    color: #1f2937 !important;
-    word-break: break-word !important;
-    overflow-wrap: break-word !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #1e293b !important;
+    font-size: 8pt !important;
+    padding: 3.5px 6px !important;
+    vertical-align: middle !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    max-width: none !important;
   }
 
+  /* Tablo dışındaki taşma kutularının sayfa kırmasını ve boş sayfa oluşturmasını önle */
+  .overflow-hidden,
+  .overflow-x-auto,
+  div:has(> table) {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* İmza ve onay alanı */
   .print-signatures {
-    margin-top: 24px !important;
+    margin-top: 10px !important;
+    margin-bottom: 0 !important;
+    padding: 6px 12px !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
     background: transparent !important;
-    color: #111827 !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+  }
+
+  .print-signatures:last-child,
+  .report-modal-body > *:last-child {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
 
   .print-signatures.grid,
   .print-signatures .grid {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 16px !important;
+    gap: 14px !important;
   }
 
   .print-signatures * {
-    color: #111827 !important;
+    color: #0f172a !important;
   }
 
   /* ====================================================
      KURUMSAL RESMİ RAPOR VE TUTANAK MODAL BASKI DÜZENİ
+     Arka planı tamamen gizleyerek boş sayfa çıkmasını engeller
      ==================================================== */
+  body:has(.report-modal-overlay) > *:not(.report-modal-overlay),
+  body:has(.report-modal-overlay) main,
   body:has(.report-modal-overlay) .app-container,
   body:has(.report-modal-overlay) .app-header,
   body:has(.report-modal-overlay) footer,
   body:has(.report-modal-overlay) .mobile-nav-bar {
     display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
   }
 
   .report-modal-overlay {
@@ -1186,6 +1268,8 @@ body:has(.modal-overlay) .mobile-nav-bar {
     margin: 0 !important;
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
     inset: auto !important;
     backdrop-filter: none !important;
@@ -1198,6 +1282,7 @@ body:has(.modal-overlay) .mobile-nav-bar {
     width: 100% !important;
     max-height: none !important;
     height: auto !important;
+    min-height: 0 !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
@@ -1209,12 +1294,16 @@ body:has(.modal-overlay) .mobile-nav-bar {
   .report-modal-header,
   .report-modal-footer {
     display: none !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   .report-modal-body {
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
+    min-height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
   }

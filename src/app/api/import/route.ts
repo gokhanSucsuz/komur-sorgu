@@ -811,6 +811,7 @@ export async function POST(request: NextRequest) {
       mukerrerTcCount,
       mukerrerHaneCount,
       hataliCount,
+      mahalleOzet,
       elenenKayitlar, // Full array of eliminated records
       duplicateWarnings: elenenKayitlar, // backwards compatibility
       message: `${totalRows} satırdan ${insertedCount} hak sahibi başarıyla sisteme aktarıldı. ${elenenKayitlar.length} mükerrer kayıt elendi ve sisteme eklenmedi.`,
