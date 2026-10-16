@@ -1,13 +1,15 @@
-const CACHE_NAME = 'komur-takip-v1';
+const CACHE_NAME = 'komur-takip-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/manifest.json'
+  '/manifest.json',
+  '/edirne-sydv-logo.png',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(STATIC_ASSETS).catch(() => {});
     })
   );
   self.skipWaiting();
@@ -29,11 +31,19 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Let API requests always go network-first
-  if (event.request.url.includes('/api/')) {
+  // Only intercept GET requests over http/https
+  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
+    return;
+  }
+
+  const url = new URL(event.request.url);
+
+  // API requests: strictly network-only (KVKK & security compliance - never cache citizen PII on disk)
+  if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: 'Çevrimdışı (İnternet bağlantınızı kontrol edin)' }), {
+        return new Response(JSON.stringify({ success: false, error: 'Çevrimdışı (İnternet bağlantınızı kontrol edin)' }), {
+          status: 503,
           headers: { 'Content-Type': 'application/json' }
         });
       })
@@ -41,22 +51,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for pages with cache fallback
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request).then((cached) => {
-          return cached || fetch(event.request);
-        });
-      })
-  );
+  // Only cache immutable/static assets (icons, manifest, Next.js static bundles, images, fonts)
+  const isStaticAsset =
+    url.pathname.startsWith('/_next/static/') ||
+    url.pathname.startsWith('/icons/') ||
+    url.pathname === '/manifest.json' ||
+    /\.(png|jpg|jpeg|svg|ico|woff2?)$/i.test(url.pathname);
+
+  if (isStaticAsset) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, clone);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          return caches.match(event.request);
+        })
+    );
+  }
 });

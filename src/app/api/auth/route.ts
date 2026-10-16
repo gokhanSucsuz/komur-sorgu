@@ -213,10 +213,35 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    // 3. User Login Process (Single Device Enforcement & scrypt Hash Verification)
+    // 3. User Login Process (Brute-Force Protection, Single Device Enforcement & scrypt Hash Verification)
     const trimmedPass = (password || '').trim();
     if (!trimmedPass) {
       return NextResponse.json({ success: false, error: 'Lütfen şifre / PIN giriniz' }, { status: 400 });
+    }
+
+    const clientIpRaw = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
+    const clientIp = clientIpRaw.split(',')[0].trim();
+    const rateLimitKey = `${clientIp}::${trimmedUser.toLocaleLowerCase('tr-TR')}`;
+
+    const globalForAuth = globalThis as unknown as {
+      __loginAttempts?: Map<string, { count: number; firstAttemptAt: number; lockedUntil: number }>;
+    };
+    if (!globalForAuth.__loginAttempts) {
+      globalForAuth.__loginAttempts = new Map();
+    }
+    const attemptsMap = globalForAuth.__loginAttempts;
+    const nowMs = Date.now();
+    const attemptRecord = attemptsMap.get(rateLimitKey);
+
+    if (attemptRecord && attemptRecord.lockedUntil > nowMs) {
+      const waitSec = Math.ceil((attemptRecord.lockedUntil - nowMs) / 1000);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Çok fazla hatalı giriş denemesi tespit edildi! Güvenliğiniz için lütfen ${waitSec} saniye bekleyip tekrar deneyiniz.`,
+        },
+        { status: 429 }
+      );
     }
 
     const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
@@ -243,6 +268,31 @@ export async function POST(request: NextRequest) {
     }
 
     if (!rawUser || !isPasswordCorrect) {
+      const windowMs = 10 * 60 * 1000; // 10 minutes
+      const lockDurationMs = 5 * 60 * 1000; // 5 minutes lockout after 5 failed attempts
+      const prevCount =
+        attemptRecord && nowMs - attemptRecord.firstAttemptAt < windowMs
+          ? attemptRecord.count
+          : 0;
+      const nextCount = prevCount + 1;
+      const lockedUntil = nextCount >= 5 ? nowMs + lockDurationMs : 0;
+
+      attemptsMap.set(rateLimitKey, {
+        count: nextCount,
+        firstAttemptAt: prevCount === 0 ? nowMs : attemptRecord!.firstAttemptAt,
+        lockedUntil,
+      });
+
+      if (nextCount >= 5) {
+        await recordActivityLog({
+          kullanici_adi: trimmedUser || 'Bilinmeyen',
+          kullanici_rolu: role === 'ADMIN' ? 'ADMIN' : 'PERSONEL',
+          islem_tipi: 'GUVENLIK_ENGEL',
+          baslik: 'Çoklu Hatalı Şifre Denemesi Engellendi',
+          detay: `"${trimmedUser}" hesabı için (${clientIp}) arka arkaya ${nextCount} hatalı şifre denemesi yapıldığı için hesap 5 dakika süreyle korumaya alındı.`,
+        });
+      }
+
       return NextResponse.json(
         {
           success: false,
@@ -251,6 +301,9 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    // Reset failed attempts on successful authentication
+    attemptsMap.delete(rateLimitKey);
 
     const user = sanitizeUser(mapDoc(rawUser));
 
@@ -270,7 +323,6 @@ export async function POST(request: NextRequest) {
       ? rawUser.active_session_token
       : crypto.randomUUID();
     const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz / Tarayıcı';
-    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
     const { iso: nowIso } = getIstanbulDate();
 
     await usersCol.updateOne(
@@ -280,7 +332,7 @@ export async function POST(request: NextRequest) {
           active_session_token: newSessionToken,
           last_login_at: nowIso,
           last_device: userAgent.substring(0, 150),
-          last_ip: clientIp.split(',')[0].trim(),
+          last_ip: clientIp,
         },
       }
     );
@@ -309,6 +361,7 @@ export async function POST(request: NextRequest) {
 
       elevRes.cookies.set('komur_session_token', newSessionToken, {
         httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
         maxAge: 60 * 60 * 24 * 30,
@@ -342,6 +395,7 @@ export async function POST(request: NextRequest) {
     // Set HttpOnly Secure session cookie
     res.cookies.set('komur_session_token', newSessionToken, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 30, // 30 days

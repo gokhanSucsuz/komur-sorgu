@@ -12,6 +12,23 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
+          },
+        ],
+      },
+      {
         source: '/(.*)',
         headers: [
           {
@@ -29,6 +46,22 @@ const nextConfig: NextConfig = {
           {
             key: 'X-XSS-Protection',
             value: '1; mode=block',
+          },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(self), interest-cohort=()',
+          },
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'off',
+          },
+          {
+            key: 'X-Permitted-Cross-Domain-Policies',
+            value: 'none',
           },
         ],
       },

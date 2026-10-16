@@ -575,18 +575,12 @@ export default function Home() {
             return p;
           });
 
-          // SessionStorage önbelleğini güncelle
-          if (typeof window !== 'undefined') {
-            try {
-              sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
-                data: updated,
-                mahalleler,
-                eksikHaneler
-              }));
-            } catch (e) {
-              // Ignore quota errors
-            }
-          }
+          // RAM önbelleğini güncelle (KVKK uyumu: sessionStorage'a açık metin PII yazılmaz)
+          beneficiariesMemoryCacheRef.current = {
+            data: updated,
+            mahalleler,
+            eksikHaneler
+          };
           return updated;
         });
 
@@ -648,15 +642,11 @@ export default function Home() {
             }
             return p;
           });
-          if (typeof window !== 'undefined') {
-            try {
-              sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
-                data: updated,
-                mahalleler,
-                eksikHaneler
-              }));
-            } catch (err) {}
-          }
+          beneficiariesMemoryCacheRef.current = {
+            data: updated,
+            mahalleler,
+            eksikHaneler
+          };
           return updated;
         });
 
