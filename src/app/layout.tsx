@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import PwaRegister from "@/components/PwaRegister";
+import GlobalAlertManager from "@/components/GlobalAlertManager";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -48,6 +49,7 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body className="antialiased">
+        <GlobalAlertManager />
         <PwaRegister />
         {children}
       </body>

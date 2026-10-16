@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { PackageCheck, Minus, Plus, User, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus } from 'lucide-react';
 import { saveOfflineDelivery } from '@/lib/offlineSync';
+import { showAlert } from './GlobalAlertManager';
 
 interface DeliveryModalProps {
   beneficiary: any;
@@ -79,7 +80,11 @@ export default function DeliveryModal({
         navigator.vibrate([100, 50, 100]);
       }
 
-      alert(`📶 Çevrimdışı Teslimat Kaydedildi:\n${beneficiary.ad_soyad} için yapılan teslimat cihazınıza yerel olarak depolandı. İnternet bağlantısı kurulduğunda anlık olarak sisteme aktarılacaktır.`);
+      showAlert({
+        title: '📶 Çevrimdışı Teslimat Kaydedildi',
+        message: `${beneficiary.ad_soyad} için yapılan teslimat cihazınıza yerel olarak depolandı.\n\nİnternet bağlantısı kurulduğunda anlık olarak sisteme aktarılacaktır.`,
+        type: 'warning'
+      });
 
       onSuccess({
         ...beneficiary,
@@ -137,7 +142,11 @@ export default function DeliveryModal({
           notlar: notlar
         });
 
-        alert(`📶 İnternet Bağlantısı Kesildi:\nTeslimat işlemi cihazınıza güvenle kaydedildi. İnternet tekrar sağlandığında anlık olarak aktarılacaktır.`);
+        showAlert({
+          title: '📶 İnternet Bağlantısı Kesildi',
+          message: `Teslimat işlemi cihazınıza güvenle kaydedildi.\n\nİnternet tekrar sağlandığında anlık olarak sisteme aktarılacaktır.`,
+          type: 'warning'
+        });
 
         onSuccess({
           ...beneficiary,

@@ -9,6 +9,7 @@ import {
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
   List, LayoutGrid, Edit3
 } from 'lucide-react';
+import { showAlert, showToast } from './GlobalAlertManager';
 import { 
   getRecordPhones, 
   formatPhoneDisplay, 
@@ -125,6 +126,11 @@ export default function BeneficiaryList({
       if (data.success) {
         setSelectedIds(new Set());
         setIsBulkSignMode(false);
+        showToast({
+          type: 'success',
+          title: 'Toplu İmza Kaydedildi',
+          message: `${idsArray.length} hanenin imzası başarıyla kaydedildi.`
+        });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent('komur_bulk_signed', {
@@ -133,10 +139,18 @@ export default function BeneficiaryList({
           );
         }
       } else {
-        alert(data.error || 'İmzalar toplu olarak kaydedilemedi');
+        showAlert({
+          title: 'İşlem Başarısız',
+          message: data.error || 'İmzalar toplu olarak kaydedilemedi',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsBulkSignLoading(false);
     }

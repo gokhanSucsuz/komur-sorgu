@@ -22,6 +22,7 @@ import {
   Download,
   FileText
 } from 'lucide-react';
+import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
 
 interface ShiftPageProps {
   userRole: 'ADMIN' | 'PERSONEL';
@@ -241,7 +242,11 @@ export default function ShiftPage({
     });
 
     if (conflict) {
-      alert(`Aynı saatlere denk gelen (${conflict.baslama_saati} - ${conflict.bitis_saati}) başka bir mesai kaydı mevcuttur. Çakışan saatlerde güncelleme yapılamaz.`);
+      showAlert({
+        title: 'Çakışan Mesai Kaydı',
+        message: `Aynı saatlere denk gelen (${conflict.baslama_saati} - ${conflict.bitis_saati}) başka bir mesai kaydı mevcuttur. Çakışan saatlerde güncelleme yapılamaz.`,
+        type: 'warning'
+      });
       return;
     }
 
@@ -270,10 +275,19 @@ export default function ShiftPage({
         throw new Error(data.error || 'Güncellenemedi.');
       }
 
+      showToast({
+        type: 'success',
+        title: 'Mesai Güncellendi',
+        message: 'Mesai kaydı başarıyla güncellendi.'
+      });
       setEditingShift(null);
       await fetchShifts();
     } catch (err: any) {
-      alert(err.message || 'Güncelleme hatası.');
+      showAlert({
+        title: 'Hata',
+        message: err.message || 'Güncelleme hatası.',
+        type: 'error'
+      });
     } finally {
       setIsUpdating(false);
     }
@@ -281,9 +295,13 @@ export default function ShiftPage({
 
   // Handle Delete Shift
   const handleDeleteShift = async (shift: any) => {
-    const confirmPrompt = window.confirm(
-      `${shift.tarih} tarihli "${shift.personel_adi}" çalışma saati kaydını (${shift.baslama_saati} - ${shift.bitis_saati}) silmek istediğinize emin misiniz?`
-    );
+    const confirmPrompt = await showConfirm({
+      title: 'Mesai Kaydını Sil',
+      message: `${shift.tarih} tarihli "${shift.personel_adi}" çalışma saati kaydını (${shift.baslama_saati} - ${shift.bitis_saati}) silmek istediğinize emin misiniz?`,
+      type: 'warning',
+      confirmText: 'Evet, Sil',
+      cancelText: 'Vazgeç'
+    });
     if (!confirmPrompt) return;
 
     try {
@@ -305,9 +323,18 @@ export default function ShiftPage({
         throw new Error(data.error || 'Silinemedi.');
       }
 
+      showToast({
+        type: 'info',
+        title: 'Mesai Silindi',
+        message: 'Mesai kaydı başarıyla silindi.'
+      });
       await fetchShifts();
     } catch (err: any) {
-      alert(err.message || 'Silme hatası.');
+      showAlert({
+        title: 'Hata',
+        message: err.message || 'Silme hatası.',
+        type: 'error'
+      });
     }
   };
 

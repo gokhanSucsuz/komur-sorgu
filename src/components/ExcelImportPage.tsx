@@ -6,6 +6,7 @@ import {
   Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
   Eye, Phone, MapPin, Copy, Check, Users, Info, Hash, Building2, Trees
 } from 'lucide-react';
+import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 
 const isKoySettlement = (name: string, tip?: string) => {
   if (tip === 'KOY') return true;
@@ -242,19 +243,39 @@ export default function ExcelImportPage({
         fetchUploadedBatches();
         fetchLogs();
         onRefreshAll();
-        alert(data.message || 'Excel dosyasına ait kayıtlar başarıyla silindi.');
+        showToast({
+          type: 'success',
+          title: 'Dosya Kayıtları Silindi',
+          message: data.message || 'Excel dosyasına ait kayıtlar başarıyla silindi.'
+        });
       } else {
-        alert(data.error || 'Dosya kayıtları silinemedi.');
+        showAlert({
+          title: 'Hata',
+          message: data.error || 'Dosya kayıtları silinemedi.',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert(err.message || 'Bağlantı hatası oluştu.');
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: err.message || 'Bağlantı hatası oluştu.',
+        type: 'error'
+      });
     } finally {
       setIsDeletingBatch(false);
     }
   };
 
   const handleClearLogs = async () => {
-    if (!confirm('Yükleme hata kayıtlarını temizlemek istediğinize emin misiniz?')) return;
+    const confirmed = await showConfirm({
+      title: 'Hata Kayıtlarını Temizle',
+      message: 'Yükleme hata kayıtlarını temizlemek istediğinize emin misiniz? Bu işlem geri alınamaz.',
+      type: 'warning',
+      confirmText: 'Evet, Temizle',
+      cancelText: 'Vazgeç'
+    });
+    if (!confirmed) return;
+
     try {
       const res = await fetch('/api/import/logs', { 
         method: 'DELETE',
@@ -264,10 +285,19 @@ export default function ExcelImportPage({
       });
       const data = await res.json();
       if (data.success) {
+        showToast({
+          type: 'info',
+          title: 'Kayıtlar Temizlendi',
+          message: 'Yükleme hata kayıtları temizlendi.'
+        });
         fetchLogs();
       }
     } catch (err) {
-      alert('Kayıtlar temizlenemedi');
+      showAlert({
+        title: 'Hata',
+        message: 'Kayıtlar temizlenemedi',
+        type: 'error'
+      });
     }
   };
 

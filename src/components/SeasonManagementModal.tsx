@@ -19,6 +19,7 @@ import {
   Clock,
   HelpCircle
 } from 'lucide-react';
+import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
 
 interface SeasonManagementModalProps {
   isOpen: boolean;
@@ -185,13 +186,17 @@ export default function SeasonManagementModal({
       return;
     }
 
-    const confirmPrompt = window.confirm(
-      `DİKKAT: "${activeSeason?.kod}" dönemi kalıcı olarak arşivlenecektir!\n\n` +
-      `- Tüm teslimat ve mahalle kayıtları arşive kilitlenecek.\n` +
-      `- Aktif hak sahibi listesi sıfırlanacak.\n` +
-      `- Yeni dönem "${newSeasonKod}" olarak başlayacak.\n\n` +
-      `Bu işlemi başlatmak istediğinizden emin misiniz?`
-    );
+    const confirmPrompt = await showConfirm({
+      title: 'Dönemi Kalıcı Olarak Arşivle',
+      message: `DİKKAT: "${activeSeason?.kod}" dönemi kalıcı olarak arşivlenecektir!\n\n` +
+        `• Tüm teslimat ve mahalle kayıtları arşive kilitlenecek.\n` +
+        `• Aktif hak sahibi listesi sıfırlanacak.\n` +
+        `• Yeni dönem "${newSeasonKod}" olarak başlayacak.\n\n` +
+        `Bu işlemi başlatmak istediğinizden emin misiniz?`,
+      type: 'warning',
+      confirmText: 'Evet, Dönemi Arşivle',
+      cancelText: 'Vazgeç'
+    });
 
     if (!confirmPrompt) return;
 
@@ -220,6 +225,11 @@ export default function SeasonManagementModal({
         throw new Error(data.error || 'Dönem arşivlenemedi.');
       }
 
+      showToast({
+        type: 'success',
+        title: 'Dönem Arşivlendi',
+        message: data.message || 'Dönem başarıyla arşivlendi ve yeni dönem başlatıldı!'
+      });
       setSuccessMsg(data.message || 'Dönem başarıyla arşivlendi ve yeni dönem başlatıldı!');
       setConfirmCheckbox(false);
       setActiveTab('ARCHIVES');
@@ -241,10 +251,18 @@ export default function SeasonManagementModal({
       if (data.success && data.archive) {
         setSelectedArchiveDetail(data.archive);
       } else {
-        alert(data.error || 'Arşiv detayı yüklenemedi.');
+        showAlert({
+          title: 'Hata',
+          message: data.error || 'Arşiv detayı yüklenemedi.',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert(err.message || 'Bağlantı hatası.');
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: err.message || 'Bağlantı hatası.',
+        type: 'error'
+      });
     } finally {
       setIsLoadingArchiveDetail(false);
     }

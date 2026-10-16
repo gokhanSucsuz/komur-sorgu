@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter } from 'lucide-react';
+import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 
 interface TonnagePageProps {
   trucks: any[];
@@ -151,7 +152,14 @@ export default function TonnagePage({
   };
 
   const handleDeleteTruck = async (id: number, plakaText: string) => {
-    if (!confirm(`${plakaText} plakalı tır kaydını silmek istediğinize emin misiniz?`)) {
+    const confirmed = await showConfirm({
+      title: 'Tır Kaydını Sil',
+      message: `"${plakaText}" plakalı tır kaydını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+      type: 'warning',
+      confirmText: 'Evet, Sil',
+      cancelText: 'Vazgeç'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -159,10 +167,25 @@ export default function TonnagePage({
       const res = await fetch(`/api/trucks?id=${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
+        showToast({
+          type: 'success',
+          title: 'Kayıt Silindi',
+          message: `"${plakaText}" plakalı tır kaydı silindi.`
+        });
         onRefresh();
+      } else {
+        showAlert({
+          title: 'Hata',
+          message: data.error || 'Silme işleminde hata oluştu',
+          type: 'error'
+        });
       }
-    } catch (err) {
-      alert('Silme işleminde hata oluştu');
+    } catch (err: any) {
+      showAlert({
+        title: 'Hata',
+        message: err.message || 'Silme işleminde hata oluştu',
+        type: 'error'
+      });
     }
   };
 

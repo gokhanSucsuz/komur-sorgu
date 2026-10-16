@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Route as RouteIcon, MapPin, Navigation, CheckCircle2, AlertTriangle, XCircle,
@@ -11,6 +11,7 @@ import {
   Undo2, Lock, Unlock
 } from 'lucide-react';
 import CancelModal from '@/components/CancelModal';
+import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
 
 interface RoutePageProps {
@@ -133,8 +134,9 @@ export default function RoutePage({
   }, [printRoute]);
 
   // Fetch routes data
-  const fetchRoutes = useCallback(async () => {
-    setIsLoading(true);
+  const fetchRoutes = useCallback(async (silentOrEvent?: boolean | any) => {
+    const silent = typeof silentOrEvent === 'boolean' ? silentOrEvent : false;
+    if (!silent) setIsLoading(true);
     try {
       const res = await fetch('/api/routes');
       const data = await res.json();
@@ -153,7 +155,7 @@ export default function RoutePage({
     } catch (err) {
       console.error('Error fetching routes:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -175,6 +177,66 @@ export default function RoutePage({
     fetchRoutes();
     fetchPendingBeneficiaries();
   }, [fetchRoutes, fetchPendingBeneficiaries]);
+
+  // Real-time synchronization polling for Route Page:
+  // Detects when another staff starts/exits route mode, locks/unlocks a route, or updates a stop
+  const lastSyncPulseRef = useRef<string>('');
+  const wasLockedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkPulse = async () => {
+      if (typeof window !== 'undefined' && !navigator.onLine) return;
+      try {
+        const res = await fetch('/api/sync/status');
+        const data = await res.json();
+        if (data.success && data.lastSyncTime) {
+          if (!lastSyncPulseRef.current) {
+            lastSyncPulseRef.current = data.lastSyncTime;
+          } else if (data.lastSyncTime !== lastSyncPulseRef.current) {
+            lastSyncPulseRef.current = data.lastSyncTime;
+            if (isMounted) {
+              await fetchRoutes(true); // Silent fetch without spinner
+            }
+          }
+        }
+      } catch (e) {
+        // blip or offline
+      }
+    };
+
+    // Fast poll every 2.5 seconds while viewing routes
+    const interval = setInterval(checkPulse, 2500);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkPulse();
+      }
+    };
+
+    window.addEventListener('focus', checkPulse);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', checkPulse);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchRoutes]);
+
+  // Notify when a route that was locked by another staff is now unlocked
+  useEffect(() => {
+    if (wasLockedRef.current && !isRouteLockedByOther && activeRoute) {
+      showToast({
+        type: 'success',
+        title: '🟢 Rota Kilidi Kaldırıldı',
+        message: `"${activeRoute.rota_adi}" rotası serbest bırakıldı. Artık Rota Modunu başlatabilirsiniz.`
+      });
+    }
+    wasLockedRef.current = isRouteLockedByOther;
+  }, [isRouteLockedByOther, activeRoute]);
 
   // Open Create Route Modal
   const handleOpenCreateModal = async () => {
@@ -260,16 +322,24 @@ export default function RoutePage({
       });
       const lockData = await lockRes.json();
       if (!lockData.success) {
-        alert(
-          lockData.error ||
-          'Bu rota şu anda başka bir personel tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel bir rotayı kullanabilir.'
-        );
-        await fetchRoutes();
+        showAlert({
+          title: '🔒 Rota Kullanımda & Kilitli',
+          message:
+            lockData.error ||
+            'Bu rota şu anda başka bir personel tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel bir rotayı kullanabilir.',
+          type: 'lock',
+          badge: lockData.locked_by || routeLockedByName || undefined
+        });
+        await fetchRoutes(true);
         return;
       }
     } catch (err: any) {
       console.error('Lock acquisition error:', err);
-      alert('Rota kilidi kontrolünde hata oluştu: ' + err.message);
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: 'Rota kilidi kontrolünde hata oluştu: ' + err.message,
+        type: 'error'
+      });
       return;
     } finally {
       setIsActionLoading(false);
@@ -385,7 +455,14 @@ export default function RoutePage({
 
   // Admin Force Unlock
   const handleForceUnlockRoute = async (routeId: string) => {
-    if (!confirm('Bu rotanın kilidini kaldırmak istediğinize emin misiniz? Diğer personelin Rota Modu oturumu sonlandırılabilir.')) {
+    const confirmed = await showConfirm({
+      title: 'Rotanın Kilidini Kaldır',
+      message: `Bu rotanın kilidini zorla kaldırmak istediğinize emin misiniz?\n\n"${routeLockedByName || 'Diğer personel'}" personeline ait aktif Rota Modu oturumu sonlandırılabilir.`,
+      type: 'warning',
+      confirmText: 'Evet, Kilidi Kaldır',
+      cancelText: 'Vazgeç'
+    });
+    if (!confirmed) {
       return;
     }
     setIsActionLoading(true);
@@ -402,13 +479,26 @@ export default function RoutePage({
       });
       const data = await res.json();
       if (data.success) {
+        showToast({
+          type: 'success',
+          title: 'Kilit Kaldırıldı',
+          message: 'Rota kilidi başarıyla kaldırıldı.'
+        });
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'Kilit kaldırılamadı');
+        showAlert({
+          title: 'İşlem Başarısız',
+          message: data.error || 'Kilit kaldırılamadı',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -468,10 +558,18 @@ export default function RoutePage({
         );
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'İmza durumu güncellenemedi');
+        showAlert({
+          title: 'İmza Güncellenemedi',
+          message: data.error || 'İmza durumu güncellenemedi',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -498,11 +596,19 @@ export default function RoutePage({
       if (routeModeDeferType === 'PARTIAL') {
         const parsed = parseInt(routeModeTorba, 10);
         if (isNaN(parsed) || parsed <= 0) {
-          alert('Kısmi teslimat için en az 1 torba girilmelidir. Eğer şu an hiç kömür bırakılamadıysa "Şu An Teslim Edilemedi (0 Torba)" seçeneğini seçiniz.');
+          showAlert({
+            title: 'Torba Sayısı Gerekli',
+            message: 'Kısmi teslimat için en az 1 torba girilmelidir. Eğer şu an hiç kömür bırakılamadıysa "Şu An Teslim Edilemedi (0 Torba)" seçeneğini seçiniz.',
+            type: 'warning'
+          });
           return;
         }
         if (parsed >= hedef) {
-          alert(`Hedef kota (${hedef} torba) kadar giriş yaptınız. Tam teslimat için "Tam Teslimat Yap" butonunu kullanınız.`);
+          showAlert({
+            title: 'Tam Teslimat Uyarısı',
+            message: `Hedef kota (${hedef} torba) kadar giriş yaptınız. Tam teslimat için "Tam Teslimat Yap" butonunu kullanınız.`,
+            type: 'warning'
+          });
           return;
         }
         targetDurum = 'EKSIK';
@@ -539,7 +645,11 @@ export default function RoutePage({
 
       const data = await res.json();
       if (!data.success) {
-        alert(data.error || 'Durak güncellenemedi');
+        showAlert({
+          title: 'Durak Güncellenemedi',
+          message: data.error || 'Durak güncellenemedi',
+          type: 'error'
+        });
         return;
       }
 
@@ -622,7 +732,11 @@ export default function RoutePage({
       await fetchRoutes();
       if (onRefreshAll) onRefreshAll();
     } catch (err: any) {
-      alert('Bağlantı hatası: ' + err.message);
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: 'Bağlantı hatası: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -715,7 +829,11 @@ export default function RoutePage({
   // Submit Create Route
   const handleCreateRouteSubmit = async (startInRouteMode: boolean = true) => {
     if (selectedBeneficiaryIds.length === 0) {
-      alert('Lütfen rotaya eklenecek en az bir hane seçiniz.');
+      showAlert({
+        title: 'Hane Seçimi Gerekli',
+        message: 'Lütfen rotaya eklenecek en az bir hane seçiniz.',
+        type: 'warning'
+      });
       return;
     }
 
@@ -747,10 +865,18 @@ export default function RoutePage({
         }
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'Rota oluşturulamadı');
+        showAlert({
+          title: 'Rota Oluşturulamadı',
+          message: data.error || 'Rota oluşturulamadı',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Bağlantı hatası: ' + err.message);
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: 'Bağlantı hatası: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -759,7 +885,12 @@ export default function RoutePage({
   // Move Stop Up or Down in order
   const handleMoveStop = async (currentIndex: number, direction: 'UP' | 'DOWN') => {
     if (isRouteLockedByOther) {
-      alert(`Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel rotaya müdahale edebilir.`);
+      showAlert({
+        title: '🔒 Rota Kullanımda & Kilitli',
+        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
+        type: 'lock',
+        badge: routeLockedByName || undefined
+      });
       return;
     }
     if (!activeRoute || !activeRoute.duraklar) return;
@@ -804,7 +935,12 @@ export default function RoutePage({
     mode: 'TAMAMLANDI' | 'EKSIK' | 'TESLIM_EDILEMEDI'
   ) => {
     if (isRouteLockedByOther) {
-      alert(`Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel rotaya müdahale edebilir.`);
+      showAlert({
+        title: '🔒 Rota Kullanımda & Kilitli',
+        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
+        type: 'lock',
+        badge: routeLockedByName || undefined
+      });
       return;
     }
     const hedef = stop.hedef_torba || 34;
@@ -830,7 +966,11 @@ export default function RoutePage({
     if (mode === 'EKSIK') {
       const parsedTorba = parseInt(stopTorbaInput, 10);
       if (isNaN(parsedTorba) || parsedTorba <= 0) {
-        alert('Eksik teslimat için en az 1 torba girilmelidir. Hiç kömür verilemediyse "Verilemedi" seçeneğini kullanınız.');
+        showAlert({
+          title: 'Torba Sayısı Gerekli',
+          message: 'Eksik teslimat için en az 1 torba girilmelidir. Hiç kömür verilemediyse "Verilemedi" seçeneğini kullanınız.',
+          type: 'warning'
+        });
         return;
       }
     }
@@ -873,10 +1013,18 @@ export default function RoutePage({
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'İşlem güncellenemedi');
+        showAlert({
+          title: 'İşlem Başarısız',
+          message: data.error || 'İşlem güncellenemedi',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -885,12 +1033,24 @@ export default function RoutePage({
   // Remove Stop from active route
   const handleRemoveStop = async (index: number, stop: any) => {
     if (isRouteLockedByOther) {
-      alert(`Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel rotaya müdahale edebilir.`);
+      showAlert({
+        title: '🔒 Rota Kullanımda & Kilitli',
+        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
+        type: 'lock',
+        badge: routeLockedByName || undefined
+      });
       return;
     }
     if (!activeRoute) return;
     const confirmMsg = `"${stop.ad_soyad}" (${stop.mahalle || ''}) hanesini bu rotadan çıkarmak istiyor musunuz?\n\nBu hane genel listede teslimat bekliyor olarak kalacaktır. Kalan hanelerin teslimatı bittiğinde rota tamamlanabilir.`;
-    if (!window.confirm(confirmMsg)) return;
+    const confirmed = await showConfirm({
+      title: 'Durağı Rotadan Çıkar',
+      message: confirmMsg,
+      type: 'warning',
+      confirmText: 'Evet, Çıkar',
+      cancelText: 'Vazgeç'
+    });
+    if (!confirmed) return;
 
     setIsActionLoading(true);
     try {
@@ -906,13 +1066,26 @@ export default function RoutePage({
       });
       const data = await res.json();
       if (data.success) {
+        showToast({
+          type: 'info',
+          title: 'Durak Çıkarıldı',
+          message: `"${stop.ad_soyad}" rotadan çıkarıldı.`
+        });
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'Durak rotadan çıkarılamadı');
+        showAlert({
+          title: 'İşlem Başarısız',
+          message: data.error || 'Durak rotadan çıkarılamadı',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -921,7 +1094,12 @@ export default function RoutePage({
   // Finalize Route
   const handleFinalizeRouteSubmit = async () => {
     if (isRouteLockedByOther) {
-      alert(`Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel rotaya müdahale edebilir.`);
+      showAlert({
+        title: '🔒 Rota Kullanımda & Kilitli',
+        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
+        type: 'lock',
+        badge: routeLockedByName || undefined
+      });
       return;
     }
     if (!activeRoute) return;
@@ -936,7 +1114,11 @@ export default function RoutePage({
     });
 
     if (noCoalStops.length > 0) {
-      alert(`Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmesi gerekmektedir.\n\nHiç kömür teslim edilmeyen ${noCoalStops.length} hane bulunmaktadır. Eksik kömür verilen hane olsa bile rota tamamlanabilir; ancak hiç kömür verilmeyen hane var ise tamamlanamaz.`);
+      showAlert({
+        title: 'Eksik Teslimat Uyarısı',
+        message: `Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmesi gerekmektedir.\n\nHiç kömür teslim edilmeyen ${noCoalStops.length} hane bulunmaktadır. Eksik kömür verilen hane olsa bile rota tamamlanabilir; ancak hiç kömür verilmeyen hane var ise tamamlanamaz.`,
+        type: 'warning'
+      });
       return;
     }
 
@@ -968,10 +1150,18 @@ export default function RoutePage({
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'Rota tamamlanamadı');
+        showAlert({
+          title: 'Rota Tamamlanamadı',
+          message: data.error || 'Rota tamamlanamadı',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -980,7 +1170,12 @@ export default function RoutePage({
   // Delete Route
   const handleDeleteRoute = async () => {
     if (isRouteLockedByOther && userRole !== 'ADMIN') {
-      alert(`Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır ve silinemez.`);
+      showAlert({
+        title: '🔒 Rota Kullanımda & Kilitli',
+        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır ve silinemez.`,
+        type: 'lock',
+        badge: routeLockedByName || undefined
+      });
       return;
     }
     if (!activeRoute) return;
@@ -1010,10 +1205,18 @@ export default function RoutePage({
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
-        alert(data.error || 'Rota silinemedi');
+        showAlert({
+          title: 'Rota Silinemedi',
+          message: data.error || 'Rota silinemedi',
+          type: 'error'
+        });
       }
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + err.message,
+        type: 'error'
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -1021,7 +1224,14 @@ export default function RoutePage({
 
   // Delete Archived Route
   const handleDeleteArchivedRoute = async (routeId: string) => {
-    if (!confirm('Bu arşiv kaydını silmek istediğinize emin misiniz?')) return;
+    const confirmed = await showConfirm({
+      title: 'Arşiv Kaydını Sil',
+      message: 'Bu arşiv kaydını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
+      type: 'warning',
+      confirmText: 'Evet, Sil',
+      cancelText: 'Vazgeç'
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
@@ -1033,10 +1243,25 @@ export default function RoutePage({
       });
       const data = await res.json();
       if (data.success) {
+        showToast({
+          type: 'info',
+          title: 'Arşiv Silindi',
+          message: 'Arşivlenmiş rota başarıyla silindi.'
+        });
         await fetchRoutes();
+      } else {
+        showAlert({
+          title: 'Hata',
+          message: data.error || 'Arşiv kaydı silinemedi',
+          type: 'error'
+        });
       }
-    } catch (err) {
-      console.error('Error deleting archived route:', err);
+    } catch (err: any) {
+      showAlert({
+        title: 'Hata',
+        message: 'Hata: ' + (err?.message || 'Bilinmeyen hata'),
+        type: 'error'
+      });
     }
   };
 
@@ -1115,7 +1340,7 @@ export default function RoutePage({
 
           <button
             type="button"
-            onClick={fetchRoutes}
+            onClick={() => fetchRoutes()}
             disabled={isLoading}
             className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-all active:scale-95"
             title="Yenile"
@@ -1943,7 +2168,12 @@ export default function RoutePage({
                                   type="button"
                                   onClick={() => {
                                     if (isRouteLockedByOther) {
-                                      alert(`Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır. Aynı anda yalnızca bir personel rotaya müdahale edebilir.`);
+                                      showAlert({
+                                        title: '🔒 Rota Kullanımda & Kilitli',
+                                        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
+                                        type: 'lock',
+                                        badge: routeLockedByName || undefined
+                                      });
                                       return;
                                     }
                                     setCancelStopTarget(stop);

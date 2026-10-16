@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Users, UserPlus, Edit3, Trash2, Key, Phone, Shield, User, X, Check, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 
 interface PersonnelManagementModalProps {
   isOpen: boolean;
@@ -135,7 +136,14 @@ export default function PersonnelManagementModal({
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`${name} isimli personeli silmek istediğinize emin misiniz?`)) return;
+    const confirmed = await showConfirm({
+      title: 'Personeli Sil',
+      message: `"${name}" isimli personeli silmek istediğinize emin misiniz?\n\nBu işlem personelin sisteme giriş yetkisini iptal edecektir.`,
+      type: 'warning',
+      confirmText: 'Evet, Sil',
+      cancelText: 'Vazgeç'
+    });
+    if (!confirmed) return;
 
     try {
       const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
@@ -147,10 +155,19 @@ export default function PersonnelManagementModal({
       if (!data.success) {
         throw new Error(data.error || 'Silinemedi');
       }
+      showToast({
+        type: 'success',
+        title: 'Personel Silindi',
+        message: `"${name}" personeli başarıyla silindi.`
+      });
       fetchPersonnel();
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      alert(err.message || 'Silme işleminde hata oluştu');
+      showAlert({
+        title: 'Hata',
+        message: err.message || 'Silme işleminde hata oluştu',
+        type: 'error'
+      });
     }
   };
 
