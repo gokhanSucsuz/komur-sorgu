@@ -17,9 +17,9 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action') || 'all';
 
-    // 1. Fetch All Active Routes (Simultaneous multi-team & multi-vehicle support)
+    // 1. Fetch All Active & Paused Routes (Simultaneous multi-team & multi-vehicle support)
     const activeRouteDocs = await routeCol
-      .find({ durum: 'AKTIF' })
+      .find({ durum: { $in: ['AKTIF', 'DURAKLATILDI'] } })
       .sort({ created_at: -1 })
       .toArray();
     const activeRoutes = mapDocs(activeRouteDocs);
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Multi-Route Support: Check if all selected beneficiaries are already assigned to an ongoing active route
-      const otherActiveRoutes = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      const otherActiveRoutes = await routeCol.find({ durum: { $in: ['AKTIF', 'DURAKLATILDI'] } }).toArray();
       const activeAssignedMap = new Map<string, string>();
       otherActiveRoutes.forEach((r: any) => {
         (r.duraklar || []).forEach((d: any) => {
@@ -247,7 +247,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ==========================================
-    // ACTION 2: UPDATE_STOP (Deliver / Missing / Undelivered)
+    // ==========================================
+    // ACTION 2: UPDATE_STOP (Deliver / Missing / Undelivered / Deferred)
     // ==========================================
     if (action === 'UPDATE_STOP') {
       const {
@@ -257,7 +258,8 @@ export async function POST(request: NextRequest) {
         torba_sayisi,
         teslim_alan,
         notlar = '',
-        personel = 'Dağıtım Ekibi'
+        personel = 'Dağıtım Ekibi',
+        daha_sonra_tamamlanacak = false
       } = body;
 
       if (!route_id || stop_index === undefined) {
@@ -278,6 +280,7 @@ export async function POST(request: NextRequest) {
       }
 
       const hedef = targetStop.hedef_torba || 34;
+      const previousDelivered = Number(targetStop.teslim_edilen_torba || 0);
       let deliveredBags = 0;
 
       if (durum === 'TAMAMLANDI') {
@@ -287,7 +290,7 @@ export async function POST(request: NextRequest) {
         if (isNaN(deliveredBags) || deliveredBags <= 0) {
           return NextResponse.json({
             success: false,
-            error: 'Eksik teslimat için teslim edilen torba miktarı en az 1 olmalıdır. Hiç kömür teslim edilemediyse "Teslim Edilemedi" seçeneğini kullanınız.'
+            error: 'Eksik teslimat için teslim edilen torba miktarı en az 1 olmalıdır. Hiç kömür teslim edilemediyse "Daha Sonra Tamamlanacak (0 Torba)" veya "Teslim Edilemedi" seçeneğini kullanınız.'
           }, { status: 400 });
         }
       } else {
@@ -305,11 +308,16 @@ export async function POST(request: NextRequest) {
       targetStop.teslim_eden_personel = durum !== 'BEKLIYOR' ? staffName : null;
       targetStop.teslimat_notu = note;
       targetStop.teslim_alan = recipient;
+      targetStop.daha_sonra_tamamlanacak =
+        durum === 'TAMAMLANDI'
+          ? false
+          : Boolean(daha_sonra_tamamlanacak || durum === 'EKSIK' || durum === 'TESLIM_EDILEMEDI');
 
       // Recalculate route stats
       let completedCount = 0;
       let eksikCount = 0;
       let undeliveredCount = 0;
+      let waitingCount = 0;
       let totalDeliveredBags = 0;
 
       stops.forEach((s: any) => {
@@ -321,23 +329,55 @@ export async function POST(request: NextRequest) {
           totalDeliveredBags += s.teslim_edilen_torba || 0;
         } else if (s.durum === 'TESLIM_EDILEMEDI') {
           undeliveredCount++;
+        } else {
+          waitingCount++;
         }
       });
 
+      const isAllStopsCompleted = stops.length > 0 && completedCount === stops.length;
+      const isLastStopOrAllVisitedWithIncomplete =
+        !isAllStopsCompleted &&
+        (eksikCount > 0 || undeliveredCount > 0) &&
+        (waitingCount === 0 || Number(stop_index) === stops.length - 1);
+
+      let nextRouteDurum = route.durum || 'AKTIF';
+      if (isAllStopsCompleted) {
+        nextRouteDurum = 'TAMAMLANDI';
+      } else if (isLastStopOrAllVisitedWithIncomplete) {
+        nextRouteDurum = 'DURAKLATILDI';
+      } else if (nextRouteDurum === 'DURAKLATILDI' && waitingCount > 0) {
+        nextRouteDurum = 'AKTIF';
+      }
+
+      const routeSetFields: Record<string, any> = {
+        durum: nextRouteDurum,
+        duraklar: stops.map(encryptRouteStop),
+        tamamlanan_hane: completedCount,
+        eksik_hane: eksikCount,
+        teslim_edilemeyen_hane: undeliveredCount,
+        toplam_dagitilan_torba: totalDeliveredBags,
+        updated_at: localTimeStr
+      };
+
+      if (isAllStopsCompleted) {
+        routeSetFields.completed_at = localTimeStr;
+        routeSetFields.kapatan_personel = staffName;
+        routeSetFields.kapanis_notu = encryptField(
+          note || 'Saha Teslimat (Rota) Modu üzerinden tüm duraklar eksiksiz tamamlanarak otomatik kapatıldı.'
+        );
+      }
+
       // Update route in DB with AES-256-GCM encrypted stops
       await routeCol.updateOne(buildIdFilter(route_id), {
-        $set: {
-          duraklar: stops.map(encryptRouteStop),
-          tamamlanan_hane: completedCount,
-          eksik_hane: eksikCount,
-          teslim_edilemeyen_hane: undeliveredCount,
-          toplam_dagitilan_torba: totalDeliveredBags,
-          updated_at: localTimeStr
-        }
+        $set: routeSetFields
       });
 
       // Synchronize with beneficiary & delivery history (AES-256-GCM encrypted)
       const benIdFilter = buildIdFilter(targetStop.beneficiary_id);
+      const deltaBags =
+        previousDelivered > 0 && deliveredBags > previousDelivered
+          ? deliveredBags - previousDelivered
+          : deliveredBags;
 
       if (durum === 'TAMAMLANDI') {
         await benCol.updateOne(benIdFilter, {
@@ -359,10 +399,10 @@ export async function POST(request: NextRequest) {
           mahalle: targetStop.mahalle,
           acik_adres: targetStop.acik_adres,
           islem_tipi: 'TESLIMAT',
-          torba_sayisi: deliveredBags,
+          torba_sayisi: deltaBags,
           teslim_alan: recipient,
           personel: staffName,
-          notlar: `[Rota: ${route.rota_adi}] ${note}`.trim(),
+          notlar: `[Rota: ${route.rota_adi}] ${previousDelivered > 0 ? `(Eksik Tamamlama +${deltaBags} Torba) ` : ''}${note}`.trim(),
           iptal_nedeni: null,
           tarih: localTimeStr,
           gun_tarihi: localToday
@@ -373,14 +413,14 @@ export async function POST(request: NextRequest) {
           kullanici_rolu: session.rol || 'PERSONEL',
           islem_tipi: 'TESLIMAT',
           baslik: 'Rota Üzerinden Kömür Teslimatı Tamamlandı',
-          detay: `[Rota: ${route.rota_adi}] ${recipient} (${targetStop.tc_no}) hanesine ${deliveredBags} torba kömür teslim edildi.`,
+          detay: `[Rota: ${route.rota_adi}] ${recipient} (${targetStop.tc_no}) hanesine ${deltaBags} torba kömür teslim edildi (Toplam: ${deliveredBags}/${hedef}).`,
           hedef_kisi: recipient,
           hedef_tc: targetStop.tc_no,
           mahalle: targetStop.mahalle,
-          torba_sayisi: deliveredBags,
+          torba_sayisi: deltaBags,
         });
       } else if (durum === 'EKSIK') {
-        const eksikNote = note || 'Kısmi teslimat yapıldı, eksik torba var';
+        const eksikNote = note || 'Kısmi teslimat yapıldı, daha sonra tamamlanacak';
         await benCol.updateOne(benIdFilter, {
           $set: {
             teslimat_durumu: 'EKSIK',
@@ -400,10 +440,10 @@ export async function POST(request: NextRequest) {
           mahalle: targetStop.mahalle,
           acik_adres: targetStop.acik_adres,
           islem_tipi: 'EKSIK_TESLIMAT',
-          torba_sayisi: deliveredBags,
+          torba_sayisi: deltaBags,
           teslim_alan: recipient,
           personel: staffName,
-          notlar: `[Rota: ${route.rota_adi}] Eksik Kalan: ${Math.max(0, hedef - deliveredBags)} torba. ${note}`.trim(),
+          notlar: `[Rota: ${route.rota_adi}] Eksik Kalan: ${Math.max(0, hedef - deliveredBags)} torba (Daha sonra tamamlanacak). ${note}`.trim(),
           iptal_nedeni: null,
           tarih: localTimeStr,
           gun_tarihi: localToday
@@ -414,14 +454,14 @@ export async function POST(request: NextRequest) {
           kullanici_rolu: session.rol || 'PERSONEL',
           islem_tipi: 'EKSIK_TESLIMAT',
           baslik: 'Rota Üzerinden Eksik Kömür Teslimatı Yapıldı',
-          detay: `[Rota: ${route.rota_adi}] ${recipient} (${targetStop.tc_no}) hanesine ${deliveredBags}/${hedef} torba teslim edildi.`,
+          detay: `[Rota: ${route.rota_adi}] ${recipient} (${targetStop.tc_no}) hanesine ${deliveredBags}/${hedef} torba teslim edildi (Daha sonra tamamlanacak).`,
           hedef_kisi: recipient,
           hedef_tc: targetStop.tc_no,
           mahalle: targetStop.mahalle,
-          torba_sayisi: deliveredBags,
+          torba_sayisi: deltaBags,
         });
       } else if (durum === 'TESLIM_EDILEMEDI') {
-        const undeliveredNote = `[${localToday} Teslim Edilemedi]: ${note || 'Kapı açılmadı / evde yok'}`;
+        const undeliveredNote = `[${localToday} ${daha_sonra_tamamlanacak ? 'Daha Sonra Tamamlanacak' : 'Teslim Edilemedi'}]: ${note || 'Daha sonra tamamlanacak / adreste bulunamadı'}`;
         await benCol.updateOne(benIdFilter, {
           $set: {
             teslimat_durumu: 'BEKLIYOR',
@@ -440,25 +480,72 @@ export async function POST(request: NextRequest) {
           torba_sayisi: 0,
           teslim_alan: null,
           personel: staffName,
-          notlar: `[Rota: ${route.rota_adi}] Teslim Edilemedi Nedeni: ${note || 'Evde yok / ulaşılamadı'}`.trim(),
+          notlar: `[Rota: ${route.rota_adi}] ${daha_sonra_tamamlanacak ? 'Daha Sonra Tamamlanacak' : 'Teslim Edilemedi'}: ${note || 'Daha sonra uğranacak'}`.trim(),
           iptal_nedeni: null,
           tarih: localTimeStr,
           gun_tarihi: localToday
         }));
       }
 
+      if (isAllStopsCompleted) {
+        await recordActivityLog({
+          kullanici_adi: staffName,
+          kullanici_rolu: session.rol || 'PERSONEL',
+          islem_tipi: 'ROTA_KAPATMA',
+          baslik: 'Dağıtım Rotası Otomatik Tamamlandı & Arşivlendi',
+          detay: `"${route.rota_adi}" rotasındaki tüm duraklar (${completedCount} hane, ${totalDeliveredBags} torba) eksiksiz tamamlandığı için rota otomatik olarak TAMAMLANDI durumuna alındı.`,
+          ek_bilgi: { route_id, completedCount, totalDeliveredBags }
+        });
+      }
+
       await touchSyncPulse(staffName);
 
       return NextResponse.json({
         success: true,
-        message: `${targetStop.sira}. Durak (${targetStop.ad_soyad}) işlemi güncellendi: ${durum}`,
+        message: isAllStopsCompleted
+          ? `Tüm duraklar eksiksiz tamamlandı! "${route.rota_adi}" rotası otomatik olarak TAMAMLANDI durumuna alındı.`
+          : isLastStopOrAllVisitedWithIncomplete
+          ? `Son durağa ulaşıldı. Eksik / daha sonra tamamlanacak kayıtlar bulunduğu için rota GEÇİCİ OLARAK DURDURULDU.`
+          : `${targetStop.sira}. Durak (${targetStop.ad_soyad}) işlemi güncellendi: ${durum}`,
         stop: targetStop,
+        routeStatus: nextRouteDurum,
+        routeAutoCompleted: isAllStopsCompleted,
+        routeAutoPaused: isLastStopOrAllVisitedWithIncomplete,
         stats: {
           tamamlanan_hane: completedCount,
           eksik_hane: eksikCount,
           teslim_edilemeyen_hane: undeliveredCount,
+          bekleyen_hane: waitingCount,
           toplam_dagitilan_torba: totalDeliveredBags
         }
+      });
+    }
+
+    // ==========================================
+    // ACTION 2.5: PAUSE_ROUTE / RESUME_ROUTE
+    // ==========================================
+    if (action === 'PAUSE_ROUTE' || action === 'RESUME_ROUTE') {
+      const { route_id, notlar = '' } = body;
+      if (!route_id) {
+        return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
+      }
+      const nextState = action === 'PAUSE_ROUTE' ? 'DURAKLATILDI' : 'AKTIF';
+      const setObj: Record<string, any> = {
+        durum: nextState,
+        updated_at: localTimeStr
+      };
+      if (notlar && notlar.trim()) {
+        setObj.notlar = encryptField(notlar.trim());
+      }
+      await routeCol.updateOne(buildIdFilter(route_id), { $set: setObj });
+      await touchSyncPulse(session.ad_soyad || 'Personel');
+
+      return NextResponse.json({
+        success: true,
+        routeStatus: nextState,
+        message: nextState === 'DURAKLATILDI'
+          ? 'Rota geçici olarak duraklatıldı. Eksik kalan duraklara daha sonra kaldığınız yerden devam edebilirsiniz.'
+          : 'Rota tekrar aktif duruma alındı.'
       });
     }
 

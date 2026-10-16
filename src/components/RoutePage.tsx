@@ -7,7 +7,7 @@ import {
   Clock, Plus, ArrowUp, ArrowDown, Users, Phone, Truck, Trash2, Archive,
   CheckSquare, Square, Search, RefreshCw, FileText, ChevronDown, ChevronUp,
   AlertCircle, ShieldCheck, PenTool, Check, ArrowRight, Download, Printer,
-  ArrowUpDown, X, UserMinus
+  ArrowUpDown, X, UserMinus, Play, Pause, SkipForward, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
 
@@ -44,7 +44,7 @@ export default function RoutePage({
     const set = new Set<string>();
     activeRoutes.forEach((r) => {
       (r.duraklar || []).forEach((d: any) => {
-        if (!d.durum || d.durum === 'BEKLIYOR') {
+        if (d.durum !== 'TAMAMLANDI') {
           set.add(String(d.beneficiary_id));
         }
       });
@@ -72,6 +72,24 @@ export default function RoutePage({
   const [stopTorbaInput, setStopTorbaInput] = useState<string>('34');
   const [stopRecipientInput, setStopRecipientInput] = useState<string>('');
   const [stopNoteInput, setStopNoteInput] = useState<string>('');
+  const [stopDeferLaterInput, setStopDeferLaterInput] = useState<boolean>(true);
+
+  // ========================================================
+  // ROTA MODU (SIRALI SAHA TESLİMAT MODU - UBER/LYFT COCKPIT)
+  // ========================================================
+  const [isRouteModeOpen, setIsRouteModeOpen] = useState<boolean>(false);
+  const [routeModeIndex, setRouteModeIndex] = useState<number>(0);
+  const [routeModeTab, setRouteModeTab] = useState<'DELIVER' | 'DEFER'>('DELIVER');
+  const [routeModeDeferType, setRouteModeDeferType] = useState<'PARTIAL' | 'ZERO'>('PARTIAL');
+  const [routeModeTorba, setRouteModeTorba] = useState<string>('34');
+  const [routeModeRecipient, setRouteModeRecipient] = useState<string>('');
+  const [routeModeNote, setRouteModeNote] = useState<string>('');
+  const [routeModePausedNotice, setRouteModePausedNotice] = useState<boolean>(false);
+  const [routeStatusBanner, setRouteStatusBanner] = useState<{
+    type: 'COMPLETED' | 'PAUSED' | 'INFO';
+    title: string;
+    message: string;
+  } | null>(null);
 
   // Create Modal Form State
   const [newRouteName, setNewRouteName] = useState<string>('');
@@ -191,8 +209,284 @@ export default function RoutePage({
     }
   };
 
+  // Helper: Sync Rota Modu form inputs when switching to a stop
+  const syncRouteModeInputsForStop = useCallback((stop: any) => {
+    if (!stop) return;
+    const hedef = Number(stop.hedef_torba) || 34;
+    const prevDelivered = Number(stop.teslim_edilen_torba) || 0;
+    setRouteModeTab('DELIVER');
+    setRouteModeTorba(String(hedef));
+    setRouteModeRecipient(stop.teslim_alan || stop.ad_soyad || '');
+    setRouteModeNote(stop.teslimat_notu || '');
+    setRouteModeDeferType(prevDelivered > 0 ? 'PARTIAL' : 'PARTIAL');
+    setRouteModePausedNotice(false);
+  }, []);
+
+  // Open Rota Modu (Uber/Lyft style sequential field delivery cockpit)
+  const handleOpenRouteMode = async (targetRoute?: any, forcedStopIndex?: number) => {
+    const routeToUse = targetRoute || activeRoute;
+    if (!routeToUse || !routeToUse.duraklar || routeToUse.duraklar.length === 0) return;
+
+    const stops = routeToUse.duraklar;
+    let startIdx = 0;
+
+    if (typeof forcedStopIndex === 'number' && forcedStopIndex >= 0 && forcedStopIndex < stops.length) {
+      startIdx = forcedStopIndex;
+    } else {
+      // 1. Prefer first unvisited stop (BEKLIYOR)
+      const firstWaitingIdx = stops.findIndex((s: any) => !s.durum || s.durum === 'BEKLIYOR');
+      if (firstWaitingIdx !== -1) {
+        startIdx = firstWaitingIdx;
+      } else {
+        // 2. Otherwise first deferred / incomplete stop (EKSIK or TESLIM_EDILEMEDI)
+        const firstIncompleteIdx = stops.findIndex((s: any) => s.durum !== 'TAMAMLANDI');
+        startIdx = firstIncompleteIdx !== -1 ? firstIncompleteIdx : 0;
+      }
+    }
+
+    setSelectedRouteId(String(routeToUse.id || routeToUse._id));
+    setRouteModeIndex(startIdx);
+    syncRouteModeInputsForStop(stops[startIdx]);
+    setRouteStatusBanner(null);
+    setIsRouteModeOpen(true);
+
+    // If the route was temporarily paused (DURAKLATILDI), resume it to AKTIF
+    if (routeToUse.durum === 'DURAKLATILDI') {
+      try {
+        await fetch('/api/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'RESUME_ROUTE',
+            route_id: routeToUse.id || routeToUse._id,
+            personel: userName || 'Saha Personeli'
+          })
+        });
+        setActiveRoutes((prev) =>
+          prev.map((r) =>
+            String(r.id || r._id) === String(routeToUse.id || routeToUse._id)
+              ? { ...r, durum: 'AKTIF' }
+              : r
+          )
+        );
+      } catch (e) {
+        console.error('Error resuming route:', e);
+      }
+    }
+  };
+
+  // Pause Route and Exit Rota Modu
+  const handlePauseRouteAndExit = async (customReason?: string) => {
+    if (!activeRoute) {
+      setIsRouteModeOpen(false);
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await fetch('/api/routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'PAUSE_ROUTE',
+          route_id: activeRoute.id || activeRoute._id,
+          notlar: customReason || 'Personel tarafından rota geçici olarak durduruldu (Daha sonra devam edilecek).',
+          personel: userName || 'Saha Personeli'
+        })
+      });
+      await fetchRoutes();
+      setIsRouteModeOpen(false);
+      setRouteModePausedNotice(false);
+      setRouteStatusBanner({
+        type: 'PAUSED',
+        title: '⏸️ Rota Geçici Olarak Durduruldu',
+        message: `"${activeRoute.rota_adi}" rotası geçici olarak durduruldu. Eksik veya bekleyen kayıtları tamamlamak için istediğiniz zaman "Rota Moduna Devam Et" butonuna tıklayabilirsiniz.`
+      });
+    } catch (e) {
+      console.error('Error pausing route:', e);
+      setIsRouteModeOpen(false);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // Sign beneficiary directly inside Rota Modu (1-tap kapıda imza)
+  const handleSignInRouteMode = async (stopIndex: number, stop: any) => {
+    if (!stop || !stop.beneficiary_id) return;
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/beneficiaries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SIGN_BENEFICIARY',
+          id: stop.beneficiary_id,
+          personel: userName || 'Saha Personeli'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Optimistic update on activeRoutes
+        setActiveRoutes((prev) =>
+          prev.map((r) => {
+            if (String(r.id || r._id) !== String(activeRoute?.id || activeRoute?._id)) return r;
+            const nextStops = [...(r.duraklar || [])];
+            if (nextStops[stopIndex]) {
+              nextStops[stopIndex] = { ...nextStops[stopIndex], imza_durumu: 'IMZALANDI' };
+            }
+            return { ...r, duraklar: nextStops };
+          })
+        );
+        if (onRefreshAll) onRefreshAll();
+      } else {
+        alert(data.error || 'İmza durumu güncellenemedi');
+      }
+    } catch (err: any) {
+      alert('Hata: ' + err.message);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // Submit stop action inside Rota Modu (Full Delivery OR Defer/Partial for Later)
+  const handleRouteModeSubmit = async (submitKind: 'COMPLETE' | 'DEFER_LATER') => {
+    if (!activeRoute || !activeRoute.duraklar) return;
+    const stops = activeRoute.duraklar;
+    const currentStop = stops[routeModeIndex];
+    if (!currentStop) return;
+
+    const hedef = Number(currentStop.hedef_torba) || 34;
+    let targetDurum: 'TAMAMLANDI' | 'EKSIK' | 'TESLIM_EDILEMEDI' = 'TAMAMLANDI';
+    let targetTorba = hedef;
+    let targetNote = routeModeNote.trim();
+
+    if (submitKind === 'COMPLETE') {
+      const parsed = parseInt(routeModeTorba, 10);
+      targetTorba = !isNaN(parsed) && parsed > 0 ? parsed : hedef;
+      targetDurum = targetTorba < hedef ? 'EKSIK' : 'TAMAMLANDI';
+    } else {
+      // DEFER_LATER ("Daha Sonra Tamamlanacak")
+      if (routeModeDeferType === 'PARTIAL') {
+        const parsed = parseInt(routeModeTorba, 10);
+        if (isNaN(parsed) || parsed <= 0) {
+          alert('Kısmi teslimat için en az 1 torba girilmelidir. Eğer şu an hiç kömür bırakılamadıysa "Şu An Teslim Edilemedi (0 Torba)" seçeneğini seçiniz.');
+          return;
+        }
+        if (parsed >= hedef) {
+          alert(`Hedef kota (${hedef} torba) kadar giriş yaptınız. Tam teslimat için "Tam Teslimat Yap" butonunu kullanınız.`);
+          return;
+        }
+        targetDurum = 'EKSIK';
+        targetTorba = parsed;
+        if (!targetNote) {
+          targetNote = 'Kısmi teslimat yapıldı - Kalanı daha sonra tamamlanacak';
+        }
+      } else {
+        targetDurum = 'TESLIM_EDILEMEDI';
+        targetTorba = 0;
+        if (!targetNote) {
+          targetNote = 'Daha sonra tamamlanacak (Geçici olarak atlandı)';
+        }
+      }
+    }
+
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_STOP',
+          route_id: activeRoute.id || activeRoute._id,
+          stop_index: routeModeIndex,
+          durum: targetDurum,
+          torba_sayisi: targetTorba,
+          teslim_alan: routeModeRecipient.trim() || currentStop.ad_soyad,
+          notlar: targetNote,
+          daha_sonra_tamamlanacak: submitKind === 'DEFER_LATER' || targetDurum !== 'TAMAMLANDI',
+          personel: userName || 'Dağıtım Personeli'
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'Durak güncellenemedi');
+        return;
+      }
+
+      const updatedRoute = data.route;
+      const updatedStops: any[] = updatedRoute?.duraklar || [];
+
+      // Case 1: All stops in the route are now TAMAMLANDI!
+      if (data.routeAutoCompleted) {
+        setIsRouteModeOpen(false);
+        setRouteModePausedNotice(false);
+        setRouteStatusBanner({
+          type: 'COMPLETED',
+          title: '🎉 Tüm Kayıtlar Tamamlandı — Rota "Tamamlandı" Durumuna Geçti!',
+          message: `"${activeRoute.rota_adi}" rotasındaki tüm hanelerin kömür teslimatı eksiksiz tamamlandı. Rota Modundan otomatik çıkış yapıldı ve rota arşivlendi.`
+        });
+        await fetchRoutes();
+        if (onRefreshAll) onRefreshAll();
+        return;
+      }
+
+      // Refresh routes in background so state stays in sync
+      await fetchRoutes();
+      if (onRefreshAll) onRefreshAll();
+
+      // Determine next stop progression
+      const isLastStopInOrder = routeModeIndex >= updatedStops.length - 1;
+
+      // Look for next unvisited (BEKLIYOR) stop after current index
+      const nextWaitingAfter = updatedStops.findIndex(
+        (s: any, idx: number) => idx > routeModeIndex && (!s.durum || s.durum === 'BEKLIYOR')
+      );
+
+      if (nextWaitingAfter !== -1) {
+        // Move to the next unvisited stop in sequence
+        setRouteModeIndex(nextWaitingAfter);
+        syncRouteModeInputsForStop(updatedStops[nextWaitingAfter]);
+        return;
+      }
+
+      // Check if there is any earlier BEKLIYOR stop before current index
+      const anyWaitingIndex = updatedStops.findIndex(
+        (s: any) => !s.durum || s.durum === 'BEKLIYOR'
+      );
+      if (anyWaitingIndex !== -1 && !isLastStopInOrder) {
+        setRouteModeIndex(anyWaitingIndex);
+        syncRouteModeInputsForStop(updatedStops[anyWaitingIndex]);
+        return;
+      }
+
+      // If we were completing deferred stops (submitKind === 'COMPLETE') and there's another incomplete stop after this one, advance to it
+      if (submitKind === 'COMPLETE' && !isLastStopInOrder) {
+        const nextIncompleteAfter = updatedStops.findIndex(
+          (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
+        );
+        if (nextIncompleteAfter !== -1) {
+          setRouteModeIndex(nextIncompleteAfter);
+          syncRouteModeInputsForStop(updatedStops[nextIncompleteAfter]);
+          return;
+        }
+      }
+
+      // Otherwise, we reached the last stop (or finished all unvisited stops) and deferred/incomplete stops remain -> Route is temporarily paused!
+      setRouteModePausedNotice(true);
+      setRouteStatusBanner({
+        type: 'PAUSED',
+        title: '⏸️ Son Kayda Ulaşıldı — Rota Geçici Olarak Durduruldu',
+        message: `"${activeRoute.rota_adi}" rotasında son durağa ulaşıldı. Daha sonra tamamlanacak eksik kayıtlar bulunduğu için rota geçici olarak durduruldu.`
+      });
+    } catch (err: any) {
+      alert('Bağlantı hatası: ' + err.message);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   // Submit Create Route
-  const handleCreateRouteSubmit = async () => {
+  const handleCreateRouteSubmit = async (startInRouteMode: boolean = true) => {
     if (selectedBeneficiaryIds.length === 0) {
       alert('Lütfen rotaya eklenecek en az bir hane seçiniz.');
       return;
@@ -220,6 +514,9 @@ export default function RoutePage({
         await fetchRoutes();
         if (data.route && (data.route.id || data.route._id)) {
           setSelectedRouteId(String(data.route.id || data.route._id));
+          if (startInRouteMode) {
+            handleOpenRouteMode(data.route, 0);
+          }
         }
         if (onRefreshAll) onRefreshAll();
       } else {
@@ -279,11 +576,12 @@ export default function RoutePage({
     setShowStopModal({ stopIndex, stop, mode });
     setStopTorbaInput(mode === 'TAMAMLANDI' ? String(hedef) : mode === 'EKSIK' ? '20' : '0');
     setStopRecipientInput(stop.ad_soyad || '');
+    setStopDeferLaterInput(mode !== 'TAMAMLANDI');
     setStopNoteInput(
       mode === 'EKSIK'
-        ? 'Kamyonda kömür bitti'
+        ? 'Kamyonda kömür bitti - Daha sonra tamamlanacak'
         : mode === 'TESLIM_EDILEMEDI'
-        ? 'Evde kimse yok / Kapı açılmadı'
+        ? 'Evde kimse yok - Daha sonra tamamlanacak'
         : ''
     );
   };
@@ -316,6 +614,7 @@ export default function RoutePage({
           torba_sayisi: mode === 'TAMAMLANDI' || mode === 'EKSIK' ? parseInt(stopTorbaInput, 10) : 0,
           teslim_alan: stopRecipientInput.trim() || stop.ad_soyad,
           notlar: stopNoteInput.trim(),
+          daha_sonra_tamamlanacak: mode !== 'TAMAMLANDI' ? stopDeferLaterInput : false,
           personel: userName || 'Dağıtım Personeli'
         })
       });
@@ -323,6 +622,19 @@ export default function RoutePage({
       const data = await res.json();
       if (data.success) {
         setShowStopModal(null);
+        if (data.routeAutoCompleted) {
+          setRouteStatusBanner({
+            type: 'COMPLETED',
+            title: '🎉 Tüm Kayıtlar Tamamlandı — Rota "Tamamlandı" Durumuna Geçti!',
+            message: `"${activeRoute.rota_adi}" rotasındaki tüm hanelerin teslimatı tamamlandı ve rota otomatik olarak arşivlendi.`
+          });
+        } else if (data.routeAutoPaused) {
+          setRouteStatusBanner({
+            type: 'PAUSED',
+            title: '⏸️ Son Kayda Ulaşıldı — Rota Geçici Olarak Durduruldu',
+            message: `"${activeRoute.rota_adi}" rotasında daha sonra tamamlanacak eksik kayıtlar bulunduğu için rota geçici olarak durduruldu.`
+          });
+        }
         await fetchRoutes();
         if (onRefreshAll) onRefreshAll();
       } else {
@@ -597,6 +909,72 @@ export default function RoutePage({
         </div>
       </div>
 
+      {/* Otomatik Rota Tamamlanma / Geçici Durdurulma Bildirim Banner'ı */}
+      {routeStatusBanner && (
+        <div
+          className={`p-4 rounded-2xl border shadow-sm flex items-start justify-between gap-3 ${
+            routeStatusBanner.type === 'COMPLETED'
+              ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
+              : 'bg-amber-50 border-amber-400 text-amber-950'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black ${
+                routeStatusBanner.type === 'COMPLETED'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-amber-600 text-white'
+              }`}
+            >
+              {routeStatusBanner.type === 'COMPLETED' ? (
+                <CheckCircle2 className="w-5 h-5" />
+              ) : (
+                <Pause className="w-5 h-5" />
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-black">{routeStatusBanner.title}</h4>
+              <p className="text-xs font-medium mt-0.5 leading-relaxed opacity-90">
+                {routeStatusBanner.message}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                {routeStatusBanner.type === 'COMPLETED' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('ARCHIVE');
+                      setRouteStatusBanner(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>Tamamlanan Rota Arşivini Gör</span>
+                  </button>
+                )}
+                {routeStatusBanner.type === 'PAUSED' && activeRoute && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenRouteMode(activeRoute)}
+                    className="px-3 py-1.5 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-black flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Rota Moduna Tekrar Gir (Eksikleri Tamamla)</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRouteStatusBanner(null)}
+            className="p-1.5 rounded-lg hover:bg-black/5 text-slate-500 font-bold text-xs shrink-0"
+            title="Bildirimi Kapat"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* ======================================================== */}
       {/* TAB 1: AKTİF DAĞITIM ROTASI                              */}
       {/* ======================================================== */}
@@ -674,9 +1052,10 @@ export default function RoutePage({
               <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
                 {activeRoutes.map((r, idx) => {
                   const isSelected = String(r.id || r._id) === String(activeRoute?.id || activeRoute?._id);
+                  const isPaused = r.durum === 'DURAKLATILDI';
                   const total = r.toplam_hane || 0;
-                  const handled = (r.tamamlanan_hane || 0) + (r.eksik_hane || 0) + (r.teslim_edilemeyen_hane || 0);
-                  const percent = total > 0 ? Math.round((handled / total) * 100) : 0;
+                  const completedCount = r.tamamlanan_hane || 0;
+                  const percent = total > 0 ? Math.round((completedCount / total) * 100) : 0;
 
                   return (
                     <button
@@ -689,12 +1068,25 @@ export default function RoutePage({
                           : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
                       }`}
                     >
-                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${isSelected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                          isPaused
+                            ? 'bg-amber-500'
+                            : isSelected
+                            ? 'bg-emerald-500 animate-pulse'
+                            : 'bg-slate-400'
+                        }`}
+                      />
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <span className="text-xs font-black truncate max-w-[170px] sm:max-w-[220px]">
                             {r.rota_adi}
                           </span>
+                          {isPaused && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-black shrink-0">
+                              ⏸️ DURAKLATILDI
+                            </span>
+                          )}
                           {r.arac_plaka && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-800 font-mono font-bold shrink-0">
                               {r.arac_plaka}
@@ -704,7 +1096,9 @@ export default function RoutePage({
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium mt-0.5">
                           <span>{r.dagitim_personeli || 'Personel'}</span>
                           <span>•</span>
-                          <span className="font-bold text-slate-700">{handled}/{total} Hane (%{percent})</span>
+                          <span className="font-bold text-slate-700">
+                            {completedCount}/{total} Tamam (%{percent})
+                          </span>
                         </div>
                       </div>
                     </button>
@@ -754,427 +1148,560 @@ export default function RoutePage({
                 <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-28 space-y-3">
                   {/* ROTA ÖZETİ VE İLERLEME KARTI */}
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200">
-                        Dağıtım Sürüyor
-                      </span>
-                      <span className="text-xs text-slate-500 font-mono">
-                        {activeRoute.tarih}
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-black text-slate-900 mt-1 truncate">
-                      {activeRoute.rota_adi}
-                    </h3>
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-1">
-                      {activeRoute.arac_plaka && (
-                        <span className="flex items-center gap-1 font-bold text-slate-800">
-                          <Truck className="w-3.5 h-3.5 text-slate-500" />
-                          Plaka: {activeRoute.arac_plaka}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1 text-slate-600">
-                        <Users className="w-3.5 h-3.5 text-slate-500" />
-                        Dağıtım: {activeRoute.dagitim_personeli}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowDeleteConfirm(true)}
-                      className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-all active:scale-95"
-                      title="Rotayı Sil"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* İlerleme Çubuğu */}
-                {(() => {
-                  const total = activeRoute.toplam_hane || 1;
-                  const completed = activeRoute.tamamlanan_hane || 0;
-                  const eksik = activeRoute.eksik_hane || 0;
-                  const undelivered = activeRoute.teslim_edilemeyen_hane || 0;
-                  const handled = completed + eksik + undelivered;
-                  const percent = Math.min(100, Math.round((handled / total) * 100));
-
-                  return (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-slate-700">
-                          Dağıtım Durumu: <strong className="text-slate-900">{handled} / {total} Hane</strong>
-                        </span>
-                        <span className="text-sky-800 font-extrabold font-mono">%{percent}</span>
-                      </div>
-                      <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
-                        <div
-                          className="h-full bg-linear-to-r from-sky-500 to-emerald-500 transition-all duration-300"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 4'lü İstatistik Metrikleri */}
-                <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
-                  <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
-                    <span className="text-base font-black text-emerald-800 block leading-tight">
-                      {activeRoute.tamamlanan_hane || 0}
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-900 uppercase">Tamam</span>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-amber-50 border border-amber-200">
-                    <span className="text-base font-black text-amber-800 block leading-tight">
-                      {activeRoute.eksik_hane || 0}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-900 uppercase">Eksik</span>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-rose-50 border border-rose-200">
-                    <span className="text-base font-black text-rose-800 block leading-tight">
-                      {activeRoute.teslim_edilemeyen_hane || 0}
-                    </span>
-                    <span className="text-[10px] font-bold text-rose-900 uppercase">Verilemedi</span>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-sky-50 border border-sky-200">
-                    <span className="text-base font-black text-sky-800 block leading-tight">
-                      {activeRoute.toplam_dagitilan_torba || 0}
-                    </span>
-                    <span className="text-[10px] font-bold text-sky-900 uppercase">Torba</span>
-                  </div>
-                </div>
-
-                {/* Rotayı Tamamla & Listeyi İndir Butonları */}
-                {(() => {
-                  const stops = activeRoute.duraklar || [];
-                  const noCoalStops = stops.filter((s: any) => {
-                    const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
-                    const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
-                    return !hasCoal;
-                  });
-                  const canFinalize = stops.length > 0 && noCoalStops.length === 0;
-
-                  return (
-                    <div className="pt-2 flex flex-col gap-2">
-                      {/* Tamamlanabilirlik Durum Göstergesi */}
-                      {canFinalize ? (
-                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-[11px] font-semibold flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>Tüm hanelere kömür verildi. Rota tamamlanmaya hazır.</span>
-                        </div>
-                      ) : (
-                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 text-[11px] font-semibold flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-bold text-rose-900 block">
-                              Hiç kömür verilmeyen {noCoalStops.length} hane var!
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {activeRoute.durum === 'DURAKLATILDI' ? (
+                            <span className="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 px-2 py-0.5 rounded border border-amber-300 flex items-center gap-1">
+                              <Pause className="w-3 h-3 text-amber-700" />
+                              Geçici Durduruldu (Eksikler Bekliyor)
                             </span>
-                            <span className="text-[10px] text-rose-800 font-normal leading-tight block mt-0.5">
-                              Rotayı tamamlamak için tüm hanelere kömür verilmelidir (eksik teslimat kabul edilir, hiç kömür verilmeyen hane varken tamamlanamaz).
+                          ) : (
+                            <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200">
+                              Dağıtım Sürüyor
                             </span>
-                          </div>
+                          )}
+                          <span className="text-xs text-slate-500 font-mono">
+                            {activeRoute.tarih}
+                          </span>
                         </div>
-                      )}
+                        <h3 className="text-lg font-black text-slate-900 mt-1 truncate">
+                          {activeRoute.rota_adi}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-1">
+                          {activeRoute.arac_plaka && (
+                            <span className="flex items-center gap-1 font-bold text-slate-800">
+                              <Truck className="w-3.5 h-3.5 text-slate-500" />
+                              Plaka: {activeRoute.arac_plaka}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1 text-slate-600">
+                            <Users className="w-3.5 h-3.5 text-slate-500" />
+                            Dağıtım: {activeRoute.dagitim_personeli}
+                          </span>
+                        </div>
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowFinalizeModal(true)}
-                        className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] ${
-                          canFinalize
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                            : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300'
-                        }`}
-                        title={canFinalize ? 'Rotayı Tamamla ve Arşivle' : `${noCoalStops.length} hane henüz kömür almadı`}
-                      >
-                        {canFinalize ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Rotayı Tamamla ve Arşivle</span>
-                          </>
-                        ) : (
-                          <>
-                            <AlertCircle className="w-4 h-4 text-rose-600" />
-                            <span>Rotayı Tamamla ({noCoalStops.length} Haneye Kömür Verilmedi)</span>
-                          </>
-                        )}
-                      </button>
-
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={`/api/export?type=daily_deliveries&date=${activeRoute.tarih || new Date().toLocaleDateString('en-CA')}`}
-                          download={`Edirne_SYDV_Teslimat_Listesi_${activeRoute.tarih || 'Bugun'}.xlsx`}
-                          className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-                        >
-                          <Download className="w-3.5 h-3.5 text-emerald-700" />
-                          <span>Günün Teslimat Listesini İndir (Excel)</span>
-                        </a>
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
-                          onClick={() => setPrintRoute(activeRoute)}
-                          className="py-2 px-3 rounded-xl bg-white hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 border border-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-                          title="Resmi Dağıtım Tutanağını Önizle ve Yazdır"
+                          onClick={() => setShowDeleteConfirm(true)}
+                          className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-all active:scale-95"
+                          title="Rotayı Sil"
                         >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Yazdır</span>
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
-                  );
-                })()}
-              </div>
 
-              {/* Sağ Panel: SIRALI DURAKLAR LİSTESİ */}
-              <div className="lg:col-span-7 xl:col-span-8 space-y-2.5">
-                <div className="flex items-center justify-between px-1">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                    <Navigation className="w-3.5 h-3.5 text-sky-600" />
-                    <span>Sıralı Durak Listesi ({activeRoute.duraklar?.length || 0} Hane)</span>
-                  </h4>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Kapı No sıralı • Yukarı/Aşağı taşınabilir
-                  </span>
-                </div>
+                    {/* ======================================================== */}
+                    {/* UBER/LYFT TARZI ROTA MODUNA GİRİŞ HERO BUTONU            */}
+                    {/* ======================================================== */}
+                    {(() => {
+                      const stops = activeRoute.duraklar || [];
+                      const waitingCount = stops.filter((s: any) => !s.durum || s.durum === 'BEKLIYOR').length;
+                      const deferredCount = stops.filter(
+                        (s: any) => s.durum === 'EKSIK' || s.durum === 'TESLIM_EDILEMEDI'
+                      ).length;
+                      const isPaused = activeRoute.durum === 'DURAKLATILDI';
+                      const nextStop =
+                        stops.find((s: any) => !s.durum || s.durum === 'BEKLIYOR') ||
+                        stops.find((s: any) => s.durum !== 'TAMAMLANDI') ||
+                        stops[0];
 
-                {activeRoute.duraklar?.map((stop: any, index: number) => {
-                  const isTamam = stop.durum === 'TAMAMLANDI';
-                  const isEksik = stop.durum === 'EKSIK';
-                  const isUndelivered = stop.durum === 'TESLIM_EDILEMEDI';
-                  const isPending = !stop.durum || stop.durum === 'BEKLIYOR';
-
-                  return (
-                    <div
-                      key={stop.beneficiary_id || index}
-                      className={`p-3.5 rounded-2xl border transition-all shadow-xs ${
-                        isTamam
-                          ? 'bg-emerald-50/40 border-emerald-300'
-                          : isEksik
-                          ? 'bg-amber-50/50 border-amber-300'
-                          : isUndelivered
-                          ? 'bg-rose-50/50 border-rose-300'
-                          : 'bg-white border-slate-200'
-                      }`}
-                    >
-                      {/* Üst Satır: Durak No, İsim ve Reorder Butonları */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2.5 min-w-0">
-                          {/* Sıra Numarası Rozeti */}
-                          <div
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 border ${
-                              isTamam
-                                ? 'bg-emerald-600 text-white border-emerald-700'
-                                : isEksik
-                                ? 'bg-amber-500 text-white border-amber-600'
-                                : isUndelivered
-                                ? 'bg-rose-600 text-white border-rose-700'
-                                : 'bg-slate-900 text-white border-slate-900'
+                      return (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenRouteMode(activeRoute)}
+                            className={`w-full p-3.5 rounded-2xl text-left flex items-center justify-between gap-3 ${
+                              isPaused ? 'route-mode-paused-btn' : 'route-mode-hero-btn'
                             }`}
                           >
-                            #{stop.sira || index + 1}
-                          </div>
-
-                          <div className="min-w-0">
-                            <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                              {stop.ad_soyad}
-                            </h4>
-                            <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-0.5">
-                              <span className="font-mono text-amber-800 font-bold">
-                                TC: {stop.tc_no}
-                              </span>
-                              <span>•</span>
-                              <span className="text-slate-700 font-medium">{stop.mahalle}</span>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                                style={{
+                                  background: 'rgba(255, 255, 255, 0.16)',
+                                  border: '1px solid rgba(255, 255, 255, 0.28)'
+                                }}
+                              >
+                                <Play className="w-5 h-5 text-white fill-white" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-sm font-black tracking-wide text-white uppercase">
+                                    {isPaused
+                                      ? 'Rota Moduna Devam Et'
+                                      : 'Rota Moduna Gir (Saha Modu)'}
+                                  </span>
+                                  <span
+                                    className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                                    style={{
+                                      background: 'rgba(255,255,255,0.2)',
+                                      color: '#ffffff'
+                                    }}
+                                  >
+                                    {waitingCount > 0
+                                      ? `${waitingCount} Sıradaki`
+                                      : `${deferredCount} Eksik Kayıt`}
+                                  </span>
+                                </div>
+                                <p
+                                  className="text-[11px] font-semibold truncate mt-0.5"
+                                  style={{ color: 'rgba(255, 255, 255, 0.88)' }}
+                                >
+                                  {nextStop
+                                    ? `Sıradaki: #${nextStop.sira} ${nextStop.ad_soyad} (${nextStop.sokak || nextStop.mahalle || ''})`
+                                    : 'Sıralı adres ekranını başlat'}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-
-                        {/* Sıralama Taşıma Butonları (Reorder) ve Çıkar Butonu */}
-                        <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveStop(index, 'UP')}
-                            disabled={index === 0}
-                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
-                            title="Yukarı Taşı"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveStop(index, 'DOWN')}
-                            disabled={index === (activeRoute.duraklar?.length || 0) - 1}
-                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
-                            title="Aşağı Taşı"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveStop(index, stop)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-0.5 border-l border-slate-200 pl-1"
-                            title="Bu haneyi rotadan çıkar (Beklemeye döner)"
-                          >
-                            <UserMinus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Adres ve Sokak Bilgisi */}
-                      <div className="mt-2 text-xs flex flex-wrap items-center gap-1.5">
-                        {stop.sokak && (
-                          <span className="inline-flex items-center gap-1 font-bold text-sky-900 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
-                            <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
-                            <span>{stop.sokak}</span>
-                            {stop.kapi_no && <strong>No: {stop.kapi_no}</strong>}
-                            {stop.daire_no && <span>D: {stop.daire_no}</span>}
-                          </span>
-                        )}
-                        <span className="text-slate-600 truncate max-w-full font-medium">
-                          {stop.acik_adres}
-                        </span>
-                      </div>
-
-                      {/* Durum Rozeti & Telefon */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-100">
-                        <div className="flex items-center gap-2">
-                          {stop.imza_durumu === 'IMZALANDI' ? (
-                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                              <PenTool className="w-3 h-3 text-emerald-700" />
-                              İmza Alındı
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                              İmza Yok
-                            </span>
-                          )}
-
-                          <span className="text-xs font-bold text-slate-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                            Kota: {stop.hedef_torba || 34} Torba
-                          </span>
-                        </div>
-
-                        {stop.telefon && (
-                          <a
-                            href={`tel:${stop.telefon}`}
-                            className="text-xs font-mono font-bold text-emerald-700 hover:underline flex items-center gap-1"
-                          >
-                            <Phone className="w-3.5 h-3.5" />
-                            {formatPhoneDisplay(stop.telefon)}
-                          </a>
-                        )}
-                      </div>
-
-                      {/* TESLİMAT DURUMU BİLGİSİ VEYA AKSİYON BUTONLARI */}
-                      <div className="mt-3 pt-2 border-t border-slate-100">
-                        {isTamam && (
-                          <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-100/70 border border-emerald-300 text-emerald-900 text-xs font-bold">
-                            <span className="flex items-center gap-1.5">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                              <span>
-                                ✓ Tamamlandı: {stop.teslim_edilen_torba || stop.hedef_torba} Torba Teslim Edildi
-                              </span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStopModal(index, stop, 'TAMAMLANDI')}
-                              className="text-[11px] underline text-emerald-800 hover:text-emerald-950 font-bold ml-2"
+                            <div
+                              className="px-2.5 py-1.5 rounded-xl text-xs font-black shrink-0 flex items-center gap-1"
+                              style={{
+                                background: '#ffffff',
+                                color: isPaused ? '#92400e' : '#0369a1'
+                              }}
                             >
-                              Düzenle
-                            </button>
-                          </div>
-                        )}
+                              <span>Başlat</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    })()}
 
-                        {isEksik && (
-                          <div className="flex items-center justify-between p-2 rounded-xl bg-amber-100/70 border border-amber-300 text-amber-950 text-xs font-bold">
-                            <div className="min-w-0">
-                              <span className="flex items-center gap-1.5">
-                                <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                                <span>
-                                  ⚠️ Eksik Teslimat: {stop.teslim_edilen_torba} / {stop.hedef_torba} Torba
+                    {/* İlerleme Çubuğu */}
+                    {(() => {
+                      const total = activeRoute.toplam_hane || 1;
+                      const completed = activeRoute.tamamlanan_hane || 0;
+                      const eksik = activeRoute.eksik_hane || 0;
+                      const undelivered = activeRoute.teslim_edilemeyen_hane || 0;
+                      const handled = completed + eksik + undelivered;
+                      const percent = Math.min(100, Math.round((completed / total) * 100));
+
+                      return (
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex items-center justify-between text-xs font-bold">
+                            <span className="text-slate-700">
+                              Tamamlanan: <strong className="text-slate-900">{completed} / {total} Hane</strong>
+                              {handled > completed && (
+                                <span className="text-amber-700 ml-1">
+                                  ({handled - completed} Daha Sonra)
                                 </span>
-                              </span>
-                              {stop.teslimat_notu && (
-                                <p className="text-[11px] font-normal text-amber-900 mt-0.5 truncate pl-5.5">
-                                  Not: {stop.teslimat_notu}
-                                </p>
                               )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStopModal(index, stop, 'EKSIK')}
-                              className="text-[11px] underline text-amber-900 hover:text-amber-950 font-bold ml-2 shrink-0"
-                            >
-                              Düzenle
-                            </button>
+                            </span>
+                            <span className="text-sky-800 font-extrabold font-mono">%{percent}</span>
                           </div>
-                        )}
-
-                        {isUndelivered && (
-                          <div className="flex items-center justify-between p-2 rounded-xl bg-rose-100/70 border border-rose-300 text-rose-950 text-xs font-bold">
-                            <div className="min-w-0">
-                              <span className="flex items-center gap-1.5">
-                                <XCircle className="w-4 h-4 text-rose-700 shrink-0" />
-                                <span>✕ Teslim Edilemedi</span>
-                              </span>
-                              {stop.teslimat_notu && (
-                                <p className="text-[11px] font-normal text-rose-900 mt-0.5 truncate pl-5.5">
-                                  Neden: {stop.teslimat_notu}
-                                </p>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStopModal(index, stop, 'TESLIM_EDILEMEDI')}
-                              className="text-[11px] underline text-rose-900 hover:text-rose-950 font-bold ml-2 shrink-0"
-                            >
-                              Düzenle
-                            </button>
+                          <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+                            <div
+                              className="h-full bg-linear-to-r from-sky-500 to-emerald-500 transition-all duration-300"
+                              style={{ width: `${percent}%` }}
+                            />
                           </div>
-                        )}
+                        </div>
+                      );
+                    })()}
 
-                        {isPending && (
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {/* 1. Tam Teslimat Butonu */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStopModal(index, stop, 'TAMAMLANDI')}
-                              className="col-span-1 py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span className="truncate">Teslim ({stop.hedef_torba || 34})</span>
-                            </button>
+                    {/* 4'lü İstatistik Metrikleri */}
+                    <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
+                      <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
+                        <span className="text-base font-black text-emerald-800 block leading-tight">
+                          {activeRoute.tamamlanan_hane || 0}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-900 uppercase">Tamam</span>
+                      </div>
 
-                            {/* 2. Eksik Kömür Verildi Butonu */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStopModal(index, stop, 'EKSIK')}
-                              className="col-span-1 py-2 px-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
-                            >
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              <span className="truncate">Eksik Ver</span>
-                            </button>
+                      <div className="p-2 rounded-xl bg-amber-50 border border-amber-200">
+                        <span className="text-base font-black text-amber-800 block leading-tight">
+                          {activeRoute.eksik_hane || 0}
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-900 uppercase">Eksik</span>
+                      </div>
 
-                            {/* 3. Teslim Edilemedi Butonu */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStopModal(index, stop, 'TESLIM_EDILEMEDI')}
-                              className="col-span-1 py-2 px-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span className="truncate">Verilemedi</span>
-                            </button>
-                          </div>
-                        )}
+                      <div className="p-2 rounded-xl bg-rose-50 border border-rose-200">
+                        <span className="text-base font-black text-rose-800 block leading-tight">
+                          {activeRoute.teslim_edilemeyen_hane || 0}
+                        </span>
+                        <span className="text-[10px] font-bold text-rose-900 uppercase">Sonra/Yok</span>
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-sky-50 border border-sky-200">
+                        <span className="text-base font-black text-sky-800 block leading-tight">
+                          {activeRoute.toplam_dagitilan_torba || 0}
+                        </span>
+                        <span className="text-[10px] font-bold text-sky-900 uppercase">Torba</span>
                       </div>
                     </div>
-                  );
-                })}
+
+                    {/* Rotayı Tamamla & Listeyi İndir Butonları */}
+                    {(() => {
+                      const stops = activeRoute.duraklar || [];
+                      const noCoalStops = stops.filter((s: any) => {
+                        const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
+                        const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
+                        return !hasCoal;
+                      });
+                      const canFinalize = stops.length > 0 && noCoalStops.length === 0;
+
+                      return (
+                        <div className="pt-2 flex flex-col gap-2">
+                          {/* Tamamlanabilirlik Durum Göstergesi */}
+                          {canFinalize ? (
+                            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-[11px] font-semibold flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>Tüm hanelere kömür verildi. Rota tamamlanmaya hazır.</span>
+                            </div>
+                          ) : (
+                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 text-[11px] font-semibold flex items-start gap-2">
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-bold text-rose-900 block">
+                                  Hiç kömür verilmeyen {noCoalStops.length} hane var!
+                                </span>
+                                <span className="text-[10px] text-rose-800 font-normal leading-tight block mt-0.5">
+                                  Tüm kayıtlar tamamlandığında rota otomatik kapanır. Eksik kayıt varsa &quot;Rota Modu&quot; ile sırayla tamamlayabilirsiniz.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setShowFinalizeModal(true)}
+                            className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] ${
+                              canFinalize
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300'
+                            }`}
+                            title={canFinalize ? 'Rotayı Tamamla ve Arşivle' : `${noCoalStops.length} hane henüz kömür almadı`}
+                          >
+                            {canFinalize ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>Rotayı Tamamla ve Arşivle</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="w-4 h-4 text-rose-600" />
+                                <span>Rotayı Tamamla ({noCoalStops.length} Haneye Kömür Verilmedi)</span>
+                              </>
+                            )}
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`/api/export?type=daily_deliveries&date=${activeRoute.tarih || new Date().toLocaleDateString('en-CA')}`}
+                              download={`Edirne_SYDV_Teslimat_Listesi_${activeRoute.tarih || 'Bugun'}.xlsx`}
+                              className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                            >
+                              <Download className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Günün Teslimat Listesini İndir (Excel)</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => setPrintRoute(activeRoute)}
+                              className="py-2 px-3 rounded-xl bg-white hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 border border-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                              title="Resmi Dağıtım Tutanağını Önizle ve Yazdır"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>Yazdır</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+                </div>
+
+                {/* Sağ Panel: SIRALI DURAKLAR LİSTESİ */}
+                <div className="lg:col-span-7 xl:col-span-8 space-y-2.5">
+                  <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <Navigation className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Sıralı Durak Listesi ({activeRoute.duraklar?.length || 0} Hane)</span>
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRouteMode(activeRoute)}
+                      className="text-xs font-black text-sky-700 hover:text-sky-900 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all"
+                    >
+                      <Play className="w-3 h-3 fill-sky-700" />
+                      <span>Sıralı Rota Modunu Aç</span>
+                    </button>
+                  </div>
+
+                  {activeRoute.duraklar?.map((stop: any, index: number) => {
+                    const isTamam = stop.durum === 'TAMAMLANDI';
+                    const isEksik = stop.durum === 'EKSIK';
+                    const isUndelivered = stop.durum === 'TESLIM_EDILEMEDI';
+                    const isPending = !stop.durum || stop.durum === 'BEKLIYOR';
+
+                    return (
+                      <div
+                        key={stop.beneficiary_id || index}
+                        className={`p-3.5 rounded-2xl border transition-all shadow-xs ${
+                          isTamam
+                            ? 'bg-emerald-50/40 border-emerald-300'
+                            : isEksik
+                            ? 'bg-amber-50/50 border-amber-300'
+                            : isUndelivered
+                            ? 'bg-rose-50/50 border-rose-300'
+                            : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        {/* Üst Satır: Durak No, İsim ve Reorder Butonları */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            {/* Sıra Numarası Rozeti */}
+                            <div
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 border ${
+                                isTamam
+                                  ? 'bg-emerald-600 text-white border-emerald-700'
+                                  : isEksik
+                                  ? 'bg-amber-500 text-white border-amber-600'
+                                  : isUndelivered
+                                  ? 'bg-rose-600 text-white border-rose-700'
+                                  : 'bg-slate-900 text-white border-slate-900'
+                              }`}
+                            >
+                              #{stop.sira || index + 1}
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                                  {stop.ad_soyad}
+                                </h4>
+                                {!isTamam && stop.daha_sonra_tamamlanacak && (
+                                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                    ⏳ Daha Sonra Tamamlanacak
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+                                <span className="font-mono text-amber-800 font-bold">
+                                  TC: {stop.tc_no}
+                                </span>
+                                <span>•</span>
+                                <span className="text-slate-700 font-medium">{stop.mahalle}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Sıralama Taşıma Butonları (Reorder), Rota Modunda Aç ve Çıkar Butonu */}
+                          <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRouteMode(activeRoute, index)}
+                              className="px-1.5 py-1 rounded text-[10px] font-black text-sky-800 hover:bg-sky-100 flex items-center gap-0.5"
+                              title="Rota Modunu Bu Duraktan Başlat"
+                            >
+                              <Play className="w-3 h-3 fill-sky-700" />
+                              <span className="hidden sm:inline">Odakla</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveStop(index, 'UP')}
+                              disabled={index === 0}
+                              className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
+                              title="Yukarı Taşı"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveStop(index, 'DOWN')}
+                              disabled={index === (activeRoute.duraklar?.length || 0) - 1}
+                              className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
+                              title="Aşağı Taşı"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStop(index, stop)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-0.5 border-l border-slate-200 pl-1"
+                              title="Bu haneyi rotadan çıkar (Beklemeye döner)"
+                            >
+                              <UserMinus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Adres ve Sokak Bilgisi */}
+                        <div className="mt-2 text-xs flex flex-wrap items-center gap-1.5">
+                          {stop.sokak && (
+                            <span className="inline-flex items-center gap-1 font-bold text-sky-900 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                              <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
+                              <span>{stop.sokak}</span>
+                              {stop.kapi_no && <strong>No: {stop.kapi_no}</strong>}
+                              {stop.daire_no && <span>D: {stop.daire_no}</span>}
+                            </span>
+                          )}
+                          <span className="text-slate-600 truncate max-w-full font-medium">
+                            {stop.acik_adres}
+                          </span>
+                        </div>
+
+                        {/* Durum Rozeti & Telefon */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-100">
+                          <div className="flex items-center gap-2">
+                            {stop.imza_durumu === 'IMZALANDI' ? (
+                              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                <PenTool className="w-3 h-3 text-emerald-700" />
+                                İmza Alındı
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                İmza Yok
+                              </span>
+                            )}
+
+                            <span className="text-xs font-bold text-slate-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                              Kota: {stop.hedef_torba || 34} Torba
+                            </span>
+                          </div>
+
+                          {stop.telefon && (
+                            <a
+                              href={`tel:${stop.telefon}`}
+                              className="text-xs font-mono font-bold text-emerald-700 hover:underline flex items-center gap-1"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              {formatPhoneDisplay(stop.telefon)}
+                            </a>
+                          )}
+                        </div>
+
+                        {/* TESLİMAT DURUMU BİLGİSİ VEYA AKSİYON BUTONLARI */}
+                        <div className="mt-3 pt-2 border-t border-slate-100">
+                          {isTamam && (
+                            <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-100/70 border border-emerald-300 text-emerald-900 text-xs font-bold">
+                              <span className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                                <span>
+                                  ✓ Tamamlandı: {stop.teslim_edilen_torba || stop.hedef_torba} Torba Teslim Edildi
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStopModal(index, stop, 'TAMAMLANDI')}
+                                className="text-[11px] underline text-emerald-800 hover:text-emerald-950 font-bold ml-2"
+                              >
+                                Düzenle
+                              </button>
+                            </div>
+                          )}
+
+                          {isEksik && (
+                            <div className="flex items-center justify-between p-2 rounded-xl bg-amber-100/70 border border-amber-300 text-amber-950 text-xs font-bold gap-2">
+                              <div className="min-w-0">
+                                <span className="flex items-center gap-1.5">
+                                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                                  <span>
+                                    ⚠️ Eksik Teslimat: {stop.teslim_edilen_torba} / {stop.hedef_torba} Torba (Kalan: {Math.max(0, (stop.hedef_torba || 34) - (stop.teslim_edilen_torba || 0))} T)
+                                  </span>
+                                </span>
+                                {stop.teslimat_notu && (
+                                  <p className="text-[11px] font-normal text-amber-900 mt-0.5 truncate pl-5.5">
+                                    Not: {stop.teslimat_notu}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenStopModal(index, stop, 'TAMAMLANDI')}
+                                  className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black"
+                                >
+                                  Tamamla
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenStopModal(index, stop, 'EKSIK')}
+                                  className="text-[11px] underline text-amber-900 hover:text-amber-950 font-bold"
+                                >
+                                  Düzenle
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {isUndelivered && (
+                            <div className="flex items-center justify-between p-2 rounded-xl bg-rose-100/70 border border-rose-300 text-rose-950 text-xs font-bold gap-2">
+                              <div className="min-w-0">
+                                <span className="flex items-center gap-1.5">
+                                  <XCircle className="w-4 h-4 text-rose-700 shrink-0" />
+                                  <span>
+                                    {stop.daha_sonra_tamamlanacak
+                                      ? '⏳ Daha Sonra Tamamlanacak (0 Torba)'
+                                      : '✕ Teslim Edilemedi'}
+                                  </span>
+                                </span>
+                                {stop.teslimat_notu && (
+                                  <p className="text-[11px] font-normal text-rose-900 mt-0.5 truncate pl-5.5">
+                                    Neden: {stop.teslimat_notu}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenStopModal(index, stop, 'TAMAMLANDI')}
+                                  className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black"
+                                >
+                                  Şimdi Teslim Et
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenStopModal(index, stop, 'TESLIM_EDILEMEDI')}
+                                  className="text-[11px] underline text-rose-900 hover:text-rose-950 font-bold"
+                                >
+                                  Düzenle
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {isPending && (
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {/* 1. Tam Teslimat Butonu */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStopModal(index, stop, 'TAMAMLANDI')}
+                                className="col-span-1 py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span className="truncate">Teslim ({stop.hedef_torba || 34})</span>
+                              </button>
+
+                              {/* 2. Eksik Kömür Verildi Butonu */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStopModal(index, stop, 'EKSIK')}
+                                className="col-span-1 py-2 px-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span className="truncate">Eksik / Sonra</span>
+                              </button>
+
+                              {/* 3. Teslim Edilemedi Butonu */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStopModal(index, stop, 'TESLIM_EDILEMEDI')}
+                                className="col-span-1 py-2 px-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                                <span className="truncate">Daha Sonra</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -1726,26 +2253,34 @@ export default function RoutePage({
                 </div>
 
                 {/* Adım 2 Alt Butonlar */}
-                <div className="pt-3 border-t border-slate-200 flex gap-2">
+                <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
                   <button
                     type="button"
                     onClick={() => setCreateModalStep('SELECT')}
-                    className="btn-secondary flex-1 text-xs py-2.5 font-bold"
+                    className="btn-secondary text-xs py-2.5 px-3 font-bold"
                   >
                     ← Hane Seçimi
                   </button>
                   <button
                     type="button"
-                    onClick={handleCreateRouteSubmit}
+                    onClick={() => handleCreateRouteSubmit(false)}
                     disabled={isActionLoading || selectedBeneficiaryIds.length === 0}
-                    className="btn-primary flex-1 text-xs py-2.5 font-bold flex items-center justify-center gap-1.5"
+                    className="btn-secondary flex-1 text-xs py-2.5 font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <span>Sadece Rotayı Kaydet</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCreateRouteSubmit(true)}
+                    disabled={isActionLoading || selectedBeneficiaryIds.length === 0}
+                    className="btn-primary flex-1 text-xs py-2.5 font-black flex items-center justify-center gap-1.5"
                   >
                     {isActionLoading ? (
                       <span>Oluşturuluyor...</span>
                     ) : (
                       <>
-                        <RouteIcon className="w-4 h-4" />
-                        <span>Rotayı Başlat ({selectedBeneficiaryIds.length} Durak)</span>
+                        <Play className="w-4 h-4 fill-white" />
+                        <span>Rotayı Başlat & Rota Moduna Gir ({selectedBeneficiaryIds.length})</span>
                       </>
                     )}
                   </button>
@@ -1787,7 +2322,7 @@ export default function RoutePage({
                       ? 'Tam Teslimat Kaydı'
                       : showStopModal.mode === 'EKSIK'
                       ? 'Eksik Kömür Teslimatı'
-                      : 'Teslim Edilemedi Kaydı'}
+                      : 'Teslim Edilemedi / Daha Sonra'}
                   </h3>
                   <p className="text-xs text-slate-500 font-medium">
                     {showStopModal.stop?.sira}. Durak: {showStopModal.stop?.ad_soyad}
@@ -1856,7 +2391,7 @@ export default function RoutePage({
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  {showStopModal.mode === 'TESLIM_EDILEMEDI' ? 'Teslim Edilememe Nedeni' : 'Açıklama / Not'}
+                  {showStopModal.mode === 'TESLIM_EDILEMEDI' ? 'Teslim Edilememe / Erteleme Nedeni' : 'Açıklama / Not'}
                 </label>
                 <input
                   type="text"
@@ -1864,28 +2399,60 @@ export default function RoutePage({
                   onChange={(e) => setStopNoteInput(e.target.value)}
                   placeholder={
                     showStopModal.mode === 'TESLIM_EDILEMEDI'
-                      ? 'Örn: Kapı açılmadı, evde kimse yok, taşınmış...'
+                      ? 'Örn: Evde yok - Daha sonra tamamlanacak...'
                       : 'Opsiyonel not ekleyin'
                   }
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-900 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
+              {/* Daha Sonra Tamamlanacak Seçeneği (Eksik veya Verilemedi ise) */}
+              {showStopModal.mode !== 'TAMAMLANDI' && (
+                <button
+                  type="button"
+                  onClick={() => setStopDeferLaterInput((v) => !v)}
+                  className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between gap-2 transition-all ${
+                    stopDeferLaterInput
+                      ? 'bg-amber-50 border-amber-400 text-amber-950'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {stopDeferLaterInput ? (
+                      <CheckSquare className="w-4 h-4 text-amber-700 shrink-0" />
+                    ) : (
+                      <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                    )}
+                    <div>
+                      <span className="text-xs font-black block">
+                        ⏳ Daha Sonra Tamamlanacak Olarak İşaretle
+                      </span>
+                      <span className="text-[10px] font-medium opacity-80 block">
+                        Sonraki kayda geçilir; son kayıt ise rota geçici olarak durdurulur.
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              )}
+
               {/* Hızlı Seçim Butonları (Teslim Edilemediğinde) */}
               {showStopModal.mode === 'TESLIM_EDILEMEDI' && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {['Evde yok / Kapı kapalı', 'Adreste bulunamadı', 'Taşınmış / Ayrılmış', 'Teslimatı reddetti'].map(
-                    (quick) => (
-                      <button
-                        key={quick}
-                        type="button"
-                        onClick={() => setStopNoteInput(quick)}
-                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
-                      >
-                        {quick}
-                      </button>
-                    )
-                  )}
+                  {[
+                    'Evde yok - Daha sonra tamamlanacak',
+                    'Kamyonda kömür bitti - Sonra verilecek',
+                    'Sokak kapalı - Daha sonra girilecek',
+                    'Adreste bulunamadı'
+                  ].map((quick) => (
+                    <button
+                      key={quick}
+                      type="button"
+                      onClick={() => setStopNoteInput(quick)}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
+                    >
+                      {quick}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -2404,6 +2971,824 @@ export default function RoutePage({
             </div>
           </div>
         </div>,
+        document.body
+      )}
+
+      {/* ======================================================== */}
+      {/* UBER / LYFT TARZI HARİTASIZ TAM EKRAN ROTA MODU KOKPİTİ   */}
+      {/* ======================================================== */}
+      {isRouteModeOpen && activeRoute && typeof document !== 'undefined' && createPortal(
+        (() => {
+          const stops: any[] = activeRoute.duraklar || [];
+          const totalStops = stops.length;
+          const safeIndex = Math.min(Math.max(0, routeModeIndex), Math.max(0, totalStops - 1));
+          const currentStop = stops[safeIndex] || null;
+          const nextStopInOrder = safeIndex + 1 < totalStops ? stops[safeIndex + 1] : null;
+
+          const completedCount = stops.filter((s) => s.durum === 'TAMAMLANDI').length;
+          const deferredStops = stops
+            .map((s, idx) => ({ stop: s, index: idx }))
+            .filter(({ stop }) => stop.durum === 'EKSIK' || stop.durum === 'TESLIM_EDILEMEDI');
+          const waitingStops = stops
+            .map((s, idx) => ({ stop: s, index: idx }))
+            .filter(({ stop }) => !stop.durum || stop.durum === 'BEKLIYOR');
+
+          const totalDeliveredBags = stops.reduce(
+            (acc, s) => acc + (Number(s.teslim_edilen_torba) || 0),
+            0
+          );
+          const progressPercent =
+            totalStops > 0 ? Math.min(100, Math.round((completedCount / totalStops) * 100)) : 0;
+
+          const isLastStopInRoute = safeIndex >= totalStops - 1;
+          const isOnlyRemainingStop =
+            stops.filter((s, idx) => idx !== safeIndex && s.durum !== 'TAMAMLANDI').length === 0;
+
+          const hedefTorba = Number(currentStop?.hedef_torba) || 34;
+          const prevDeliveredTorba = Number(currentStop?.teslim_edilen_torba) || 0;
+          const remainingForStop = Math.max(0, hedefTorba - prevDeliveredTorba);
+
+          return (
+            <div className="route-mode-overlay no-print">
+              {/* 1. ÜST KOKPİT BARI */}
+              <div className="route-mode-topbar">
+                <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{
+                          background: 'rgba(56, 189, 248, 0.2)',
+                          border: '1px solid rgba(56, 189, 248, 0.45)'
+                        }}
+                      >
+                        <Navigation className="w-4 h-4 text-sky-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded"
+                            style={{ background: '#0284c7', color: '#ffffff' }}
+                          >
+                            ROTA MODU
+                          </span>
+                          <span className="text-xs font-black text-white truncate">
+                            {activeRoute.rota_adi}
+                          </span>
+                        </div>
+                        <div
+                          className="flex items-center gap-2 text-[11px] font-medium mt-0.5"
+                          style={{ color: '#cbd5e1' }}
+                        >
+                          <span>
+                            Tamamlanan: <strong className="text-white">{completedCount}/{totalStops}</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Dağıtılan: <strong className="text-emerald-400">{totalDeliveredBags} Torba</strong>
+                          </span>
+                          {activeRoute.arac_plaka && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-amber-300 font-bold">
+                                {activeRoute.arac_plaka}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sağ Üst Aksiyonlar: Geçici Durdur & Listeye Dön */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePauseRouteAndExit(
+                            'Personel Rota Modundan geçici durdurma seçti (Daha sonra devam edilecek).'
+                          )
+                        }
+                        disabled={isActionLoading}
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 transition-all active:scale-95"
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.2)',
+                          border: '1px solid rgba(251, 191, 36, 0.5)',
+                          color: '#fde68a'
+                        }}
+                        title="Rotayı geçici olarak durdur ve çık"
+                      >
+                        <Pause className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Geçici Durdur</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRouteModeOpen(false);
+                          setRouteModePausedNotice(false);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.12)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          color: '#f8fafc'
+                        }}
+                        title="Rota Modundan Çık (Liste Görünümü)"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Çıkış</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* İlerleme Çubuğu */}
+                  <div
+                    className="w-full h-1.5 rounded-full overflow-hidden mt-2.5"
+                    style={{ background: 'rgba(255,255,255,0.14)' }}
+                  >
+                    <div
+                      className="h-full transition-all duration-300"
+                      style={{
+                        width: `${progressPercent}%`,
+                        background: 'linear-gradient(90deg, #38bdf8, #10b981)'
+                      }}
+                    />
+                  </div>
+
+                  {/* Durak Numarası Sekmeleri (Hızlı Geçiş Barı) */}
+                  <div className="route-mode-pill-strip mt-2">
+                    {stops.map((stItem: any, idx: number) => {
+                      const isCurrent = idx === safeIndex && !routeModePausedNotice;
+                      const isDone = stItem.durum === 'TAMAMLANDI';
+                      const isDeferred =
+                        stItem.durum === 'EKSIK' || stItem.durum === 'TESLIM_EDILEMEDI';
+
+                      let bg = 'rgba(255,255,255,0.08)';
+                      let border = 'rgba(255,255,255,0.18)';
+                      let text = '#cbd5e1';
+
+                      if (isCurrent) {
+                        bg = '#0284c7';
+                        border = '#7dd3fc';
+                        text = '#ffffff';
+                      } else if (isDone) {
+                        bg = 'rgba(16, 185, 129, 0.25)';
+                        border = 'rgba(52, 211, 153, 0.55)';
+                        text = '#6ee7b7';
+                      } else if (isDeferred) {
+                        bg = 'rgba(245, 158, 11, 0.25)';
+                        border = 'rgba(251, 191, 36, 0.55)';
+                        text = '#fcd34d';
+                      }
+
+                      return (
+                        <button
+                          key={stItem.beneficiary_id || idx}
+                          type="button"
+                          onClick={() => {
+                            setRouteModeIndex(idx);
+                            syncRouteModeInputsForStop(stops[idx]);
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-black shrink-0 flex items-center gap-1 transition-all active:scale-95"
+                          style={{
+                            background: bg,
+                            border: `1px solid ${border}`,
+                            color: text
+                          }}
+                        >
+                          <span>#{stItem.sira || idx + 1}</span>
+                          {isDone && <span>✓</span>}
+                          {isDeferred && <span>⏳</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. ANA İÇERİK GÖVDESİ */}
+              <div className="route-mode-body">
+                <div className="route-mode-container">
+                  {/* EĞER SON KAYDA ULAŞILDI VE EKSİK / DAHA SONRA TAMAMLANACAK KAYITLAR VARSA GEÇİCİ DURDURULDU EKRANI */}
+                  {routeModePausedNotice ? (
+                    <div className="bg-white rounded-3xl border-2 border-amber-400 shadow-lg p-5 space-y-4">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-300 text-amber-800 flex items-center justify-center shrink-0">
+                          <Pause className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                            ROTA GEÇİCİ OLARAK DURDURULDU
+                          </span>
+                          <h3 className="text-lg font-black text-slate-900 mt-1">
+                            Son Kayda Ulaşıldı — Eksik Kayıtlar Bekliyor
+                          </h3>
+                          <p className="text-xs text-slate-600 font-medium mt-1 leading-relaxed">
+                            Rotadaki sıradaki kayıtlar tamamlandı ancak <strong>&quot;Daha Sonra Tamamlanacak&quot;</strong> olarak işaretlenen <strong>{deferredStops.length} hane</strong> bulunduğu için rota geçici olarak durduruldu.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Bekleyen / Daha Sonra Tamamlanacak Kayıtlar Listesi */}
+                      {deferredStops.length > 0 && (
+                        <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 block">
+                            ⏳ Daha Sonra Tamamlanacak Kayıtlar ({deferredStops.length} Hane):
+                          </span>
+                          <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                            {deferredStops.map(({ stop: dStop, index: dIdx }) => (
+                              <div
+                                key={dStop.beneficiary_id || dIdx}
+                                className="p-2.5 rounded-xl bg-white border border-amber-200 flex items-center justify-between gap-2"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-black">
+                                      #{dStop.sira || dIdx + 1}
+                                    </span>
+                                    <span className="text-xs font-extrabold text-slate-900 truncate">
+                                      {dStop.ad_soyad}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                                    {dStop.mahalle} {dStop.sokak ? `• ${dStop.sokak} No:${dStop.kapi_no || '-'}` : ''}
+                                  </p>
+                                  <p className="text-[10px] text-amber-800 font-bold mt-0.5">
+                                    {dStop.durum === 'EKSIK'
+                                      ? `Verilen: ${dStop.teslim_edilen_torba} / ${dStop.hedef_torba || 34} Torba (Kalan: ${(dStop.hedef_torba || 34) - (dStop.teslim_edilen_torba || 0)} T)`
+                                      : `Henüz Kömür Verilmedi (0 / ${dStop.hedef_torba || 34} Torba)`}
+                                    {dStop.teslimat_notu ? ` • ${dStop.teslimat_notu}` : ''}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRouteModeIndex(dIdx);
+                                    syncRouteModeInputsForStop(dStop);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-black shrink-0"
+                                >
+                                  Kayda Git →
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Aksiyon Seçenekleri */}
+                      <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                        {deferredStops.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const firstDef = deferredStops[0];
+                              setRouteModeIndex(firstDef.index);
+                              syncRouteModeInputsForStop(firstDef.stop);
+                            }}
+                            className="flex-1 py-3.5 px-4 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+                          >
+                            <Play className="w-4 h-4 fill-white" />
+                            <span>Eksik Kayıtları Şimdi Tamamla (#{deferredStops[0].stop.sira || deferredStops[0].index + 1})</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRouteModeOpen(false);
+                            setRouteModePausedNotice(false);
+                          }}
+                          className="flex-1 py-3.5 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+                        >
+                          <Pause className="w-4 h-4" />
+                          <span>Rotayı Geçici Durdurulmuş Bırak ve Çık</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : currentStop ? (
+                    <>
+                      {/* AKTİF DURAK ANA KARTI (HARİTASIZ, YÜKSEK OKUNABİLİRLİKLİ SAHA KARTI) */}
+                      <div className="bg-white rounded-3xl border border-slate-300 shadow-md overflow-hidden">
+                        {/* Kart Üst Başlık: Sıra No, Durum ve Hedef Torba */}
+                        <div
+                          className="p-4 flex items-center justify-between gap-3 border-b"
+                          style={{
+                            background:
+                              currentStop.durum === 'TAMAMLANDI'
+                                ? '#ecfdf5'
+                                : currentStop.durum === 'EKSIK' || currentStop.durum === 'TESLIM_EDILEMEDI'
+                                ? '#fffbeb'
+                                : '#f8fafc',
+                            borderColor: '#e2e8f0'
+                          }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="px-3.5 py-2 rounded-2xl font-black text-base sm:text-lg flex items-center justify-center shadow-xs"
+                              style={{
+                                background:
+                                  currentStop.durum === 'TAMAMLANDI'
+                                    ? '#059669'
+                                    : currentStop.durum === 'EKSIK' || currentStop.durum === 'TESLIM_EDILEMEDI'
+                                    ? '#d97706'
+                                    : '#0f172a',
+                                color: '#ffffff'
+                              }}
+                            >
+                              #{currentStop.sira || safeIndex + 1}. DURAK
+                            </div>
+                            <div>
+                              <span
+                                className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border inline-block ${
+                                  currentStop.durum === 'TAMAMLANDI'
+                                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                    : currentStop.durum === 'EKSIK'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                    : currentStop.durum === 'TESLIM_EDILEMEDI'
+                                    ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                    : 'bg-sky-100 text-sky-900 border-sky-300'
+                                }`}
+                              >
+                                {currentStop.durum === 'TAMAMLANDI'
+                                  ? '✓ TESLİMAT TAMAMLANDI'
+                                  : currentStop.durum === 'EKSIK'
+                                  ? '⏳ EKSİK BIRAKILDI (DAHA SONRA TAMAMLANACAK)'
+                                  : currentStop.durum === 'TESLIM_EDILEMEDI'
+                                  ? '⏳ DAHA SONRA TAMAMLANACAK (0 TORBA)'
+                                  : `SIRADAKİ TESLİMAT (${safeIndex + 1} / ${totalStops})`}
+                              </span>
+                              <p className="text-xs text-slate-500 font-bold mt-0.5">
+                                {isLastStopInRoute ? '🏁 Rotadaki Son Durak' : `Kalan Bekleyen: ${waitingStops.length} Durak`}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Hedef Kota Rozeti */}
+                          <div className="text-right shrink-0 bg-white px-3 py-1.5 rounded-2xl border border-slate-200 shadow-2xs">
+                            <span className="text-[10px] font-extrabold uppercase text-slate-400 block">
+                              HEDEF KOTA
+                            </span>
+                            <span className="text-base sm:text-lg font-black text-slate-900 font-mono">
+                              {hedefTorba} Torba
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-800 block">
+                              ({(hedefTorba * 0.025).toFixed(2)} Ton)
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* BÜYÜK ADRES VE KONUM KUTUSU (HARİTASIZ NET ADRES REHBERİ) */}
+                        <div className="p-4 sm:p-5 bg-sky-50/70 border-b border-sky-200/80 space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-sky-800 flex items-center gap-1">
+                              <MapPin className="w-4 h-4 text-sky-600" />
+                              TESLİMAT ADRESİ BİLGİLERİ
+                            </span>
+                            <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-sky-900 text-white">
+                              {currentStop.mahalle || 'MERKEZ'} MAHALLESİ
+                            </span>
+                          </div>
+
+                          {/* Sokak ve Kapı Numarası Büyük Punto */}
+                          <div className="p-3.5 rounded-2xl bg-white border-2 border-sky-300 shadow-2xs">
+                            {currentStop.sokak ? (
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <span className="text-base sm:text-xl font-black text-slate-950 tracking-tight">
+                                  {currentStop.sokak}
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  {currentStop.kapi_no && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-amber-500 text-white font-black text-sm sm:text-base shadow-2xs">
+                                      KAPI NO: {currentStop.kapi_no}
+                                    </span>
+                                  )}
+                                  {currentStop.daire_no && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-slate-800 text-white font-black text-xs sm:text-sm">
+                                      DAİRE: {currentStop.daire_no}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                            <p
+                              className={`text-xs sm:text-sm font-bold text-slate-700 leading-relaxed ${
+                                currentStop.sokak ? 'mt-2 pt-2 border-t border-slate-100' : ''
+                              }`}
+                            >
+                              {currentStop.acik_adres || 'Açık adres bilgisi belirtilmemiş'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* VATANDAŞ KİMLİK, İMZA VE TELEFON SATIRI */}
+                        <div className="p-4 sm:p-5 space-y-3 border-b border-slate-200">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                                HAK SAHİBİ VATANDAŞ
+                              </span>
+                              <h2 className="text-lg sm:text-xl font-black text-slate-900 leading-snug">
+                                {currentStop.ad_soyad}
+                              </h2>
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
+                                <span className="text-xs font-mono font-black text-amber-900 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200">
+                                  T.C.: {currentStop.tc_no}
+                                </span>
+
+                                {currentStop.imza_durumu === 'IMZALANDI' ? (
+                                  <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
+                                    <PenTool className="w-3.5 h-3.5 text-emerald-700" />
+                                    Kapıda İmza Alındı
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSignInRouteMode(safeIndex, currentStop)}
+                                    disabled={isActionLoading}
+                                    className="text-xs font-black text-amber-900 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg border border-amber-400 flex items-center gap-1 transition-all active:scale-95"
+                                  >
+                                    <PenTool className="w-3.5 h-3.5 text-amber-800" />
+                                    <span>✍️ Kapıda İmza Alındı İşaretle</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Tek Dokunuşla Vatandaşı Ara Butonu */}
+                            {currentStop.telefon ? (
+                              <a
+                                href={`tel:${currentStop.telefon}`}
+                                className="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all shrink-0"
+                              >
+                                <Phone className="w-4 h-4" />
+                                <span>Ara: {formatPhoneDisplay(currentStop.telefon)}</span>
+                              </a>
+                            ) : (
+                              <div className="px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-400 text-xs font-bold shrink-0">
+                                Telefon Kayıtlı Değil
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Eğer daha önce kısmi teslimat yapıldıysa bilgi kutusu */}
+                          {currentStop.durum === 'EKSIK' && prevDeliveredTorba > 0 && (
+                            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5">
+                              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                              <div>
+                                <strong className="font-black block">
+                                  Önceki Kısmi Teslimat: {prevDeliveredTorba} Torba Verildi (Kalan Eksik: {remainingForStop} Torba)
+                                </strong>
+                                <span className="text-[11px] font-medium block mt-0.5">
+                                  Kalan {remainingForStop} torbayı teslim ettiğinizde aşağıdaki &quot;Tam Teslimat ({hedefTorba} Torba)&quot; butonu ile kaydı tamamlayabilirsiniz.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ======================================================== */}
+                        {/* TESLİMAT İŞLEM PANELİ: TAM TESLİMAT vs DAHA SONRA TAMAMLA */}
+                        {/* ======================================================== */}
+                        <div className="p-4 sm:p-5 bg-white space-y-4">
+                          {/* 2'li Mod Seçici Sekme */}
+                          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRouteModeTab('DELIVER');
+                                setRouteModeTorba(String(hedefTorba));
+                              }}
+                              className={`py-2.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+                                routeModeTab === 'DELIVER'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'text-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>1. Tam Teslimat Yap</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRouteModeTab('DEFER');
+                                if (routeModeDeferType === 'PARTIAL') {
+                                  setRouteModeTorba(
+                                    prevDeliveredTorba > 0 ? String(prevDeliveredTorba) : '20'
+                                  );
+                                } else {
+                                  setRouteModeTorba('0');
+                                }
+                              }}
+                              className={`py-2.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+                                routeModeTab === 'DEFER'
+                                  ? 'bg-amber-500 text-white shadow-xs'
+                                  : 'text-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <Clock className="w-4 h-4" />
+                              <span>2. Eksik / Daha Sonra</span>
+                            </button>
+                          </div>
+
+                          {/* SEKME 1: TAM TESLİMAT YAP VE SIRADAKİ KAYDA GEÇ */}
+                          {routeModeTab === 'DELIVER' && (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-[11px] font-black text-slate-700 uppercase block mb-1">
+                                    Toplam Teslim Edilen Torba
+                                  </label>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRouteModeTorba((v) =>
+                                          String(Math.max(1, (parseInt(v, 10) || hedefTorba) - 1))
+                                        )
+                                      }
+                                      className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 font-black text-base text-slate-800"
+                                    >
+                                      -
+                                    </button>
+                                    <input
+                                      type="number"
+                                      value={routeModeTorba}
+                                      onChange={(e) => setRouteModeTorba(e.target.value)}
+                                      min="1"
+                                      max={hedefTorba}
+                                      className="flex-1 h-11 px-3 rounded-xl bg-white border-2 border-emerald-400 text-center text-base font-mono font-black text-slate-900 focus:outline-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRouteModeTorba((v) =>
+                                          String(Math.min(hedefTorba, (parseInt(v, 10) || 0) + 1))
+                                        )
+                                      }
+                                      className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 font-black text-base text-slate-800"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="text-[11px] font-black text-slate-700 uppercase block mb-1">
+                                    Teslim Alan Kişi
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={routeModeRecipient}
+                                    onChange={(e) => setRouteModeRecipient(e.target.value)}
+                                    placeholder={currentStop.ad_soyad}
+                                    className="w-full h-11 px-3 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+                                  />
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRouteModeSubmit('COMPLETE')}
+                                disabled={isActionLoading}
+                                className="w-full py-4 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md active:scale-[0.99] transition-all"
+                              >
+                                <CheckCircle2 className="w-5 h-5 shrink-0" />
+                                <span>
+                                  {isActionLoading
+                                    ? 'Kaydediliyor...'
+                                    : isOnlyRemainingStop
+                                    ? `🎉 TESLİMATI TAMAMLA (${routeModeTorba || hedefTorba} TORBA) & ROTAYI BİTİR`
+                                    : `✓ TESLİMATI TAMAMLA (${routeModeTorba || hedefTorba} TORBA) & SIRADAKİ KAYDA GEÇ →`}
+                                </span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* SEKME 2: EKSİK BIRAK / DAHA SONRA TAMAMLANACAK */}
+                          {routeModeTab === 'DEFER' && (
+                            <div className="space-y-3 p-3.5 rounded-2xl bg-amber-50/70 border border-amber-300">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-black text-amber-950">
+                                  ⏳ Eksik / Daha Sonra Tamamlanacak Seçeneği:
+                                </span>
+                              </div>
+
+                              {/* Alt Seçenek: Kısmi Kömür Verildi vs Şu An 0 Torba */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRouteModeDeferType('PARTIAL');
+                                    setRouteModeTorba('20');
+                                    if (!routeModeNote) {
+                                      setRouteModeNote('Kamyonda kömür bitti - Kalanı daha sonra tamamlanacak');
+                                    }
+                                  }}
+                                  className={`p-2.5 rounded-xl border text-left transition-all ${
+                                    routeModeDeferType === 'PARTIAL'
+                                      ? 'bg-white border-amber-500 text-amber-950 shadow-2xs ring-2 ring-amber-400/30'
+                                      : 'bg-white/60 border-slate-200 text-slate-600'
+                                  }`}
+                                >
+                                  <span className="text-xs font-black block">
+                                    ⚠️ Kısmi Kömür Verildi (Eksik)
+                                  </span>
+                                  <span className="text-[10px] font-medium opacity-85 block mt-0.5">
+                                    Bir kısmı şimdi verildi, kalanı daha sonra tamamlanacak
+                                  </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRouteModeDeferType('ZERO');
+                                    setRouteModeTorba('0');
+                                    if (!routeModeNote || routeModeNote.includes('Kamyonda')) {
+                                      setRouteModeNote('Evde kimse yok - Daha sonra tamamlanacak');
+                                    }
+                                  }}
+                                  className={`p-2.5 rounded-xl border text-left transition-all ${
+                                    routeModeDeferType === 'ZERO'
+                                      ? 'bg-white border-rose-500 text-rose-950 shadow-2xs ring-2 ring-rose-400/30'
+                                      : 'bg-white/60 border-slate-200 text-slate-600'
+                                  }`}
+                                >
+                                  <span className="text-xs font-black block">
+                                    ⏳ Şu An Verilemedi (0 Torba)
+                                  </span>
+                                  <span className="text-[10px] font-medium opacity-85 block mt-0.5">
+                                    Evde yok / ulaşılamadı, daha sonra tamamlanacak
+                                  </span>
+                                </button>
+                              </div>
+
+                              {routeModeDeferType === 'PARTIAL' && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                                  <div>
+                                    <label className="text-[11px] font-black text-amber-950 block mb-1">
+                                      Şu An Verilen Torba Sayısı
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={routeModeTorba}
+                                      onChange={(e) => setRouteModeTorba(e.target.value)}
+                                      min="1"
+                                      max={hedefTorba - 1}
+                                      className="w-full px-3 py-2 rounded-xl bg-white border-2 border-amber-400 text-sm font-mono font-black text-slate-900"
+                                    />
+                                    <span className="text-[10px] font-extrabold text-amber-900 block mt-1">
+                                      Daha Sonra Tamamlanacak Kalan:{' '}
+                                      {Math.max(0, hedefTorba - (parseInt(routeModeTorba, 10) || 0))} Torba
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <label className="text-[11px] font-black text-amber-950 block mb-1">
+                                      Teslim Alan Kişi
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={routeModeRecipient}
+                                      onChange={(e) => setRouteModeRecipient(e.target.value)}
+                                      placeholder={currentStop.ad_soyad}
+                                      className="w-full px-3 py-2 rounded-xl bg-white border border-amber-300 text-xs font-bold text-slate-900"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              <div>
+                                <label className="text-[11px] font-black text-amber-950 block mb-1">
+                                  Daha Sonra Tamamlanma / Eksik Nedeni
+                                </label>
+                                <input
+                                  type="text"
+                                  value={routeModeNote}
+                                  onChange={(e) => setRouteModeNote(e.target.value)}
+                                  placeholder="Örn: Evde yok / Kamyonda kömür bitti - Daha sonra tamamlanacak"
+                                  className="w-full px-3 py-2 rounded-xl bg-white border border-amber-300 text-xs font-semibold text-slate-900"
+                                />
+                                {/* Hızlı Neden Etiketleri */}
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  {[
+                                    'Evde kimse yok - Daha sonra tamamlanacak',
+                                    'Kamyonda kömür bitti - Daha sonra tamamlanacak',
+                                    'Sokak kapalı - Daha sonra girilecek',
+                                    'Vatandaş daha sonra teslim almak istedi'
+                                  ].map((reasonChip) => (
+                                    <button
+                                      key={reasonChip}
+                                      type="button"
+                                      onClick={() => setRouteModeNote(reasonChip)}
+                                      className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-950 border border-amber-300"
+                                    >
+                                      {reasonChip}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRouteModeSubmit('DEFER_LATER')}
+                                disabled={isActionLoading}
+                                className="w-full py-3.5 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm active:scale-[0.99] transition-all"
+                              >
+                                <SkipForward className="w-4 h-4 shrink-0" />
+                                <span>
+                                  {isActionLoading
+                                    ? 'İşleniyor...'
+                                    : isLastStopInRoute || waitingStops.filter((w) => w.index !== safeIndex).length === 0
+                                    ? '⏸️ DAHA SONRA TAMAMLANACAK İŞARETLE & ROTAYI GEÇİCİ DURDUR'
+                                    : '⏳ DAHA SONRA TAMAMLANACAK İŞARETLE & SIRADAKİ KAYDA GEÇ →'}
+                                </span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* 3. ALT NAVİGASYON VE SIRADAKİ DURAK ÖNİZLEME BARI */}
+              <div className="route-mode-footer">
+                <div
+                  className="flex items-center justify-between gap-2"
+                  style={{ maxWidth: '680px', margin: '0 auto' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (routeModePausedNotice) {
+                        setRouteModePausedNotice(false);
+                        return;
+                      }
+                      const prevIdx = Math.max(0, safeIndex - 1);
+                      setRouteModeIndex(prevIdx);
+                      syncRouteModeInputsForStop(stops[prevIdx]);
+                    }}
+                    disabled={!routeModePausedNotice && safeIndex === 0}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-black flex items-center gap-1 border border-slate-300 shrink-0"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Önceki</span>
+                  </button>
+
+                  {/* Sıradaki Durak Bilgisi */}
+                  <div className="min-w-0 text-center flex-1 px-2">
+                    {nextStopInOrder ? (
+                      <div className="truncate">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                          SIRADAKİ KAYIT (#{nextStopInOrder.sira || safeIndex + 2})
+                        </span>
+                        <span className="text-xs font-black text-slate-800 truncate block">
+                          {nextStopInOrder.ad_soyad} —{' '}
+                          <span className="text-sky-700">
+                            {nextStopInOrder.sokak
+                              ? `${nextStopInOrder.sokak} No:${nextStopInOrder.kapi_no || '-'}`
+                              : nextStopInOrder.mahalle}
+                          </span>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="truncate">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 block">
+                          SON DURAKTASINIZ
+                        </span>
+                        <span className="text-xs font-bold text-slate-700 truncate block">
+                          {deferredStops.length > 0
+                            ? `${deferredStops.length} kayıt daha sonra tamamlanacak`
+                            : 'Tüm kayıtlar tamamlandığında rota kapanır'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (safeIndex + 1 < totalStops) {
+                        const nextIdx = safeIndex + 1;
+                        setRouteModeIndex(nextIdx);
+                        syncRouteModeInputsForStop(stops[nextIdx]);
+                      } else if (deferredStops.length > 0) {
+                        setRouteModePausedNotice(true);
+                      }
+                    }}
+                    disabled={safeIndex >= totalStops - 1 && deferredStops.length === 0}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-black flex items-center gap-1 border border-slate-300 shrink-0"
+                  >
+                    <span>Sonraki</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })(),
         document.body
       )}
     </div>
