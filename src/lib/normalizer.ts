@@ -67,9 +67,14 @@ export function normalizeTurkishNameForExactMatch(name: string | null | undefine
 }
 
 /**
- * Checks whether a beneficiary record matches a search query "birebir" (exact match):
- * - Matches if TC Kimlik No matches exactly (cleanTcNo digits equality).
- * - Matches if Ad Soyad matches exactly (case-insensitive, Turkish-normalized, punctuation-stripped, word-order independent).
+ * Checks whether a beneficiary record matches a search query:
+ * - Matches if TC Kimlik No matches (exact 11-digit match or partial match for 3+ digits).
+ * - Matches if Hak Sahibi (Ad Soyad) matches:
+ *   - Supports first name, last name, full name, or multiple names.
+ *   - Word order independent (e.g. 'yilmaz ahmet' matches 'Ahmet Yılmaz').
+ *   - Case-insensitive & Turkish diacritics insensitive (i/ı, ö/o, ü/u, ç/c, ş/s, ğ/g, â/a).
+ *   - Substring / prefix-friendly as you type (e.g. 'ahm yil' matches 'Ahmet Yılmaz').
+ *   - Punctuation stripped and multi-space collapsed.
  * - Strictly DOES NOT search in addresses (acik_adres, mahalle, sokak, hane_no) or phone numbers.
  */
 export function isBirebirBeneficiaryMatch(
@@ -79,29 +84,42 @@ export function isBirebirBeneficiaryMatch(
   if (!query || !query.trim() || !record) return false;
   const rawQ = query.trim();
 
-  // 1. TC Kimlik No Birebir Eşleşme (Sadece rakamlar karşılaştırılır)
+  // 1. TC Kimlik No Eşleşmesi (Tam 11 hane veya en az 3 haneli sayısal arama)
   const qDigits = rawQ.replace(/\D/g, '');
-  if (qDigits.length > 0) {
-    const recordTcDigits = record.tc_no ? String(record.tc_no).replace(/\D/g, '') : '';
-    if (recordTcDigits && recordTcDigits === qDigits) {
-      return true;
+  if (qDigits.length > 0 && record.tc_no) {
+    const recordTcDigits = String(record.tc_no).replace(/\D/g, '');
+    if (recordTcDigits) {
+      // 11 haneli tam TC eşleşmesi
+      if (qDigits.length === 11 && recordTcDigits === qDigits) {
+        return true;
+      }
+      // Kullanıcı sadece rakamlardan oluşan bir sorgu yazdıysa ve en az 3 hane ise TC içinde ara
+      const isPureDigits = /^\d+$/.test(rawQ.replace(/\s+/g, ''));
+      if (isPureDigits && qDigits.length >= 3 && recordTcDigits.includes(qDigits)) {
+        return true;
+      }
     }
   }
 
-  // 2. Ad Soyad Birebir Eşleşme (Türkçe karakter ve kelime sırası esnekliği ile)
-  const normQuery = normalizeTurkishNameForExactMatch(rawQ);
-  if (normQuery && record.ad_soyad) {
+  // 2. Hak Sahibi (Ad Soyad) Eşleşmesi
+  // Kullanıcının yazdığı her kelime, Hak Sahibi ad soyad alanında yer almalıdır
+  if (record.ad_soyad) {
     const normTarget = normalizeTurkishNameForExactMatch(record.ad_soyad);
-    if (normTarget) {
-      // Birebir eşitlik (örn: "ahmet yilmaz" === "ahmet yilmaz")
+    const normQuery = normalizeTurkishNameForExactMatch(rawQ);
+
+    if (normTarget && normQuery) {
+      // Tam birebir eşitlik (örn: "ahmet yilmaz" === "ahmet yilmaz")
       if (normTarget === normQuery) {
         return true;
       }
-      // Kelime sırası bağımsız birebir eşitlik (örn: "yilmaz ahmet" === "ahmet yilmaz")
-      const targetWordsSorted = normTarget.split(' ').sort().join(' ');
-      const queryWordsSorted = normQuery.split(' ').sort().join(' ');
-      if (targetWordsSorted === queryWordsSorted) {
-        return true;
+
+      const queryTerms = normQuery.split(' ').filter(Boolean);
+      if (queryTerms.length > 0) {
+        // Kullanıcının girdiği her arama terimi ad soyad içinde geçmelidir
+        const allTermsFound = queryTerms.every((term) => normTarget.includes(term));
+        if (allTermsFound) {
+          return true;
+        }
       }
     }
   }

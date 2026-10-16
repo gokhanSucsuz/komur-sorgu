@@ -141,10 +141,10 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px]">
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-              <span className="font-bold text-slate-900 block mb-1">🔍 Birebir Arama:</span>
+              <span className="font-bold text-slate-900 block mb-1">🔍 Hak Sahibi & TC Arama:</span>
               <ul className="list-disc list-inside text-slate-600 space-y-0.5">
-                <li>11 Haneli TC Kimlik No (Birebir)</li>
-                <li>Ad Soyad (Birebir Eşleşme)</li>
+                <li>11 Haneli veya Kısmi TC Kimlik No</li>
+                <li>Hak Sahibi Ad, Soyad veya Ad Soyad</li>
                 <li>Adreslerde gereksiz arama yapılmaz</li>
               </ul>
             </div>

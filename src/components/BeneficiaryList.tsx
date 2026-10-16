@@ -528,7 +528,7 @@ export default function BeneficiaryList({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="TC Kimlik No veya Ad Soyad ile birebir ara..."
+            placeholder="TC Kimlik No veya Hak Sahibi (Ad Soyad) ile ara..."
             className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-white border border-slate-200 text-slate-900 placeholder-slate-400 font-medium text-sm focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-sm"
           />
           {searchQuery && (
@@ -1063,7 +1063,7 @@ export default function BeneficiaryList({
               Aramanızla Eşleşen Kayıt Bulunamadı
             </p>
             <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-              <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> ile birebir eşleşen TC Kimlik No veya Ad Soyad kaydı bulunamadı.
+              <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> için TC Kimlik No veya Hak Sahibi (Ad Soyad) kaydı bulunamadı.
             </p>
             <button
               type="button"
