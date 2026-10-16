@@ -6,6 +6,32 @@ import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
 
+const LOCK_TIMEOUT_MS = 45 * 60 * 1000; // 45 dakika hareketsizlik aşımı
+
+export function checkRouteLock(
+  route: any,
+  staffName: string
+): { isLocked: boolean; lockedBy?: string } {
+  if (!route || !route.kilitli_personel) return { isLocked: false };
+
+  const now = Date.now();
+  const lockTime = Number(route.kilit_timestamp) || 0;
+  // Kilit 45 dakikadan eski ise zaman aşımına uğramış kabul edilir
+  if (lockTime > 0 && now - lockTime > LOCK_TIMEOUT_MS) {
+    return { isLocked: false };
+  }
+
+  const lockedBy = String(route.kilitli_personel).trim();
+  const currentStaff = String(staffName || '').trim();
+
+  // Aynı personel ise kilit kendisinde demektir
+  if (lockedBy.toLowerCase() === currentStaff.toLowerCase()) {
+    return { isLocked: false };
+  }
+
+  return { isLocked: true, lockedBy };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await verifySession(request);
@@ -247,6 +273,132 @@ export async function POST(request: NextRequest) {
     }
 
     // ==========================================
+    // ACTION 1.5: ROUTE LOCKING (ACQUIRE / RELEASE / HEARTBEAT)
+    // Sadece bir personel rotayı aynı anda aktif kullanabilir
+    // ==========================================
+    if (action === 'ACQUIRE_ROUTE_LOCK') {
+      const { route_id, force = false, personel } = body;
+      if (!route_id) {
+        return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
+      }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (!rawRoute) {
+        return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
+      }
+
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const route = mapDoc(rawRoute);
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota şu anda "${lockCheck.lockedBy}" tarafından Rota Modunda aktif olarak kullanılmaktadır. Aynı anda yalnızca bir personel bir rotayı kullanabilir.`
+        }, { status: 409 });
+      }
+
+      const nowTimestamp = Date.now();
+      await routeCol.updateOne(buildIdFilter(route_id), {
+        $set: {
+          kilitli_personel: staffName,
+          kilitli_personel_username: session.username || '',
+          kilit_tarihi: localTimeStr,
+          kilit_timestamp: nowTimestamp,
+          updated_at: localTimeStr
+        }
+      });
+
+      await touchSyncPulse(staffName);
+
+      return NextResponse.json({
+        success: true,
+        message: `Rota kilitlendi (${staffName}).`,
+        kilitli_personel: staffName,
+        kilit_timestamp: nowTimestamp
+      });
+    }
+
+    if (action === 'RELEASE_ROUTE_LOCK') {
+      const { route_id, force = false, personel } = body;
+      if (!route_id) {
+        return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
+      }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (!rawRoute) {
+        return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
+      }
+
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const route = mapDoc(rawRoute);
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota "${lockCheck.lockedBy}" tarafından kilitlenmiştir. Kilidi yalnızca ilgili personel veya Admin kaldırabilir.`
+        }, { status: 403 });
+      }
+
+      await routeCol.updateOne(buildIdFilter(route_id), {
+        $set: {
+          kilitli_personel: null,
+          kilitli_personel_username: null,
+          kilit_tarihi: null,
+          kilit_timestamp: null,
+          updated_at: localTimeStr
+        }
+      });
+
+      await touchSyncPulse(staffName);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Rota kilidi başarıyla kaldırıldı.'
+      });
+    }
+
+    if (action === 'HEARTBEAT_ROUTE_LOCK') {
+      const { route_id, personel } = body;
+      if (!route_id) {
+        return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
+      }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (!rawRoute) {
+        return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
+      }
+
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const route = mapDoc(rawRoute);
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked) {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Kilit zaman aşımı yenilenemedi, rota "${lockCheck.lockedBy}" personeline kilitli.`
+        }, { status: 409 });
+      }
+
+      const nowTimestamp = Date.now();
+      await routeCol.updateOne(buildIdFilter(route_id), {
+        $set: {
+          kilitli_personel: staffName,
+          kilit_timestamp: nowTimestamp,
+          updated_at: localTimeStr
+        }
+      });
+
+      return NextResponse.json({ success: true, kilit_timestamp: nowTimestamp });
+    }
+
     // ==========================================
     // ACTION 2: UPDATE_STOP (Deliver / Missing / Undelivered / Deferred)
     // ==========================================
@@ -271,7 +423,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
       }
 
+      const staffName = (session.ad_soyad || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked) {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota şu anda "${lockCheck.lockedBy}" tarafından Rota Modunda aktif olarak kullanılmaktadır. Aynı anda yalnızca bir personel bir rotayı kullanabilir.`
+        }, { status: 409 });
+      }
+
       const stops = route.duraklar || [];
       const targetStop = stops[stop_index];
 
@@ -298,7 +462,6 @@ export async function POST(request: NextRequest) {
       }
 
       const recipient = (teslim_alan || targetStop.ad_soyad).trim();
-      const staffName = (session.ad_soyad || personel || 'Personel').trim();
       const note = notlar.trim();
 
       // Update stop data
@@ -366,6 +529,20 @@ export async function POST(request: NextRequest) {
         routeSetFields.kapanis_notu = encryptField(
           note || 'Saha Teslimat (Rota) Modu üzerinden tüm duraklar eksiksiz tamamlanarak otomatik kapatıldı.'
         );
+        routeSetFields.kilitli_personel = null;
+        routeSetFields.kilitli_personel_username = null;
+        routeSetFields.kilit_tarihi = null;
+        routeSetFields.kilit_timestamp = null;
+      } else {
+        routeSetFields.kilitli_personel = staffName;
+        routeSetFields.kilitli_personel_username = session.username || '';
+        routeSetFields.kilit_tarihi = localTimeStr;
+        routeSetFields.kilit_timestamp = Date.now();
+        if (nextRouteDurum === 'AKTIF' && route.durum === 'TAMAMLANDI') {
+          routeSetFields.completed_at = null;
+          routeSetFields.kapatan_personel = null;
+          routeSetFields.kapanis_notu = null;
+        }
       }
 
       // Update route in DB with AES-256-GCM encrypted stops
@@ -486,6 +663,46 @@ export async function POST(request: NextRequest) {
           tarih: localTimeStr,
           gun_tarihi: localToday
         }));
+      } else if (durum === 'BEKLIYOR') {
+        await benCol.updateOne(benIdFilter, {
+          $set: {
+            teslimat_durumu: 'BEKLIYOR',
+            teslimat_tarihi: null,
+            torba_sayisi: 0,
+            teslim_alan: null,
+            teslim_eden_personel: null,
+            teslimat_notu: null,
+            updated_at: localTimeStr
+          }
+        });
+
+        await histCol.insertOne(encryptDeliveryHistory({
+          beneficiary_id: targetStop.beneficiary_id,
+          tc_no: targetStop.tc_no,
+          ad_soyad: targetStop.ad_soyad,
+          mahalle: targetStop.mahalle,
+          acik_adres: targetStop.acik_adres,
+          islem_tipi: 'IPTAL',
+          torba_sayisi: previousDelivered,
+          teslim_alan: targetStop.teslim_alan || '',
+          personel: staffName,
+          notlar: `[Rota: ${route.rota_adi}] Teslimat geri alındı / iptal edildi.${note ? ' ' + note : ''}`.trim(),
+          iptal_nedeni: note || 'Hatalı teslimat geri alma',
+          tarih: localTimeStr,
+          gun_tarihi: localToday
+        }));
+
+        await recordActivityLog({
+          kullanici_adi: staffName,
+          kullanici_rolu: session.rol || 'PERSONEL',
+          islem_tipi: 'IPTAL',
+          baslik: 'Rota Üzerinden Teslimat Geri Alındı / İptal Edildi',
+          detay: `[Rota: ${route.rota_adi}] ${targetStop.ad_soyad} (${targetStop.tc_no}) hanesine yapılan teslimat geri alındı ve kayıt tekrar BEKLİYOR durumuna getirildi.${note ? ' Gerekçe: ' + note : ''}`,
+          hedef_kisi: targetStop.ad_soyad,
+          hedef_tc: targetStop.tc_no,
+          mahalle: targetStop.mahalle,
+          torba_sayisi: 0,
+        });
       }
 
       if (isAllStopsCompleted) {
@@ -539,10 +756,29 @@ export async function POST(request: NextRequest) {
     // ACTION 2.5: PAUSE_ROUTE / RESUME_ROUTE
     // ==========================================
     if (action === 'PAUSE_ROUTE' || action === 'RESUME_ROUTE') {
-      const { route_id, notlar = '' } = body;
+      const { route_id, notlar = '', personel } = body;
       if (!route_id) {
         return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
       }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (!rawRoute) {
+        return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
+      }
+
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const route = mapDoc(rawRoute);
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked && session.rol !== 'ADMIN') {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota şu anda "${lockCheck.lockedBy}" tarafından Rota Modunda kullanılmaktadır.`
+        }, { status: 409 });
+      }
+
       const nextState = action === 'PAUSE_ROUTE' ? 'DURAKLATILDI' : 'AKTIF';
       const setObj: Record<string, any> = {
         durum: nextState,
@@ -551,8 +787,23 @@ export async function POST(request: NextRequest) {
       if (notlar && notlar.trim()) {
         setObj.notlar = encryptField(notlar.trim());
       }
+
+      if (action === 'PAUSE_ROUTE') {
+        // Rotayı geçici durdururken kilidi serbest bırak
+        setObj.kilitli_personel = null;
+        setObj.kilitli_personel_username = null;
+        setObj.kilit_tarihi = null;
+        setObj.kilit_timestamp = null;
+      } else {
+        // Rotayı tekrar aktif ederken bu personele kilitle
+        setObj.kilitli_personel = staffName;
+        setObj.kilitli_personel_username = session.username || '';
+        setObj.kilit_tarihi = localTimeStr;
+        setObj.kilit_timestamp = Date.now();
+      }
+
       await routeCol.updateOne(buildIdFilter(route_id), { $set: setObj });
-      await touchSyncPulse(session.ad_soyad || 'Personel');
+      await touchSyncPulse(staffName);
 
       return NextResponse.json({
         success: true,
@@ -567,9 +818,27 @@ export async function POST(request: NextRequest) {
     // ACTION 3: REORDER_STOPS
     // ==========================================
     if (action === 'REORDER_STOPS') {
-      const { route_id, duraklar } = body;
+      const { route_id, duraklar, personel } = body;
       if (!route_id || !Array.isArray(duraklar)) {
         return NextResponse.json({ success: false, error: 'Geçersiz durak listesi' }, { status: 400 });
+      }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (!rawRoute) {
+        return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
+      }
+
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const route = mapDoc(rawRoute);
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked && session.rol !== 'ADMIN') {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota şu anda "${lockCheck.lockedBy}" personeline aittir ve sıralama değiştirilemez.`
+        }, { status: 409 });
       }
 
       const reindexedStops = duraklar.map((s: any, idx: number) => ({
@@ -606,6 +875,18 @@ export async function POST(request: NextRequest) {
       }
 
       const route = mapDoc(rawRoute);
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked && session.rol !== 'ADMIN') {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota şu anda "${lockCheck.lockedBy}" personeli tarafından Rota Modunda kullanılmaktadır ve sonlandırılamaz.`
+        }, { status: 409 });
+      }
+
       const stops = route.duraklar || [];
 
       if (!stops || stops.length === 0) {
@@ -685,6 +966,10 @@ export async function POST(request: NextRequest) {
           toplam_dagitilan_torba: totalDeliveredBags,
           kapanis_notu: encryptField(notlar.trim()),
           kapatan_personel: personel.trim(),
+          kilitli_personel: null,
+          kilitli_personel_username: null,
+          kilit_tarihi: null,
+          kilit_timestamp: null,
           updated_at: localTimeStr
         }
       });
@@ -721,6 +1006,18 @@ export async function POST(request: NextRequest) {
       }
 
       const route = mapDoc(rawRoute);
+      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const lockCheck = checkRouteLock(route, staffName);
+
+      if (lockCheck.isLocked && session.rol !== 'ADMIN') {
+        return NextResponse.json({
+          success: false,
+          locked: true,
+          lockedBy: lockCheck.lockedBy,
+          error: `Bu rota şu anda "${lockCheck.lockedBy}" personeli tarafından Rota Modunda kullanılmaktadır.`
+        }, { status: 409 });
+      }
+
       const stops = [...(route.duraklar || [])];
       const idx = parseInt(String(stop_index), 10);
       if (isNaN(idx) || idx < 0 || idx >= stops.length) {
@@ -791,9 +1088,24 @@ export async function POST(request: NextRequest) {
     // ACTION 5: DELETE_ROUTE
     // ==========================================
     if (action === 'DELETE_ROUTE') {
-      const { route_id } = body;
+      const { route_id, personel = 'Personel' } = body;
       if (!route_id) {
         return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
+      }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (rawRoute) {
+        const route = mapDoc(rawRoute);
+        const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+        const lockCheck = checkRouteLock(route, staffName);
+        if (lockCheck.isLocked && session.rol !== 'ADMIN') {
+          return NextResponse.json({
+            success: false,
+            locked: true,
+            lockedBy: lockCheck.lockedBy,
+            error: `Bu rota şu anda "${lockCheck.lockedBy}" personeli tarafından kullanımda olduğundan silinemez.`
+          }, { status: 409 });
+        }
       }
 
       await routeCol.deleteOne(buildIdFilter(route_id));

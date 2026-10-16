@@ -142,19 +142,24 @@ export async function POST(request: NextRequest) {
       }
 
       // Sync any active routes containing this beneficiary
-      const activeRoutes = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      const activeRoutes = await routeCol.find({ durum: { $in: ['AKTIF', 'DURAKLATILDI'] } }).toArray();
       for (const rawR of activeRoutes) {
         const decR = mapDoc(rawR);
         const stops = decR.duraklar || [];
         let modified = false;
         stops.forEach((s: any) => {
-          if (String(s.beneficiary_id) === String(beneficiary.id)) {
+          if (
+            String(s.beneficiary_id) === String(beneficiary.id) ||
+            String(s.beneficiary_id) === String(beneficiary._id) ||
+            (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
+          ) {
             s.durum = newStatus;
             s.teslim_edilen_torba = newTotalBags;
             s.teslim_tarihi = localTimeStr;
             s.teslim_eden_personel = staff;
             s.teslim_alan = recipient;
             s.teslimat_notu = note;
+            s.daha_sonra_tamamlanacak = false;
             modified = true;
           }
         });
@@ -255,20 +260,27 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Sync any active routes containing this beneficiary
-      const activeRoutes = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      // Sync any active/completed/paused routes containing this beneficiary
+      const activeRoutes = await routeCol.find({
+        durum: { $in: ['AKTIF', 'DURAKLATILDI', 'TAMAMLANDI'] }
+      }).toArray();
       for (const rawR of activeRoutes) {
         const decR = mapDoc(rawR);
         const stops = decR.duraklar || [];
         let modified = false;
         stops.forEach((s: any) => {
-          if (String(s.beneficiary_id) === String(beneficiary.id)) {
+          if (
+            String(s.beneficiary_id) === String(beneficiary.id) ||
+            String(s.beneficiary_id) === String(beneficiary._id) ||
+            (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
+          ) {
             s.durum = 'BEKLIYOR';
             s.teslim_edilen_torba = 0;
             s.teslim_tarihi = null;
             s.teslim_eden_personel = null;
             s.teslim_alan = '';
             s.teslimat_notu = '';
+            s.daha_sonra_tamamlanacak = false;
             modified = true;
           }
         });
@@ -288,15 +300,31 @@ export async function POST(request: NextRequest) {
               undeliveredCount++;
             }
           });
+
+          let nextRouteDurum = decR.durum;
+          // If the route was TAMAMLANDI, but now has pending or incomplete stops, revert it to AKTIF!
+          if (decR.durum === 'TAMAMLANDI' && completedCount < stops.length) {
+            nextRouteDurum = 'AKTIF';
+          }
+
+          const routeSetFields: Record<string, any> = {
+            durum: nextRouteDurum,
+            duraklar: stops.map(encryptRouteStop),
+            tamamlanan_hane: completedCount,
+            eksik_hane: eksikCount,
+            teslim_edilemeyen_hane: undeliveredCount,
+            toplam_dagitilan_torba: totalDeliveredBags,
+            updated_at: localTimeStr,
+          };
+
+          if (nextRouteDurum === 'AKTIF' && decR.durum === 'TAMAMLANDI') {
+            routeSetFields.completed_at = null;
+            routeSetFields.kapatan_personel = null;
+            routeSetFields.kapanis_notu = null;
+          }
+
           await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
-            $set: {
-              duraklar: stops.map(encryptRouteStop),
-              tamamlanan_hane: completedCount,
-              eksik_hane: eksikCount,
-              teslim_edilemeyen_hane: undeliveredCount,
-              toplam_dagitilan_torba: totalDeliveredBags,
-              updated_at: localTimeStr,
-            },
+            $set: routeSetFields,
           });
         }
       }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Undo2, X } from 'lucide-react';
 
 interface CancelModalProps {
@@ -64,8 +65,13 @@ export default function CancelModal({
     }
   };
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const modalContent = (
+    <div className="modal-overlay" style={{ zIndex: 200 }} onClick={onClose}>
       <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
           <div className="flex items-center gap-2">
@@ -173,4 +179,10 @@ export default function CancelModal({
       </div>
     </div>
   );
+
+  if (mounted && typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+
+  return modalContent;
 }
