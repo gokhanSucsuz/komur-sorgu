@@ -335,17 +335,18 @@ export async function POST(request: NextRequest) {
       });
 
       const isAllStopsCompleted = stops.length > 0 && completedCount === stops.length;
+      const hasRemainingStopsAfterCurrent = stops.some(
+        (s: any, idx: number) => idx > Number(stop_index) && s.durum !== 'TAMAMLANDI'
+      );
       const isLastStopOrAllVisitedWithIncomplete =
-        !isAllStopsCompleted &&
-        (eksikCount > 0 || undeliveredCount > 0) &&
-        (waitingCount === 0 || Number(stop_index) === stops.length - 1);
+        !isAllStopsCompleted && !hasRemainingStopsAfterCurrent;
 
       let nextRouteDurum = route.durum || 'AKTIF';
       if (isAllStopsCompleted) {
         nextRouteDurum = 'TAMAMLANDI';
       } else if (isLastStopOrAllVisitedWithIncomplete) {
         nextRouteDurum = 'DURAKLATILDI';
-      } else if (nextRouteDurum === 'DURAKLATILDI' && waitingCount > 0) {
+      } else {
         nextRouteDurum = 'AKTIF';
       }
 
@@ -500,6 +501,17 @@ export async function POST(request: NextRequest) {
 
       await touchSyncPulse(staffName);
 
+      const updatedRouteResponse = {
+        ...route,
+        durum: nextRouteDurum,
+        duraklar: stops,
+        tamamlanan_hane: completedCount,
+        eksik_hane: eksikCount,
+        teslim_edilemeyen_hane: undeliveredCount,
+        toplam_dagitilan_torba: totalDeliveredBags,
+        updated_at: localTimeStr
+      };
+
       return NextResponse.json({
         success: true,
         message: isAllStopsCompleted
@@ -508,6 +520,8 @@ export async function POST(request: NextRequest) {
           ? `Son durağa ulaşıldı. Eksik / daha sonra tamamlanacak kayıtlar bulunduğu için rota GEÇİCİ OLARAK DURDURULDU.`
           : `${targetStop.sira}. Durak (${targetStop.ad_soyad}) işlemi güncellendi: ${durum}`,
         stop: targetStop,
+        duraklar: stops,
+        route: updatedRouteResponse,
         routeStatus: nextRouteDurum,
         routeAutoCompleted: isAllStopsCompleted,
         routeAutoPaused: isLastStopOrAllVisitedWithIncomplete,

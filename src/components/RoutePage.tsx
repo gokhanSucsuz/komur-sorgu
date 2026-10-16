@@ -413,11 +413,30 @@ export default function RoutePage({
         return;
       }
 
-      const updatedRoute = data.route;
-      const updatedStops: any[] = updatedRoute?.duraklar || [];
+      // Build reliable updatedStops array (from API response or local fallback)
+      const fallbackUpdatedStops = stops.map((s: any, idx: number) =>
+        idx === routeModeIndex
+          ? data.stop || {
+              ...s,
+              durum: targetDurum,
+              teslim_edilen_torba: targetTorba,
+              teslim_alan: routeModeRecipient.trim() || currentStop.ad_soyad,
+              teslimat_notu: targetNote,
+              daha_sonra_tamamlanacak: targetDurum !== 'TAMAMLANDI'
+            }
+          : s
+      );
+      const updatedStops: any[] =
+        (Array.isArray(data.duraklar) && data.duraklar.length > 0 && data.duraklar) ||
+        (Array.isArray(data.route?.duraklar) && data.route.duraklar.length > 0 && data.route.duraklar) ||
+        fallbackUpdatedStops;
 
-      // Case 1: All stops in the route are now TAMAMLANDI!
-      if (data.routeAutoCompleted) {
+      const allCompleted =
+        Boolean(data.routeAutoCompleted) ||
+        (updatedStops.length > 0 && updatedStops.every((s: any) => s.durum === 'TAMAMLANDI'));
+
+      // Case 1: All stops in the route are now TAMAMLANDI -> finalize route & exit Rota Modu!
+      if (allCompleted) {
         setIsRouteModeOpen(false);
         setRouteModePausedNotice(false);
         setRouteStatusBanner({
@@ -430,54 +449,48 @@ export default function RoutePage({
         return;
       }
 
-      // Refresh routes in background so state stays in sync
-      await fetchRoutes();
-      if (onRefreshAll) onRefreshAll();
-
-      // Determine next stop progression
-      const isLastStopInOrder = routeModeIndex >= updatedStops.length - 1;
-
-      // Look for next unvisited (BEKLIYOR) stop after current index
-      const nextWaitingAfter = updatedStops.findIndex(
-        (s: any, idx: number) => idx > routeModeIndex && (!s.durum || s.durum === 'BEKLIYOR')
+      // Immediately update activeRoutes in memory so the UI transitions without waiting or flickering
+      const currentRouteId = String(activeRoute.id || activeRoute._id);
+      setActiveRoutes((prev) =>
+        prev.map((r) => {
+          if (String(r.id || r._id) !== currentRouteId) return r;
+          if (data.route) return data.route;
+          return {
+            ...r,
+            durum: data.routeStatus || r.durum,
+            duraklar: updatedStops,
+            tamamlanan_hane: data.stats?.tamamlanan_hane ?? r.tamamlanan_hane,
+            eksik_hane: data.stats?.eksik_hane ?? r.eksik_hane,
+            teslim_edilemeyen_hane: data.stats?.teslim_edilemeyen_hane ?? r.teslim_edilemeyen_hane,
+            toplam_dagitilan_torba: data.stats?.toplam_dagitilan_torba ?? r.toplam_dagitilan_torba
+          };
+        })
       );
 
-      if (nextWaitingAfter !== -1) {
-        // Move to the next unvisited stop in sequence
-        setRouteModeIndex(nextWaitingAfter);
-        syncRouteModeInputsForStop(updatedStops[nextWaitingAfter]);
+      // Case 2: Is there any remaining uncompleted stop AFTER the current stop?
+      // (Whether current stop was completed OR left incomplete, always advance to the next stop!)
+      const nextStopIndexAfter = updatedStops.findIndex(
+        (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
+      );
+
+      if (nextStopIndexAfter !== -1) {
+        setRouteModePausedNotice(false);
+        setRouteModeIndex(nextStopIndexAfter);
+        syncRouteModeInputsForStop(updatedStops[nextStopIndexAfter]);
+        if (onRefreshAll) onRefreshAll();
         return;
       }
 
-      // Check if there is any earlier BEKLIYOR stop before current index
-      const anyWaitingIndex = updatedStops.findIndex(
-        (s: any) => !s.durum || s.durum === 'BEKLIYOR'
-      );
-      if (anyWaitingIndex !== -1 && !isLastStopInOrder) {
-        setRouteModeIndex(anyWaitingIndex);
-        syncRouteModeInputsForStop(updatedStops[anyWaitingIndex]);
-        return;
-      }
-
-      // If we were completing deferred stops (submitKind === 'COMPLETE') and there's another incomplete stop after this one, advance to it
-      if (submitKind === 'COMPLETE' && !isLastStopInOrder) {
-        const nextIncompleteAfter = updatedStops.findIndex(
-          (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
-        );
-        if (nextIncompleteAfter !== -1) {
-          setRouteModeIndex(nextIncompleteAfter);
-          syncRouteModeInputsForStop(updatedStops[nextIncompleteAfter]);
-          return;
-        }
-      }
-
-      // Otherwise, we reached the last stop (or finished all unvisited stops) and deferred/incomplete stops remain -> Route is temporarily paused!
+      // Case 3: We just processed the LAST stop in the sequence (no stops left after currentStop),
+      // and since allCompleted is false, there are incomplete/deferred stops in the route -> Show Pause screen!
       setRouteModePausedNotice(true);
       setRouteStatusBanner({
         type: 'PAUSED',
         title: '⏸️ Son Kayda Ulaşıldı — Rota Geçici Olarak Durduruldu',
-        message: `"${activeRoute.rota_adi}" rotasında son durağa ulaşıldı. Daha sonra tamamlanacak eksik kayıtlar bulunduğu için rota geçici olarak durduruldu.`
+        message: `"${activeRoute.rota_adi}" rotasında son kayda ulaşıldı. Eksik / daha sonra tamamlanacak kayıtlar bulunduğu için rota geçici olarak durduruldu.`
       });
+      await fetchRoutes();
+      if (onRefreshAll) onRefreshAll();
     } catch (err: any) {
       alert('Bağlantı hatası: ' + err.message);
     } finally {
@@ -3001,6 +3014,9 @@ export default function RoutePage({
             totalStops > 0 ? Math.min(100, Math.round((completedCount / totalStops) * 100)) : 0;
 
           const isLastStopInRoute = safeIndex >= totalStops - 1;
+          const hasRemainingStopsAfterCurrent = stops.some(
+            (s, idx) => idx > safeIndex && s.durum !== 'TAMAMLANDI'
+          );
           const isOnlyRemainingStop =
             stops.filter((s, idx) => idx !== safeIndex && s.durum !== 'TAMAMLANDI').length === 0;
 
@@ -3699,7 +3715,7 @@ export default function RoutePage({
                                 <span>
                                   {isActionLoading
                                     ? 'İşleniyor...'
-                                    : isLastStopInRoute || waitingStops.filter((w) => w.index !== safeIndex).length === 0
+                                    : !hasRemainingStopsAfterCurrent
                                     ? '⏸️ DAHA SONRA TAMAMLANACAK İŞARETLE & ROTAYI GEÇİCİ DURDUR'
                                     : '⏳ DAHA SONRA TAMAMLANACAK İŞARETLE & SIRADAKİ KAYDA GEÇ →'}
                                 </span>
