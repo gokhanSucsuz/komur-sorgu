@@ -43,6 +43,73 @@ export function normalizeTurkishForSearch(text: string | null | undefined): stri
 }
 
 /**
+ * Normalizes a name string specifically for exact ("birebir") Turkish matching.
+ * Converts Turkish characters (İ->i, I->ı, etc.), removes punctuation,
+ * collapses multiple spaces, and trims.
+ */
+export function normalizeTurkishNameForExactMatch(name: string | null | undefined): string {
+  if (!name) return '';
+  return name
+    .toString()
+    .replace(/[^a-zA-Z0-9çÇğĞıİöÖşŞüÜâÂ\s]/g, ' ')
+    .replace(/[İîÎ]/g, 'i')
+    .replace(/I/g, 'ı')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/[çÇ]/g, 'c')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[ıİiîÎ]/g, 'i')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[üÜûÛ]/g, 'u')
+    .replace(/[âÂ]/g, 'a')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Checks whether a beneficiary record matches a search query "birebir" (exact match):
+ * - Matches if TC Kimlik No matches exactly (cleanTcNo digits equality).
+ * - Matches if Ad Soyad matches exactly (case-insensitive, Turkish-normalized, punctuation-stripped, word-order independent).
+ * - Strictly DOES NOT search in addresses (acik_adres, mahalle, sokak, hane_no) or phone numbers.
+ */
+export function isBirebirBeneficiaryMatch(
+  record: { tc_no?: any; ad_soyad?: any } | null | undefined,
+  query: string | null | undefined
+): boolean {
+  if (!query || !query.trim() || !record) return false;
+  const rawQ = query.trim();
+
+  // 1. TC Kimlik No Birebir Eşleşme (Sadece rakamlar karşılaştırılır)
+  const qDigits = rawQ.replace(/\D/g, '');
+  if (qDigits.length > 0) {
+    const recordTcDigits = record.tc_no ? String(record.tc_no).replace(/\D/g, '') : '';
+    if (recordTcDigits && recordTcDigits === qDigits) {
+      return true;
+    }
+  }
+
+  // 2. Ad Soyad Birebir Eşleşme (Türkçe karakter ve kelime sırası esnekliği ile)
+  const normQuery = normalizeTurkishNameForExactMatch(rawQ);
+  if (normQuery && record.ad_soyad) {
+    const normTarget = normalizeTurkishNameForExactMatch(record.ad_soyad);
+    if (normTarget) {
+      // Birebir eşitlik (örn: "ahmet yilmaz" === "ahmet yilmaz")
+      if (normTarget === normQuery) {
+        return true;
+      }
+      // Kelime sırası bağımsız birebir eşitlik (örn: "yilmaz ahmet" === "ahmet yilmaz")
+      const targetWordsSorted = normTarget.split(' ').sort().join(' ');
+      const queryWordsSorted = normQuery.split(' ').sort().join(' ');
+      if (targetWordsSorted === queryWordsSorted) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Builds a regex pattern that matches Turkish characters interchangeably with their Latin/English counterparts,
  * completely case-insensitively.
  *

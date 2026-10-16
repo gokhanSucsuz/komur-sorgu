@@ -12,6 +12,7 @@ import {
   cleanHaneNo,
   cleanHaneKey,
   formatDeliveryStatusSummary,
+  isBirebirBeneficiaryMatch
 } from '@/lib/normalizer';
 import {
   hashTc,
@@ -185,28 +186,13 @@ export async function GET(request: NextRequest) {
           return r;
         });
       } else {
-        // Text / partial search (names, streets, partial TCs, phones):
         // Query candidates by non-PII filters (mahalle, durum) from MongoDB,
-        // transparently decrypt, and apply Turkish-aware memory search.
+        // transparently decrypt, and apply Birebir TC Kimlik No veya Ad Soyad matching.
+        // Addresses and phone numbers are excluded from search as requested.
         const rawCandidates = await benCol.find(filter).toArray();
         const decryptedCandidates = mapDocs(rawCandidates);
 
-        const qClean = cleanTurkishText(q);
-        const qDigits = q.replace(/\D/g, '');
-
-        const filtered = decryptedCandidates.filter((r: any) => {
-          if (qClean && turkishIncludes(r.ad_soyad || '', qClean)) return true;
-          if (qClean && turkishIncludes(r.acik_adres || '', qClean)) return true;
-          if (qClean && turkishIncludes(r.mahalle || '', qClean)) return true;
-          if (qClean && turkishIncludes(r.sokak || '', qClean)) return true;
-          if (qClean && r.hane_no && turkishIncludes(String(r.hane_no), qClean)) return true;
-          if (qDigits && qDigits.length >= 3) {
-            if (r.tc_no && String(r.tc_no).includes(qDigits)) return true;
-            if (r.telefon && String(r.telefon).includes(qDigits)) return true;
-            if (r.telefon2 && String(r.telefon2).includes(qDigits)) return true;
-          }
-          return false;
-        });
+        const filtered = decryptedCandidates.filter((r: any) => isBirebirBeneficiaryMatch(r, q));
 
         total = filtered.length;
         const sliced = (limit > 0) ? filtered.slice(skip, skip + limit) : (skip > 0 ? filtered.slice(skip) : filtered);

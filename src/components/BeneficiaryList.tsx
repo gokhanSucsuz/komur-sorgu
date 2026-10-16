@@ -17,7 +17,8 @@ import {
   compareBySiraNo,
   cleanTurkishText,
   cleanTcNo,
-  turkishIncludes
+  turkishIncludes,
+  isBirebirBeneficiaryMatch
 } from '@/lib/normalizer';
 
 interface BeneficiaryListProps {
@@ -236,24 +237,11 @@ export default function BeneficiaryList({
 
   const isSearching = Boolean(searchQuery && searchQuery.trim().length > 0);
 
-  // In-memory Turkish-aware search across all cached records
+  // In-memory Turkish-aware search across all cached records:
+  // TC Kimlik No ve Ad Soyad alanlarında BİREBİR arama (Adreslerde arama yapılmaz)
   const searchFilteredRecords = useMemo(() => {
     if (!isSearching) return [];
-    const qClean = cleanTurkishText(searchQuery);
-    const qDigits = searchQuery.replace(/\D/g, '');
-    return records.filter((r) => {
-      if (qClean && turkishIncludes(r.ad_soyad || '', qClean)) return true;
-      if (qClean && turkishIncludes(r.acik_adres || '', qClean)) return true;
-      if (qClean && turkishIncludes(r.mahalle || '', qClean)) return true;
-      if (qClean && turkishIncludes(r.sokak || '', qClean)) return true;
-      if (qClean && r.hane_no && turkishIncludes(String(r.hane_no), qClean)) return true;
-      if (qDigits && qDigits.length >= 3) {
-        if (r.tc_no && String(r.tc_no).includes(qDigits)) return true;
-        if (r.telefon && String(r.telefon).includes(qDigits)) return true;
-        if (r.telefon2 && String(r.telefon2).includes(qDigits)) return true;
-      }
-      return false;
-    });
+    return records.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery));
   }, [records, isSearching, searchQuery]);
 
   // Active list to display based on search mode or selectedQueueTab
@@ -540,7 +528,7 @@ export default function BeneficiaryList({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="TC Kimlik No, İsim veya Adres ile ara..."
+            placeholder="TC Kimlik No veya Ad Soyad ile birebir ara..."
             className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-white border border-slate-200 text-slate-900 placeholder-slate-400 font-medium text-sm focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-sm"
           />
           {searchQuery && (
@@ -1075,7 +1063,7 @@ export default function BeneficiaryList({
               Aramanızla Eşleşen Kayıt Bulunamadı
             </p>
             <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-              <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> için isim, TC Kimlik No, telefon veya adres kaydı bulunamadı.
+              <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> ile birebir eşleşen TC Kimlik No veya Ad Soyad kaydı bulunamadı.
             </p>
             <button
               type="button"
