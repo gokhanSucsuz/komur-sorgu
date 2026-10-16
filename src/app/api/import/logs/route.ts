@@ -59,9 +59,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get list of batches
-    const rawAllLogs = await logsCol.find({}).toArray();
-    const allLogs = mapDocs(rawAllLogs);
+    // Get list of batches & stats using lightweight projection on unencrypted fields
+    const allLogs = await logsCol
+      .find({}, { projection: { batch_id: 1, tarih: 1, durum: 1, islem_sonucu: 1 } })
+      .toArray();
     const batchMap = new Map<string, { batch_id: string; tarih: string; hata_sayisi: number; elenen_sayisi: number }>();
 
     for (const log of allLogs) {
@@ -123,6 +124,14 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    if (!session.valid) {
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Excel yükleme hata kayıtlarını sadece Sistem Yöneticisi temizleyebilir.' },
+        { status: 401 }
+      );
+    }
+
     const { importLogs: logsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const batchId = searchParams.get('batchId');

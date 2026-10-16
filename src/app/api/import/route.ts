@@ -6,6 +6,7 @@ import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { 
   cleanTcNo, 
+  isValidTcNo,
   normalizeAddress, 
   cleanPhone, 
   cleanTurkishText, 
@@ -64,42 +65,96 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Read Excel workbook with ExcelJS
+    // Read Excel workbook with ExcelJS (supports single-sheet and multi-sheet workbooks)
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) {
+    if (!workbook.worksheets || workbook.worksheets.length === 0) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında sayfa bulunamadı' }, { status: 400 });
     }
 
-    const headerRow = worksheet.getRow(1);
-    const headers: Record<number, string> = {};
-    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      headers[colNumber] = String(cell.value || '').trim();
-    });
-
     const rawRows: any[] = [];
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return;
-      const rowObj: Record<string, any> = {};
-      let hasData = false;
-      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        const header = headers[colNumber];
-        if (header) {
-          let cellVal = cell.value;
-          if (cellVal !== null && typeof cellVal === 'object') {
-            if ('text' in cellVal) cellVal = (cellVal as any).text;
-            else if ('result' in cellVal) cellVal = (cellVal as any).result;
+    const totalSheets = workbook.worksheets.length;
+    const headerKeywords = ['tc', 'kimlik', 'adsoyad', 'adisoyadi', 'isim', 'mahalle', 'adres', 'telefon', 'tel', 'hane'];
+
+    for (const worksheet of workbook.worksheets) {
+      const sheetTitle = (worksheet.name || '').trim();
+      // If workbook has multiple sheets, skip pure summary/icmal sheets
+      if (
+        totalSheets > 1 &&
+        /^(genel\s*icmal|ozet\s*icmal|donem\s*icmali|icmal\s*cetveli)/i.test(cleanTurkishText(sheetTitle))
+      ) {
+        continue;
+      }
+
+      // Auto-detect header row within rows 1..10 (handles institutional 5-row banners)
+      let headerRowIndex = 1;
+      let bestMatchScore = 0;
+      const maxScanRow = Math.min(10, worksheet.rowCount || 1);
+
+      for (let r = 1; r <= maxScanRow; r++) {
+        const candidateRow = worksheet.getRow(r);
+        let score = 0;
+        candidateRow.eachCell({ includeEmpty: false }, (cell) => {
+          let val = cell.value;
+          if (val !== null && typeof val === 'object') {
+            if ('text' in val) val = (val as any).text;
+            else if ('result' in val) val = (val as any).result;
           }
-          const strVal = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
-          rowObj[header] = strVal;
-          if (strVal) hasData = true;
+          const cleanCell = cleanTurkishText(String(val || '')).replace(/[^a-z0-9]/g, '');
+          if (cleanCell && cleanCell.length <= 30) {
+            if (headerKeywords.some((kw) => cleanCell === kw || cleanCell.includes(kw))) {
+              score++;
+            }
+          }
+        });
+        if (score > bestMatchScore) {
+          bestMatchScore = score;
+          headerRowIndex = r;
+        }
+      }
+
+      const headerRow = worksheet.getRow(headerRowIndex);
+      const headers: Record<number, string> = {};
+      headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        let val = cell.value;
+        if (val !== null && typeof val === 'object') {
+          if ('text' in val) val = (val as any).text;
+          else if ('result' in val) val = (val as any).result;
+        }
+        headers[colNumber] = String(val || '').trim();
+      });
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowIndex) return;
+        const rowObj: Record<string, any> = {
+          __sheetName: sheetTitle,
+          __rowNum: rowNumber,
+        };
+        let hasData = false;
+        let isSummaryFooter = false;
+
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const header = headers[colNumber];
+          if (header) {
+            let cellVal = cell.value;
+            if (cellVal !== null && typeof cellVal === 'object') {
+              if ('text' in cellVal) cellVal = (cellVal as any).text;
+              else if ('result' in cellVal) cellVal = (cellVal as any).result;
+            }
+            const strVal = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+            if (/^(TOPLAM|GENEL TOPLAM)\s*:/i.test(strVal)) {
+              isSummaryFooter = true;
+            }
+            rowObj[header] = strVal;
+            if (strVal) hasData = true;
+          }
+        });
+
+        if (hasData && !isSummaryFooter) {
+          rawRows.push(rowObj);
         }
       });
-      if (hasData) {
-        rawRows.push(rowObj);
-      }
-    });
+    }
 
     if (rawRows.length === 0) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında veri satırı bulunamadı' }, { status: 400 });
@@ -204,11 +259,13 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < rawRows.length; i++) {
       totalRows++;
       const row = rawRows[i];
-      const rowNum = i + 2; // Excel row index
+      const rowNum = row.__rowNum || (i + 2); // Excel row index
+      const sheetName = String(row.__sheetName || '').trim();
 
       // Helper to extract field case-insensitively
       const getField = (fieldAliases: string[]): string => {
         for (const key of Object.keys(row)) {
+          if (key.startsWith('__')) continue;
           const cleanKey = cleanTurkishText(key).replace(/[^a-z0-9]/g, '');
           for (const alias of fieldAliases) {
             const cleanAlias = cleanTurkishText(alias).replace(/[^a-z0-9]/g, '');
@@ -237,9 +294,17 @@ export async function POST(request: NextRequest) {
       const telefon2 = phones[1] || '';
       const displayPhoneLog = phones.length > 1 ? phones.join(' / ') : telefon;
 
-      // Settlement detection: Mahalle or Köy
-      const rawMahalle = getField(['mahalle', 'mahalle adi', 'mah', 'mh']);
+      // Settlement detection: Mahalle or Köy (fallback to sheet name on multi-sheet workbooks)
+      let rawMahalle = getField(['mahalle', 'mahalle adi', 'mah', 'mh']);
       const rawKoy = getField(['koy', 'koyu', 'koy adi', 'koyu adi', 'koy/mahalle', 'mahalle/koy', 'yerlesim', 'belde']);
+      if (
+        !rawMahalle &&
+        !rawKoy &&
+        sheetName &&
+        !/^(sayfa\s*\d*|sheet\s*\d*|hak\s*sahipleri|genel\s*liste|liste|tablo\s*\d*)$/i.test(cleanTurkishText(sheetName))
+      ) {
+        rawMahalle = sheetName;
+      }
       let acikAdres = getField(['adres', 'acik adres', 'acikadres', 'ikametgah']);
       const rawStreet = getField(['sokak', 'cadde', 'sokak cadde', 'cadde sokak', 'cadde/sokak', 'sokak/cadde', 'sk', 'cad', 'yol', 'mevkii', 'kume evleri', 'küme evleri', 'sok', 'bulvar', 'bulvari']);
       
@@ -277,8 +342,9 @@ export async function POST(request: NextRequest) {
       // Collect warnings for missing data without skipping the row
       const rowWarnings: string[] = [];
 
-      // Check 1: TC Kimlik
+      // Check 1: TC Kimlik (11 digits + official Turkish Republic algorithmic checksum)
       const hasValidTc = Boolean(tcNo && tcNo.length === 11);
+      const hasAlgorithmicValidTc = hasValidTc && isValidTcNo(tcNo);
       if (!hasValidTc) {
         uyariliCount++;
         toInsertLogs.push({
@@ -304,8 +370,31 @@ export async function POST(request: NextRequest) {
         rowWarnings.push('TC Kimlik Eksik/Geçersiz');
         // Assign a unique placeholder so database indexing never collides
         if (!tcNo || tcNo.length !== 11) {
-          tcNo = `EKSİK_TC_${batchId.slice(-4)}_${rowNum}`;
+          tcNo = `EKSİK_TC_${batchId.slice(-4)}_${i + 2}`;
         }
+      } else if (!hasAlgorithmicValidTc) {
+        uyariliCount++;
+        toInsertLogs.push({
+          batch_id: batchId,
+          satir_no: rowNum,
+          tc_no: tcNo,
+          ad_soyad: adSoyad || 'Bilinmiyor',
+          telefon: displayPhoneLog,
+          mahalle: mahalle || 'Adres Eksik',
+          acik_adres: acikAdres || 'Adres Eksik',
+          hane_no: haneNo || null,
+          hata_nedeni: 'TC Kimlik Numarası Algoritmik Doğrulamadan Geçemedi (Kontrol Basamağı Hatalı - Kayıt Uyarılı Olarak Eklendi)',
+          durum: 'HATALI',
+          islem_sonucu: 'EKLENDİ_UYARILI',
+          teslimat_durumu: 'BEKLIYOR',
+          torba_sayisi: 0,
+          hedef_torba: defaultQuota,
+          teslimat_tarihi: null,
+          teslim_alan: null,
+          teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı',
+          tarih: nowStr,
+        });
+        rowWarnings.push('TC Kimlik Algoritmik Kontrol Hatası');
       }
 
       // Check 2: Name Missing (skip only if entire row is empty/corrupted)

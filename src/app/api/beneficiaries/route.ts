@@ -205,8 +205,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Aggregated list of neighborhoods/villages with distribution metrics
-    const allBeneficiariesRaw = await benCol.find({}).toArray();
-    const allBeneficiaries = mapDocs(allBeneficiariesRaw);
+    const isUnfilteredFullLoad = !q && Object.keys(filter).length === 0 && skip === 0 && limit === 0;
+    const sourceForMahalleStats = isUnfilteredFullLoad
+      ? records
+      : await benCol
+          .find({}, { projection: { mahalle: 1, yerlesim_tipi: 1, teslimat_durumu: 1 } })
+          .toArray();
 
     const mahalleMap = new Map<string, {
       mahalle: string;
@@ -217,7 +221,7 @@ export async function GET(request: NextRequest) {
       tip: 'MAHALLE' | 'KOY';
     }>();
 
-    for (const b of allBeneficiaries) {
+    for (const b of sourceForMahalleStats) {
       const m = b.mahalle || 'Belirtilmemiş';
       const tip = b.yerlesim_tipi || (/(?:Köyü|Koy|Koyu)$/i.test(m) ? 'KOY' : 'MAHALLE');
       if (!mahalleMap.has(m)) {
@@ -240,34 +244,59 @@ export async function GET(request: NextRequest) {
     );
 
     // Incomplete & Signed-Undelivered Households for Morning Alert Banner
-    const rawEksik = await benCol
-      .find({ teslimat_durumu: 'EKSIK' })
-      .sort({ mahalle: 1 })
-      .toArray();
+    let mappedEksik: any[] = [];
+    let mappedImzali: any[] = [];
+    if (isUnfilteredFullLoad) {
+      mappedEksik = records
+        .filter((r: any) => r.teslimat_durumu === 'EKSIK')
+        .map((m: any) => ({
+          ...m,
+          hedef_torba: m.hedef_torba || 34,
+          kalan_torba: Math.max(0, (m.hedef_torba || 34) - (m.torba_sayisi || 0)),
+          uyari_tipi: 'EKSIK_TESLIMAT',
+        }));
 
-    const mappedEksik = mapDocs(rawEksik).map((m: any) => {
-      m.hedef_torba = m.hedef_torba || 34;
-      m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
-      m.uyari_tipi = 'EKSIK_TESLIMAT';
-      return m;
-    });
+      mappedImzali = records
+        .filter(
+          (r: any) =>
+            r.imza_durumu === 'IMZALANDI' &&
+            !['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'].includes(r.teslimat_durumu)
+        )
+        .map((m: any) => ({
+          ...m,
+          hedef_torba: m.hedef_torba || 34,
+          kalan_torba: m.hedef_torba || 34,
+          uyari_tipi: 'IMZALI_TESLIM_BEKLIYOR',
+        }));
+    } else {
+      const rawAlertDocs = await benCol
+        .find({
+          $or: [
+            { teslimat_durumu: 'EKSIK' },
+            {
+              imza_durumu: 'IMZALANDI',
+              teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'] },
+            },
+          ],
+        })
+        .sort({ mahalle: 1 })
+        .toArray();
 
-    // İmzası alınmış fakat kömürü henüz teslim edilmemiş haneler
-    const rawImzali = await benCol
-      .find({
-        imza_durumu: 'IMZALANDI',
-        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'] },
-      })
-      .sort({ mahalle: 1 })
-      .toArray();
+      const decryptedAlertDocs = mapDocs(rawAlertDocs);
 
-    const mappedImzali = mapDocs(rawImzali).map((m: any) => {
-      m.hedef_torba = m.hedef_torba || 34;
-      m.kalan_torba = m.hedef_torba;
-      m.uyari_tipi = 'IMZALI_TESLIM_BEKLIYOR';
-      return m;
-    });
-
+      for (const m of decryptedAlertDocs) {
+        m.hedef_torba = m.hedef_torba || 34;
+        if (m.teslimat_durumu === 'EKSIK') {
+          m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
+          m.uyari_tipi = 'EKSIK_TESLIMAT';
+          mappedEksik.push(m);
+        } else {
+          m.kalan_torba = m.hedef_torba;
+          m.uyari_tipi = 'IMZALI_TESLIM_BEKLIYOR';
+          mappedImzali.push(m);
+        }
+      }
+    }
     const eksikHaneler = [...mappedEksik, ...mappedImzali];
 
     return NextResponse.json({

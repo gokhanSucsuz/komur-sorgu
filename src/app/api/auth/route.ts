@@ -3,7 +3,39 @@ import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
 import { encryptField, hashPassword, verifyPassword } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
-import { sanitizeUser } from '@/lib/auth';
+import { sanitizeUser, verifySession } from '@/lib/auth';
+
+/**
+ * Finds an active user by username (indexed) or decrypted ad_soyad (AES-256-GCM fallback).
+ */
+async function findActiveUserByIdentifier(usersCol: any, identifier: string) {
+  const trimmed = (identifier || '').trim();
+  if (!trimmed) return null;
+
+  const escaped = trimmed.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+  const userRegex = new RegExp(`^${escaped}$`, 'i');
+
+  // 1. Fast lookup by unencrypted username index
+  const byUsername = await usersCol.findOne({
+    username: userRegex,
+    aktif: 1,
+  });
+  if (byUsername) return byUsername;
+
+  // 2. Fallback: decrypt active users and match by ad_soyad or username (case-insensitive Turkish)
+  const allActiveRaw = await usersCol.find({ aktif: 1 }).toArray();
+  const targetLower = trimmed.toLocaleLowerCase('tr-TR');
+  for (const raw of allActiveRaw) {
+    const dec = mapDoc(raw);
+    if (
+      (dec.username && String(dec.username).trim().toLocaleLowerCase('tr-TR') === targetLower) ||
+      (dec.ad_soyad && String(dec.ad_soyad).trim().toLocaleLowerCase('tr-TR') === targetLower)
+    ) {
+      return raw;
+    }
+  }
+  return null;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,13 +55,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const escapedUser = username.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-      const userRegex = new RegExp(`^${escapedUser}$`, 'i');
-
-      const rawUser = await usersCol.findOne({
-        $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-        aktif: 1,
-      });
+      const rawUser = await findActiveUserByIdentifier(usersCol, username);
 
       if (!rawUser) {
         return NextResponse.json(
@@ -59,13 +85,28 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. Return active staff members for login screen (SECURITY: Strip passwords and session tokens!)
+    // 2. Return active staff members for login screen
+    // KVKK & Security: Only expose minimal public fields (id, username, ad_soyad, rol) when unauthenticated
+    const session = await verifySession(request);
     const rawUsers = await usersCol
       .find({ aktif: 1 })
-      .sort({ rol: 1, ad_soyad: 1 })
+      .sort({ rol: 1 })
       .toArray();
 
-    const users = mapDocs(rawUsers).map(sanitizeUser);
+    const users = mapDocs(rawUsers)
+      .map(sanitizeUser)
+      .map((u: any) =>
+        session.valid
+          ? u
+          : {
+              id: u.id,
+              username: u.username,
+              ad_soyad: u.ad_soyad,
+              rol: u.rol,
+              aktif: u.aktif,
+            }
+      )
+      .sort((a: any, b: any) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'));
 
     return NextResponse.json({
       success: true,
@@ -100,13 +141,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const escapedUser = trimmedUser.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-      const userRegex = new RegExp(`^${escapedUser}$`, 'i');
-
-      const rawUser = await usersCol.findOne({
-        $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-        aktif: 1,
-      });
+      const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
 
       if (!rawUser) {
         return NextResponse.json(
@@ -128,28 +163,38 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      return NextResponse.json({
+      const res = NextResponse.json({
         success: true,
         valid: true,
       });
+
+      // Ensure HttpOnly cookie stays synchronized with valid active session token
+      if (rawUser.active_session_token === targetToken) {
+        res.cookies.set('komur_session_token', targetToken, {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 60 * 60 * 24 * 30,
+        });
+      }
+
+      return res;
     }
 
     // 2. Explicit Logout: Clean up active session
     if (action === 'logout') {
       const targetToken = (session_token || '').trim();
-      const escapedUser = trimmedUser.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-      const userRegex = new RegExp(`^${escapedUser}$`, 'i');
 
       if (trimmedUser && targetToken) {
-        await usersCol.updateOne(
-          {
-            $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-            active_session_token: targetToken,
-          },
-          {
-            $set: { active_session_token: null, last_logout_at: getIstanbulDate().iso },
-          }
-        );
+        const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
+        if (rawUser && rawUser.active_session_token === targetToken) {
+          await usersCol.updateOne(
+            { _id: rawUser._id },
+            {
+              $set: { active_session_token: null, last_logout_at: getIstanbulDate().iso },
+            }
+          );
+        }
 
         await recordActivityLog({
           kullanici_adi: trimmedUser,
@@ -174,13 +219,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Lütfen şifre / PIN giriniz' }, { status: 400 });
     }
 
-    const escapedUser = trimmedUser.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-    const userRegex = new RegExp(`^${escapedUser}$`, 'i');
-
-    const rawUser = await usersCol.findOne({
-      $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-      aktif: 1,
-    });
+    const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
 
     let isPasswordCorrect = false;
 
@@ -215,28 +254,25 @@ export async function POST(request: NextRequest) {
 
     const user = sanitizeUser(mapDoc(rawUser));
 
-    // If it's a temporary admin elevation dialog (e.g. AdminAuthModal), verify credentials without overriding active device session
-    if (is_elevation) {
-      return NextResponse.json({
-        success: true,
-        message: 'Yetkilendirme doğrulandı',
-        user: {
-          id: user.id,
-          username: user.username,
-          ad_soyad: user.ad_soyad,
-          rol: user.rol,
-          telefon: user.telefon,
+    // SECURITY ENFORCEMENT: Prevent non-ADMIN accounts from logging in as ADMIN or elevating privileges
+    if ((is_elevation || role === 'ADMIN') && user.rol !== 'ADMIN') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Yetkisiz Erişim: Girilen kullanıcı hesabı Sistem Yöneticisi (ADMIN) yetkisine sahip değildir!',
         },
-      });
+        { status: 403 }
+      );
     }
 
-    // Generate a fresh unique session token for this device
-    const newSessionToken = crypto.randomUUID();
+    // Generate or reuse session token and bind cookie so server-side verifySession(req, { requiredRole: 'ADMIN' }) succeeds
+    const newSessionToken = (is_elevation && rawUser.active_session_token)
+      ? rawUser.active_session_token
+      : crypto.randomUUID();
     const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz / Tarayıcı';
     const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
     const { iso: nowIso } = getIstanbulDate();
 
-    // Store new session token on user document (immediately invalidates any previous device session)
     await usersCol.updateOne(
       { _id: rawUser._id },
       {
@@ -249,7 +285,39 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Record audit log
+    if (is_elevation) {
+      await recordActivityLog({
+        kullanici_adi: user.ad_soyad || user.username,
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'YETKI_DOGRULAMA',
+        baslik: 'Yönetici Moduna Geçiş Doğrulandı',
+        detay: `"${user.ad_soyad}" (@${user.username}) şifreli doğrulama ile Yönetici moduna geçiş yaptı.`,
+      });
+
+      const elevRes = NextResponse.json({
+        success: true,
+        message: 'Yönetici yetkilendirmesi doğrulandı',
+        session_token: newSessionToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          ad_soyad: user.ad_soyad,
+          rol: user.rol,
+          telefon: user.telefon,
+        },
+      });
+
+      elevRes.cookies.set('komur_session_token', newSessionToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+      });
+
+      return elevRes;
+    }
+
+    // Record audit log for standard login
     await recordActivityLog({
       kullanici_adi: user.ad_soyad || user.username,
       kullanici_rolu: user.rol,
@@ -292,6 +360,11 @@ export async function POST(request: NextRequest) {
 // 4. Self-Profile & Password Update for Logged-In Users and Administrators
 export async function PUT(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
     const {
@@ -303,7 +376,7 @@ export async function PUT(request: NextRequest) {
       telefon,
     } = body;
 
-    const trimmedUser = (username || '').trim();
+    const trimmedUser = (username || session.username || '').trim();
     const trimmedCurrentPass = (current_password || '').trim();
 
     if (!trimmedUser) {
@@ -314,19 +387,21 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'İşlemi onaylamak için lütfen mevcut şifrenizi / PIN kodunuzu giriniz.' }, { status: 400 });
     }
 
-    const escapedUser = trimmedUser.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-    const userRegex = new RegExp(`^${escapedUser}$`, 'i');
-
-    const rawUser = await usersCol.findOne({
-      $or: [{ username: userRegex }, { ad_soyad: userRegex }],
-      aktif: 1,
-    });
+    const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
 
     if (!rawUser) {
       return NextResponse.json({ success: false, error: 'Kullanıcı hesabı bulunamadı.' }, { status: 404 });
     }
 
     const decUser = mapDoc(rawUser);
+
+    // Non-admin users can only update their own account
+    if (session.rol !== 'ADMIN' && String(decUser.id) !== String(session.id)) {
+      return NextResponse.json(
+        { success: false, error: 'Yetkisiz işlem! Yalnızca kendi profil bilgilerinizi güncelleyebilirsiniz.' },
+        { status: 403 }
+      );
+    }
 
     // Verify current password with scrypt or legacy fallback
     let isCurrentPassValid = false;
@@ -349,7 +424,6 @@ export async function PUT(request: NextRequest) {
     };
 
     let usernameChanged = false;
-    let oldUsername = rawUser.username;
 
     // Check & update username
     if (new_username && new_username.trim()) {

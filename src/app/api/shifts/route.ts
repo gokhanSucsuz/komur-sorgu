@@ -386,18 +386,20 @@ export async function POST(request: NextRequest) {
 
       const shiftDate = tarih || localToday;
 
-      // Check if already active
-      const existing = await shiftsCol.findOne({
-        personel_adi,
+      // Check if already active (decrypt active shifts first because personel_adi is AES-GCM encrypted)
+      const rawActiveOnDate = await shiftsCol.find({
         tarih: shiftDate,
         durum: 'DEVAM_EDIYOR',
-      });
+      }).toArray();
+      const existing = mapDocs(rawActiveOnDate).find(
+        (s: any) => (s.personel_adi || '').trim().toLowerCase() === personel_adi.trim().toLowerCase()
+      );
 
       if (existing) {
         return NextResponse.json({
           success: true,
           message: 'Bu personel için zaten aktif bir mesai bulunmaktadır.',
-          shift: mapDoc(existing),
+          shift: existing,
         });
       }
 
@@ -440,24 +442,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'END') {
-      let targetShift: any = null;
+      let rawTargetShift: any = null;
 
       if (shiftId) {
-        targetShift = await shiftsCol.findOne(buildIdFilter(shiftId));
+        rawTargetShift = await shiftsCol.findOne(buildIdFilter(shiftId));
       } else if (personel_adi) {
         const rawActiveList = await shiftsCol.find({ durum: 'DEVAM_EDIYOR' }).toArray();
         const activeList = mapDocs(rawActiveList);
         const match = activeList.find((s: any) => s.personel_adi?.toLowerCase() === personel_adi.trim().toLowerCase());
-        if (match) targetShift = await shiftsCol.findOne(buildIdFilter(match.id));
+        if (match) rawTargetShift = await shiftsCol.findOne(buildIdFilter(match.id));
       }
 
-      if (!targetShift) {
+      if (!rawTargetShift) {
         return NextResponse.json({ success: false, error: 'Sonlandırılacak aktif mesai kaydı bulunamadı.' }, { status: 404 });
       }
 
+      const targetShift = mapDoc(rawTargetShift);
+
       // Check shift ownership if non-admin
-      const callerRole = request.headers.get('x-user-role') || body.callerRole;
-      const callerName = request.headers.get('x-user-name') || body.callerName;
+      const callerRole = session.rol || request.headers.get('x-user-role') || body.callerRole;
+      const callerName = session.ad_soyad || request.headers.get('x-user-name') || body.callerName;
 
       if (callerRole && callerRole !== 'ADMIN' && callerName) {
         if (targetShift.personel_adi?.trim().toLowerCase() !== callerName.trim().toLowerCase()) {
@@ -473,13 +477,16 @@ export async function POST(request: NextRequest) {
       const totalMinutes = calculateMinutes(startTime, endTime);
 
       // Auto-aggregate deliveries performed by this staff on that day from delivery_history
-      const deliveries = await histCol
+      const rawDeliveries = await histCol
         .find({
-          personel: { $regex: new RegExp(`^${targetShift.personel_adi.trim()}$`, 'i') },
           gun_tarihi: targetShift.tarih,
-          islem_tipi: 'TESLIMAT',
+          islem_tipi: { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] },
         })
         .toArray();
+      const staffLower = (targetShift.personel_adi || '').trim().toLowerCase();
+      const deliveries = mapDocs(rawDeliveries).filter(
+        (d: any) => (d.personel || '').trim().toLowerCase() === staffLower
+      );
 
       let finalTorba = 0;
       const uniqueTc = new Set<string>();
@@ -494,7 +501,8 @@ export async function POST(request: NextRequest) {
       const finalHane = uniqueTc.size;
       const finalMahalleler = mahalleler || Array.from(uniqueMahalle).join(', ');
 
-      const updateFilter = targetShift._id ? { _id: targetShift._id } : buildIdFilter(targetShift.id);
+      const updateFilter = rawTargetShift._id ? { _id: rawTargetShift._id } : buildIdFilter(targetShift.id);
+      const finalNotesPlain = notlar !== undefined ? notlar : targetShift.notlar;
 
       await shiftsCol.updateOne(updateFilter, {
         $set: {
@@ -505,7 +513,7 @@ export async function POST(request: NextRequest) {
           mahalleler: finalMahalleler,
           teslim_edilen_torba: finalTorba,
           teslim_edilen_hane: finalHane,
-          notlar: notlar || targetShift.notlar,
+          notlar: finalNotesPlain ? encryptField(String(finalNotesPlain)) : null,
           updated_at: nowStr,
         },
       });
@@ -575,7 +583,8 @@ export async function POST(request: NextRequest) {
         updated_at: nowStr,
       };
 
-      const result = await shiftsCol.insertOne(newDoc);
+      const encryptedDoc = encryptShift(newDoc);
+      const result = await shiftsCol.insertOne(encryptedDoc);
       const inserted = await shiftsCol.findOne({ _id: result.insertedId });
 
       await recordActivityLog({
@@ -617,10 +626,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
     }
 
-    const existingShift = await shiftsCol.findOne(buildIdFilter(id));
-    if (!existingShift) {
+    const rawExistingShift = await shiftsCol.findOne(buildIdFilter(id));
+    if (!rawExistingShift) {
       return NextResponse.json({ success: false, error: 'Mesai kaydı bulunamadı' }, { status: 404 });
     }
+    const existingShift = mapDoc(rawExistingShift);
 
     if (session.rol !== 'ADMIN') {
       const staffName = (existingShift.personel_adi || '').trim().toLowerCase();
@@ -672,7 +682,7 @@ export async function PUT(request: NextRequest) {
       updated_at: nowLocaleTr,
     };
 
-    if (personel_adi) updateFields.personel_adi = personel_adi;
+    if (personel_adi) updateFields.personel_adi = encryptField(personel_adi.trim());
     if (tarih) updateFields.tarih = tarih;
     if (baslama_saati) updateFields.baslama_saati = baslama_saati;
     if (bitis_saati) updateFields.bitis_saati = bitis_saati;
@@ -681,7 +691,7 @@ export async function PUT(request: NextRequest) {
     if (mahalleler !== undefined) updateFields.mahalleler = mahalleler;
     if (teslim_edilen_torba !== undefined) updateFields.teslim_edilen_torba = teslim_edilen_torba;
     if (teslim_edilen_hane !== undefined) updateFields.teslim_edilen_hane = teslim_edilen_hane;
-    if (notlar !== undefined) updateFields.notlar = notlar;
+    if (notlar !== undefined) updateFields.notlar = notlar ? encryptField(String(notlar).trim()) : null;
 
     await shiftsCol.updateOne(buildIdFilter(id), { $set: updateFields });
     const updated = await shiftsCol.findOne(buildIdFilter(id));
@@ -713,10 +723,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
     }
 
-    const existing = await shiftsCol.findOne(buildIdFilter(id));
-    if (!existing) {
+    const rawExisting = await shiftsCol.findOne(buildIdFilter(id));
+    if (!rawExisting) {
       return NextResponse.json({ success: false, error: 'Mesai kaydı bulunamadı' }, { status: 404 });
     }
+    const existing = mapDoc(rawExisting);
 
     if (session.rol !== 'ADMIN') {
       const staffName = (existing.personel_adi || '').trim().toLowerCase();

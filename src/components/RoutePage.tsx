@@ -2165,10 +2165,10 @@ export default function RoutePage({
                     <span>Tarih: <strong className="text-slate-800">{printRoute.tarih}</strong></span>
                     <span>•</span>
                     <span>Personel: <strong className="text-slate-800">{printRoute.dagitim_personeli || userName || 'Saha Personeli'}</strong></span>
-                    {printRoute.arac_plakasi && (
+                    {(printRoute.arac_plaka || printRoute.arac_plakasi) && (
                       <>
                         <span>•</span>
-                        <span>Plaka: <strong className="text-slate-800">{printRoute.arac_plakasi}</strong></span>
+                        <span>Plaka: <strong className="text-slate-800">{printRoute.arac_plaka || printRoute.arac_plakasi}</strong></span>
                       </>
                     )}
                     <span>•</span>
@@ -2235,10 +2235,10 @@ export default function RoutePage({
                     <span>Rota: <strong className="text-slate-900">{printRoute.rota_adi}</strong></span>
                     <span>•</span>
                     <span>Tarih: <strong className="text-slate-900">{printRoute.tarih}</strong></span>
-                    {printRoute.arac_plakasi && (
+                    {(printRoute.arac_plaka || printRoute.arac_plakasi) && (
                       <>
                         <span>•</span>
-                        <span>Araç: <strong className="text-slate-900">{printRoute.arac_plakasi}</strong></span>
+                        <span>Araç: <strong className="text-slate-900">{printRoute.arac_plaka || printRoute.arac_plakasi}</strong></span>
                       </>
                     )}
                   </div>

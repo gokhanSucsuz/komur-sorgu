@@ -133,6 +133,7 @@ export default function Home() {
       }
     }
     // Clear data from memory for security
+    beneficiariesMemoryCacheRef.current = null;
     setBeneficiaries([]);
     setEksikHaneler([]);
     setArchiveAllRecords([]);
@@ -248,32 +249,41 @@ export default function Home() {
     }
   }, []);
 
-  const handleRoleChange = (role: 'ADMIN' | 'PERSONEL', name: string) => {
+  const beneficiariesMemoryCacheRef = useRef<{
+    data: any[];
+    mahalleler: any[];
+    eksikHaneler: any[];
+  } | null>(null);
+
+  const handleRoleChange = (role: 'ADMIN' | 'PERSONEL', name: string, username?: string, sessionToken?: string) => {
     setUserRole(role);
     setUserName(name);
     localStorage.setItem('komur_user_role', role);
     localStorage.setItem('komur_user_name', name);
+    if (username) {
+      localStorage.setItem('komur_username', username);
+    }
+    if (sessionToken) {
+      localStorage.setItem('komur_session_token', sessionToken);
+    }
   };
 
-  // Fetch beneficiaries with smart client caching & instant restoration
+  // Fetch beneficiaries with volatile in-memory caching (KVKK: never store plaintext PII in browser sessionStorage/localStorage)
   const fetchBeneficiaries = useCallback(async (force: boolean = false) => {
-    // If not forced refresh, check sessionStorage cache first
-    if (!force && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       try {
-        const cachedRaw = sessionStorage.getItem('komur_beneficiaries_cache');
-        if (cachedRaw) {
-          const parsed = JSON.parse(cachedRaw);
-          if (parsed && Array.isArray(parsed.data) && parsed.data.length > 0) {
-            setBeneficiaries(parsed.data);
-            setMahalleler(parsed.mahalleler || []);
-            setEksikHaneler(parsed.eksikHaneler || []);
-            setIsLoadingBeneficiaries(false);
-            return;
-          }
-        }
-      } catch (cacheErr) {
-        // Fallback to network fetch
+        sessionStorage.removeItem('komur_beneficiaries_cache');
+      } catch (e) {
+        // ignore
       }
+    }
+
+    if (!force && beneficiariesMemoryCacheRef.current && beneficiariesMemoryCacheRef.current.data.length > 0) {
+      setBeneficiaries(beneficiariesMemoryCacheRef.current.data);
+      setMahalleler(beneficiariesMemoryCacheRef.current.mahalleler || []);
+      setEksikHaneler(beneficiariesMemoryCacheRef.current.eksikHaneler || []);
+      setIsLoadingBeneficiaries(false);
+      return;
     }
 
     // Only trigger full loading spinner when there are no records in memory
@@ -299,18 +309,11 @@ export default function Home() {
         setMahalleler(mList);
         setEksikHaneler(eksikList);
 
-        // Cache in sessionStorage for zero-latency subsequent views
-        if (typeof window !== 'undefined') {
-          try {
-            sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
-              data: records,
-              mahalleler: mList,
-              eksikHaneler: eksikList
-            }));
-          } catch (e) {
-            // Ignore quota errors if storage full
-          }
-        }
+        beneficiariesMemoryCacheRef.current = {
+          data: records,
+          mahalleler: mList,
+          eksikHaneler: eksikList,
+        };
       }
     } catch (err) {
       console.error('Error fetching beneficiaries:', err);
@@ -972,7 +975,7 @@ export default function Home() {
           isOpen={showAdminAuthModal}
           onClose={() => setShowAdminAuthModal(false)}
           onSuccess={(adminUser) => {
-            handleRoleChange('ADMIN', adminUser.name);
+            handleRoleChange('ADMIN', adminUser.name, adminUser.username, adminUser.session_token);
           }}
           title="Yönetici Yetkilendirmesi Gereklidir"
           description="Excel aktarımı ve toplu veri yönetimi işlemleri için lütfen Yönetici şifrenizi veya PIN kodunuzu giriniz."

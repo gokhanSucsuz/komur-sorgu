@@ -4,6 +4,11 @@ import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const { systemSettings } = await getDbCollections();
     const doc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const varsayilanHedefTorba = doc ? parseInt(doc.value, 10) : 34;

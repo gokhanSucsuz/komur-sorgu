@@ -6,7 +6,7 @@ import { ShieldAlert, KeyRound, Eye, EyeOff, Lock, X, CheckCircle2, AlertCircle,
 interface AdminAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (adminUser: { name: string; username: string }) => void;
+  onSuccess: (adminUser: { name: string; username: string; session_token?: string }) => void;
   title?: string;
   description?: string;
 }
@@ -49,28 +49,14 @@ export default function AdminAuthModal({
       });
 
       const data = await res.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Hatalı yönetici şifresi veya PIN kodu! Yetkilendirme reddedildi.');
-      }
-
-      // Record activity log for audit
-      try {
-        await fetch('/api/audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'YÖNETİCİ MODUNA GEÇİŞ',
-            details: `Kullanıcı şifreli doğrulama ile Yönetici moduna geçiş yaptı (@${data.user.username || 'admin'})`,
-            user: data.user.ad_soyad || 'Yönetici'
-          })
-        });
-      } catch (logErr) {
-        // Silent fail for log
+      if (!data.success || data.user?.rol !== 'ADMIN') {
+        throw new Error(data.error || 'Hatalı yönetici şifresi veya yetkisiz kullanıcı! Yetkilendirme reddedildi.');
       }
 
       onSuccess({
         name: data.user.ad_soyad || 'Yönetici',
-        username: data.user.username || 'admin'
+        username: data.user.username || 'admin',
+        session_token: data.session_token,
       });
       setPassword('');
       setErrorMsg('');

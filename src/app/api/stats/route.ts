@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections } from '@/lib/mongodb';
+import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const {
       isFallback,
       beneficiaries: benCol,

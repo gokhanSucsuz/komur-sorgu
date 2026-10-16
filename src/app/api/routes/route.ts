@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
+import { encryptField, encryptDeliveryHistory, encryptRoute, encryptRouteStop } from '@/lib/crypto';
 import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
-    const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
+    const { nowLocaleTr, nowEnCa } = getIstanbulDate();
     const localToday = nowEnCa; // YYYY-MM-DD
     const localTimeStr = nowLocaleTr;
 
@@ -224,16 +225,19 @@ export async function POST(request: NextRequest) {
         completed_at: null
       };
 
-      await routeCol.insertOne(newRoute);
+      // Encrypt all PII fields in stops & notes with AES-256-GCM before storing in MongoDB
+      await routeCol.insertOne(encryptRoute(newRoute));
 
       await recordActivityLog({
         kullanici_adi: olusturan_personel.trim(),
-        kullanici_rolu: 'PERSONEL',
+        kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'ROTA_OLUSTURMA',
         baslik: 'Yeni Dağıtım Rotası Oluşturuldu',
         detay: `"${routeName}" oluşturuldu. Toplam ${duraklar.length} durak, ${hedefToplam} torba hedef. Araç: ${arac_plaka || 'Belirtilmedi'}. Mahalleler: ${mahalleler.join(', ')}`,
         ek_bilgi: { routeId: routeIdStr, totalStops: duraklar.length, hedefToplam }
       });
+
+      await touchSyncPulse(olusturan_personel.trim());
 
       return NextResponse.json({
         success: true,
@@ -291,7 +295,7 @@ export async function POST(request: NextRequest) {
       }
 
       const recipient = (teslim_alan || targetStop.ad_soyad).trim();
-      const staffName = (personel || 'Personel').trim();
+      const staffName = (session.ad_soyad || personel || 'Personel').trim();
       const note = notlar.trim();
 
       // Update stop data
@@ -320,10 +324,10 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Update route in DB
+      // Update route in DB with AES-256-GCM encrypted stops
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
-          duraklar: stops,
+          duraklar: stops.map(encryptRouteStop),
           tamamlanan_hane: completedCount,
           eksik_hane: eksikCount,
           teslim_edilemeyen_hane: undeliveredCount,
@@ -332,7 +336,7 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Synchronize with beneficiary & delivery history
+      // Synchronize with beneficiary & delivery history (AES-256-GCM encrypted)
       const benIdFilter = buildIdFilter(targetStop.beneficiary_id);
 
       if (durum === 'TAMAMLANDI') {
@@ -341,14 +345,14 @@ export async function POST(request: NextRequest) {
             teslimat_durumu: 'TAMAMLANDI',
             teslimat_tarihi: localTimeStr,
             torba_sayisi: deliveredBags,
-            teslim_alan: recipient,
+            teslim_alan: encryptField(recipient),
             teslim_eden_personel: staffName,
-            teslimat_notu: note,
+            teslimat_notu: encryptField(note),
             updated_at: localTimeStr
           }
         });
 
-        await histCol.insertOne({
+        await histCol.insertOne(encryptDeliveryHistory({
           beneficiary_id: targetStop.beneficiary_id,
           tc_no: targetStop.tc_no,
           ad_soyad: targetStop.ad_soyad,
@@ -359,23 +363,37 @@ export async function POST(request: NextRequest) {
           teslim_alan: recipient,
           personel: staffName,
           notlar: `[Rota: ${route.rota_adi}] ${note}`.trim(),
+          iptal_nedeni: null,
           tarih: localTimeStr,
           gun_tarihi: localToday
+        }));
+
+        await recordActivityLog({
+          kullanici_adi: staffName,
+          kullanici_rolu: session.rol || 'PERSONEL',
+          islem_tipi: 'TESLIMAT',
+          baslik: 'Rota Üzerinden Kömür Teslimatı Tamamlandı',
+          detay: `[Rota: ${route.rota_adi}] ${recipient} (${targetStop.tc_no}) hanesine ${deliveredBags} torba kömür teslim edildi.`,
+          hedef_kisi: recipient,
+          hedef_tc: targetStop.tc_no,
+          mahalle: targetStop.mahalle,
+          torba_sayisi: deliveredBags,
         });
       } else if (durum === 'EKSIK') {
+        const eksikNote = note || 'Kısmi teslimat yapıldı, eksik torba var';
         await benCol.updateOne(benIdFilter, {
           $set: {
             teslimat_durumu: 'EKSIK',
             teslimat_tarihi: localTimeStr,
             torba_sayisi: deliveredBags,
-            teslim_alan: recipient,
+            teslim_alan: encryptField(recipient),
             teslim_eden_personel: staffName,
-            teslimat_notu: note || 'Kısmi teslimat yapıldı, eksik torba var',
+            teslimat_notu: encryptField(eksikNote),
             updated_at: localTimeStr
           }
         });
 
-        await histCol.insertOne({
+        await histCol.insertOne(encryptDeliveryHistory({
           beneficiary_id: targetStop.beneficiary_id,
           tc_no: targetStop.tc_no,
           ad_soyad: targetStop.ad_soyad,
@@ -386,19 +404,33 @@ export async function POST(request: NextRequest) {
           teslim_alan: recipient,
           personel: staffName,
           notlar: `[Rota: ${route.rota_adi}] Eksik Kalan: ${Math.max(0, hedef - deliveredBags)} torba. ${note}`.trim(),
+          iptal_nedeni: null,
           tarih: localTimeStr,
           gun_tarihi: localToday
+        }));
+
+        await recordActivityLog({
+          kullanici_adi: staffName,
+          kullanici_rolu: session.rol || 'PERSONEL',
+          islem_tipi: 'EKSIK_TESLIMAT',
+          baslik: 'Rota Üzerinden Eksik Kömür Teslimatı Yapıldı',
+          detay: `[Rota: ${route.rota_adi}] ${recipient} (${targetStop.tc_no}) hanesine ${deliveredBags}/${hedef} torba teslim edildi.`,
+          hedef_kisi: recipient,
+          hedef_tc: targetStop.tc_no,
+          mahalle: targetStop.mahalle,
+          torba_sayisi: deliveredBags,
         });
       } else if (durum === 'TESLIM_EDILEMEDI') {
+        const undeliveredNote = `[${localToday} Teslim Edilemedi]: ${note || 'Kapı açılmadı / evde yok'}`;
         await benCol.updateOne(benIdFilter, {
           $set: {
             teslimat_durumu: 'BEKLIYOR',
-            teslimat_notu: `[${localToday} Teslim Edilemedi]: ${note || 'Kapı açılmadı / evde yok'}`,
+            teslimat_notu: encryptField(undeliveredNote),
             updated_at: localTimeStr
           }
         });
 
-        await histCol.insertOne({
+        await histCol.insertOne(encryptDeliveryHistory({
           beneficiary_id: targetStop.beneficiary_id,
           tc_no: targetStop.tc_no,
           ad_soyad: targetStop.ad_soyad,
@@ -409,10 +441,13 @@ export async function POST(request: NextRequest) {
           teslim_alan: null,
           personel: staffName,
           notlar: `[Rota: ${route.rota_adi}] Teslim Edilemedi Nedeni: ${note || 'Evde yok / ulaşılamadı'}`.trim(),
+          iptal_nedeni: null,
           tarih: localTimeStr,
           gun_tarihi: localToday
-        });
+        }));
       }
+
+      await touchSyncPulse(staffName);
 
       return NextResponse.json({
         success: true,
@@ -443,7 +478,7 @@ export async function POST(request: NextRequest) {
 
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
-          duraklar: reindexedStops,
+          duraklar: reindexedStops.map(encryptRouteStop),
           updated_at: localTimeStr
         }
       });
@@ -547,7 +582,7 @@ export async function POST(request: NextRequest) {
           eksik_hane: eksikCount,
           teslim_edilemeyen_hane: undeliveredCount,
           toplam_dagitilan_torba: totalDeliveredBags,
-          kapanis_notu: notlar.trim(),
+          kapanis_notu: encryptField(notlar.trim()),
           kapatan_personel: personel.trim(),
           updated_at: localTimeStr
         }
@@ -555,12 +590,14 @@ export async function POST(request: NextRequest) {
 
       await recordActivityLog({
         kullanici_adi: personel.trim(),
-        kullanici_rolu: 'PERSONEL',
+        kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'ROTA_KAPATMA',
         baslik: 'Dağıtım Rotası Tamamlandı & Kapatıldı',
         detay: `"${route.rota_adi}" rotası başarıyla tamamlandı ve arşivlendi. ${completedCount} tam hane, ${eksikCount} eksik hane, toplam ${totalDeliveredBags} torba kömür dağıtıldı.`,
         ek_bilgi: { route_id, completedCount, eksikCount, totalDeliveredBags }
       });
+
+      await touchSyncPulse(personel.trim());
 
       return NextResponse.json({
         success: true,
@@ -620,7 +657,7 @@ export async function POST(request: NextRequest) {
 
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
-          duraklar: reindexedStops,
+          duraklar: reindexedStops.map(encryptRouteStop),
           toplam_hane: reindexedStops.length,
           tamamlanan_hane: completedCount,
           eksik_hane: eksikCount,
@@ -633,12 +670,14 @@ export async function POST(request: NextRequest) {
 
       await recordActivityLog({
         kullanici_adi: personel.trim(),
-        kullanici_rolu: 'PERSONEL',
+        kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'ROTA_GUNCELLEME',
         baslik: 'Durak Rotadan Çıkarıldı',
         detay: `"${removed.ad_soyad}" hanesi "${route.rota_adi}" rotasından çıkarıldı. Kalan durak sayısı: ${reindexedStops.length}.`,
         ek_bilgi: { route_id, removedBeneficiaryId: removed.beneficiary_id, remainingCount: reindexedStops.length }
       });
+
+      await touchSyncPulse(personel.trim());
 
       return NextResponse.json({
         success: true,
@@ -657,6 +696,7 @@ export async function POST(request: NextRequest) {
       }
 
       await routeCol.deleteOne(buildIdFilter(route_id));
+      await touchSyncPulse(session.ad_soyad || session.username || 'Personel');
 
       return NextResponse.json({
         success: true,
@@ -687,14 +727,15 @@ export async function POST(request: NextRequest) {
           imza_durumu: isSigned ? 'IMZALANDI' : 'BEKLIYOR',
           imza_tarihi: isSigned ? localTimeStr : null,
           imza_alan_personel: isSigned ? (imza_alan_personel || 'Personel').trim() : null,
-          imza_notu: notlar.trim(),
+          imza_notu: notlar ? encryptField(notlar.trim()) : '',
           updated_at: localTimeStr
         }
       });
 
       // If there are active routes with this beneficiary, sync the stop across all active routes
       const activeRouteDocs = await routeCol.find({ durum: 'AKTIF' }).toArray();
-      for (const activeDoc of activeRouteDocs) {
+      for (const rawActiveDoc of activeRouteDocs) {
+        const activeDoc = mapDoc(rawActiveDoc);
         const stops = activeDoc.duraklar || [];
         let modified = false;
         stops.forEach((s: any) => {
@@ -707,7 +748,7 @@ export async function POST(request: NextRequest) {
         });
         if (modified) {
           await routeCol.updateOne(buildIdFilter(activeDoc.id || activeDoc._id), {
-            $set: { duraklar: stops, updated_at: localTimeStr }
+            $set: { duraklar: stops.map(encryptRouteStop), updated_at: localTimeStr }
           });
         }
       }
@@ -753,7 +794,8 @@ export async function POST(request: NextRequest) {
       // Aktif rotalardaki durakları senkronize et
       const activeRouteDocs = await routeCol.find({ durum: 'AKTIF' }).toArray();
       const idSet = new Set(beneficiary_ids.map(String));
-      for (const activeDoc of activeRouteDocs) {
+      for (const rawActiveDoc of activeRouteDocs) {
+        const activeDoc = mapDoc(rawActiveDoc);
         const stops = activeDoc.duraklar || [];
         let modified = false;
         stops.forEach((s: any) => {
@@ -766,7 +808,7 @@ export async function POST(request: NextRequest) {
         });
         if (modified) {
           await routeCol.updateOne(buildIdFilter(activeDoc.id || activeDoc._id), {
-            $set: { duraklar: stops, updated_at: localTimeStr }
+            $set: { duraklar: stops.map(encryptRouteStop), updated_at: localTimeStr }
           });
         }
       }

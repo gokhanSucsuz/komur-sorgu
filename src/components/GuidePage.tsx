@@ -209,9 +209,9 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
 
             <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-xs space-y-1">
               <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 font-extrabold flex items-center justify-center text-xs">3</span>
-              <h5 className="font-bold text-slate-900 text-xs">Dokunmatik Islak İmza Alın</h5>
+              <h5 className="font-bold text-slate-900 text-xs">İmza Durumu ve Teslimat Onayı</h5>
               <p className="text-[11px] text-slate-600">
-                Vatandaş tablet veya telefon ekranına parmağıyla imzasını atar. &quot;Teslimatı Onayla&quot; butonuna basıldığında kayıt mühürlenir.
+                Saha tutanağında ıslak imzası alınan haneler <strong>&quot;İmza Alındı&quot;</strong> olarak işaretlenir ve <strong>&quot;Teslimatı Onayla&quot;</strong> butonuna basıldığında işlem denetim iziyle mühürlenir.
               </p>
             </div>
           </div>

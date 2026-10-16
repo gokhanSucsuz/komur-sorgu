@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
-import { encryptField, encryptDeliveryHistory } from '@/lib/crypto';
+import { encryptField, encryptDeliveryHistory, encryptRouteStop, hashTc } from '@/lib/crypto';
+import { cleanTcNo } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 
@@ -14,22 +15,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { beneficiaries: benCol, deliveryHistory: histCol } = await getDbCollections();
+    const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol } = await getDbCollections();
     const body = await request.json();
-    const { action, beneficiary_id, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;
+    const { action, beneficiary_id, tc_no, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;
 
-    if (!beneficiary_id) {
-      return NextResponse.json({ success: false, error: 'Kayıt ID zorunludur' }, { status: 400 });
+    if (!beneficiary_id && !tc_no) {
+      return NextResponse.json({ success: false, error: 'Kayıt ID veya TC Kimlik No zorunludur' }, { status: 400 });
     }
 
-    const rawBeneficiary = await benCol.findOne(buildIdFilter(beneficiary_id));
+    let rawBeneficiary = beneficiary_id ? await benCol.findOne(buildIdFilter(beneficiary_id)) : null;
+
+    // Fallback lookup by TC blind index hash if beneficiary_id was a history ID or changed
+    if (!rawBeneficiary && tc_no) {
+      const cleanedTc = cleanTcNo(tc_no);
+      const tcHash = hashTc(cleanedTc);
+      if (cleanedTc) {
+        rawBeneficiary = await benCol.findOne({
+          $or: [
+            ...(tcHash ? [{ tc_hash: tcHash }] : []),
+            { tc_no: cleanedTc },
+          ],
+        });
+      }
+    }
 
     if (!rawBeneficiary) {
       return NextResponse.json({ success: false, error: 'Hak sahibi bulunamadı' }, { status: 404 });
     }
 
     const beneficiary = mapDoc(rawBeneficiary);
-    const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
+    const { nowLocaleTr, nowEnCa } = getIstanbulDate();
     const localToday = nowEnCa;
     const localTimeStr = nowLocaleTr;
 
@@ -126,6 +141,52 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Sync any active routes containing this beneficiary
+      const activeRoutes = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      for (const rawR of activeRoutes) {
+        const decR = mapDoc(rawR);
+        const stops = decR.duraklar || [];
+        let modified = false;
+        stops.forEach((s: any) => {
+          if (String(s.beneficiary_id) === String(beneficiary.id)) {
+            s.durum = newStatus;
+            s.teslim_edilen_torba = newTotalBags;
+            s.teslim_tarihi = localTimeStr;
+            s.teslim_eden_personel = staff;
+            s.teslim_alan = recipient;
+            s.teslimat_notu = note;
+            modified = true;
+          }
+        });
+        if (modified) {
+          let completedCount = 0;
+          let eksikCount = 0;
+          let undeliveredCount = 0;
+          let totalDeliveredBags = 0;
+          stops.forEach((s: any) => {
+            if (s.durum === 'TAMAMLANDI') {
+              completedCount++;
+              totalDeliveredBags += s.teslim_edilen_torba || s.hedef_torba || 34;
+            } else if (s.durum === 'EKSIK') {
+              eksikCount++;
+              totalDeliveredBags += s.teslim_edilen_torba || 0;
+            } else if (s.durum === 'TESLIM_EDILEMEDI') {
+              undeliveredCount++;
+            }
+          });
+          await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+            $set: {
+              duraklar: stops.map(encryptRouteStop),
+              tamamlanan_hane: completedCount,
+              eksik_hane: eksikCount,
+              teslim_edilemeyen_hane: undeliveredCount,
+              toplam_dagitilan_torba: totalDeliveredBags,
+              updated_at: localTimeStr,
+            },
+          });
+        }
+      }
+
       // Update sync pulse in systemSettings so other clients auto-refresh & invalidate cache
       await touchSyncPulse(staff);
 
@@ -193,6 +254,52 @@ export async function POST(request: NextRequest) {
           updated_at: localTimeStr,
         },
       });
+
+      // Sync any active routes containing this beneficiary
+      const activeRoutes = await routeCol.find({ durum: 'AKTIF' }).toArray();
+      for (const rawR of activeRoutes) {
+        const decR = mapDoc(rawR);
+        const stops = decR.duraklar || [];
+        let modified = false;
+        stops.forEach((s: any) => {
+          if (String(s.beneficiary_id) === String(beneficiary.id)) {
+            s.durum = 'BEKLIYOR';
+            s.teslim_edilen_torba = 0;
+            s.teslim_tarihi = null;
+            s.teslim_eden_personel = null;
+            s.teslim_alan = '';
+            s.teslimat_notu = '';
+            modified = true;
+          }
+        });
+        if (modified) {
+          let completedCount = 0;
+          let eksikCount = 0;
+          let undeliveredCount = 0;
+          let totalDeliveredBags = 0;
+          stops.forEach((s: any) => {
+            if (s.durum === 'TAMAMLANDI') {
+              completedCount++;
+              totalDeliveredBags += s.teslim_edilen_torba || s.hedef_torba || 34;
+            } else if (s.durum === 'EKSIK') {
+              eksikCount++;
+              totalDeliveredBags += s.teslim_edilen_torba || 0;
+            } else if (s.durum === 'TESLIM_EDILEMEDI') {
+              undeliveredCount++;
+            }
+          });
+          await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+            $set: {
+              duraklar: stops.map(encryptRouteStop),
+              tamamlanan_hane: completedCount,
+              eksik_hane: eksikCount,
+              teslim_edilemeyen_hane: undeliveredCount,
+              toplam_dagitilan_torba: totalDeliveredBags,
+              updated_at: localTimeStr,
+            },
+          });
+        }
+      }
 
       // Record cancellation in history (AES-256-GCM Şifreli)
       await histCol.insertOne(encryptDeliveryHistory({

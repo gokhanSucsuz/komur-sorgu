@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { buildTurkishSearchFilter } from '@/lib/normalizer';
+import { turkishRecordMatches } from '@/lib/normalizer';
+import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
@@ -26,29 +27,31 @@ export async function GET(request: NextRequest) {
       filter.gun_tarihi = gun;
     }
 
-    if (q) {
-      const searchFilter = buildTurkishSearchFilter(q, [
-        'tc_no',
-        'ad_soyad',
-        'mahalle',
-        'personel',
-        'acik_adres',
-        'notlar',
-        'iptal_nedeni',
-      ]);
-      if (searchFilter.$and) {
-        filter.$and = searchFilter.$and;
-      } else if (searchFilter.$or) {
-        filter.$or = searchFilter.$or;
-      }
-    }
-
     const rawRecords = await histCol
       .find(filter)
       .sort({ tarih: -1 })
       .toArray();
 
-    const records = mapDocs(rawRecords);
+    let records = mapDocs(rawRecords);
+
+    if (q) {
+      records = records.filter((item: any) =>
+        turkishRecordMatches(
+          item,
+          [
+            'tc_no',
+            'ad_soyad',
+            'mahalle',
+            'personel',
+            'teslim_alan',
+            'acik_adres',
+            'notlar',
+            'iptal_nedeni',
+          ],
+          q
+        )
+      );
+    }
 
     // Group records by gun_tarihi
     const groupedDaysMap = new Map<
@@ -69,7 +72,7 @@ export async function GET(request: NextRequest) {
       }
       const dayGroup = groupedDaysMap.get(g)!;
       dayGroup.items.push(item);
-      if (item.islem_tipi === 'TESLIMAT') {
+      if (item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') {
         dayGroup.toplamTorba += item.torba_sayisi || 0;
         dayGroup.teslimatSayisi += 1;
       } else if (item.islem_tipi === 'IPTAL') {
@@ -79,9 +82,9 @@ export async function GET(request: NextRequest) {
 
     const groupedDays = Array.from(groupedDaysMap.values());
 
-    // Summary Stats across entire history
-    const allHistory = await histCol.find({}).toArray();
-    const localToday = new Date().toLocaleDateString('en-CA');
+    // Summary Stats across entire history (reuse rawRecords when filter is empty)
+    const allHistory = Object.keys(filter).length === 0 ? rawRecords : await histCol.find({}).toArray();
+    const { nowEnCa: localToday } = getIstanbulDate();
 
     let toplamTeslimatSayisi = 0;
     let toplamTorbaSayisi = 0;
@@ -90,7 +93,7 @@ export async function GET(request: NextRequest) {
     let bugunTorbaSayisi = 0;
 
     for (const item of allHistory) {
-      if (item.islem_tipi === 'TESLIMAT') {
+      if (item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') {
         toplamTeslimatSayisi += 1;
         toplamTorbaSayisi += item.torba_sayisi || 0;
         if (item.gun_tarihi === localToday) {

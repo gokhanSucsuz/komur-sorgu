@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
-import { buildTurkishSearchFilter } from '@/lib/normalizer';
+import { turkishRecordMatches } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 
 // GET /api/activity-logs - Query user activity/audit logs
@@ -29,22 +29,6 @@ export async function GET(request: NextRequest) {
 
     const filter: any = {};
 
-    if (q) {
-      const searchFilter = buildTurkishSearchFilter(q, [
-        'kullanici_adi',
-        'baslik',
-        'detay',
-        'hedef_kisi',
-        'hedef_tc',
-        'mahalle',
-      ]);
-      if (searchFilter.$and) {
-        filter.$and = searchFilter.$and;
-      } else if (searchFilter.$or) {
-        filter.$or = searchFilter.$or;
-      }
-    }
-
     if (islemTipi && islemTipi !== 'HEPSI') {
       if (islemTipi === 'TESLIMAT') {
         filter.islem_tipi = { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] };
@@ -53,7 +37,7 @@ export async function GET(request: NextRequest) {
       } else if (islemTipi === 'EXCEL') {
         filter.islem_tipi = { $in: ['EXCEL_YUKLEME', 'EXCEL_SILME'] };
       } else if (islemTipi === 'MESAI') {
-        filter.islem_tipi = { $in: ['MESAI_BASLAT', 'MESAI_BITIR'] };
+        filter.islem_tipi = { $in: ['MESAI_BASLAT', 'MESAI_BITIR', 'MESAI_GIRIS'] };
       } else {
         filter.islem_tipi = islemTipi;
       }
@@ -72,17 +56,46 @@ export async function GET(request: NextRequest) {
       filter.tarih_iso = dateRange;
     }
 
-    const rawLogs = await activityLogs
-      .find(filter)
-      .sort({ _id: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .toArray();
+    let logs: any[] = [];
+    let total = 0;
 
-    const total = await activityLogs.countDocuments(filter);
-    const logs = mapDocs(rawLogs);
+    if (!q) {
+      const rawLogs = await activityLogs
+        .find(filter)
+        .sort({ _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .toArray();
 
-    // Dynamic stats and personnel list across all logs
+      total = await activityLogs.countDocuments(filter);
+      logs = mapDocs(rawLogs);
+    } else {
+      // Encrypted fields (detay, hedef_kisi, hedef_tc) must be decrypted before text search
+      const rawCandidates = await activityLogs
+        .find(filter)
+        .sort({ _id: -1 })
+        .toArray();
+      const decryptedCandidates = mapDocs(rawCandidates);
+      const matched = decryptedCandidates.filter((item: any) =>
+        turkishRecordMatches(
+          item,
+          [
+            'kullanici_adi',
+            'baslik',
+            'detay',
+            'hedef_kisi',
+            'hedef_tc',
+            'mahalle',
+          ],
+          q
+        )
+      );
+      total = matched.length;
+      const skip = (page - 1) * limit;
+      logs = matched.slice(skip, skip + limit);
+    }
+
+    // Dynamic stats and personnel list across logs
     const allRaw = await activityLogs.find({}).sort({ _id: -1 }).limit(1000).toArray();
     const allLogs = mapDocs(allRaw);
 
@@ -130,19 +143,27 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/activity-logs - Record custom activity log
+// POST /api/activity-logs - Record custom activity log (Requires authenticated session)
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { kullanici_adi, kullanici_rolu, islem_tipi, baslik, detay, hedef_kisi, hedef_tc, mahalle, torba_sayisi, ek_bilgi } = body;
 
-    if (!kullanici_adi || !islem_tipi || !baslik) {
+    const finalUser = (kullanici_adi || session.ad_soyad || session.username || '').trim();
+    const finalRole = session.rol || kullanici_rolu || 'PERSONEL';
+
+    if (!finalUser || !islem_tipi || !baslik) {
       return NextResponse.json({ success: false, error: 'Kullanıcı adı, işlem tipi ve başlık zorunludur' }, { status: 400 });
     }
 
     const recorded = await recordActivityLog({
-      kullanici_adi,
-      kullanici_rolu,
+      kullanici_adi: finalUser,
+      kullanici_rolu: finalRole,
       islem_tipi,
       baslik,
       detay: detay || '',

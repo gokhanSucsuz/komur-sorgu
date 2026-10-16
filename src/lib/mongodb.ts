@@ -15,12 +15,15 @@ import {
   decryptTruck,
   encryptShift,
   decryptShift,
+  encryptRouteStop,
+  decryptRouteStop,
   encryptField,
   decryptField,
   hashBlindIndex,
   hashTc,
   hashHane,
   hashAddress,
+  hashPassword,
   isEncrypted,
 } from './crypto';
 import { getIstanbulDate } from './dateUtils';
@@ -151,6 +154,7 @@ export function mapDoc<T = any>(doc: any): T {
     'teslimat_notu',
     'uyari_notu',
     'notlar',
+    'kapanis_notu',
     'iptal_nedeni',
     'hata_nedeni',
     'detay',
@@ -168,6 +172,11 @@ export function mapDoc<T = any>(doc: any): T {
     if (typeof mapped[field] === 'string' && isEncrypted(mapped[field])) {
       mapped[field] = decryptField(mapped[field]);
     }
+  }
+
+  // If route document with duraklar array, transparently decrypt each stop's PII fields
+  if (Array.isArray(mapped.duraklar)) {
+    mapped.duraklar = mapped.duraklar.map(decryptRouteStop);
   }
 
   // If beneficiary document and missing sira_no
@@ -541,23 +550,25 @@ async function initializeIndexesAndSeed(db: Db) {
     });
   }
 
-  // 2. Initial Admin User if none exists (AES-256-GCM encrypted)
+  // 2. Initial Admin User if none exists (AES-256-GCM encrypted + scrypt password hash)
   const userCount = await users.countDocuments();
   if (userCount === 0) {
     const nowStr = new Date().toLocaleString('tr-TR');
+    const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
     await users.insertOne(encryptUser({
       id: '1',
       username: 'admin',
       ad_soyad: 'Sistem Yöneticisi',
       rol: 'ADMIN',
-      sifre: '784512Gg.',
+      sifre: initialAdminPass,
+      sifre_hash: hashPassword(initialAdminPass),
       telefon: '05551112233',
       aktif: 1,
       created_at: nowStr,
     }));
   }
 
-  // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler ve kişisel verileri AES-256-GCM ile şifrele
+  // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler, rotalar ve kişisel verileri AES-256-GCM ile şifrele
   await migrateAndEncryptExistingData(db);
 
   // 4. Mahalle İsimleri İyileştirme Migrasyonu: "Yıl Mahallesi", "Yıl Mah." -> "100. Yıl Mah."
@@ -566,6 +577,7 @@ async function initializeIndexesAndSeed(db: Db) {
 
 function seedInMemoryStore(store: Record<string, any[]>) {
   const { nowLocaleTr } = getIstanbulDate();
+  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
   store.system_settings = [{ key: 'varsayilan_hedef_torba', value: '34' }];
   store.users = [
     encryptUser({
@@ -573,7 +585,8 @@ function seedInMemoryStore(store: Record<string, any[]>) {
       username: 'admin',
       ad_soyad: 'Sistem Yöneticisi',
       rol: 'ADMIN',
-      sifre: '784512Gg.',
+      sifre: initialAdminPass,
+      sifre_hash: hashPassword(initialAdminPass),
       telefon: '05551112233',
       aktif: 1,
       created_at: nowLocaleTr,
@@ -636,7 +649,7 @@ export async function recordActivityLog(item: {
 export async function migrateAndEncryptExistingData(db: Db) {
   try {
     const settings = db.collection('system_settings');
-    const migFlag = await settings.findOne({ key: 'migrations_complete_v1' });
+    const migFlag = await settings.findOne({ key: 'migrations_complete_v2' });
     if (migFlag?.value === 'true') {
       return;
     }
@@ -645,12 +658,15 @@ export async function migrateAndEncryptExistingData(db: Db) {
     const history = db.collection('delivery_history');
     const logs = db.collection('import_logs');
     const activityLogs = db.collection('activity_logs');
+    const routesCol = db.collection('delivery_routes');
 
     // 1. Hak Sahipleri (Beneficiaries) Şifreleme Migrasyonu
     const unencryptedBens = await beneficiaries.find({
       $or: [
         { tc_hash: { $exists: false } },
-        { tc_no: { $not: /^ENC:GCM:v1:/ } }
+        { tc_no: { $not: /^ENC:GCM:v1:/ } },
+        { teslim_alan: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } },
+        { teslimat_notu: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } }
       ]
     }).toArray();
 
@@ -780,13 +796,14 @@ export async function migrateAndEncryptExistingData(db: Db) {
       }
     }
 
-    // 5. Kullanıcı Hesapları (Users) Şifreleme Migrasyonu (Ad Soyad, Şifre, Telefon)
+    // 5. Kullanıcı Hesapları (Users) Şifreleme Migrasyonu (Ad Soyad, Şifre, Telefon, scrypt Hash)
     const usersCol = db.collection('users');
     const unencryptedUsers = await usersCol.find({
       $or: [
         { sifre: { $not: /^ENC:GCM:v1:/ } },
         { ad_soyad: { $not: /^ENC:GCM:v1:/ } },
-        { telefon: { $not: /^ENC:GCM:v1:/ } }
+        { telefon: { $not: /^ENC:GCM:v1:/ } },
+        { sifre_hash: { $exists: false } }
       ]
     }).toArray();
 
@@ -802,6 +819,9 @@ export async function migrateAndEncryptExistingData(db: Db) {
           sifre: encryptField(plainPass),
           telefon: encryptField(plainTel),
         };
+        if (!u.sifre_hash && plainPass) {
+          updateFields.sifre_hash = hashPassword(String(plainPass));
+        }
         await usersCol.updateOne({ _id: u._id }, { $set: updateFields });
       }
       console.log(`[AES-256-GCM] Kullanıcı hesapları (şifre, telefon, isim) başarıyla şifrelendi.`);
@@ -856,10 +876,33 @@ export async function migrateAndEncryptExistingData(db: Db) {
       }
     }
 
+    // 8. Dağıtım Rotaları (Delivery Routes) Durak Kişisel Verileri Şifreleme Migrasyonu
+    const allRoutes = await routesCol.find({}).toArray();
+    for (const r of allRoutes) {
+      const stops = Array.isArray(r.duraklar) ? r.duraklar : [];
+      const needsEncryption = stops.some((s: any) => (s.tc_no && !isEncrypted(s.tc_no)) || (s.ad_soyad && !isEncrypted(s.ad_soyad))) ||
+        (r.notlar && !isEncrypted(r.notlar)) ||
+        (r.kapanis_notu && !isEncrypted(r.kapanis_notu));
+
+      if (needsEncryption) {
+        const encryptedStops = stops.map(encryptRouteStop);
+        await routesCol.updateOne(
+          { _id: r._id },
+          {
+            $set: {
+              duraklar: encryptedStops,
+              notlar: r.notlar ? encryptField(isEncrypted(r.notlar) ? decryptField(r.notlar) : r.notlar) : r.notlar,
+              kapanis_notu: r.kapanis_notu ? encryptField(isEncrypted(r.kapanis_notu) ? decryptField(r.kapanis_notu) : r.kapanis_notu) : r.kapanis_notu,
+            },
+          }
+        );
+      }
+    }
+
     // Mark migration complete in system_settings so subsequent cold starts skip this check
     await settings.updateOne(
-      { key: 'migrations_complete_v1' },
-      { $set: { key: 'migrations_complete_v1', value: 'true', completed_at: new Date().toISOString() } },
+      { key: 'migrations_complete_v2' },
+      { $set: { key: 'migrations_complete_v2', value: 'true', completed_at: new Date().toISOString() } },
       { upsert: true }
     );
   } catch (err) {

@@ -454,6 +454,76 @@ export function decryptShift(doc: any): any {
 }
 
 // ============================================================
+// Delivery Routes & Stops Encrypt & Decrypt (Saha Rotaları)
+// ============================================================
+
+export const ROUTE_STOP_ENCRYPTED_FIELDS = [
+  'tc_no',
+  'ad_soyad',
+  'telefon',
+  'telefon2',
+  'acik_adres',
+  'sokak',
+  'teslim_alan',
+  'teslimat_notu',
+];
+
+export const ROUTE_ENCRYPTED_FIELDS = [
+  'notlar',
+  'kapanis_notu',
+];
+
+export function encryptRouteStop(stop: any): any {
+  if (!stop) return stop;
+  const cloned = { ...stop };
+  for (const field of ROUTE_STOP_ENCRYPTED_FIELDS) {
+    if (cloned[field] !== undefined && cloned[field] !== null && String(cloned[field]).length > 0) {
+      cloned[field] = encryptField(String(cloned[field]));
+    }
+  }
+  return cloned;
+}
+
+export function decryptRouteStop(stop: any): any {
+  if (!stop) return stop;
+  const cloned = { ...stop };
+  for (const field of ROUTE_STOP_ENCRYPTED_FIELDS) {
+    if (cloned[field] !== undefined && cloned[field] !== null) {
+      cloned[field] = decryptField(cloned[field]);
+    }
+  }
+  return cloned;
+}
+
+export function encryptRoute(doc: any): any {
+  if (!doc) return doc;
+  const cloned = { ...doc };
+  for (const field of ROUTE_ENCRYPTED_FIELDS) {
+    if (cloned[field] !== undefined && cloned[field] !== null && String(cloned[field]).length > 0) {
+      cloned[field] = encryptField(String(cloned[field]));
+    }
+  }
+  if (Array.isArray(cloned.duraklar)) {
+    cloned.duraklar = cloned.duraklar.map(encryptRouteStop);
+  }
+  return cloned;
+}
+
+export function decryptRoute(doc: any): any {
+  if (!doc) return doc;
+  const cloned = { ...doc };
+  for (const field of ROUTE_ENCRYPTED_FIELDS) {
+    if (cloned[field] !== undefined && cloned[field] !== null) {
+      cloned[field] = decryptField(cloned[field]);
+    }
+  }
+  if (Array.isArray(cloned.duraklar)) {
+    cloned.duraklar = cloned.duraklar.map(decryptRouteStop);
+  }
+  return cloned;
+}
+
+// ============================================================
 // Secure Password Hashing (scrypt + timing-safe comparison)
 // ============================================================
 
@@ -493,5 +563,3 @@ export function verifyPassword(password: string, storedHash: string | null | und
 
 // Re-export Istanbul date utilities from decoupled dateUtils module
 export { getIstanbulDate, type IstanbulDateResult } from './dateUtils';
-
-

@@ -1164,6 +1164,192 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // =========================================================================
+    // 7. İstatistiksel Analiz ve Mahalle İcmal Raporu (type=analytics)
+    // =========================================================================
+    if (type === 'analytics') {
+      const rawRecords = await benCol.find({}).toArray();
+      const records = mapDocs(rawRecords);
+      const seenSheetNames = new Set<string>();
+
+      const mahalleGroups = new Map<string, any[]>();
+      const eksikList: any[] = [];
+
+      for (const r of records) {
+        const m = normalizeMahalleName(r.mahalle || 'Merkez Mah.');
+        if (!mahalleGroups.has(m)) {
+          mahalleGroups.set(m, []);
+        }
+        mahalleGroups.get(m)!.push(r);
+
+        if (r.teslimat_durumu === 'EKSIK') {
+          eksikList.push(r);
+        }
+      }
+
+      const allMahalleKeys = Array.from(mahalleGroups.keys());
+      const onlyMahalles = allMahalleKeys
+        .filter((m) => !/(?:Köyü|Koy|Koyu)$/i.test(m))
+        .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+      const onlyKoys = allMahalleKeys
+        .filter((m) => /(?:Köyü|Koy|Koyu)$/i.test(m))
+        .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+      const sortedMahalles = [...onlyMahalles, ...onlyKoys];
+
+      let totalHane = 0;
+      let totalTargetBags = 0;
+      let totalDeliveredBags = 0;
+      let totalTamamlanan = 0;
+      let totalEksik = 0;
+      let totalBekleyen = 0;
+      let totalImzali = 0;
+
+      const icmalRows = sortedMahalles.map((mahName, idx) => {
+        const group = mahalleGroups.get(mahName)!;
+        let mTarget = 0;
+        let mDelivered = 0;
+        let mTamamlanan = 0;
+        let mEksik = 0;
+        let mBekleyen = 0;
+        let mImzali = 0;
+
+        for (const item of group) {
+          const t = Number(item.hedef_torba || 34);
+          const d = Number(item.torba_sayisi || 0);
+          mTarget += t;
+          mDelivered += d;
+          if (item.imza_durumu === 'IMZALANDI') mImzali++;
+          if (item.teslimat_durumu === 'TAMAMLANDI' || item.teslimat_durumu === 'TESLIM_EDILDI') {
+            mTamamlanan++;
+          } else if (item.teslimat_durumu === 'EKSIK') {
+            mEksik++;
+          } else {
+            mBekleyen++;
+          }
+        }
+
+        totalHane += group.length;
+        totalTargetBags += mTarget;
+        totalDeliveredBags += mDelivered;
+        totalTamamlanan += mTamamlanan;
+        totalEksik += mEksik;
+        totalBekleyen += mBekleyen;
+        totalImzali += mImzali;
+
+        const isKoy = /(?:Köyü|Koy|Koyu)$/i.test(mahName);
+        const ratio = group.length > 0 ? Math.round((mTamamlanan / group.length) * 100) : 0;
+
+        return {
+          'Sıra': idx + 1,
+          'Mahalle / Köy Adı': mahName,
+          'Yerleşim Tipi': isKoy ? 'KÖY' : 'MAHALLE',
+          'Toplam Hane': group.length,
+          'İmzalı Hane': mImzali,
+          'Tamamlanan Hane': mTamamlanan,
+          'Eksik Alan Hane': mEksik,
+          'Bekleyen Hane': mBekleyen,
+          'Hedef Kömür (Torba)': mTarget,
+          'Hedef Kömür (Ton)': Number((mTarget * 0.025).toFixed(2)),
+          'Dağıtılan (Torba)': mDelivered,
+          'Dağıtılan (Ton)': Number((mDelivered * 0.025).toFixed(2)),
+          'Kalan Kömür (Torba)': Math.max(0, mTarget - mDelivered),
+          'Tamamlanma Oranı': `%${ratio}`,
+        };
+      });
+
+      if (icmalRows.length > 0) {
+        const totalRatio = totalHane > 0 ? Math.round((totalTamamlanan / totalHane) * 100) : 0;
+        icmalRows.push({
+          'Sıra': '' as any,
+          'Mahalle / Köy Adı': 'GENEL TOPLAM:',
+          'Yerleşim Tipi': `${sortedMahalles.length} Yerleşim`,
+          'Toplam Hane': totalHane,
+          'İmzalı Hane': totalImzali,
+          'Tamamlanan Hane': totalTamamlanan,
+          'Eksik Alan Hane': totalEksik,
+          'Bekleyen Hane': totalBekleyen,
+          'Hedef Kömür (Torba)': totalTargetBags,
+          'Hedef Kömür (Ton)': Number((totalTargetBags * 0.025).toFixed(2)),
+          'Dağıtılan (Torba)': totalDeliveredBags,
+          'Dağıtılan (Ton)': Number((totalDeliveredBags * 0.025).toFixed(2)),
+          'Kalan Kömür (Torba)': Math.max(0, totalTargetBags - totalDeliveredBags),
+          'Tamamlanma Oranı': `%${totalRatio}`,
+        });
+      }
+
+      addStyledWorksheet(
+        workbook,
+        'KÖMÜR YARDIMI GENEL İSTATİSTİK VE MAHALLE/KÖY İCMAL RAPORU',
+        `Toplam Yerleşim: ${sortedMahalles.length} | Toplam Hane: ${totalHane} | Dağıtılan: ${totalDeliveredBags} Torba (${(totalDeliveredBags * 0.025).toFixed(2)} Ton)`,
+        sanitizeSheetName('Genel İcmal Analizi', seenSheetNames),
+        icmalRows,
+        [
+          { wch: 6 },
+          { wch: 24 },
+          { wch: 14 },
+          { wch: 14 },
+          { wch: 14 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 14 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 18 },
+          { wch: 16 },
+        ]
+      );
+
+      if (eksikList.length > 0) {
+        const eksikRows = eksikList.map((h: any, idx: number) => {
+          const target = Number(h.hedef_torba || 34);
+          const given = Number(h.torba_sayisi || 0);
+          return {
+            'Sıra': idx + 1,
+            'TC Kimlik No': h.tc_no || '-',
+            'Adı Soyadı': h.ad_soyad || '-',
+            'Telefon': h.telefon || '-',
+            'Mahalle / Köy': h.mahalle || '-',
+            'Hedef (Torba)': target,
+            'Alınan (Torba)': given,
+            'Kalan Eksik (Torba)': Math.max(0, target - given),
+            'Açıklama / Not': h.teslimat_notu || h.aciklama || '-',
+          };
+        });
+
+        addStyledWorksheet(
+          workbook,
+          'EKSİK / KISMİ KÖMÜR TESLİMATI YAPILAN HANELER LİSTESİ',
+          `Toplam Eksik Kömür Alan Hane: ${eksikList.length} Hane`,
+          sanitizeSheetName('Eksik Alan Haneler', seenSheetNames),
+          eksikRows,
+          [
+            { wch: 6 },
+            { wch: 16 },
+            { wch: 24 },
+            { wch: 16 },
+            { wch: 20 },
+            { wch: 14 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 35 },
+          ]
+        );
+      }
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const filename = `Edirne_SYDV_Istatistik_Raporu_${todayStr}.xlsx`;
+
+      return new NextResponse(new Uint8Array(buf), {
+        headers: {
+          'Content-Disposition': buildContentDispositionHeader(filename),
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+    }
+
     return NextResponse.json({ success: false, error: 'Geçersiz export tipi' }, { status: 400 });
   } catch (error: any) {
     console.error('Error generating export:', error);

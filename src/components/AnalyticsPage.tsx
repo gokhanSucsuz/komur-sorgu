@@ -1404,9 +1404,9 @@ export default function AnalyticsPage({
                             <td className="p-2 font-bold text-slate-900">{h.ad_soyad}</td>
                             <td className="p-2 font-mono text-slate-700">{h.tc_no}</td>
                             <td className="p-2 text-slate-700">{h.mahalle}</td>
-                            <td className="p-2 text-center font-bold text-emerald-700">{h.verilen_torba} Torba</td>
+                            <td className="p-2 text-center font-bold text-emerald-700">{h.torba_sayisi ?? h.verilen_torba ?? 0} Torba</td>
                             <td className="p-2 text-center font-bold text-amber-800">{h.eksik_torba} Torba</td>
-                            <td className="p-2 text-[11px] text-slate-500">{h.aciklama || '-'}</td>
+                            <td className="p-2 text-[11px] text-slate-500">{h.teslimat_notu || h.aciklama || '-'}</td>
                           </tr>
                         ))}
                       </tbody>

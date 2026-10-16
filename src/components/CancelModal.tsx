@@ -44,7 +44,8 @@ export default function CancelModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'IPTAL',
-          beneficiary_id: beneficiary.id || beneficiary.beneficiary_id,
+          beneficiary_id: beneficiary.beneficiary_id || beneficiary.id,
+          tc_no: beneficiary.tc_no,
           personel: personel,
           iptal_nedeni: iptalNedeni
         })
