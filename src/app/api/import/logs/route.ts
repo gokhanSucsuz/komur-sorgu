@@ -48,12 +48,14 @@ export async function GET(request: NextRequest) {
       logs = logs.filter((r: any) => {
         if (qClean && turkishIncludes(r.ad_soyad || '', qClean)) return true;
         if (qClean && turkishIncludes(r.hata_nedeni || '', qClean)) return true;
+        if (qClean && r.cakisan_ad_soyad && turkishIncludes(r.cakisan_ad_soyad, qClean)) return true;
         if (qClean && turkishIncludes(r.mahalle || '', qClean)) return true;
         if (qClean && turkishIncludes(r.acik_adres || '', qClean)) return true;
         if (qClean && r.hane_no && turkishIncludes(String(r.hane_no), qClean)) return true;
         if (qDigits && qDigits.length >= 3) {
           if (r.tc_no && String(r.tc_no).includes(qDigits)) return true;
           if (r.telefon && String(r.telefon).includes(qDigits)) return true;
+          if (r.cakisan_tc && String(r.cakisan_tc).includes(qDigits)) return true;
         }
         return false;
       });

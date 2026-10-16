@@ -166,6 +166,9 @@ export function mapDoc<T = any>(doc: any): T {
     'irsaliye_no',
     'personel_adi',
     'adres_guncelleme_notu',
+    'cakisan_ad_soyad',
+    'cakisan_tc',
+    'cakisan_hane_no',
   ];
 
   for (const field of piiFields) {
@@ -504,6 +507,7 @@ async function initializeIndexesAndSeed(db: Db) {
 
       logs.createIndex({ batch_id: 1 }),
       logs.createIndex({ tc_hash: 1 }, { sparse: true }),
+      logs.createIndex({ cakisan_tc_hash: 1 }, { sparse: true }),
       logs.createIndex({ tarih: -1 }),
 
       settings.createIndex({ key: 1 }, { unique: true }),
@@ -650,15 +654,12 @@ export async function migrateAndEncryptExistingData(db: Db) {
   try {
     const settings = db.collection('system_settings');
     const migFlag = await settings.findOne({ key: 'migrations_complete_v2' });
-    if (migFlag?.value === 'true') {
-      return;
-    }
-
-    const beneficiaries = db.collection('beneficiaries');
-    const history = db.collection('delivery_history');
-    const logs = db.collection('import_logs');
-    const activityLogs = db.collection('activity_logs');
-    const routesCol = db.collection('delivery_routes');
+    if (migFlag?.value !== 'true') {
+      const beneficiaries = db.collection('beneficiaries');
+      const history = db.collection('delivery_history');
+      const logs = db.collection('import_logs');
+      const activityLogs = db.collection('activity_logs');
+      const routesCol = db.collection('delivery_routes');
 
     // 1. Hak Sahipleri (Beneficiaries) Şifreleme Migrasyonu
     const unencryptedBens = await beneficiaries.find({
@@ -781,6 +782,9 @@ export async function migrateAndEncryptExistingData(db: Db) {
         const plainAdres = isEncrypted(l.acik_adres) ? decryptField(l.acik_adres) : l.acik_adres;
         const plainHane = isEncrypted(l.hane_no) ? decryptField(l.hane_no) : l.hane_no;
         const plainHata = isEncrypted(l.hata_nedeni) ? decryptField(l.hata_nedeni) : l.hata_nedeni;
+        const plainCakisanAdSoyad = isEncrypted(l.cakisan_ad_soyad) ? decryptField(l.cakisan_ad_soyad) : l.cakisan_ad_soyad;
+        const plainCakisanTc = isEncrypted(l.cakisan_tc) ? decryptField(l.cakisan_tc) : l.cakisan_tc;
+        const plainCakisanHane = isEncrypted(l.cakisan_hane_no) ? decryptField(l.cakisan_hane_no) : l.cakisan_hane_no;
 
         const updateFields: any = {
           tc_no: encryptField(plainTc),
@@ -791,6 +795,17 @@ export async function migrateAndEncryptExistingData(db: Db) {
           hane_no: encryptField(plainHane),
           hata_nedeni: encryptField(plainHata),
         };
+
+        if (plainCakisanAdSoyad) {
+          updateFields.cakisan_ad_soyad = encryptField(plainCakisanAdSoyad);
+        }
+        if (plainCakisanTc) {
+          updateFields.cakisan_tc = encryptField(plainCakisanTc);
+          updateFields.cakisan_tc_hash = hashTc(plainCakisanTc);
+        }
+        if (plainCakisanHane) {
+          updateFields.cakisan_hane_no = encryptField(plainCakisanHane);
+        }
 
         await logs.updateOne({ _id: l._id }, { $set: updateFields });
       }
@@ -905,6 +920,65 @@ export async function migrateAndEncryptExistingData(db: Db) {
       { $set: { key: 'migrations_complete_v2', value: 'true', completed_at: new Date().toISOString() } },
       { upsert: true }
     );
+  }
+
+  // 6. KVKK / AES-256-GCM Migrasyonu: import_logs tablosundaki cakisan_ad_soyad, cakisan_tc ve cakisan_hane_no alanları
+  const migV3Flag = await settings.findOne({ key: 'migrations_complete_v3_cakisan_kvkk' });
+  if (migV3Flag?.value !== 'true') {
+    const logs = db.collection('import_logs');
+    const unencryptedImportLogs = await logs.find({
+      $or: [
+        { cakisan_tc: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } },
+        { cakisan_ad_soyad: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } },
+        { cakisan_hane_no: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } },
+        { cakisan_tc_hash: { $exists: false } },
+      ]
+    }).toArray();
+
+    if (unencryptedImportLogs.length > 0) {
+      console.log(`[KVKK / AES-256-GCM] import_logs tablosunda ${unencryptedImportLogs.length} adet açık/kısmi şifreli kayıt tespit edildi, şifreleniyor...`);
+      for (const l of unencryptedImportLogs) {
+        const updateFields: any = {};
+
+        if (l.cakisan_ad_soyad && !isEncrypted(l.cakisan_ad_soyad)) {
+          updateFields.cakisan_ad_soyad = encryptField(String(l.cakisan_ad_soyad));
+        }
+        if (l.cakisan_tc) {
+          const rawTc = isEncrypted(l.cakisan_tc) ? decryptField(l.cakisan_tc) : l.cakisan_tc;
+          if (!isEncrypted(l.cakisan_tc)) {
+            updateFields.cakisan_tc = encryptField(String(l.cakisan_tc));
+          }
+          if (!l.cakisan_tc_hash && rawTc) {
+            updateFields.cakisan_tc_hash = hashTc(String(rawTc));
+          }
+        }
+        if (l.cakisan_hane_no && !isEncrypted(l.cakisan_hane_no)) {
+          updateFields.cakisan_hane_no = encryptField(String(l.cakisan_hane_no));
+        }
+        if (l.tc_no && !isEncrypted(l.tc_no)) {
+          updateFields.tc_no = encryptField(String(l.tc_no));
+          updateFields.tc_hash = hashTc(String(l.tc_no));
+        }
+        if (l.ad_soyad && !isEncrypted(l.ad_soyad)) {
+          updateFields.ad_soyad = encryptField(String(l.ad_soyad));
+        }
+        if (l.hata_nedeni && !isEncrypted(l.hata_nedeni)) {
+          updateFields.hata_nedeni = encryptField(String(l.hata_nedeni));
+        }
+
+        if (Object.keys(updateFields).length > 0) {
+          await logs.updateOne({ _id: l._id }, { $set: updateFields });
+        }
+      }
+      console.log(`[KVKK / AES-256-GCM] ${unencryptedImportLogs.length} adet import_logs kaydı başarıyla AES-256-GCM ile şifrelendi.`);
+    }
+
+    await settings.updateOne(
+      { key: 'migrations_complete_v3_cakisan_kvkk' },
+      { $set: { key: 'migrations_complete_v3_cakisan_kvkk', value: 'true', completed_at: new Date().toISOString() } },
+      { upsert: true }
+    );
+  }
   } catch (err) {
     console.error('[AES-256-GCM] Migration error:', err);
   }
@@ -1018,6 +1092,16 @@ export async function migrateMahalleNames(db?: Db | null) {
       for (const l of store.import_logs) {
         if (targetVariants.includes(l.mahalle) || (l.mahalle && /^(?:100\s*\.?\s*)?y[ıi]l(?:\s*mah.*)?$/i.test(l.mahalle))) {
           l.mahalle = '100. Yıl Mah.';
+        }
+        if (l.cakisan_ad_soyad && !isEncrypted(l.cakisan_ad_soyad)) {
+          l.cakisan_ad_soyad = encryptField(l.cakisan_ad_soyad);
+        }
+        if (l.cakisan_tc && !isEncrypted(l.cakisan_tc)) {
+          l.cakisan_tc_hash = hashTc(l.cakisan_tc);
+          l.cakisan_tc = encryptField(l.cakisan_tc);
+        }
+        if (l.cakisan_hane_no && !isEncrypted(l.cakisan_hane_no)) {
+          l.cakisan_hane_no = encryptField(l.cakisan_hane_no);
         }
       }
     }

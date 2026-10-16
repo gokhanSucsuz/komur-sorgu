@@ -271,6 +271,10 @@ const IMPORT_LOG_ENCRYPTED_FIELDS = [
   'acik_adres',
   'hane_no',
   'hata_nedeni',
+  'cakisan_ad_soyad',
+  'cakisan_tc',
+  'cakisan_hane_no',
+  'teslim_alan',
 ];
 
 export function encryptImportLog(doc: any): any {
@@ -280,6 +284,11 @@ export function encryptImportLog(doc: any): any {
   const rawTc = cleanTcNo(cloned.tc_no || '');
   if (rawTc) {
     cloned.tc_hash = hashBlindIndex(rawTc);
+  }
+
+  const rawCakisanTc = cleanTcNo(cloned.cakisan_tc || '');
+  if (rawCakisanTc) {
+    cloned.cakisan_tc_hash = hashBlindIndex(rawCakisanTc);
   }
 
   for (const field of IMPORT_LOG_ENCRYPTED_FIELDS) {
