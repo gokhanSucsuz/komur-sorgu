@@ -280,6 +280,12 @@ export async function POST(request: NextRequest) {
         deliveredBags = parseInt(torba_sayisi || String(hedef), 10);
       } else if (durum === 'EKSIK') {
         deliveredBags = parseInt(torba_sayisi || '0', 10);
+        if (isNaN(deliveredBags) || deliveredBags <= 0) {
+          return NextResponse.json({
+            success: false,
+            error: 'Eksik teslimat için teslim edilen torba miktarı en az 1 olmalıdır. Hiç kömür teslim edilemediyse "Teslim Edilemedi" seçeneğini kullanınız.'
+          }, { status: 400 });
+        }
       } else {
         deliveredBags = 0;
       }
@@ -466,11 +472,59 @@ export async function POST(request: NextRequest) {
       const route = mapDoc(rawRoute);
       const stops = route.duraklar || [];
 
+      if (!stops || stops.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'Rotada teslimat yapılacak hane bulunamadı.'
+        }, { status: 400 });
+      }
+
+      // KURAL: Rotayı tamamlayabilmek için rotadaki TÜM hanelere kömür teslim edilmiş olması gerekir.
+      // İstisna olarak eksik kömür verilen olsa bile tamamlama işlemi yapılabilir;
+      // ancak hiç kömür verilmeyen hane var ise tamamlanamaz!
+      const getStopDeliveredBags = (s: any) => {
+        if (s.durum === 'TAMAMLANDI') {
+          return Number(s.teslim_edilen_torba) || Number(s.hedef_torba) || 34;
+        }
+        if (s.durum === 'EKSIK') {
+          return Number(s.teslim_edilen_torba) || 0;
+        }
+        return 0;
+      };
+
+      const noCoalStops = stops.filter((s: any) => {
+        const bags = getStopDeliveredBags(s);
+        const hasDeliveredCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && bags > 0;
+        return !hasDeliveredCoal;
+      });
+
+      if (noCoalStops.length > 0) {
+        const sampleStops = noCoalStops
+          .slice(0, 3)
+          .map((s: any) => `#${s.sira || '?'} ${s.ad_soyad} (${s.durum === 'TESLIM_EDILEMEDI' ? 'Teslim Edilemedi' : 'Kömür Verilmedi'})`)
+          .join(', ');
+        const extraCount = noCoalStops.length > 3 ? ` ve ${noCoalStops.length - 3} hane daha` : '';
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmesi gerekmektedir. Hiç kömür teslim edilmeyen ${noCoalStops.length} hane bulunmaktadır (${sampleStops}${extraCount}). İstisna olarak eksik kömür verilen olsa bile tamamlama işlemi yapılabilir; ancak hiç kömür verilmeyen hane var ise rota tamamlanamaz.`,
+            noCoalCount: noCoalStops.length,
+            noCoalStops: noCoalStops.map((s: any) => ({
+              sira: s.sira,
+              ad_soyad: s.ad_soyad,
+              durum: s.durum || 'BEKLIYOR',
+              teslim_edilen_torba: s.teslim_edilen_torba || 0
+            }))
+          },
+          { status: 400 }
+        );
+      }
+
       // Calculate final counts
       let completedCount = 0;
       let eksikCount = 0;
       let undeliveredCount = 0;
-      let pendingCount = 0;
       let totalDeliveredBags = 0;
 
       stops.forEach((s: any) => {
@@ -482,8 +536,6 @@ export async function POST(request: NextRequest) {
           totalDeliveredBags += s.teslim_edilen_torba || 0;
         } else if (s.durum === 'TESLIM_EDILEMEDI') {
           undeliveredCount++;
-        } else {
-          pendingCount++;
         }
       });
 
@@ -506,13 +558,92 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'PERSONEL',
         islem_tipi: 'ROTA_KAPATMA',
         baslik: 'Dağıtım Rotası Tamamlandı & Kapatıldı',
-        detay: `"${route.rota_adi}" rotası tamamlandı ve arşivlendi. ${completedCount} hane tamamlandı, ${eksikCount} eksik, ${totalDeliveredBags} torba kömür dağıtıldı.`,
+        detay: `"${route.rota_adi}" rotası başarıyla tamamlandı ve arşivlendi. ${completedCount} tam hane, ${eksikCount} eksik hane, toplam ${totalDeliveredBags} torba kömür dağıtıldı.`,
         ek_bilgi: { route_id, completedCount, eksikCount, totalDeliveredBags }
       });
 
       return NextResponse.json({
         success: true,
-        message: `Günlük dağıtım rotası başarıyla tamamlandı ve arşivlendi. (${completedCount} Tamamlandı, ${eksikCount} Eksik, ${undeliveredCount} Teslim Edilemedi)`
+        message: `Günlük dağıtım rotası başarıyla tamamlandı ve arşivlendi. (${completedCount} Tamamlandı, ${eksikCount} Eksik Teslimat, Toplam ${totalDeliveredBags} Torba)`
+      });
+    }
+
+    // ==========================================
+    // ACTION 4.5: REMOVE_STOP (Durak Rotadan Çıkar)
+    // ==========================================
+    if (action === 'REMOVE_STOP') {
+      const { route_id, stop_index, personel = 'Personel' } = body;
+      if (!route_id || stop_index === undefined) {
+        return NextResponse.json({ success: false, error: 'Rota ID ve durak sırası zorunludur' }, { status: 400 });
+      }
+
+      const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
+      if (!rawRoute) {
+        return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
+      }
+
+      const route = mapDoc(rawRoute);
+      const stops = [...(route.duraklar || [])];
+      const idx = parseInt(String(stop_index), 10);
+      if (isNaN(idx) || idx < 0 || idx >= stops.length) {
+        return NextResponse.json({ success: false, error: 'Geçersiz durak indeksi' }, { status: 400 });
+      }
+
+      const [removed] = stops.splice(idx, 1);
+
+      // Kalan durakları yeniden numaralandır
+      const reindexedStops = stops.map((s: any, i: number) => ({
+        ...s,
+        sira: i + 1
+      }));
+
+      // İstatistikleri yeniden hesapla
+      let completedCount = 0;
+      let eksikCount = 0;
+      let undeliveredCount = 0;
+      let totalDeliveredBags = 0;
+      let hedefToplam = 0;
+
+      reindexedStops.forEach((s: any) => {
+        const h = Number(s.hedef_torba) || 34;
+        hedefToplam += h;
+        if (s.durum === 'TAMAMLANDI') {
+          completedCount++;
+          totalDeliveredBags += s.teslim_edilen_torba || h;
+        } else if (s.durum === 'EKSIK') {
+          eksikCount++;
+          totalDeliveredBags += s.teslim_edilen_torba || 0;
+        } else if (s.durum === 'TESLIM_EDILEMEDI') {
+          undeliveredCount++;
+        }
+      });
+
+      await routeCol.updateOne(buildIdFilter(route_id), {
+        $set: {
+          duraklar: reindexedStops,
+          toplam_hane: reindexedStops.length,
+          tamamlanan_hane: completedCount,
+          eksik_hane: eksikCount,
+          teslim_edilemeyen_hane: undeliveredCount,
+          toplam_dagitilan_torba: totalDeliveredBags,
+          hedef_toplam_torba: hedefToplam,
+          updated_at: localTimeStr
+        }
+      });
+
+      await recordActivityLog({
+        kullanici_adi: personel.trim(),
+        kullanici_rolu: 'PERSONEL',
+        islem_tipi: 'ROTA_GUNCELLEME',
+        baslik: 'Durak Rotadan Çıkarıldı',
+        detay: `"${removed.ad_soyad}" hanesi "${route.rota_adi}" rotasından çıkarıldı. Kalan durak sayısı: ${reindexedStops.length}.`,
+        ek_bilgi: { route_id, removedBeneficiaryId: removed.beneficiary_id, remainingCount: reindexedStops.length }
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `"${removed.ad_soyad}" rotadan başarıyla çıkarıldı. Kalan: ${reindexedStops.length} durak.`,
+        duraklar: reindexedStops
       });
     }
 

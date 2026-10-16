@@ -7,7 +7,7 @@ import {
   Clock, Plus, ArrowUp, ArrowDown, Users, Phone, Truck, Trash2, Archive,
   CheckSquare, Square, Search, RefreshCw, FileText, ChevronDown, ChevronUp,
   AlertCircle, ShieldCheck, PenTool, Check, ArrowRight, Download, Printer,
-  ArrowUpDown, X
+  ArrowUpDown, X, UserMinus
 } from 'lucide-react';
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
 
@@ -293,6 +293,15 @@ export default function RoutePage({
     if (!showStopModal || !activeRoute) return;
 
     const { stopIndex, stop, mode } = showStopModal;
+
+    if (mode === 'EKSIK') {
+      const parsedTorba = parseInt(stopTorbaInput, 10);
+      if (isNaN(parsedTorba) || parsedTorba <= 0) {
+        alert('Eksik teslimat için en az 1 torba girilmelidir. Hiç kömür verilemediyse "Verilemedi" seçeneğini kullanınız.');
+        return;
+      }
+    }
+
     setIsActionLoading(true);
 
     try {
@@ -326,9 +335,56 @@ export default function RoutePage({
     }
   };
 
+  // Remove Stop from active route
+  const handleRemoveStop = async (index: number, stop: any) => {
+    if (!activeRoute) return;
+    const confirmMsg = `"${stop.ad_soyad}" (${stop.mahalle || ''}) hanesini bu rotadan çıkarmak istiyor musunuz?\n\nBu hane genel listede teslimat bekliyor olarak kalacaktır. Kalan hanelerin teslimatı bittiğinde rota tamamlanabilir.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'REMOVE_STOP',
+          route_id: activeRoute.id,
+          stop_index: index,
+          personel: userName || 'Personel'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchRoutes();
+        if (onRefreshAll) onRefreshAll();
+      } else {
+        alert(data.error || 'Durak rotadan çıkarılamadı');
+      }
+    } catch (err: any) {
+      alert('Hata: ' + err.message);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   // Finalize Route
   const handleFinalizeRouteSubmit = async () => {
     if (!activeRoute) return;
+
+    // Kural Kontrolü: Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmiş olmalıdır.
+    // Eksik teslimat kabul edilir, ancak hiç kömür verilmeyen hane var ise tamamlanamaz!
+    const stops = activeRoute.duraklar || [];
+    const noCoalStops = stops.filter((s: any) => {
+      const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
+      const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
+      return !hasCoal;
+    });
+
+    if (noCoalStops.length > 0) {
+      alert(`Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmesi gerekmektedir.\n\nHiç kömür teslim edilmeyen ${noCoalStops.length} hane bulunmaktadır. Eksik kömür verilen hane olsa bile rota tamamlanabilir; ancak hiç kömür verilmeyen hane var ise tamamlanamaz.`);
+      return;
+    }
+
     setIsActionLoading(true);
 
     try {
@@ -796,36 +852,82 @@ export default function RoutePage({
                 </div>
 
                 {/* Rotayı Tamamla & Listeyi İndir Butonları */}
-                <div className="pt-2 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowFinalizeModal(true)}
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Rotayı Tamamla ve Arşivle</span>
-                  </button>
+                {(() => {
+                  const stops = activeRoute.duraklar || [];
+                  const noCoalStops = stops.filter((s: any) => {
+                    const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
+                    const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
+                    return !hasCoal;
+                  });
+                  const canFinalize = stops.length > 0 && noCoalStops.length === 0;
 
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`/api/export?type=daily_deliveries&date=${activeRoute.tarih || new Date().toLocaleDateString('en-CA')}`}
-                      download={`Edirne_SYDV_Teslimat_Listesi_${activeRoute.tarih || 'Bugun'}.xlsx`}
-                      className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-                    >
-                      <Download className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>Günün Teslimat Listesini İndir (Excel)</span>
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => setPrintRoute(activeRoute)}
-                      className="py-2 px-3 rounded-xl bg-white hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 border border-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-                      title="Resmi Dağıtım Tutanağını Önizle ve Yazdır"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>Yazdır</span>
-                    </button>
-                  </div>
-                </div>
+                  return (
+                    <div className="pt-2 flex flex-col gap-2">
+                      {/* Tamamlanabilirlik Durum Göstergesi */}
+                      {canFinalize ? (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-[11px] font-semibold flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Tüm hanelere kömür verildi. Rota tamamlanmaya hazır.</span>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 text-[11px] font-semibold flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-rose-900 block">
+                              Hiç kömür verilmeyen {noCoalStops.length} hane var!
+                            </span>
+                            <span className="text-[10px] text-rose-800 font-normal leading-tight block mt-0.5">
+                              Rotayı tamamlamak için tüm hanelere kömür verilmelidir (eksik teslimat kabul edilir, hiç kömür verilmeyen hane varken tamamlanamaz).
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setShowFinalizeModal(true)}
+                        className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] ${
+                          canFinalize
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300'
+                        }`}
+                        title={canFinalize ? 'Rotayı Tamamla ve Arşivle' : `${noCoalStops.length} hane henüz kömür almadı`}
+                      >
+                        {canFinalize ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Rotayı Tamamla ve Arşivle</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-4 h-4 text-rose-600" />
+                            <span>Rotayı Tamamla ({noCoalStops.length} Haneye Kömür Verilmedi)</span>
+                          </>
+                        )}
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`/api/export?type=daily_deliveries&date=${activeRoute.tarih || new Date().toLocaleDateString('en-CA')}`}
+                          download={`Edirne_SYDV_Teslimat_Listesi_${activeRoute.tarih || 'Bugun'}.xlsx`}
+                          className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Günün Teslimat Listesini İndir (Excel)</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setPrintRoute(activeRoute)}
+                          className="py-2 px-3 rounded-xl bg-white hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 border border-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                          title="Resmi Dağıtım Tutanağını Önizle ve Yazdır"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Yazdır</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Sağ Panel: SIRALI DURAKLAR LİSTESİ */}
@@ -891,7 +993,7 @@ export default function RoutePage({
                           </div>
                         </div>
 
-                        {/* Sıralama Taşıma Butonları (Reorder) */}
+                        {/* Sıralama Taşıma Butonları (Reorder) ve Çıkar Butonu */}
                         <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                           <button
                             type="button"
@@ -910,6 +1012,14 @@ export default function RoutePage({
                             title="Aşağı Taşı"
                           >
                             <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStop(index, stop)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-0.5 border-l border-slate-200 pl-1"
+                            title="Bu haneyi rotadan çıkar (Beklemeye döner)"
+                          >
+                            <UserMinus className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
@@ -1864,24 +1974,72 @@ export default function RoutePage({
               </p>
             </div>
 
-            {/* Bekleyen Durak Uyarısı */}
+            {/* Rota Tamamlanma Durumu & Kural Kontrolü */}
             {(() => {
-              const pendingCount =
-                (activeRoute.duraklar || []).filter((s: any) => !s.durum || s.durum === 'BEKLIYOR').length;
-              if (pendingCount > 0) {
+              const stops = activeRoute.duraklar || [];
+              const noCoal = stops.filter((s: any) => {
+                const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
+                const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
+                return !hasCoal;
+              });
+
+              if (noCoal.length > 0) {
                 return (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold flex items-start gap-2 mb-3">
-                    <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                    <div>
-                      <strong>Dikkat: {pendingCount} hane henüz dağıtılmadı!</strong>
-                      <p className="text-[11px] font-normal text-amber-800 mt-0.5">
-                        Rotayı şimdi tamamlarsanız bu haneler sistemde teslim edilmemiş olarak kalacaktır.
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 space-y-2 mb-3">
+                    <div className="flex items-start gap-2">
+                      <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-xs font-black text-rose-900 block">
+                          ⛔ Rota Tamamlanamaz: Hiç Kömür Verilmeyen {noCoal.length} Hane Var!
+                        </strong>
+                        <p className="text-[11px] font-medium text-rose-800 mt-1 leading-relaxed">
+                          Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmesi gerekmektedir. İstisna olarak eksik kömür verilen olsa bile tamamlama yapılabilir; <strong>ancak hiç kömür verilmeyen hane var ise tamamlanamaz.</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-1.5 border-t border-rose-200">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 block mb-1">
+                        Kömür Teslim Edilmeyen Haneler ({noCoal.length}):
+                      </span>
+                      <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                        {noCoal.map((s: any) => (
+                          <div
+                            key={s.beneficiary_id || s.sira}
+                            className="flex items-center justify-between text-[11px] bg-white/90 px-2 py-1 rounded-lg border border-rose-200"
+                          >
+                            <span className="font-bold text-slate-800 truncate mr-2">
+                              #{s.sira} {s.ad_soyad} {s.mahalle ? `(${s.mahalle})` : ''}
+                            </span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded shrink-0 ${
+                              s.durum === 'TESLIM_EDILEMEDI'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {s.durum === 'TESLIM_EDILEMEDI' ? 'Verilemedi (0 Torba)' : 'Bekliyor'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium mt-1">
+                        İpucu: Hanelere kömür teslim edebilir veya ulaşılamayan haneleri rotadan çıkararak kalan hanelerle rotayı kapatabilirsiniz.
                       </p>
                     </div>
                   </div>
                 );
               }
-              return null;
+
+              return (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-center gap-2 mb-3">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <strong className="block text-emerald-950">✓ Tüm Hanelere Kömür Teslim Edildi</strong>
+                    <p className="text-[11px] font-normal text-emerald-800 mt-0.5">
+                      Rotadaki tüm hanelere kömür verildi ({activeRoute.tamamlanan_hane || 0} tam, {activeRoute.eksik_hane || 0} eksik teslimat). Rota arşive kaldırılmaya uygundur.
+                    </p>
+                  </div>
+                </div>
+              );
             })()}
 
             <div>
@@ -1895,23 +2053,45 @@ export default function RoutePage({
               />
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => setShowFinalizeModal(false)}
-                className="btn-secondary flex-1 text-xs py-2.5 font-bold"
-              >
-                Vazgeç
-              </button>
-              <button
-                type="button"
-                onClick={handleFinalizeRouteSubmit}
-                disabled={isActionLoading}
-                className="flex-1 text-xs py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all active:scale-95"
-              >
-                {isActionLoading ? 'Tamamlanıyor...' : 'Onayla ve Arşivle'}
-              </button>
-            </div>
+            {/* Modal Butonları */}
+            {(() => {
+              const stops = activeRoute.duraklar || [];
+              const noCoal = stops.filter((s: any) => {
+                const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
+                const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
+                return !hasCoal;
+              });
+              const canFinalize = stops.length > 0 && noCoal.length === 0;
+
+              return (
+                <div className="pt-3 border-t border-slate-200 flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFinalizeModal(false)}
+                    className="btn-secondary flex-1 text-xs py-2.5 font-bold"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFinalizeRouteSubmit}
+                    disabled={isActionLoading || !canFinalize}
+                    className={`flex-1 text-xs py-2.5 font-black rounded-xl shadow-xs transition-all ${
+                      canFinalize
+                        ? 'text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95'
+                        : 'text-slate-400 bg-slate-200 cursor-not-allowed border border-slate-300'
+                    }`}
+                    title={!canFinalize ? 'Hiç kömür verilmeyen hane varken rota tamamlanamaz' : undefined}
+                  >
+                    {isActionLoading
+                      ? 'Tamamlanıyor...'
+                      : canFinalize
+                      ? 'Onayla ve Arşivle'
+                      : 'Hiç Kömür Verilmeyen Hane Var (Kapatılamaz)'}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
