@@ -47,6 +47,24 @@ function formatMinutes(totalMin: number): string {
   return `${h} sa ${m} dk`;
 }
 
+function timeToMinutes(t: string): number {
+  if (!t) return 0;
+  const [h, m] = t.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return 0;
+  return h * 60 + m;
+}
+
+function areIntervalsOverlapping(startA: string, endA: string, startB: string, endB: string): boolean {
+  if (!startA || !endA || !startB || !endB) return false;
+  let sA = timeToMinutes(startA);
+  let eA = timeToMinutes(endA);
+  let sB = timeToMinutes(startB);
+  let eB = timeToMinutes(endB);
+  if (eA <= sA) eA += 24 * 60;
+  if (eB <= sB) eB += 24 * 60;
+  return Math.max(sA, sB) < Math.min(eA, eB);
+}
+
 const TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
 
 export default function ShiftPage({
@@ -155,6 +173,21 @@ export default function ShiftPage({
       return;
     }
 
+    // Aynı personele aynı günde çakışan saatlerde mesai girişini engelle
+    const conflict = shifts.find((s) => {
+      const isSameStaff = (s.personel_adi || '').trim().toLowerCase() === entryStaff.trim().toLowerCase();
+      const isSameDate = (s.tarih || '').trim() === entryDate.trim();
+      return isSameStaff && isSameDate && areIntervalsOverlapping(entryStartTime, entryEndTime, s.baslama_saati, s.bitis_saati);
+    });
+
+    if (conflict) {
+      setFeedbackMsg({
+        type: 'error',
+        text: `"${entryStaff}" için ${entryDate} tarihinde aynı saatlere denk gelen (${conflict.baslama_saati} - ${conflict.bitis_saati}) bir mesai kaydı bulunmaktadır. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setFeedbackMsg(null);
 
@@ -198,6 +231,19 @@ export default function ShiftPage({
   const handleUpdateShift = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingShift) return;
+
+    // Güncellemede çakışan saat kontrolü
+    const conflict = shifts.find((s) => {
+      if (String(s.id || s._id) === String(editingShift.id || editingShift._id)) return false;
+      const isSameStaff = (s.personel_adi || '').trim().toLowerCase() === (editingShift.personel_adi || '').trim().toLowerCase();
+      const isSameDate = (s.tarih || '').trim() === (editingShift.tarih || '').trim();
+      return isSameStaff && isSameDate && areIntervalsOverlapping(editingShift.baslama_saati, editingShift.bitis_saati, s.baslama_saati, s.bitis_saati);
+    });
+
+    if (conflict) {
+      alert(`Aynı saatlere denk gelen (${conflict.baslama_saati} - ${conflict.bitis_saati}) başka bir mesai kaydı mevcuttur. Çakışan saatlerde güncelleme yapılamaz.`);
+      return;
+    }
 
     setIsUpdating(true);
     try {
@@ -733,14 +779,38 @@ export default function ShiftPage({
               <tbody className="divide-y divide-slate-100">
                 {shifts.map((shift) => {
                   const sDate = new Date(shift.tarih + 'T00:00:00');
-                  const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[sDate.getDay()];
+                  const dayIdx = isNaN(sDate.getTime()) ? -1 : sDate.getDay();
+                  const isSaturday = dayIdx === 6;
+                  const isSunday = dayIdx === 0;
+                  const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[dayIdx];
 
                   return (
-                    <tr key={shift.id || shift._id} className="hover:bg-slate-50 transition-colors">
-                      {/* Tarih */}
+                    <tr
+                      key={shift.id || shift._id}
+                      className={`transition-colors border-l-4 ${
+                        isSaturday
+                          ? 'bg-amber-50/70 hover:bg-amber-100/70 border-l-amber-500'
+                          : isSunday
+                          ? 'bg-purple-50/70 hover:bg-purple-100/70 border-l-purple-500'
+                          : 'hover:bg-slate-50 border-l-transparent'
+                      }`}
+                    >
+                      {/* Tarih & Belirgin Gün Rozeti */}
                       <td className="p-3 whitespace-nowrap">
                         <span className="font-extrabold text-slate-900 block">{shift.tarih}</span>
-                        <span className="text-[10px] text-slate-500 font-medium">{dayName}</span>
+                        {isSaturday ? (
+                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs">
+                            <Calendar className="w-3 h-3 text-white" />
+                            Cumartesi Mesaisi
+                          </span>
+                        ) : isSunday ? (
+                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs">
+                            <Sparkles className="w-3 h-3 text-white" />
+                            Pazar Full Mesai
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{dayName}</span>
+                        )}
                       </td>
 
                       {/* Personel */}
@@ -1046,13 +1116,35 @@ export default function ShiftPage({
                     ) : (
                       filteredReportShifts.map((shift: any, idx: number) => {
                         const sDate = new Date(shift.tarih + 'T00:00:00');
-                        const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[sDate.getDay()];
+                        const dayIdx = isNaN(sDate.getTime()) ? -1 : sDate.getDay();
+                        const isSaturday = dayIdx === 6;
+                        const isSunday = dayIdx === 0;
+                        const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[dayIdx];
                         return (
-                          <tr key={shift.id || shift._id || idx} className="hover:bg-slate-50/80">
+                          <tr
+                            key={shift.id || shift._id || idx}
+                            className={`border-l-4 ${
+                              isSaturday
+                                ? 'bg-amber-50/70 border-l-amber-500'
+                                : isSunday
+                                ? 'bg-purple-50/70 border-l-purple-500'
+                                : 'hover:bg-slate-50/80 border-l-transparent'
+                            }`}
+                          >
                             <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                             <td className="py-2 px-2 whitespace-nowrap">
                               <span className="font-extrabold text-slate-900 block">{shift.tarih}</span>
-                              <span className="text-[10px] text-slate-500 font-medium">{dayName}</span>
+                              {isSaturday ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500 text-white">
+                                  Cumartesi
+                                </span>
+                              ) : isSunday ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-600 text-white">
+                                  Pazar
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 font-medium">{dayName}</span>
+                              )}
                             </td>
                             <td className="py-2 px-2 font-bold text-slate-900 whitespace-nowrap">{shift.personel_adi}</td>
                             <td className="py-2 px-2 text-center whitespace-nowrap">

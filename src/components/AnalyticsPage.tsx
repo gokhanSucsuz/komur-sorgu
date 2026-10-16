@@ -131,6 +131,23 @@ export default function AnalyticsPage({
     });
   }, [mahalleStats, mahalleSearch, mahalleFilterTip]);
 
+  // Gruplanmış Mahalleler ve Köyler Listeleri
+  const mahallelerList = useMemo(() => {
+    return filteredMahalleStats.filter((m) => m.tip !== 'KOY');
+  }, [filteredMahalleStats]);
+
+  const koylerList = useMemo(() => {
+    return filteredMahalleStats.filter((m) => m.tip === 'KOY');
+  }, [filteredMahalleStats]);
+
+  const printMahalleler = useMemo(() => {
+    return mahalleStats.filter((m) => m.tip !== 'KOY');
+  }, [mahalleStats]);
+
+  const printKoyler = useMemo(() => {
+    return mahalleStats.filter((m) => m.tip === 'KOY');
+  }, [mahalleStats]);
+
   // Filtered Sokak Stats (guarantee clean, human-readable street names)
   const filteredSokakStats = useMemo(() => {
     return sokakStats.map((s) => {
@@ -171,6 +188,129 @@ export default function AnalyticsPage({
   const totalMahalleTeslim = mahalleStats.reduce((acc, m) => acc + (m.teslimEdilen || 0), 0);
   const totalMahalleKalan = mahalleStats.reduce((acc, m) => acc + (m.teslimEdilmeyen || 0), 0);
   const totalMahalleEksik = mahalleStats.reduce((acc, m) => acc + (m.eksikHane || 0), 0);
+
+  const renderMahalleGroupTable = (list: any[], title: string, type: 'MAHALLE' | 'KOY') => {
+    if (list.length === 0) {
+      return (
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 text-center text-slate-500 text-xs font-semibold">
+          {type === 'MAHALLE' ? 'Eşleşen şehir mahallesi bulunamadı.' : 'Eşleşen köy kaydı bulunamadı.'}
+        </div>
+      );
+    }
+
+    const groupKayit = list.reduce((acc, m) => acc + (m.toplamKayit || 0), 0);
+    const groupTeslim = list.reduce((acc, m) => acc + (m.teslimEdilen || 0), 0);
+    const groupKalan = list.reduce((acc, m) => acc + (m.teslimEdilmeyen || 0), 0);
+    const groupEksik = list.reduce((acc, m) => acc + (m.eksikHane || 0), 0);
+    const groupTorba = list.reduce((acc, m) => acc + (m.dagitilanTorba || 0), 0);
+    const groupTon = list.reduce((acc, m) => acc + (m.dagitilanTonaj || 0), 0);
+    const groupPct = groupKayit > 0 ? ((groupTeslim / groupKayit) * 100).toFixed(1) : '0';
+    const isKoy = type === 'KOY';
+
+    return (
+      <div className={`p-4 sm:p-5 rounded-2xl bg-white border ${isKoy ? 'border-emerald-300 shadow-sm' : 'border-sky-300 shadow-sm'} space-y-3`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isKoy ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'}`}>
+              {isKoy ? <Trees className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-slate-900">{title}</h3>
+                <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${isKoy ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-sky-100 text-sky-800 border border-sky-200'}`}>
+                  {list.length} Yerleşim
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">
+                {isKoy ? 'Köy yerleşim yerleri dağıtım ve teslimat durumları' : 'Merkez ve şehir mahalleleri dağıtım durumları'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold">
+              Kayıt: <strong className="text-slate-900">{groupKayit}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold">
+              Teslim: <strong className="text-emerald-900">{groupTeslim}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 font-bold">
+              Dağıtılan: <strong className="text-amber-950">{groupTorba} Torba ({groupTon.toFixed(1)} T)</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-sky-100 text-sky-800 font-black">
+              %{groupPct} Başarı
+            </span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="desktop-compact-table w-full text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                <th className="py-2.5 px-3 text-center w-12">#</th>
+                <th className="py-2.5 px-3 text-left">Yerleşim Adı</th>
+                <th className="py-2.5 px-3 text-center">Toplam Hane</th>
+                <th className="py-2.5 px-3 text-center text-emerald-800">Tam Teslim</th>
+                <th className="py-2.5 px-3 text-center text-amber-800">Eksik Hane</th>
+                <th className="py-2.5 px-3 text-center text-slate-600">Bekleyen</th>
+                <th className="py-2.5 px-3 text-center">Dağıtılan (Torba / Ton)</th>
+                <th className="py-2.5 px-3 text-right">Tamamlanma</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-800">
+              {list.map((m: any, idx: number) => {
+                const pct = m.toplamKayit > 0 ? Math.round((m.teslimEdilen / m.toplamKayit) * 100) : 0;
+                return (
+                  <tr key={`${m.mahalle}_${idx}`} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-2 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                    <td className="py-2 px-3 font-bold text-slate-900 flex items-center gap-1.5">
+                      {isKoy ? <Trees className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <Building2 className="w-3.5 h-3.5 text-sky-600 shrink-0" />}
+                      <span>{m.mahalle}</span>
+                    </td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-900">{m.toplamKayit}</td>
+                    <td className="py-2 px-3 text-center font-black text-emerald-700 bg-emerald-50/40">{m.teslimEdilen}</td>
+                    <td className="py-2 px-3 text-center font-bold text-amber-700 bg-amber-50/40">{m.eksikHane || 0}</td>
+                    <td className="py-2 px-3 text-center font-medium text-slate-500">{m.teslimEdilmeyen || 0}</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-800">
+                      {m.dagitilanTorba || 0} Torba <span className="text-[10px] text-slate-500 font-normal">({(m.dagitilanTonaj || 0).toFixed(1)} T)</span>
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-14 bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                          <div
+                            className={`h-full rounded-full ${pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-slate-400'}`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className="font-mono font-bold text-[11px] text-slate-700 w-8 text-right">%{pct}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-100/90 font-black text-slate-900 border-t border-slate-300 text-[11px]">
+                <td className="py-2.5 px-3 text-center font-extrabold" colSpan={2}>
+                  {title} Toplamı ({list.length})
+                </td>
+                <td className="py-2.5 px-3 text-center">{groupKayit}</td>
+                <td className="py-2.5 px-3 text-center text-emerald-800">{groupTeslim}</td>
+                <td className="py-2.5 px-3 text-center text-amber-800">{groupEksik}</td>
+                <td className="py-2.5 px-3 text-center text-slate-600">{groupKalan}</td>
+                <td className="py-2.5 px-3 text-center">
+                  {groupTorba} Torba ({groupTon.toFixed(1)} Ton)
+                </td>
+                <td className="py-2.5 px-3 text-right text-emerald-800 font-mono">
+                  %{groupPct}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -616,86 +756,17 @@ export default function AnalyticsPage({
             </div>
           </div>
 
-          {/* Detailed Mahalle Table */}
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
-            <table className="desktop-compact-table">
-              <thead>
-                <tr>
-                  <th>Yerleşim / Bölge Adı</th>
-                  <th className="text-center">Tip</th>
-                  <th className="text-center">Toplam Kayıt</th>
-                  <th className="text-center text-emerald-800">Teslim Yapılan</th>
-                  <th className="text-center text-amber-800">Teslim Yapılmayan</th>
-                  <th className="text-center">Eksik Kalan</th>
-                  <th className="text-right">Kömür Dağıtımı (Torba)</th>
-                  <th className="text-right">Tamamlanma</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMahalleStats.map((m: any) => {
-                  const isKoy = m.tip === 'KOY';
-                  const teslimEdilen = m.teslimEdilen ?? m.tamHane ?? 0;
-                  const teslimEdilmeyen = m.teslimEdilmeyen ?? ((m.toplamKayit || m.toplamHane || 0) - teslimEdilen);
-
-                  return (
-                    <tr key={m.mahalle}>
-                      <td>
-                        <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                          {isKoy ? (
-                            <Trees className="w-4 h-4 text-emerald-600 shrink-0" />
-                          ) : (
-                            <Building2 className="w-4 h-4 text-amber-600 shrink-0" />
-                          )}
-                          <span>{m.mahalle}</span>
-                        </div>
-                      </td>
-                      <td className="text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
-                          isKoy ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'
-                        }`}>
-                          {isKoy ? 'Köy' : 'Mahalle'}
-                        </span>
-                      </td>
-                      <td className="text-center font-bold text-slate-900">
-                        {m.toplamKayit || m.toplamHane} Kişi
-                      </td>
-                      <td className="text-center font-black text-emerald-700 bg-emerald-50/50">
-                        {teslimEdilen} Kişi
-                      </td>
-                      <td className="text-center font-black text-amber-800 bg-amber-50/50">
-                        {teslimEdilmeyen} Kişi
-                      </td>
-                      <td className="text-center font-bold text-slate-600">
-                        {m.eksikHane > 0 ? (
-                          <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                            {m.eksikHane}
-                          </span>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td className="text-right font-mono text-xs">
-                        <strong className="text-emerald-700">{m.dagitilanTorba || 0}</strong> / <span className="text-slate-500">{m.hedefTorba || 0}</span>
-                      </td>
-                      <td className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
-                            <div
-                              className="h-full bg-emerald-500 rounded-full"
-                              style={{ width: `${Math.min(100, m.yuzde || 0)}%` }}
-                            />
-                          </div>
-                          <span className="font-extrabold text-amber-800 font-mono text-xs">
-                            %{m.yuzde || 0}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* Detailed Mahalle & Köy Grouped Tables */}
+          {filteredMahalleStats.length === 0 ? (
+            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 font-medium">
+              Aramanızla eşleşen mahalle veya köy kaydı bulunamadı.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {mahalleFilterTip !== 'KOY' && renderMahalleGroupTable(mahallelerList, 'Şehir Mahalleleri Dağılımı', 'MAHALLE')}
+              {mahalleFilterTip !== 'MAHALLE' && renderMahalleGroupTable(koylerList, 'Köy Yerleşimleri Dağılımı', 'KOY')}
+            </div>
+          )}
         </div>
       )}
 
@@ -1168,11 +1239,19 @@ export default function AnalyticsPage({
                 </div>
               )}
 
-              {/* Mahalle & Köy İcmali Tablosu */}
+              {/* Mahalle & Köy İcmali Tablosu (Gruplanmış) */}
               <div className="space-y-1.5">
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
-                  Mahalle ve Köy Bazlı Dağıtım İcmali ({mahalleStats.length} Bölge)
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                    Mahalle ve Köy Bazlı Dağıtım İcmali ({mahalleStats.length} Yerleşim)
+                  </h4>
+                  <div className="text-[11px] font-bold text-slate-500 flex items-center gap-2">
+                    <span className="text-sky-700">{printMahalleler.length} Mahalle</span>
+                    <span>•</span>
+                    <span className="text-emerald-700">{printKoyler.length} Köy</span>
+                  </div>
+                </div>
+
                 <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
@@ -1189,10 +1268,18 @@ export default function AnalyticsPage({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {mahalleStats.map((m: any, idx: number) => {
+                      {/* 1. GRUP: ŞEHİR MAHALLELERİ */}
+                      {printMahalleler.length > 0 && (
+                        <tr className="bg-sky-50/90 border-b border-sky-200">
+                          <td colSpan={9} className="p-2 font-black text-sky-950 text-xs">
+                            🏙️ Şehir Mahalleleri Dağıtım Durumu ({printMahalleler.length} Mahalle)
+                          </td>
+                        </tr>
+                      )}
+                      {printMahalleler.map((m: any, idx: number) => {
                         const pct = m.toplamKayit > 0 ? Math.round((m.teslimEdilen / m.toplamKayit) * 100) : 0;
                         return (
-                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                          <tr key={`mahalle_${idx}`} className="hover:bg-slate-50 transition-colors">
                             <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
                             <td className="p-2 font-bold text-slate-900">{m.mahalle}</td>
                             <td className="p-2 text-center font-semibold text-slate-800">{m.toplamKayit}</td>
@@ -1211,6 +1298,69 @@ export default function AnalyticsPage({
                           </tr>
                         );
                       })}
+                      {printMahalleler.length > 0 && (
+                        <tr className="bg-sky-100/70 font-black text-sky-950 border-t border-b border-sky-300 text-[11px]">
+                          <td colSpan={2} className="p-2 text-right uppercase">ŞEHİR MAHALLELERİ ALT TOPLAMI:</td>
+                          <td className="p-2 text-center">{printMahalleler.reduce((acc, m) => acc + (m.toplamKayit || 0), 0)}</td>
+                          <td className="p-2 text-center text-emerald-800">{printMahalleler.reduce((acc, m) => acc + (m.teslimEdilen || 0), 0)}</td>
+                          <td className="p-2 text-center text-amber-800">{printMahalleler.reduce((acc, m) => acc + (m.eksikHane || 0), 0)}</td>
+                          <td className="p-2 text-center text-slate-700">{printMahalleler.reduce((acc, m) => acc + (m.teslimEdilmeyen || 0), 0)}</td>
+                          <td className="p-2 text-center">{printMahalleler.reduce((acc, m) => acc + (m.dagitilanTorba || 0), 0)}</td>
+                          <td className="p-2 text-center text-amber-900">{(printMahalleler.reduce((acc, m) => acc + (m.dagitilanTorba || 0), 0) * 0.025).toFixed(2)}</td>
+                          <td className="p-2 text-center">
+                            %{printMahalleler.reduce((acc, m) => acc + (m.toplamKayit || 0), 0) > 0
+                              ? Math.round((printMahalleler.reduce((acc, m) => acc + (m.teslimEdilen || 0), 0) / printMahalleler.reduce((acc, m) => acc + (m.toplamKayit || 0), 0)) * 100)
+                              : 0}
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* 2. GRUP: KÖY YERLEŞİMLERİ */}
+                      {printKoyler.length > 0 && (
+                        <tr className="bg-emerald-50/90 border-b border-emerald-200">
+                          <td colSpan={9} className="p-2 font-black text-emerald-950 text-xs">
+                            🌲 Köy Yerleşimleri Dağıtım Durumu ({printKoyler.length} Köy)
+                          </td>
+                        </tr>
+                      )}
+                      {printKoyler.map((m: any, idx: number) => {
+                        const pct = m.toplamKayit > 0 ? Math.round((m.teslimEdilen / m.toplamKayit) * 100) : 0;
+                        return (
+                          <tr key={`koy_${idx}`} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                            <td className="p-2 font-bold text-slate-900">{m.mahalle}</td>
+                            <td className="p-2 text-center font-semibold text-slate-800">{m.toplamKayit}</td>
+                            <td className="p-2 text-center font-bold text-emerald-700">{m.teslimEdilen}</td>
+                            <td className="p-2 text-center font-bold text-amber-700">{m.eksikHane || 0}</td>
+                            <td className="p-2 text-center font-medium text-slate-500">{m.teslimEdilmeyen || 0}</td>
+                            <td className="p-2 text-center font-bold text-slate-900">{m.dagitilanTorba || 0}</td>
+                            <td className="p-2 text-center font-mono font-bold text-amber-800">{((m.dagitilanTorba || 0) * 0.025).toFixed(2)}</td>
+                            <td className="p-2 text-center">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                pct === 100 ? 'bg-emerald-100 text-emerald-800' : pct > 50 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                %{pct}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {printKoyler.length > 0 && (
+                        <tr className="bg-emerald-100/70 font-black text-emerald-950 border-t border-b border-emerald-300 text-[11px]">
+                          <td colSpan={2} className="p-2 text-right uppercase">KÖY YERLEŞİMLERİ ALT TOPLAMI:</td>
+                          <td className="p-2 text-center">{printKoyler.reduce((acc, m) => acc + (m.toplamKayit || 0), 0)}</td>
+                          <td className="p-2 text-center text-emerald-800">{printKoyler.reduce((acc, m) => acc + (m.teslimEdilen || 0), 0)}</td>
+                          <td className="p-2 text-center text-amber-800">{printKoyler.reduce((acc, m) => acc + (m.eksikHane || 0), 0)}</td>
+                          <td className="p-2 text-center text-slate-700">{printKoyler.reduce((acc, m) => acc + (m.teslimEdilmeyen || 0), 0)}</td>
+                          <td className="p-2 text-center">{printKoyler.reduce((acc, m) => acc + (m.dagitilanTorba || 0), 0)}</td>
+                          <td className="p-2 text-center text-amber-900">{(printKoyler.reduce((acc, m) => acc + (m.dagitilanTorba || 0), 0) * 0.025).toFixed(2)}</td>
+                          <td className="p-2 text-center">
+                            %{printKoyler.reduce((acc, m) => acc + (m.toplamKayit || 0), 0) > 0
+                              ? Math.round((printKoyler.reduce((acc, m) => acc + (m.teslimEdilen || 0), 0) / printKoyler.reduce((acc, m) => acc + (m.toplamKayit || 0), 0)) * 100)
+                              : 0}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                     <tfoot>
                       <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">

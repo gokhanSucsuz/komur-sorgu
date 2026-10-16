@@ -4,8 +4,14 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
   Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
-  Eye, Phone, MapPin, Copy, Check, Users, Info, Hash
+  Eye, Phone, MapPin, Copy, Check, Users, Info, Hash, Building2, Trees
 } from 'lucide-react';
+
+const isKoySettlement = (name: string, tip?: string) => {
+  if (tip === 'KOY') return true;
+  if (!name) return false;
+  return /(?:Köyü|Koy|Koyu)$/i.test(name.trim());
+};
 
 interface ExcelImportPageProps {
   userRole: 'ADMIN' | 'PERSONEL';
@@ -507,39 +513,85 @@ export default function ExcelImportPage({
                 </div>
               )}
 
-              {/* Mahallelere Göre Ayrıştırılan Kayıtlar (İki Sütun) */}
-              {uploadResult.mahalleOzet && uploadResult.mahalleOzet.length > 0 && (
-                <div className="pt-2.5 border-t border-emerald-200/90 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-extrabold text-emerald-950">
-                    <span className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <span>Mahallelere Göre Ayrıştırılan Kayıtlar ({uploadResult.mahalleOzet.length} Mahalle):</span>
-                    </span>
-                    <span className="text-[11px] font-mono font-bold text-emerald-800">
-                      Toplam {uploadResult.insertedCount} Hak Sahibi
-                    </span>
-                  </div>
+              {/* Mahallelere ve Köylere Göre Gruplanmış Kayıtlar */}
+              {uploadResult.mahalleOzet && uploadResult.mahalleOzet.length > 0 && (() => {
+                const uploadMahalles = uploadResult.mahalleOzet.filter((mo: any) => !isKoySettlement(mo.mahalle, mo.tip));
+                const uploadKoys = uploadResult.mahalleOzet.filter((mo: any) => isKoySettlement(mo.mahalle, mo.tip));
 
-                  <div className="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto pr-1">
-                    {uploadResult.mahalleOzet.map((mo: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="p-1.5 px-2.5 rounded-lg bg-white border border-emerald-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs"
-                      >
-                        <strong className="text-slate-900 truncate" title={mo.mahalle}>
-                          {mo.mahalle}:
-                        </strong>
-                        <div className="flex items-center gap-1 shrink-0 text-[10px]">
-                          <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
-                          <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
-                            ({mo.sira_araligi})
-                          </span>
+                return (
+                  <div className="pt-2.5 border-t border-emerald-200/90 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs font-extrabold text-emerald-950">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        <span>Yerleşim Yerlerine Göre Dağılım ({uploadResult.mahalleOzet.length} Yerleşim):</span>
+                      </span>
+                      <div className="flex items-center gap-2 text-[11px] font-bold">
+                        <span className="text-sky-800">{uploadMahalles.length} Mahalle</span>
+                        <span>•</span>
+                        <span className="text-emerald-800">{uploadKoys.length} Köy</span>
+                        <span>•</span>
+                        <span className="font-mono text-emerald-950">Toplam {uploadResult.insertedCount} Hak Sahibi</span>
+                      </div>
+                    </div>
+
+                    {/* Şehir Mahalleleri */}
+                    {uploadMahalles.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-black text-sky-900 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200">
+                          <Building2 className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+                          <span>🏙️ Şehir Mahalleleri ({uploadMahalles.length})</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          {uploadMahalles.map((mo: any, idx: number) => (
+                            <div
+                              key={`up_mah_${idx}`}
+                              className="p-1.5 px-2.5 rounded-lg bg-white border border-sky-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs"
+                            >
+                              <strong className="text-slate-900 truncate" title={mo.mahalle}>
+                                {mo.mahalle}:
+                              </strong>
+                              <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                                <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                                <span className="text-sky-700 font-mono font-bold bg-sky-50 px-1 py-0.5 rounded border border-sky-100">
+                                  ({mo.sira_araligi})
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    )}
+
+                    {/* Köy Yerleşimleri */}
+                    {uploadKoys.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-black text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          <Trees className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                          <span>🌲 Köy Yerleşimleri ({uploadKoys.length})</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          {uploadKoys.map((mo: any, idx: number) => (
+                            <div
+                              key={`up_koy_${idx}`}
+                              className="p-1.5 px-2.5 rounded-lg bg-white border border-emerald-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs"
+                            >
+                              <strong className="text-slate-900 truncate" title={mo.mahalle}>
+                                {mo.mahalle}:
+                              </strong>
+                              <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                                <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                                <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
+                                  ({mo.sira_araligi})
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Sekmeli Excel İndirme Butonu */}
               {uploadResult.insertedCount > 0 && (
@@ -756,36 +808,83 @@ export default function ExcelImportPage({
                   </div>
                 </div>
 
-                {/* Mahalle Dağılımı (İki Sütun Alanı) */}
-                {batch.mahalle_ozet && batch.mahalle_ozet.length > 0 && (
-                  <div className="pt-2 border-t border-slate-200/80 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700">
-                      <span className="flex items-center gap-1 text-slate-800">
-                        <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>Mahallelere Göre Dağılım ({batch.mahalle_ozet.length} Mahalle):</span>
-                      </span>
-                    </div>
+                {/* Mahalle ve Köy Dağılımı (Gruplanmış) */}
+                {batch.mahalle_ozet && batch.mahalle_ozet.length > 0 && (() => {
+                  const bMahalles = batch.mahalle_ozet.filter((mo: any) => !isKoySettlement(mo.mahalle, mo.tip));
+                  const bKoys = batch.mahalle_ozet.filter((mo: any) => isKoySettlement(mo.mahalle, mo.tip));
 
-                    <div className="grid grid-cols-2 gap-1.5 max-h-60 overflow-y-auto pr-1">
-                      {batch.mahalle_ozet.map((mo: any, moIdx: number) => (
-                        <div
-                          key={moIdx}
-                          className="p-1.5 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs hover:border-slate-300 transition-colors"
-                        >
-                          <strong className="text-slate-900 truncate" title={mo.mahalle}>
-                            {mo.mahalle}:
-                          </strong>
-                          <div className="flex items-center gap-1 shrink-0 text-[10px]">
-                            <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
-                            <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
-                              ({mo.sira_araligi})
-                            </span>
+                  return (
+                    <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700">
+                        <span className="flex items-center gap-1 text-slate-800">
+                          <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Yerleşim Yerlerine Göre Dağılım ({batch.mahalle_ozet.length}):</span>
+                        </span>
+                        <div className="flex items-center gap-2 text-[10px] font-bold">
+                          <span className="text-sky-800">{bMahalles.length} Mahalle</span>
+                          <span>•</span>
+                          <span className="text-emerald-800">{bKoys.length} Köy</span>
+                        </div>
+                      </div>
+
+                      {/* Şehir Mahalleleri */}
+                      {bMahalles.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-sky-800 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                            <Building2 className="w-3 h-3 text-sky-700 shrink-0" />
+                            <span>🏙️ Şehir Mahalleleri ({bMahalles.length})</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                            {bMahalles.map((mo: any, moIdx: number) => (
+                              <div
+                                key={`b_mah_${moIdx}`}
+                                className="p-1.5 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs hover:border-sky-300 transition-colors"
+                              >
+                                <strong className="text-slate-900 truncate" title={mo.mahalle}>
+                                  {mo.mahalle}:
+                                </strong>
+                                <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                                  <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                                  <span className="text-sky-700 font-mono font-bold bg-sky-50 px-1 py-0.5 rounded border border-sky-100">
+                                    ({mo.sira_araligi})
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
+                      )}
+
+                      {/* Köy Yerleşimleri */}
+                      {bKoys.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            <Trees className="w-3 h-3 text-emerald-700 shrink-0" />
+                            <span>🌲 Köy Yerleşimleri ({bKoys.length})</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                            {bKoys.map((mo: any, moIdx: number) => (
+                              <div
+                                key={`b_koy_${moIdx}`}
+                                className="p-1.5 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] flex items-center justify-between gap-1 shadow-2xs hover:border-emerald-300 transition-colors"
+                              >
+                                <strong className="text-slate-900 truncate" title={mo.mahalle}>
+                                  {mo.mahalle}:
+                                </strong>
+                                <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                                  <span className="text-amber-800 font-extrabold">{mo.ek_liste_adi}</span>
+                                  <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
+                                    ({mo.sira_araligi})
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             ))}
           </div>

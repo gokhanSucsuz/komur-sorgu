@@ -695,10 +695,15 @@ export async function GET(request: NextRequest) {
         mahalleGroups.get(m)!.push(r);
       }
 
-      // Sort mahalle names alphabetically
-      const sortedMahalles = Array.from(mahalleGroups.keys()).sort((a, b) =>
-        a.localeCompare(b, 'tr', { sensitivity: 'base' })
-      );
+      // Sort mahalle names: Mahalleler A-Z first, then Köyler A-Z
+      const allMahalleKeys = Array.from(mahalleGroups.keys());
+      const onlyMahalles = allMahalleKeys
+        .filter((m) => !/(?:Köyü|Koy|Koyu)$/i.test(m))
+        .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+      const onlyKoys = allMahalleKeys
+        .filter((m) => /(?:Köyü|Koy|Koyu)$/i.test(m))
+        .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+      const sortedMahalles = [...onlyMahalles, ...onlyKoys];
 
       const seenSheetNames = new Set<string>();
 

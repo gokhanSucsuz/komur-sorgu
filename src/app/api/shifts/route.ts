@@ -42,6 +42,17 @@ function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
+function areIntervalsOverlapping(startA: string, endA: string, startB: string, endB: string): boolean {
+  if (!startA || !endA || !startB || !endB) return false;
+  let sA = timeToMinutes(startA);
+  let eA = timeToMinutes(endA);
+  let sB = timeToMinutes(startB);
+  let eB = timeToMinutes(endB);
+  if (eA <= sA) eA += 24 * 60;
+  if (eB <= sB) eB += 24 * 60;
+  return Math.max(sA, sB) < Math.min(eA, eB);
+}
+
 // GET /api/shifts - List shifts, active shift & calculated overtime stats with carryover
 export async function GET(request: NextRequest) {
   try {
@@ -527,6 +538,28 @@ export async function POST(request: NextRequest) {
 
       const totalMinutes = body.toplam_dakika || calculateMinutes(baslama_saati, bitis_saati);
 
+      // Aynı personele aynı günde çakışan saatlerde ikinci mesai girişini engelle
+      const rawExistingShifts = await shiftsCol.find({
+        tarih: tarih.trim(),
+      }).toArray();
+      const existingShifts = mapDocs(rawExistingShifts).filter(
+        (s: any) => (s.personel_adi || '').trim().toLowerCase() === personel_adi.trim().toLowerCase()
+      );
+
+      const conflictingShift = existingShifts.find((s: any) =>
+        areIntervalsOverlapping(baslama_saati.trim(), bitis_saati.trim(), s.baslama_saati, s.bitis_saati)
+      );
+
+      if (conflictingShift) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `${personel_adi} için ${tarih} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) bir mesai kaydı mevcuttur. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
+          },
+          { status: 400 }
+        );
+      }
+
       const newDoc = {
         personel_adi: personel_adi.trim(),
         tarih: tarih.trim(),
@@ -598,6 +631,35 @@ export async function PUT(request: NextRequest) {
           { status: 403 }
         );
       }
+    }
+
+    const targetDate = (tarih || existingShift.tarih || '').trim();
+    const targetStaff = (personel_adi || existingShift.personel_adi || '').trim();
+    const targetStart = (baslama_saati || existingShift.baslama_saati || '').trim();
+    const targetEnd = (bitis_saati || existingShift.bitis_saati || '').trim();
+
+    // Çakışan saat kontrolü (kendisi hariç aynı personel ve aynı gün)
+    const rawExistingShifts = await shiftsCol.find({
+      tarih: targetDate,
+    }).toArray();
+    const otherShifts = mapDocs(rawExistingShifts).filter(
+      (s: any) =>
+        String(s.id || s._id) !== String(id) &&
+        (s.personel_adi || '').trim().toLowerCase() === targetStaff.toLowerCase()
+    );
+
+    const conflictingShift = otherShifts.find((s: any) =>
+      areIntervalsOverlapping(targetStart, targetEnd, s.baslama_saati, s.bitis_saati)
+    );
+
+    if (conflictingShift) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `${targetStaff} için ${targetDate} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) başka bir mesai kaydı mevcuttur. Çakışan saatlerde güncelleme yapılamaz.`
+        },
+        { status: 400 }
+      );
     }
 
     let totalMinutes = 0;
