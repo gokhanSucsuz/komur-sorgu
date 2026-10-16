@@ -14,6 +14,20 @@ import CancelModal from '@/components/CancelModal';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
 
+function getOrCreateClientId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    let id = sessionStorage.getItem('komur_client_id');
+    if (!id) {
+      id = 'cid_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+      sessionStorage.setItem('komur_client_id', id);
+    }
+    return id;
+  } catch {
+    return 'cid_' + Math.random().toString(36).substring(2, 9);
+  }
+}
+
 interface RoutePageProps {
   userRole: 'ADMIN' | 'PERSONEL';
   userName: string;
@@ -27,6 +41,7 @@ export default function RoutePage({
   onRefreshAll,
   onNavigateToSearch
 }: RoutePageProps) {
+  const [currentClientId] = useState<string>(() => getOrCreateClientId());
   const [activeTab, setActiveTab] = useState<'ACTIVE_ROUTE' | 'ARCHIVE'>('ACTIVE_ROUTE');
   const [printRoute, setPrintRoute] = useState<any | null>(null);
   const [activeRoutes, setActiveRoutes] = useState<any[]>([]);
@@ -55,16 +70,45 @@ export default function RoutePage({
     return set;
   }, [activeRoutes]);
 
-  // Route lock status: Is the selected activeRoute locked by another staff member?
+  // ========================================================
+  // ROTA MODU (SIRALI SAHA TESLİMAT MODU - UBER/LYFT COCKPIT)
+  // ========================================================
+  const [isRouteModeOpen, setIsRouteModeOpen] = useState<boolean>(false);
+  const [routeModeIndex, setRouteModeIndex] = useState<number>(0);
+  const [routeModeTab, setRouteModeTab] = useState<'DELIVER' | 'DEFER'>('DELIVER');
+  const [routeModeDeferType, setRouteModeDeferType] = useState<'PARTIAL' | 'ZERO'>('PARTIAL');
+  const [routeModeTorba, setRouteModeTorba] = useState<string>('34');
+  const [routeModeRecipient, setRouteModeRecipient] = useState<string>('');
+  const [routeModeNote, setRouteModeNote] = useState<string>('');
+  const [routeModePausedNotice, setRouteModePausedNotice] = useState<boolean>(false);
+  const [routeStatusBanner, setRouteStatusBanner] = useState<{
+    type: 'COMPLETED' | 'PAUSED' | 'INFO';
+    title: string;
+    message: string;
+  } | null>(null);
+
+  // Route lock status: Is the selected activeRoute locked by another staff or another device?
   const isRouteLockedByOther = useMemo(() => {
     if (!activeRoute || !activeRoute.kilitli_personel) return false;
+    const lockTimestamp = Number(activeRoute.kilit_timestamp) || 0;
+    const isExpired = lockTimestamp > 0 && Date.now() - lockTimestamp > 25 * 60 * 1000;
+    if (isExpired) return false;
+
+    // If THIS tab/device has Route Mode open AND route has our client_id:
+    if (isRouteModeOpen && activeRoute.kilitli_client_id && activeRoute.kilitli_client_id === currentClientId) {
+      return false; // I am the one actively running Route Mode!
+    }
+
+    // If locked to another client/device:
+    if (activeRoute.kilitli_client_id) {
+      return activeRoute.kilitli_client_id !== currentClientId;
+    }
+
+    // Fallback: If personnel name differs
     const currentStaff = (userName || 'Personel').trim().toLowerCase();
     const lockedStaff = String(activeRoute.kilitli_personel).trim().toLowerCase();
-    const lockTimestamp = Number(activeRoute.kilit_timestamp) || 0;
-    const isExpired = lockTimestamp > 0 && Date.now() - lockTimestamp > 45 * 60 * 1000;
-    if (isExpired) return false;
     return lockedStaff !== currentStaff;
-  }, [activeRoute, userName]);
+  }, [activeRoute, userName, isRouteModeOpen, currentClientId]);
 
   const routeLockedByName = activeRoute?.kilitli_personel ? String(activeRoute.kilitli_personel).trim() : '';
 
@@ -91,23 +135,6 @@ export default function RoutePage({
   const [stopRecipientInput, setStopRecipientInput] = useState<string>('');
   const [stopNoteInput, setStopNoteInput] = useState<string>('');
   const [stopDeferLaterInput, setStopDeferLaterInput] = useState<boolean>(true);
-
-  // ========================================================
-  // ROTA MODU (SIRALI SAHA TESLİMAT MODU - UBER/LYFT COCKPIT)
-  // ========================================================
-  const [isRouteModeOpen, setIsRouteModeOpen] = useState<boolean>(false);
-  const [routeModeIndex, setRouteModeIndex] = useState<number>(0);
-  const [routeModeTab, setRouteModeTab] = useState<'DELIVER' | 'DEFER'>('DELIVER');
-  const [routeModeDeferType, setRouteModeDeferType] = useState<'PARTIAL' | 'ZERO'>('PARTIAL');
-  const [routeModeTorba, setRouteModeTorba] = useState<string>('34');
-  const [routeModeRecipient, setRouteModeRecipient] = useState<string>('');
-  const [routeModeNote, setRouteModeNote] = useState<string>('');
-  const [routeModePausedNotice, setRouteModePausedNotice] = useState<boolean>(false);
-  const [routeStatusBanner, setRouteStatusBanner] = useState<{
-    type: 'COMPLETED' | 'PAUSED' | 'INFO';
-    title: string;
-    message: string;
-  } | null>(null);
 
   // Create Modal Form State
   const [newRouteName, setNewRouteName] = useState<string>('');
@@ -138,7 +165,13 @@ export default function RoutePage({
     const silent = typeof silentOrEvent === 'boolean' ? silentOrEvent : false;
     if (!silent) setIsLoading(true);
     try {
-      const res = await fetch('/api/routes');
+      const res = await fetch(`/api/routes?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'x-client-id': currentClientId
+        }
+      });
       const data = await res.json();
       if (data.success) {
         const routes = data.activeRoutes || (data.activeRoute ? [data.activeRoute] : []);
@@ -157,7 +190,7 @@ export default function RoutePage({
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, []);
+  }, [currentClientId]);
 
   // Fetch pending beneficiaries for custom route building
   const fetchPendingBeneficiaries = useCallback(async () => {
@@ -181,6 +214,7 @@ export default function RoutePage({
   // Real-time synchronization polling for Route Page:
   // Detects when another staff starts/exits route mode, locks/unlocks a route, or updates a stop
   const lastSyncPulseRef = useRef<string>('');
+  const lastRouteLocksRef = useRef<string>('');
   const wasLockedRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -189,16 +223,26 @@ export default function RoutePage({
     const checkPulse = async () => {
       if (typeof window !== 'undefined' && !navigator.onLine) return;
       try {
-        const res = await fetch('/api/sync/status');
+        const res = await fetch(`/api/sync/status?_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'x-client-id': currentClientId
+          }
+        });
         const data = await res.json();
-        if (data.success && data.lastSyncTime) {
-          if (!lastSyncPulseRef.current) {
-            lastSyncPulseRef.current = data.lastSyncTime;
-          } else if (data.lastSyncTime !== lastSyncPulseRef.current) {
-            lastSyncPulseRef.current = data.lastSyncTime;
-            if (isMounted) {
-              await fetchRoutes(true); // Silent fetch without spinner
-            }
+        if (data.success) {
+          const syncTime = data.lastSyncTime || '';
+          const locksJson = JSON.stringify(data.activeRouteLocks || []);
+
+          const hasSyncTimeChanged = Boolean(lastSyncPulseRef.current && syncTime !== lastSyncPulseRef.current);
+          const hasLocksChanged = Boolean(lastRouteLocksRef.current && locksJson !== lastRouteLocksRef.current);
+
+          lastSyncPulseRef.current = syncTime;
+          lastRouteLocksRef.current = locksJson;
+
+          if ((hasSyncTimeChanged || hasLocksChanged) && isMounted) {
+            await fetchRoutes(true); // Silent fetch without spinner
           }
         }
       } catch (e) {
@@ -206,8 +250,8 @@ export default function RoutePage({
       }
     };
 
-    // Fast poll every 2.5 seconds while viewing routes
-    const interval = setInterval(checkPulse, 2500);
+    // Ultra-fast poll every 1.5 seconds while viewing routes
+    const interval = setInterval(checkPulse, 1500);
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
@@ -224,7 +268,7 @@ export default function RoutePage({
       window.removeEventListener('focus', checkPulse);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [fetchRoutes]);
+  }, [fetchRoutes, currentClientId]);
 
   // Notify when a route that was locked by another staff is now unlocked
   useEffect(() => {
@@ -307,17 +351,38 @@ export default function RoutePage({
     if (!routeToUse || !routeToUse.duraklar || routeToUse.duraklar.length === 0) return;
 
     const routeId = routeToUse.id || routeToUse._id;
+    const stops = routeToUse.duraklar;
+    let startIdx = 0;
+
+    if (typeof forcedStopIndex === 'number' && forcedStopIndex >= 0 && forcedStopIndex < stops.length) {
+      startIdx = forcedStopIndex;
+    } else {
+      // 1. Prefer first unvisited stop (BEKLIYOR)
+      const firstWaitingIdx = stops.findIndex((s: any) => !s.durum || s.durum === 'BEKLIYOR');
+      if (firstWaitingIdx !== -1) {
+        startIdx = firstWaitingIdx;
+      } else {
+        // 2. Otherwise first deferred / incomplete stop (EKSIK or TESLIM_EDILEMEDI)
+        const firstIncompleteIdx = stops.findIndex((s: any) => s.durum !== 'TAMAMLANDI');
+        startIdx = firstIncompleteIdx !== -1 ? firstIncompleteIdx : 0;
+      }
+    }
 
     // Rota kilidini al / tek personel kuralı kontrolü
     setIsActionLoading(true);
     try {
       const lockRes = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'ACQUIRE_ROUTE_LOCK',
           route_id: routeId,
-          personel: userName || 'Personel'
+          personel: userName || 'Personel',
+          client_id: currentClientId,
+          stop_index: startIdx
         })
       });
       const lockData = await lockRes.json();
@@ -345,23 +410,6 @@ export default function RoutePage({
       setIsActionLoading(false);
     }
 
-    const stops = routeToUse.duraklar;
-    let startIdx = 0;
-
-    if (typeof forcedStopIndex === 'number' && forcedStopIndex >= 0 && forcedStopIndex < stops.length) {
-      startIdx = forcedStopIndex;
-    } else {
-      // 1. Prefer first unvisited stop (BEKLIYOR)
-      const firstWaitingIdx = stops.findIndex((s: any) => !s.durum || s.durum === 'BEKLIYOR');
-      if (firstWaitingIdx !== -1) {
-        startIdx = firstWaitingIdx;
-      } else {
-        // 2. Otherwise first deferred / incomplete stop (EKSIK or TESLIM_EDILEMEDI)
-        const firstIncompleteIdx = stops.findIndex((s: any) => s.durum !== 'TAMAMLANDI');
-        startIdx = firstIncompleteIdx !== -1 ? firstIncompleteIdx : 0;
-      }
-    }
-
     setSelectedRouteId(String(routeId));
     setRouteModeIndex(startIdx);
     syncRouteModeInputsForStop(stops[startIdx]);
@@ -373,11 +421,15 @@ export default function RoutePage({
       try {
         await fetch('/api/routes', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-client-id': currentClientId
+          },
           body: JSON.stringify({
             action: 'RESUME_ROUTE',
             route_id: routeId,
-            personel: userName || 'Saha Personeli'
+            personel: userName || 'Saha Personeli',
+            client_id: currentClientId
           })
         });
         setActiveRoutes((prev) =>
@@ -403,11 +455,15 @@ export default function RoutePage({
       try {
         await fetch('/api/routes', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-client-id': currentClientId
+          },
           body: JSON.stringify({
             action: 'RELEASE_ROUTE_LOCK',
             route_id: routeId,
-            personel: userName || 'Personel'
+            personel: userName || 'Personel',
+            client_id: currentClientId
           })
         });
         await fetchRoutes();
@@ -428,12 +484,16 @@ export default function RoutePage({
     try {
       await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'PAUSE_ROUTE',
           route_id: activeRoute.id || activeRoute._id,
           notlar: customReason || 'Personel tarafından rota geçici olarak durduruldu (Daha sonra devam edilecek).',
-          personel: userName || 'Saha Personeli'
+          personel: userName || 'Saha Personeli',
+          client_id: currentClientId
         })
       });
       await fetchRoutes();
@@ -469,12 +529,16 @@ export default function RoutePage({
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'RELEASE_ROUTE_LOCK',
           route_id: routeId,
           force: true,
-          personel: userName || 'Admin'
+          personel: userName || 'Admin',
+          client_id: currentClientId
         })
       });
       const data = await res.json();
@@ -504,30 +568,38 @@ export default function RoutePage({
     }
   };
 
-  // Heartbeat to keep route lock active while in Route Mode
+  // Heartbeat to keep route lock active and report current active stop while in Route Mode
   useEffect(() => {
     if (!isRouteModeOpen || !activeRoute) return;
     const routeId = activeRoute.id || activeRoute._id;
     if (!routeId) return;
 
-    const interval = setInterval(async () => {
+    const sendHeartbeat = async () => {
       try {
         await fetch('/api/routes', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-client-id': currentClientId
+          },
           body: JSON.stringify({
             action: 'HEARTBEAT_ROUTE_LOCK',
             route_id: routeId,
-            personel: userName || 'Personel'
+            personel: userName || 'Personel',
+            client_id: currentClientId,
+            stop_index: routeModeIndex
           })
         });
       } catch (err) {
         console.error('Heartbeat route lock error:', err);
       }
-    }, 2 * 60 * 1000);
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 20 * 1000);
 
     return () => clearInterval(interval);
-  }, [isRouteModeOpen, activeRoute, userName]);
+  }, [isRouteModeOpen, activeRoute?.id, activeRoute?._id, routeModeIndex, userName, currentClientId]);
 
   // Sign beneficiary directly inside Rota Modu (1-tap kapıda imza)
   const handleSignInRouteMode = async (stopIndex: number, stop: any) => {
@@ -629,7 +701,10 @@ export default function RoutePage({
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'UPDATE_STOP',
           route_id: activeRoute.id || activeRoute._id,
@@ -639,7 +714,8 @@ export default function RoutePage({
           teslim_alan: routeModeRecipient.trim() || currentStop.ad_soyad,
           notlar: targetNote,
           daha_sonra_tamamlanacak: submitKind === 'DEFER_LATER' || targetDurum !== 'TAMAMLANDI',
-          personel: userName || 'Dağıtım Personeli'
+          personel: userName || 'Dağıtım Personeli',
+          client_id: currentClientId
         })
       });
 
@@ -916,11 +992,16 @@ export default function RoutePage({
     try {
       await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'REORDER_STOPS',
           route_id: activeRoute.id,
-          duraklar: updatedStops
+          duraklar: updatedStops,
+          client_id: currentClientId,
+          personel: userName || 'Personel'
         })
       });
     } catch (err) {
@@ -980,7 +1061,10 @@ export default function RoutePage({
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'UPDATE_STOP',
           route_id: activeRoute.id,
@@ -990,7 +1074,8 @@ export default function RoutePage({
           teslim_alan: stopRecipientInput.trim() || stop.ad_soyad,
           notlar: stopNoteInput.trim(),
           daha_sonra_tamamlanacak: mode !== 'TAMAMLANDI' ? stopDeferLaterInput : false,
-          personel: userName || 'Dağıtım Personeli'
+          personel: userName || 'Dağıtım Personeli',
+          client_id: currentClientId
         })
       });
 
@@ -1056,12 +1141,16 @@ export default function RoutePage({
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'REMOVE_STOP',
           route_id: activeRoute.id,
           stop_index: index,
-          personel: userName || 'Personel'
+          personel: userName || 'Personel',
+          client_id: currentClientId
         })
       });
       const data = await res.json();
@@ -1127,12 +1216,16 @@ export default function RoutePage({
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'FINALIZE_ROUTE',
           route_id: activeRoute.id,
           notlar: finalizeNote.trim(),
-          personel: userName || 'Personel'
+          personel: userName || 'Personel',
+          client_id: currentClientId
         })
       });
 
@@ -1184,11 +1277,15 @@ export default function RoutePage({
     try {
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
         body: JSON.stringify({
           action: 'DELETE_ROUTE',
           route_id: activeRoute.id,
-          personel: userName || 'Personel'
+          personel: userName || 'Personel',
+          client_id: currentClientId
         })
       });
 
@@ -1701,6 +1798,18 @@ export default function RoutePage({
                             <p className="text-[11px] text-amber-800 mt-0.5">
                               Bu rota şu anda <strong>{routeLockedByName}</strong> tarafından Rota Modunda aktif olarak yürütülmektedir. Aynı anda yalnızca bir personel bir rotayı kullanabilir.
                             </p>
+                            {typeof activeRoute.aktif_durak_index === 'number' && activeRoute.duraklar?.[activeRoute.aktif_durak_index] && (
+                              <div className="flex items-center gap-2 mt-1.5 text-xs text-amber-950 bg-amber-200/60 px-2 py-1 rounded-lg border border-amber-300/80">
+                                <span className="flex h-2 w-2 relative">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-600"></span>
+                                </span>
+                                <span className="font-extrabold text-[11px]">Canlı İşlenen Durak:</span>
+                                <span className="text-[11px] font-bold">
+                                  #{activeRoute.aktif_durak_index + 1} - {activeRoute.duraklar[activeRoute.aktif_durak_index].ad_soyad}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                         {userRole === 'ADMIN' && (
@@ -1733,6 +1842,8 @@ export default function RoutePage({
                         stops[0];
 
                       if (isRouteLockedByOther) {
+                        const liveIndex = typeof activeRoute.aktif_durak_index === 'number' ? activeRoute.aktif_durak_index : 0;
+                        const liveStop = activeRoute.duraklar?.[liveIndex];
                         return (
                           <div className="pt-1">
                             <div
@@ -1746,14 +1857,18 @@ export default function RoutePage({
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="text-sm font-black tracking-wide text-slate-800 uppercase">
-                                      Rota Kilitli & Kullanımda
+                                      Rota Kilitli & Canlı İşlemde
                                     </span>
                                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-200 text-amber-950">
                                       {routeLockedByName}
                                     </span>
                                   </div>
                                   <p className="text-[11px] font-medium text-slate-600 truncate mt-0.5">
-                                    Bu rota {routeLockedByName} personeli tarafından yürütülüyor.
+                                    {liveStop ? (
+                                      <>🚚 Canlı Durak: <strong>#{liveIndex + 1} {liveStop.ad_soyad}</strong></>
+                                    ) : (
+                                      <>Bu rota {routeLockedByName} personeli tarafından yürütülüyor.</>
+                                    )}
                                   </p>
                                 </div>
                               </div>
@@ -2009,12 +2124,18 @@ export default function RoutePage({
                     const isEksik = stop.durum === 'EKSIK';
                     const isUndelivered = stop.durum === 'TESLIM_EDILEMEDI';
                     const isPending = !stop.durum || stop.durum === 'BEKLIYOR';
+                    const isCurrentlyActiveInRouteMode =
+                      isRouteLockedByOther &&
+                      (activeRoute.aktif_durak_index ?? 0) === index &&
+                      !isTamam;
 
                     return (
                       <div
                         key={stop.beneficiary_id || index}
                         className={`p-3.5 rounded-2xl border transition-all shadow-xs ${
-                          isTamam
+                          isCurrentlyActiveInRouteMode
+                            ? 'bg-amber-50/90 border-2 border-amber-500 shadow-md ring-2 ring-amber-300/50'
+                            : isTamam
                             ? 'bg-emerald-50/40 border-emerald-300'
                             : isEksik
                             ? 'bg-amber-50/50 border-amber-300'
@@ -2035,6 +2156,8 @@ export default function RoutePage({
                                   ? 'bg-amber-500 text-white border-amber-600'
                                   : isUndelivered
                                   ? 'bg-rose-600 text-white border-rose-700'
+                                  : isCurrentlyActiveInRouteMode
+                                  ? 'bg-amber-600 text-white border-amber-700'
                                   : 'bg-slate-900 text-white border-slate-900'
                               }`}
                             >
@@ -2046,7 +2169,13 @@ export default function RoutePage({
                                 <h4 className="text-sm font-extrabold text-slate-900 truncate">
                                   {stop.ad_soyad}
                                 </h4>
-                                {!isTamam && stop.daha_sonra_tamamlanacak && (
+                                {isCurrentlyActiveInRouteMode && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1 shadow-xs animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
+                                    <span>🚚 Şu Anda İşleniyor ({routeLockedByName})</span>
+                                  </span>
+                                )}
+                                {!isTamam && stop.daha_sonra_tamamlanacak && !isCurrentlyActiveInRouteMode && (
                                   <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
                                     ⏳ Daha Sonra Tamamlanacak
                                   </span>

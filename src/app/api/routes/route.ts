@@ -6,24 +6,35 @@ import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
 
-const LOCK_TIMEOUT_MS = 45 * 60 * 1000; // 45 dakika hareketsizlik aşımı
+const LOCK_TIMEOUT_MS = 25 * 60 * 1000; // 25 dakika hareketsizlik aşımı
 
 export function checkRouteLock(
   route: any,
-  staffName: string
+  staffName: string,
+  clientId?: string
 ): { isLocked: boolean; lockedBy?: string } {
   if (!route || !route.kilitli_personel) return { isLocked: false };
 
   const now = Date.now();
   const lockTime = Number(route.kilit_timestamp) || 0;
-  // Kilit 45 dakikadan eski ise zaman aşımına uğramış kabul edilir
+  // Kilit 25 dakikadan eski ise zaman aşımına uğramış kabul edilir
   if (lockTime > 0 && now - lockTime > LOCK_TIMEOUT_MS) {
     return { isLocked: false };
   }
 
   const lockedBy = String(route.kilitli_personel).trim();
-  const currentStaff = String(staffName || '').trim();
+  const lockedClient = route.kilitli_client_id ? String(route.kilitli_client_id).trim() : '';
+  const currentClient = clientId ? String(clientId).trim() : '';
 
+  // Eğer istemci kimlikleri mevcutsa doğrudan cihaz/sekme bazlı doğrula
+  if (lockedClient && currentClient) {
+    if (lockedClient === currentClient) {
+      return { isLocked: false };
+    }
+    return { isLocked: true, lockedBy };
+  }
+
+  const currentStaff = String(staffName || '').trim();
   // Aynı personel ise kilit kendisinde demektir
   if (lockedBy.toLowerCase() === currentStaff.toLowerCase()) {
     return { isLocked: false };
@@ -71,15 +82,24 @@ export async function GET(request: NextRequest) {
       .toArray();
     const signedBeneficiaries = mapDocs(pendingSignedDocs).sort(compareByAddressAsc);
 
-    return NextResponse.json({
-      success: true,
-      activeRoutes,
-      activeRoute,
-      activeCount: activeRoutes.length,
-      archivedRoutes,
-      signedBeneficiaries,
-      signedCount: signedBeneficiaries.length
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        activeRoutes,
+        activeRoute,
+        activeCount: activeRoutes.length,
+        archivedRoutes,
+        signedBeneficiaries,
+        signedCount: signedBeneficiaries.length
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
+    );
   } catch (error: any) {
     console.error('Error fetching delivery routes:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -277,7 +297,10 @@ export async function POST(request: NextRequest) {
     // Sadece bir personel rotayı aynı anda aktif kullanabilir
     // ==========================================
     if (action === 'ACQUIRE_ROUTE_LOCK') {
-      const { route_id, force = false, personel } = body;
+      const { route_id, force = false, personel, client_id, stop_index = 0 } = body;
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (client_id || headerClientId || '').trim();
+
       if (!route_id) {
         return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
       }
@@ -289,7 +312,7 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
         return NextResponse.json({
@@ -305,8 +328,11 @@ export async function POST(request: NextRequest) {
         $set: {
           kilitli_personel: staffName,
           kilitli_personel_username: session.username || '',
+          kilitli_client_id: effectiveClientId,
           kilit_tarihi: localTimeStr,
           kilit_timestamp: nowTimestamp,
+          aktif_rota_modu: true,
+          aktif_durak_index: Number(stop_index) || 0,
           updated_at: localTimeStr
         }
       });
@@ -317,12 +343,17 @@ export async function POST(request: NextRequest) {
         success: true,
         message: `Rota kilitlendi (${staffName}).`,
         kilitli_personel: staffName,
-        kilit_timestamp: nowTimestamp
+        kilitli_client_id: effectiveClientId,
+        kilit_timestamp: nowTimestamp,
+        aktif_durak_index: Number(stop_index) || 0
       });
     }
 
     if (action === 'RELEASE_ROUTE_LOCK') {
-      const { route_id, force = false, personel } = body;
+      const { route_id, force = false, personel, client_id } = body;
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (client_id || headerClientId || '').trim();
+
       if (!route_id) {
         return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
       }
@@ -334,7 +365,7 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
         return NextResponse.json({
@@ -349,8 +380,10 @@ export async function POST(request: NextRequest) {
         $set: {
           kilitli_personel: null,
           kilitli_personel_username: null,
+          kilitli_client_id: null,
           kilit_tarihi: null,
           kilit_timestamp: null,
+          aktif_rota_modu: false,
           updated_at: localTimeStr
         }
       });
@@ -364,7 +397,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'HEARTBEAT_ROUTE_LOCK') {
-      const { route_id, personel } = body;
+      const { route_id, personel, client_id, stop_index } = body;
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (client_id || headerClientId || '').trim();
+
       if (!route_id) {
         return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
       }
@@ -376,7 +412,7 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked) {
         return NextResponse.json({
@@ -388,13 +424,16 @@ export async function POST(request: NextRequest) {
       }
 
       const nowTimestamp = Date.now();
-      await routeCol.updateOne(buildIdFilter(route_id), {
-        $set: {
-          kilitli_personel: staffName,
-          kilit_timestamp: nowTimestamp,
-          updated_at: localTimeStr
-        }
-      });
+      const updateFields: any = {
+        kilitli_personel: staffName,
+        kilit_timestamp: nowTimestamp,
+        aktif_rota_modu: true,
+        updated_at: localTimeStr
+      };
+      if (effectiveClientId) updateFields.kilitli_client_id = effectiveClientId;
+      if (stop_index !== undefined) updateFields.aktif_durak_index = Number(stop_index);
+
+      await routeCol.updateOne(buildIdFilter(route_id), { $set: updateFields });
 
       return NextResponse.json({ success: true, kilit_timestamp: nowTimestamp });
     }
@@ -423,9 +462,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
       }
 
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const staffName = (session.ad_soyad || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked) {
         return NextResponse.json({
@@ -531,13 +572,22 @@ export async function POST(request: NextRequest) {
         );
         routeSetFields.kilitli_personel = null;
         routeSetFields.kilitli_personel_username = null;
+        routeSetFields.kilitli_client_id = null;
         routeSetFields.kilit_tarihi = null;
         routeSetFields.kilit_timestamp = null;
+        routeSetFields.aktif_rota_modu = false;
       } else {
         routeSetFields.kilitli_personel = staffName;
         routeSetFields.kilitli_personel_username = session.username || '';
+        if (effectiveClientId) routeSetFields.kilitli_client_id = effectiveClientId;
         routeSetFields.kilit_tarihi = localTimeStr;
         routeSetFields.kilit_timestamp = Date.now();
+        routeSetFields.aktif_rota_modu = true;
+        if (body.next_stop_index !== undefined) {
+          routeSetFields.aktif_durak_index = Number(body.next_stop_index);
+        } else {
+          routeSetFields.aktif_durak_index = Number(stop_index);
+        }
         if (nextRouteDurum === 'AKTIF' && route.durum === 'TAMAMLANDI') {
           routeSetFields.completed_at = null;
           routeSetFields.kapatan_personel = null;
@@ -756,7 +806,10 @@ export async function POST(request: NextRequest) {
     // ACTION 2.5: PAUSE_ROUTE / RESUME_ROUTE
     // ==========================================
     if (action === 'PAUSE_ROUTE' || action === 'RESUME_ROUTE') {
-      const { route_id, notlar = '', personel } = body;
+      const { route_id, notlar = '', personel, client_id } = body;
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (client_id || headerClientId || '').trim();
+
       if (!route_id) {
         return NextResponse.json({ success: false, error: 'Rota ID zorunludur' }, { status: 400 });
       }
@@ -768,7 +821,7 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
         return NextResponse.json({
@@ -792,14 +845,18 @@ export async function POST(request: NextRequest) {
         // Rotayı geçici durdururken kilidi serbest bırak
         setObj.kilitli_personel = null;
         setObj.kilitli_personel_username = null;
+        setObj.kilitli_client_id = null;
         setObj.kilit_tarihi = null;
         setObj.kilit_timestamp = null;
+        setObj.aktif_rota_modu = false;
       } else {
-        // Rotayı tekrar aktif ederken bu personele kilitle
+        // Rotayı tekrar aktif ederken bu personele ve istemciye kilitle
         setObj.kilitli_personel = staffName;
         setObj.kilitli_personel_username = session.username || '';
+        if (effectiveClientId) setObj.kilitli_client_id = effectiveClientId;
         setObj.kilit_tarihi = localTimeStr;
         setObj.kilit_timestamp = Date.now();
+        setObj.aktif_rota_modu = true;
       }
 
       await routeCol.updateOne(buildIdFilter(route_id), { $set: setObj });
@@ -828,9 +885,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
       }
 
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
         return NextResponse.json({
@@ -874,9 +933,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
       }
 
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const route = mapDoc(rawRoute);
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
         return NextResponse.json({
@@ -1005,9 +1066,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
       }
 
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const route = mapDoc(rawRoute);
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
-      const lockCheck = checkRouteLock(route, staffName);
+      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
         return NextResponse.json({
@@ -1095,9 +1158,11 @@ export async function POST(request: NextRequest) {
 
       const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
       if (rawRoute) {
+        const headerClientId = request.headers.get('x-client-id') || '';
+        const effectiveClientId = (body.client_id || headerClientId || '').trim();
         const route = mapDoc(rawRoute);
         const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
-        const lockCheck = checkRouteLock(route, staffName);
+        const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
         if (lockCheck.isLocked && session.rol !== 'ADMIN') {
           return NextResponse.json({
             success: false,
