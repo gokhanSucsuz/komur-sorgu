@@ -1,9 +1,24 @@
 'use client';
 
-import { useState } from 'react';
-import { 
-  User, Shield, KeyRound, Lock, Eye, EyeOff, CheckCircle2, 
-  AlertCircle, LogOut, X, Smartphone, Check, RefreshCw
+import { useState, useEffect } from 'react';
+import {
+  User,
+  Shield,
+  KeyRound,
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  AlertCircle,
+  LogOut,
+  X,
+  Smartphone,
+  Check,
+  RefreshCw,
+  QrCode,
+  Copy,
+  ShieldCheck,
+  ShieldOff,
 } from 'lucide-react';
 
 interface ProfileModalProps {
@@ -32,7 +47,7 @@ export default function ProfileModal({
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   // Toggles
   const [showCurrentPass, setShowCurrentPass] = useState(false);
   const [showNewPass, setShowNewPass] = useState(false);
@@ -42,7 +57,190 @@ export default function ProfileModal({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // 2FA (Google Authenticator) States for ADMIN
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [totpEnabledAt, setTotpEnabledAt] = useState<string | null>(null);
+  const [recoveryCodesCount, setRecoveryCodesCount] = useState(0);
+  const [loading2faStatus, setLoading2faStatus] = useState(false);
+
+  // 2FA Setup Flow
+  const [setupMode, setSetupMode] = useState(false);
+  const [qrSvgUrl, setQrSvgUrl] = useState('');
+  const [totpSecret, setTotpSecret] = useState('');
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [totpVerifyPassword, setTotpVerifyPassword] = useState('');
+  const [totpSubmitting, setTotpSubmitting] = useState(false);
+  const [generatedRecoveryCodes, setGeneratedRecoveryCodes] = useState<string[]>([]);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [copiedRecovery, setCopiedRecovery] = useState(false);
+
+  // 2FA Disable Flow
+  const [disableMode, setDisableMode] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setAdSoyad(userName || '');
+      setUsername(typeof window !== 'undefined' ? (localStorage.getItem('komur_username') || '') : '');
+      setErrorMsg('');
+      setSuccessMsg('');
+      setSetupMode(false);
+      setDisableMode(false);
+      setTotpVerifyCode('');
+      setTotpVerifyPassword('');
+      setDisableCode('');
+      setDisablePassword('');
+
+      if (userRole === 'ADMIN') {
+        fetch2faStatus();
+      }
+    }
+  }, [isOpen, userRole, userName]);
+
+  const fetch2faStatus = async () => {
+    setLoading2faStatus(true);
+    try {
+      const res = await fetch('/api/auth?action=2fa_status');
+      const data = await res.json();
+      if (data.success) {
+        setTotpEnabled(Boolean(data.totp_enabled));
+        setTotpEnabledAt(data.totp_enabled_at || null);
+        setRecoveryCodesCount(data.recovery_codes_count || 0);
+      }
+    } catch {
+      // ignore status fetch error
+    } finally {
+      setLoading2faStatus(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const handleStart2faSetup = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    setTotpSubmitting(true);
+    setGeneratedRecoveryCodes([]);
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: '2fa_setup_init' }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '2FA kurulum anahtarı oluşturulamadı.');
+      }
+      setQrSvgUrl(data.qr_svg_data_url);
+      setTotpSecret(data.secret);
+      setSetupMode(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || '2FA kurulumu başlatılamadı.');
+    } finally {
+      setTotpSubmitting(false);
+    }
+  };
+
+  const handleVerifyAndEnable2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (!totpVerifyCode.trim() || totpVerifyCode.trim().length < 6) {
+      setErrorMsg('Lütfen Google Authenticator uygulamasındaki 6 haneli doğrulama kodunu giriniz.');
+      return;
+    }
+    if (!totpVerifyPassword.trim()) {
+      setErrorMsg('İşlemi onaylamak için lütfen mevcut yönetici şifrenizi giriniz.');
+      return;
+    }
+
+    setTotpSubmitting(true);
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: '2fa_setup_verify',
+          totp_code: totpVerifyCode.trim(),
+          current_password: totpVerifyPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Doğrulama başarısız oldu.');
+      }
+
+      setTotpEnabled(true);
+      setTotpEnabledAt(data.totp_enabled_at || null);
+      setGeneratedRecoveryCodes(data.recovery_codes || []);
+      setRecoveryCodesCount((data.recovery_codes || []).length);
+      setSetupMode(false);
+      setTotpVerifyCode('');
+      setTotpVerifyPassword('');
+      setSuccessMsg(data.message || 'Google Authenticator (2FA) başarıyla etkinleştirildi!');
+    } catch (err: any) {
+      setErrorMsg(err.message || '2FA doğrulanamadı.');
+    } finally {
+      setTotpSubmitting(false);
+    }
+  };
+
+  const handleDisable2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (!disablePassword.trim() || !disableCode.trim()) {
+      setErrorMsg('Lütfen mevcut yönetici şifrenizi ve 6 haneli Google Authenticator (veya kurtarma) kodunuzu giriniz.');
+      return;
+    }
+
+    setTotpSubmitting(true);
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: '2fa_disable',
+          current_password: disablePassword.trim(),
+          totp_code: disableCode.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '2FA devre dışı bırakılamadı.');
+      }
+
+      setTotpEnabled(false);
+      setTotpEnabledAt(null);
+      setRecoveryCodesCount(0);
+      setGeneratedRecoveryCodes([]);
+      setDisableMode(false);
+      setDisableCode('');
+      setDisablePassword('');
+      setSuccessMsg('İki Faktörlü Doğrulama (2FA) devre dışı bırakıldı.');
+    } catch (err: any) {
+      setErrorMsg(err.message || '2FA kapatılamadı.');
+    } finally {
+      setTotpSubmitting(false);
+    }
+  };
+
+  const handleCopySecret = () => {
+    if (!totpSecret) return;
+    navigator.clipboard.writeText(totpSecret);
+    setCopiedSecret(true);
+    setTimeout(() => setCopiedSecret(false), 2000);
+  };
+
+  const handleCopyRecoveryCodes = () => {
+    if (!generatedRecoveryCodes.length) return;
+    navigator.clipboard.writeText(generatedRecoveryCodes.join('\n'));
+    setCopiedRecovery(true);
+    setTimeout(() => setCopiedRecovery(false), 2000);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,7 +294,7 @@ export default function ProfileModal({
       }
 
       setSuccessMsg(data.message || 'Profil ve şifre bilgileriniz başarıyla güncellendi!');
-      
+
       // Update local storage
       if (data.user) {
         localStorage.setItem('komur_user_name', data.user.ad_soyad);
@@ -125,25 +323,29 @@ export default function ProfileModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="modal-sheet max-w-md w-full" 
-        onClick={(e) => e.stopPropagation()} 
-        style={{ maxWidth: '440px' }}
+      <div
+        className="modal-sheet max-w-md w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: '460px' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
           <div className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-              userRole === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
-            }`}>
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                userRole === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+              }`}
+            >
               {userRole === 'ADMIN' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
             </div>
             <div>
               <h3 className="text-sm font-black text-slate-900 leading-tight">
-                Hesap & Şifre Yönetimi
+                Hesap, Şifre & Güvenlik Yönetimi
               </h3>
               <p className="text-[11px] text-slate-500 font-semibold">
-                Kullanıcı adı ve şifre güncelleme
+                {userRole === 'ADMIN'
+                  ? 'Profil, şifre ve Google Authenticator (2FA) ayarları'
+                  : 'Kullanıcı adı ve şifre güncelleme'}
               </p>
             </div>
           </div>
@@ -161,16 +363,20 @@ export default function ProfileModal({
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
               Oturum Sahibi & Rol
             </span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-              userRole === 'ADMIN' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-sky-100 text-sky-900 border border-sky-300'
-            }`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                userRole === 'ADMIN'
+                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                  : 'bg-sky-100 text-sky-900 border border-sky-300'
+              }`}
+            >
               {userRole === 'ADMIN' ? 'Sistem Yöneticisi' : 'Saha Personeli'}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
             <Smartphone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Bu cihazda tek aktif oturum yetkilendirilmiştir.</span>
+            <span>Bu cihazda tek aktif oturum (24 saat süreli) yetkilendirilmiştir.</span>
           </div>
         </div>
 
@@ -186,6 +392,269 @@ export default function ProfileModal({
           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 mb-3">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Newly Generated Recovery Codes Banner (Shown immediately after activating 2FA) */}
+        {generatedRecoveryCodes.length > 0 && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border-2 border-amber-300 mb-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-amber-700" />
+                Yedek Kurtarma Kodlarınız (Önemli!)
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyRecoveryCodes}
+                className="px-2 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black flex items-center gap-1 transition-all"
+              >
+                <Copy className="w-3 h-3" />
+                {copiedRecovery ? 'Kopyalandı!' : 'Tümünü Kopyala'}
+              </button>
+            </div>
+            <p className="text-[11px] text-amber-900 font-medium leading-relaxed">
+              Telefonunuza erişemediğiniz acil durumlarda bu tek kullanımlık kodlarla giriş yapabilirsiniz. Lütfen güvenli bir yere kaydedin:
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {generatedRecoveryCodes.map((code, idx) => (
+                <div
+                  key={idx}
+                  className="px-2.5 py-1.5 rounded-lg bg-white border border-amber-200 font-mono text-xs font-black text-slate-900 text-center tracking-wider"
+                >
+                  {code}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* GOOGLE AUTHENTICATOR (2FA) SECTION FOR ADMIN */}
+        {userRole === 'ADMIN' && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mb-4 space-y-3 shadow-sm border border-slate-700">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400">
+                  <QrCode className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black tracking-wide text-white">
+                    Google Authenticator (2FA)
+                  </h4>
+                  <p className="text-[10px] text-slate-300 font-medium">
+                    İki Faktörlü Yönetici Koruması
+                  </p>
+                </div>
+              </div>
+
+              {loading2faStatus ? (
+                <span className="text-[10px] text-slate-400 font-bold">Kontrol ediliyor...</span>
+              ) : totpEnabled ? (
+                <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />
+                  AKTİF
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase tracking-wider">
+                  KAPALI
+                </span>
+              )}
+            </div>
+
+            {/* State 1: 2FA Disabled & Not in Setup Mode */}
+            {!totpEnabled && !setupMode && (
+              <div className="space-y-2.5 pt-1">
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Yönetici hesabınızı en üst düzeyde korumak için telefonunuzdaki{' '}
+                  <strong className="text-amber-300">Google Authenticator</strong> uygulamasını tanımlayın.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleStart2faSetup}
+                  disabled={totpSubmitting}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  {totpSubmitting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>QR Kod Hazırlanıyor...</span>
+                    </>
+                  ) : (
+                    <>
+                      <QrCode className="w-4 h-4" />
+                      <span>Google Authenticator (2FA) Tanımla / Aç</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* State 2: 2FA Setup Mode (Show QR Code + Secret + Verification Input) */}
+            {!totpEnabled && setupMode && (
+              <div className="space-y-3 pt-2 border-t border-slate-700/80">
+                <div className="text-[11px] text-slate-200 space-y-1 leading-relaxed">
+                  <p>
+                    <strong className="text-amber-400">1. Adım:</strong> Telefonunuzdan{' '}
+                    <strong>Google Authenticator</strong> uygulamasını açın ve <strong>(+)</strong> butonuna basıp{' '}
+                    <strong>&quot;QR kodunu tara&quot;</strong> seçeneğiyle aşağıdaki kodu okutun:
+                  </p>
+                </div>
+
+                {/* Offline SVG QR Code Box */}
+                {qrSvgUrl && (
+                  <div className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl mx-auto w-fit shadow-inner">
+                    <img
+                      src={qrSvgUrl}
+                      alt="Google Authenticator QR Kodu"
+                      className="w-44 h-44 object-contain"
+                    />
+                  </div>
+                )}
+
+                {/* Manual Secret Key Copy */}
+                <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-700 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Manuel Kurulum Anahtarı:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopySecret}
+                      className="text-[10px] font-black text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" />
+                      {copiedSecret ? 'Kopyalandı!' : 'Anahtarı Kopyala'}
+                    </button>
+                  </div>
+                  <div className="font-mono text-xs font-black text-amber-200 tracking-widest break-all select-all">
+                    {totpSecret.replace(/(.{4})/g, '$1 ').trim()}
+                  </div>
+                </div>
+
+                {/* Verify 6-Digit Code Form */}
+                <div className="space-y-2.5 pt-1">
+                  <div>
+                    <label className="block text-[10px] font-black text-amber-300 uppercase tracking-wider mb-1">
+                      2. Adım: Uygulamadaki 6 Haneli Doğrulama Kodu
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={totpVerifyCode}
+                      onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="Örn: 123456"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-600 text-white text-center font-mono text-base font-black tracking-[0.35em] focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-300 uppercase tracking-wider mb-1">
+                      Mevcut Yönetici Şifreniz
+                    </label>
+                    <input
+                      type="password"
+                      value={totpVerifyPassword}
+                      onChange={(e) => setTotpVerifyPassword(e.target.value)}
+                      placeholder="Mevcut şifrenizi giriniz"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-600 text-white text-xs font-bold focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleVerifyAndEnable2fa}
+                      disabled={totpSubmitting}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    >
+                      {totpSubmitting ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Doğrulanıyor...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Doğrula ve 2FA Aktif Et</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSetupMode(false)}
+                      disabled={totpSubmitting}
+                      className="py-2.5 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold transition-all"
+                    >
+                      İptal
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* State 3: 2FA Enabled */}
+            {totpEnabled && (
+              <div className="space-y-2.5 pt-1 border-t border-slate-700/80">
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>Kalan Yedek Kurtarma Kodu:</span>
+                  <span className="font-black text-emerald-300">{recoveryCodesCount} Adet</span>
+                </div>
+                {totpEnabledAt && (
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>Etkinleştirme Tarihi:</span>
+                    <span>{totpEnabledAt}</span>
+                  </div>
+                )}
+
+                {!disableMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setDisableMode(true)}
+                    className="w-full py-2 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/30 text-rose-300 text-[11px] font-black transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <ShieldOff className="w-3.5 h-3.5" />
+                    <span>2FA Korumasını Devre Dışı Bırak</span>
+                  </button>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-rose-500/40 space-y-2">
+                    <p className="text-[11px] text-rose-300 font-bold">
+                      2FA korumasını kapatmak için şifrenizi ve güncel 6 haneli Google Authenticator (veya kurtarma) kodunuzu giriniz:
+                    </p>
+                    <input
+                      type="password"
+                      value={disablePassword}
+                      onChange={(e) => setDisablePassword(e.target.value)}
+                      placeholder="Mevcut Yönetici Şifreniz"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-semibold focus:outline-none focus:border-rose-400"
+                    />
+                    <input
+                      type="text"
+                      value={disableCode}
+                      onChange={(e) => setDisableCode(e.target.value)}
+                      placeholder="6 Haneli 2FA Kodu veya Kurtarma Kodu"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono font-bold tracking-wider focus:outline-none focus:border-rose-400"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDisable2fa}
+                        disabled={totpSubmitting}
+                        className="flex-1 py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black transition-all"
+                      >
+                        {totpSubmitting ? 'İşleniyor...' : 'Onayla ve 2FA Kapat'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDisableMode(false)}
+                        className="py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
+                      >
+                        Vazgeç
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -233,7 +702,8 @@ export default function ProfileModal({
             {/* Yeni Şifre */}
             <div>
               <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                Yeni Şifre / PIN <span className="text-slate-400 font-normal">(Değiştirmek istemiyorsanız boş bırakın)</span>
+                Yeni Şifre / PIN{' '}
+                <span className="text-slate-400 font-normal">(Değiştirmek istemiyorsanız boş bırakın)</span>
               </label>
               <div className="relative">
                 <input
@@ -349,3 +819,4 @@ export default function ProfileModal({
     </div>
   );
 }
+

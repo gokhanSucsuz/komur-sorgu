@@ -171,12 +171,21 @@ export function mapDoc<T = any>(doc: any): T {
     'cakisan_hane_no',
     'last_ip',
     'last_device',
+    'totp_secret',
+    'totp_pending_secret',
   ];
 
   for (const field of piiFields) {
     if (typeof mapped[field] === 'string' && isEncrypted(mapped[field])) {
       mapped[field] = decryptField(mapped[field]);
     }
+  }
+
+  // Transparently decrypt totp_recovery_codes array items on user documents
+  if (Array.isArray(mapped.totp_recovery_codes)) {
+    mapped.totp_recovery_codes = mapped.totp_recovery_codes.map((c: any) =>
+      typeof c === 'string' && isEncrypted(c) ? decryptField(c) : c
+    );
   }
 
   // Transparently decrypt uyarilar array items on beneficiary documents
@@ -237,6 +246,7 @@ function getInMemoryStore() {
       archived_beneficiaries: [],
       archived_truck_deliveries: [],
       archived_delivery_history: [],
+      security_rate_limits: [],
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
@@ -462,6 +472,7 @@ export async function getDbCollections() {
         archivedBeneficiaries: db.collection<any>('archived_beneficiaries'),
         archivedTruckDeliveries: db.collection<any>('archived_truck_deliveries'),
         archivedDeliveryHistory: db.collection<any>('archived_delivery_history'),
+        securityRateLimits: db.collection<any>('security_rate_limits'),
       };
     } catch (err) {
       console.error('[MongoDB] Atlas connection failure:', err);
@@ -491,6 +502,7 @@ export async function getDbCollections() {
     archivedBeneficiaries: new InMemoryCollection('archived_beneficiaries') as any,
     archivedTruckDeliveries: new InMemoryCollection('archived_truck_deliveries') as any,
     archivedDeliveryHistory: new InMemoryCollection('archived_delivery_history') as any,
+    securityRateLimits: new InMemoryCollection('security_rate_limits') as any,
   };
 }
 
@@ -506,6 +518,7 @@ async function initializeIndexesAndSeed(db: Db) {
   const settings = db.collection('system_settings');
   const shifts = db.collection('work_shifts');
   const activityLogs = db.collection('activity_logs');
+  const rateLimits = db.collection('security_rate_limits');
 
   try {
     await Promise.allSettled([
@@ -551,6 +564,10 @@ async function initializeIndexesAndSeed(db: Db) {
       db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1, mahalle: 1 }),
       db.collection('archived_truck_deliveries').createIndex({ donem_kodu: 1 }),
       db.collection('archived_delivery_history').createIndex({ donem_kodu: 1 }),
+
+      // Dağıtık Brute-Force Koruma İndeksleri (TTL otomatik temizleme dahil)
+      rateLimits.createIndex({ key: 1 }, { unique: true }),
+      rateLimits.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 }),
     ]);
   } catch (err) {
     console.warn('[MongoDB] Index initialization notice:', err);

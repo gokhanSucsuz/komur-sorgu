@@ -396,6 +396,8 @@ export const USER_ENCRYPTED_FIELDS = [
   'sifre',
   'last_ip',
   'last_device',
+  'totp_secret',
+  'totp_pending_secret',
 ];
 
 export function encryptUser(doc: any): any {
@@ -406,6 +408,12 @@ export function encryptUser(doc: any): any {
     if (cloned[field] !== undefined && cloned[field] !== null) {
       cloned[field] = encryptField(String(cloned[field]));
     }
+  }
+
+  if (Array.isArray(cloned.totp_recovery_codes)) {
+    cloned.totp_recovery_codes = cloned.totp_recovery_codes.map((c: any) =>
+      c !== undefined && c !== null ? encryptField(String(c)) : c
+    );
   }
 
   return cloned;
@@ -419,6 +427,12 @@ export function decryptUser(doc: any): any {
     if (cloned[field] !== undefined && cloned[field] !== null) {
       cloned[field] = decryptField(cloned[field]);
     }
+  }
+
+  if (Array.isArray(cloned.totp_recovery_codes)) {
+    cloned.totp_recovery_codes = cloned.totp_recovery_codes.map((c: any) =>
+      typeof c === 'string' && isEncrypted(c) ? decryptField(c) : c
+    );
   }
 
   return cloned;
