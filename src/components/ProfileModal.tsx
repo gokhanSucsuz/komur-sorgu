@@ -67,6 +67,7 @@ export default function ProfileModal({
   const [setupMode, setSetupMode] = useState(false);
   const [qrSvgUrl, setQrSvgUrl] = useState('');
   const [totpSecret, setTotpSecret] = useState('');
+  const [otpauthUri, setOtpauthUri] = useState('');
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
   const [totpVerifyPassword, setTotpVerifyPassword] = useState('');
   const [totpSubmitting, setTotpSubmitting] = useState(false);
@@ -117,6 +118,31 @@ export default function ProfileModal({
 
   if (!isOpen) return null;
 
+  const copyTextSafe = (text: string) => {
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+  };
+
   const handleStart2faSetup = async () => {
     setErrorMsg('');
     setSuccessMsg('');
@@ -134,6 +160,7 @@ export default function ProfileModal({
       }
       setQrSvgUrl(data.qr_svg_data_url);
       setTotpSecret(data.secret);
+      setOtpauthUri(data.otpauth_uri || '');
       setSetupMode(true);
     } catch (err: any) {
       setErrorMsg(err.message || '2FA kurulumu başlatılamadı.');
@@ -230,14 +257,14 @@ export default function ProfileModal({
 
   const handleCopySecret = () => {
     if (!totpSecret) return;
-    navigator.clipboard.writeText(totpSecret);
+    copyTextSafe(totpSecret);
     setCopiedSecret(true);
     setTimeout(() => setCopiedSecret(false), 2000);
   };
 
   const handleCopyRecoveryCodes = () => {
     if (!generatedRecoveryCodes.length) return;
-    navigator.clipboard.writeText(generatedRecoveryCodes.join('\n'));
+    copyTextSafe(generatedRecoveryCodes.join('\n'));
     setCopiedRecovery(true);
     setTimeout(() => setCopiedRecovery(false), 2000);
   };
@@ -430,7 +457,10 @@ export default function ProfileModal({
 
         {/* GOOGLE AUTHENTICATOR (2FA) SECTION FOR ADMIN */}
         {userRole === 'ADMIN' && (
-          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mb-4 space-y-3 shadow-sm border border-slate-700">
+          <div
+            className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mb-4 space-y-3 shadow-sm border border-slate-700"
+            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#ffffff' }}
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400">
@@ -488,30 +518,49 @@ export default function ProfileModal({
               </div>
             )}
 
-            {/* State 2: 2FA Setup Mode (Show QR Code + Secret + Verification Input) */}
+            {/* State 2: 2FA Setup Mode (Show QR Code + Mobile Deep Link + Secret + Verification Input) */}
             {!totpEnabled && setupMode && (
               <div className="space-y-3 pt-2 border-t border-slate-700/80">
                 <div className="text-[11px] text-slate-200 space-y-1 leading-relaxed">
                   <p>
                     <strong className="text-amber-400">1. Adım:</strong> Telefonunuzdan{' '}
-                    <strong>Google Authenticator</strong> uygulamasını açın ve <strong>(+)</strong> butonuna basıp{' '}
-                    <strong>&quot;QR kodunu tara&quot;</strong> seçeneğiyle aşağıdaki kodu okutun:
+                    <strong>Google Authenticator</strong> uygulamasını açıp aşağıdaki QR kodu okutun (veya telefondan
+                    girdiyseniz doğrudan aşağıdaki butona dokunun):
                   </p>
                 </div>
 
                 {/* Offline SVG QR Code Box */}
                 {qrSvgUrl && (
-                  <div className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl mx-auto w-fit shadow-inner">
+                  <div
+                    className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl mx-auto w-fit shadow-inner"
+                    style={{ width: 'fit-content' }}
+                  >
                     <img
                       src={qrSvgUrl}
                       alt="Google Authenticator QR Kodu"
                       className="w-44 h-44 object-contain"
+                      style={{ width: '176px', height: '176px', objectFit: 'contain' }}
                     />
                   </div>
                 )}
 
+                {/* One-Tap Mobile Deep-Link Button for Same-Phone Setup */}
+                {otpauthUri && (
+                  <a
+                    href={otpauthUri}
+                    className="w-full py-2 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 text-xs font-black flex items-center justify-center gap-1.5 transition-all text-center"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                    <span>Bu Telefonda Authenticator Uygulamasında Aç</span>
+                  </a>
+                )}
+
                 {/* Manual Secret Key Copy */}
-                <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-700 space-y-1">
+                <div
+                  className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-700 space-y-1"
+                  style={{ backgroundColor: 'rgba(2, 6, 23, 0.7)' }}
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                       Manuel Kurulum Anahtarı:
@@ -539,11 +588,14 @@ export default function ProfileModal({
                     <input
                       type="text"
                       inputMode="numeric"
+                      autoComplete="one-time-code"
+                      enterKeyHint="done"
                       maxLength={6}
                       value={totpVerifyCode}
                       onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="Örn: 123456"
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-600 text-white text-center font-mono text-base font-black tracking-[0.35em] focus:outline-none focus:border-amber-400"
+                      style={{ backgroundColor: '#020617', color: '#ffffff', letterSpacing: '0.35em' }}
                     />
                   </div>
 
@@ -553,10 +605,13 @@ export default function ProfileModal({
                     </label>
                     <input
                       type="password"
+                      autoComplete="current-password"
+                      enterKeyHint="done"
                       value={totpVerifyPassword}
                       onChange={(e) => setTotpVerifyPassword(e.target.value)}
                       placeholder="Mevcut şifrenizi giriniz"
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-600 text-white text-xs font-bold focus:outline-none focus:border-amber-400"
+                      style={{ backgroundColor: '#020617', color: '#ffffff' }}
                     />
                   </div>
 
@@ -616,7 +671,10 @@ export default function ProfileModal({
                     <span>2FA Korumasını Devre Dışı Bırak</span>
                   </button>
                 ) : (
-                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-rose-500/40 space-y-2">
+                  <div
+                    className="p-2.5 rounded-xl bg-slate-950/80 border border-rose-500/40 space-y-2"
+                    style={{ backgroundColor: 'rgba(2, 6, 23, 0.85)' }}
+                  >
                     <p className="text-[11px] text-rose-300 font-bold">
                       2FA korumasını kapatmak için şifrenizi ve güncel 6 haneli Google Authenticator (veya kurtarma) kodunuzu giriniz:
                     </p>

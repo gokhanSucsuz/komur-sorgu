@@ -199,11 +199,14 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                 <input
                   type="text"
                   inputMode="numeric"
+                  autoComplete="one-time-code"
+                  enterKeyHint="go"
                   autoFocus
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.toUpperCase().slice(0, 10))}
                   placeholder="6 Haneli Kod (veya Kurtarma Kodu)"
                   className="w-full px-4 py-3 rounded-xl bg-white border-2 border-amber-400 text-slate-900 text-center font-mono text-lg font-black tracking-[0.25em] focus:outline-none focus:border-amber-600 shadow-2xs"
+                  style={{ letterSpacing: '0.25em' }}
                   required
                 />
 
@@ -233,6 +236,8 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                       </label>
                       <input
                         type="text"
+                        autoComplete="username"
+                        enterKeyHint="next"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="Kullanıcı adınızı girin"
@@ -248,6 +253,8 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                       <div className="relative">
                         <input
                           type={showPassword ? 'text' : 'password'}
+                          autoComplete="current-password"
+                          enterKeyHint="go"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="Şifrenizi girin"

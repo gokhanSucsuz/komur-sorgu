@@ -142,14 +142,19 @@ export default function Home() {
     setOverallStats(null);
   }, []);
 
-  // Single Device Session Heartbeat & Verification
+  // Single Device & 24h TTL Session Heartbeat & Verification
   const checkActiveSession = useCallback(async () => {
     if (typeof window === 'undefined') return;
     const savedLogin = localStorage.getItem('komur_logged_in');
     const savedUsername = localStorage.getItem('komur_username');
     const savedToken = localStorage.getItem('komur_session_token');
 
-    if (savedLogin !== 'true' || !savedUsername || !savedToken) return;
+    if (savedLogin !== 'true') return;
+
+    if (!savedUsername || !savedToken) {
+      handleLogout('Oturum güvenlik anahtarı bulunamadı. Lütfen tekrar giriş yapınız.');
+      return;
+    }
 
     try {
       const res = await fetch('/api/auth', {
@@ -164,9 +169,15 @@ export default function Home() {
 
       const data = await res.json();
       if (!data.success || !data.valid) {
-        if (data.code === 'SESSION_TERMINATED') {
+        if (
+          data.code === 'SESSION_TERMINATED' ||
+          data.code === 'SESSION_EXPIRED' ||
+          data.code === 'USER_NOT_FOUND' ||
+          res.status === 401
+        ) {
           handleLogout(
-            data.error || 'Bu kullanıcı adı ile başka bir cihazdan oturum açıldı! Güvenlik gereği bu cihazdaki oturum sonlandırıldı.'
+            data.error ||
+              'Bu kullanıcı adı ile başka bir cihazdan oturum açıldı veya 24 saatlik oturum süreniz doldu!'
           );
         }
       }
@@ -181,7 +192,8 @@ export default function Home() {
       const savedLogin = localStorage.getItem('komur_logged_in');
       const savedRole = localStorage.getItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
       const savedName = localStorage.getItem('komur_user_name');
-      if (savedLogin === 'true' && savedRole && savedName) {
+      const savedToken = localStorage.getItem('komur_session_token');
+      if (savedLogin === 'true' && savedRole && savedName && savedToken) {
         setIsLoggedIn(true);
         setUserRole(savedRole);
         setUserName(savedName);
@@ -194,7 +206,7 @@ export default function Home() {
     }
   }, [checkActiveSession]);
 
-  // Heartbeat timer for single device session checking
+  // Heartbeat timer & mobile foreground resume listener for single device session checking
   useEffect(() => {
     if (!isLoggedIn) return;
 
@@ -206,11 +218,19 @@ export default function Home() {
       checkActiveSession();
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkActiveSession();
+      }
+    };
+
     window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       clearInterval(intervalId);
       window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [isLoggedIn, checkActiveSession]);
 

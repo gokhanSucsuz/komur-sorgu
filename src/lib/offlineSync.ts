@@ -17,12 +17,71 @@ export interface OfflineDeliveryItem {
 }
 
 const STORAGE_KEY = 'komur_offline_queue';
+const OBF_PREFIX = 'KVKK_OBF_v1:';
+
+/**
+ * Masks TC Identity Number so full plaintext TC is never persisted in mobile localStorage.
+ */
+function maskTcForStorage(tc: string): string {
+  const cleaned = String(tc || '').trim();
+  if (cleaned.length <= 4) return '*******';
+  return '*******' + cleaned.slice(-4);
+}
+
+/**
+ * Obfuscates offline queue string in localStorage bound to current session token
+ * so plaintext citizen names are not readable in raw browser storage inspection.
+ */
+function encodeStoragePayload(items: OfflineDeliveryItem[]): string {
+  try {
+    const json = JSON.stringify(items);
+    const bytes = new TextEncoder().encode(json);
+    const keyStr =
+      (typeof window !== 'undefined' && localStorage.getItem('komur_session_token')) ||
+      'edirne-sydv-mobile-kvkk-guard';
+    const keyBytes = new TextEncoder().encode(keyStr);
+    const out = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      out[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    let binary = '';
+    for (let i = 0; i < out.length; i++) {
+      binary += String.fromCharCode(out[i]);
+    }
+    return OBF_PREFIX + btoa(binary);
+  } catch {
+    return JSON.stringify(items);
+  }
+}
+
+function decodeStoragePayload(raw: string): OfflineDeliveryItem[] {
+  if (!raw) return [];
+  if (!raw.startsWith(OBF_PREFIX)) {
+    return JSON.parse(raw);
+  }
+  const b64 = raw.slice(OBF_PREFIX.length);
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const keyStr =
+    (typeof window !== 'undefined' && localStorage.getItem('komur_session_token')) ||
+    'edirne-sydv-mobile-kvkk-guard';
+  const keyBytes = new TextEncoder().encode(keyStr);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    out[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+  }
+  const json = new TextDecoder().decode(out);
+  return JSON.parse(json);
+}
 
 export function getOfflineQueue(): OfflineDeliveryItem[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return raw ? decodeStoragePayload(raw) : [];
   } catch (e) {
     console.error('Failed to parse offline queue:', e);
     return [];
@@ -35,15 +94,16 @@ export function saveOfflineDelivery(
   const queue = getOfflineQueue();
   const newItem: OfflineDeliveryItem = {
     ...item,
+    tc_no: maskTcForStorage(item.tc_no),
     client_uuid: 'off_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
     timestamp: Date.now(),
     status: 'PENDING',
-    created_at_formatted: new Date().toLocaleString('tr-TR')
+    created_at_formatted: new Date().toLocaleString('tr-TR'),
   };
 
   queue.push(newItem);
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    localStorage.setItem(STORAGE_KEY, encodeStoragePayload(queue));
     // Dispatch custom event for UI updates
     window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: queue.length } }));
   }
@@ -59,7 +119,7 @@ export function getPendingOfflineCount(): number {
 export function removeOfflineItem(clientUuid: string): void {
   const queue = getOfflineQueue().filter((item) => item.client_uuid !== clientUuid);
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    localStorage.setItem(STORAGE_KEY, encodeStoragePayload(queue));
     window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: queue.length } }));
   }
 }
@@ -102,17 +162,20 @@ export async function syncOfflineDeliveries(
           torba_sayisi: item.torba_sayisi,
           teslim_alan: item.teslim_alan,
           personel: item.personel,
-          notlar: item.notlar ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}` : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`
-        })
+          notlar: item.notlar
+            ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
+            : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
+        }),
       });
 
       const data = await res.json();
 
-      if (res.status === 409 || data.conflict) {
-        // Double delivery / conflict prevented!
+      if (res.status === 409 || res.status === 423 || data.conflict) {
+        // Double delivery or active route lock conflict prevented!
         conflicts++;
-        const conflictMsg = data.error || `${item.ad_soyad} kaydı başka bir personel tarafından tamamlanmış.`;
-        messages.push(`⚠️ Mükerrer Önleme: ${conflictMsg}`);
+        const conflictMsg =
+          data.error || `${item.ad_soyad} kaydı başka bir personel tarafından işlem görmüş veya kilitli.`;
+        messages.push(`⚠️ Çakışma Önleme: ${conflictMsg}`);
 
         // Remove from queue so it does not loop
         const idx = updatedQueue.findIndex((q) => q.client_uuid === item.client_uuid);
@@ -138,7 +201,7 @@ export async function syncOfflineDeliveries(
     }
   }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedQueue));
+  localStorage.setItem(STORAGE_KEY, encodeStoragePayload(updatedQueue));
   window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: updatedQueue.length } }));
 
   return {
@@ -146,6 +209,7 @@ export async function syncOfflineDeliveries(
     synced,
     conflicts,
     failed,
-    messages
+    messages,
   };
 }
+

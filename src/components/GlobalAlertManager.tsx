@@ -211,8 +211,8 @@ export default function GlobalAlertManager() {
       {/* 1. FLOATING TOAST NOTIFICATIONS CONTAINER (TOP-RIGHT)   */}
       {/* ======================================================== */}
       <div
-        className="fixed top-4 right-4 z-[10000] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-3"
-        style={{ perspective: 1000 }}
+        className="fixed top-4 inset-x-0 mx-auto sm:left-auto sm:right-4 z-[10000] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-3"
+        style={{ perspective: 1000, zIndex: 10000 }}
       >
         {toasts.map((toast) => {
           const type = toast.type || 'info';
@@ -221,6 +221,7 @@ export default function GlobalAlertManager() {
               key={toast.id}
               className="pointer-events-auto w-full bg-white/95 backdrop-blur-md rounded-2xl border p-3.5 shadow-xl flex items-start gap-3 transition-all duration-300 animate-slide-in"
               style={{
+                pointerEvents: 'auto',
                 borderColor:
                   type === 'lock'
                     ? '#f59e0b'
@@ -287,6 +288,7 @@ export default function GlobalAlertManager() {
       {modal && (
         <div
           className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+          style={{ zIndex: 9999, backgroundColor: 'rgba(2, 6, 23, 0.72)' }}
           onClick={() => {
             // For simple alerts, clicking backdrop closes them
             if (!modal.isConfirm) {
