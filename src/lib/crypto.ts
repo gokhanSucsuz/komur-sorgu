@@ -450,9 +450,39 @@ export const TRUCK_ENCRYPTED_FIELDS = [
   'notlar',
 ];
 
+/**
+ * Normalize Waybill / Delivery Note Number (İrsaliye / Teslimat No)
+ * for primary/unique key comparison (case-insensitive Turkish uppercase, stripped spaces).
+ */
+export function normalizeIrsaliyeNo(val: string | null | undefined): string {
+  if (!val) return '';
+  return String(val)
+    .trim()
+    .toLocaleUpperCase('tr-TR')
+    .replace(/\s+/g, '');
+}
+
+/**
+ * Compute deterministic HMAC-SHA256 blind index hash for İrsaliye / Teslimat No
+ */
+export function hashIrsaliye(val: string | null | undefined): string | null {
+  const norm = normalizeIrsaliyeNo(val);
+  if (!norm) return null;
+  return hashBlindIndex(norm);
+}
+
 export function encryptTruck(doc: any): any {
   if (!doc) return doc;
   const cloned = { ...doc };
+
+  // Compute primary/unique blind index for irsaliye_no before encrypting
+  const rawIrsaliye = isEncrypted(cloned.irsaliye_no)
+    ? decryptField(cloned.irsaliye_no)
+    : cloned.irsaliye_no;
+  const irsHash = hashIrsaliye(rawIrsaliye);
+  if (irsHash) {
+    cloned.irsaliye_hash = irsHash;
+  }
 
   for (const field of TRUCK_ENCRYPTED_FIELDS) {
     if (cloned[field] !== undefined && cloned[field] !== null) {

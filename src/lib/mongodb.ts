@@ -163,6 +163,7 @@ export function mapDoc<T = any>(doc: any): T {
     'sifre',
     'sofor_adi',
     'plaka',
+    'dorse_plaka',
     'irsaliye_no',
     'personel_adi',
     'adres_guncelleme_notu',
@@ -538,6 +539,7 @@ async function initializeIndexesAndSeed(db: Db) {
 
       trucks.createIndex({ tarih: -1 }),
       trucks.createIndex({ tir_sirasi: -1 }),
+      trucks.createIndex({ irsaliye_hash: 1 }, { unique: true, sparse: true }),
 
       logs.createIndex({ batch_id: 1 }),
       logs.createIndex({ tc_hash: 1 }, { sparse: true }),

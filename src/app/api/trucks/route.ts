@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
-import { encryptTruck } from '@/lib/crypto';
+import { encryptTruck, normalizeIrsaliyeNo, hashIrsaliye } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { cleanTurkishText, turkishIncludes } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
@@ -110,6 +110,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Tır Plakası, İrsaliye No ve Geliş Tarihi zorunludur' }, { status: 400 });
     }
 
+    const cleanIrsaliye = String(irsaliye_no).trim().toLocaleUpperCase('tr-TR');
+    const targetIrsaliyeNorm = normalizeIrsaliyeNo(cleanIrsaliye);
+    const targetIrsaliyeHash = hashIrsaliye(cleanIrsaliye);
+
+    if (!targetIrsaliyeNorm) {
+      return NextResponse.json({ success: false, error: 'Geçerli bir İrsaliye / Teslimat Numarası giriniz' }, { status: 400 });
+    }
+
     if (ocak_cikis_tarihi && tarih && ocak_cikis_tarihi > tarih) {
       return NextResponse.json(
         { success: false, error: 'Kömür ocağından çıkış tarihi, dağıtım sahasına geliş tarihinden ileri bir tarih olamaz!' },
@@ -128,14 +136,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Brüt tonaj, net tonajdan küçük olamaz!' }, { status: 400 });
     }
 
+    // Birincil Anahtar Kontrolü: Aynı İrsaliye / Teslimat No ile birden fazla kayıt açılamaz
+    const existingRawTrucks = await trucksCol.find({}).toArray();
+    const existingTrucks = mapDocs(existingRawTrucks);
+
+    const duplicateTruck = existingTrucks.find(
+      (t: any) =>
+        (targetIrsaliyeHash && t.irsaliye_hash === targetIrsaliyeHash) ||
+        normalizeIrsaliyeNo(t.irsaliye_no) === targetIrsaliyeNorm
+    );
+
+    if (duplicateTruck) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `"${cleanIrsaliye}" İrsaliye / Teslimat Numarası sistemde zaten kayıtlı (#${duplicateTruck.tir_sirasi} - Plaka: ${duplicateTruck.plaka} - Tarih: ${duplicateTruck.tarih}). İrsaliye No birincil anahtardır; aynı irsaliye numarasıyla birden fazla kayıt açılamaz!`,
+        },
+        { status: 409 }
+      );
+    }
+
     const taraVal = parseFloat((brutVal - netVal).toFixed(3));
 
     // Determine truck order if not provided
     let orderNum = parseInt(tir_sirasi, 10);
     if (isNaN(orderNum) || orderNum <= 0) {
-      const allTrucks = await trucksCol.find({}).toArray();
       let maxSira = 0;
-      for (const t of allTrucks) {
+      for (const t of existingRawTrucks) {
         if (Number(t.tir_sirasi) > maxSira) maxSira = Number(t.tir_sirasi);
       }
       orderNum = maxSira + 1;
@@ -146,7 +173,7 @@ export async function POST(request: NextRequest) {
       tir_sirasi: orderNum,
       plaka: plaka.toUpperCase().trim(),
       dorse_plaka: dorse_plaka ? dorse_plaka.toUpperCase().trim() : null,
-      irsaliye_no: irsaliye_no.trim(),
+      irsaliye_no: cleanIrsaliye,
       ocak_cikis_tarihi: ocak_cikis_tarihi ? ocak_cikis_tarihi.trim() : tarih,
       tarih,
       net_tonaj: netVal,
@@ -157,7 +184,7 @@ export async function POST(request: NextRequest) {
       created_at: nowLocaleTr,
     };
 
-    // Encrypt driver name, plate, waybill, and notes with AES-256-GCM
+    // Encrypt driver name, plate, waybill, and notes with AES-256-GCM + compute irsaliye_hash
     const encryptedDoc = encryptTruck(newDoc);
     const result = await trucksCol.insertOne(encryptedDoc);
     const newId = result.insertedId ? result.insertedId.toString() : '';
@@ -168,6 +195,15 @@ export async function POST(request: NextRequest) {
       id: newId,
     });
   } catch (error: any) {
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Bu İrsaliye / Teslimat Numarası sistemde zaten kayıtlı. Aynı irsaliye numarasıyla birden fazla kayıt açılamaz!',
+        },
+        { status: 409 }
+      );
+    }
     console.error('Error adding truck delivery:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

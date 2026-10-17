@@ -51,6 +51,7 @@ export default function TonnagePage({
   }, [trucks]);
 
   // Apply a saved truck record as a template into the form with 1 click
+  // Note: İrsaliye / Teslimat No is a primary/unique key and cannot be reused, so it is cleared for the new entry.
   const applyTruckTemplate = (t: any) => {
     if (!t) return;
     setSelectedTemplateId(String(t.id || t._id || t.tir_sirasi));
@@ -60,12 +61,28 @@ export default function TonnagePage({
     setNotlar(t.notlar || '');
     setBrutTonaj(t.brut_tonaj !== undefined && t.brut_tonaj !== null ? String(t.brut_tonaj) : '');
     setNetTonaj(t.net_tonaj !== undefined && t.net_tonaj !== null ? String(t.net_tonaj) : '');
-    setIrsaliyeNo(t.irsaliye_no || '');
+    setIrsaliyeNo('');
     if (t.ocak_cikis_tarihi) {
       setOcakCikisTarihi(t.ocak_cikis_tarihi);
     }
     setErrorMsg('');
   };
+
+  // Normalize waybill number for primary/unique key check
+  const normalizeIrsaliyeClient = (val: string) =>
+    String(val || '')
+      .trim()
+      .toLocaleUpperCase('tr-TR')
+      .replace(/\s+/g, '');
+
+  // Real-time duplicate check for İrsaliye / Teslimat No (Birincil Anahtar)
+  const duplicateIrsaliyeTruck = useMemo(() => {
+    const normInput = normalizeIrsaliyeClient(irsaliyeNo);
+    if (!normInput) return null;
+    return (
+      trucks.find((t: any) => normalizeIrsaliyeClient(t.irsaliye_no) === normInput) || null
+    );
+  }, [irsaliyeNo, trucks]);
 
   const resetAddForm = () => {
     const todayStr = todayDefault();
@@ -160,6 +177,13 @@ export default function TonnagePage({
       return;
     }
 
+    if (duplicateIrsaliyeTruck) {
+      setErrorMsg(
+        `"${irsaliyeNo.trim().toLocaleUpperCase('tr-TR')}" İrsaliye / Teslimat No sistemde zaten kayıtlı (#${duplicateIrsaliyeTruck.tir_sirasi} - Plaka: ${duplicateIrsaliyeTruck.plaka} - Tarih: ${duplicateIrsaliyeTruck.tarih}). İrsaliye No birincil anahtardır; aynı irsaliye numarasıyla birden fazla kayıt açılamaz!`
+      );
+      return;
+    }
+
     if (ocakCikisTarihi && tarih && ocakCikisTarihi > tarih) {
       setErrorMsg('Kömür ocağından çıkış tarihi, dağıtım sahasına geliş tarihinden ileri bir tarih olamaz!');
       return;
@@ -181,7 +205,7 @@ export default function TonnagePage({
           tir_sirasi: tirSirasi,
           plaka,
           dorse_plaka: dorsePlaka,
-          irsaliye_no: irsaliyeNo,
+          irsaliye_no: irsaliyeNo.trim().toLocaleUpperCase('tr-TR'),
           ocak_cikis_tarihi: ocakCikisTarihi || tarih,
           tarih,
           net_tonaj: netVal,
@@ -584,17 +608,33 @@ export default function TonnagePage({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    İrsaliye / Teslimat No
+                  <label className="flex items-center justify-between text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    <span>İrsaliye / Teslimat No</span>
+                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black">
+                      BİRİNCİL / TEKİL
+                    </span>
                   </label>
                   <input
                     type="text"
                     value={irsaliyeNo}
-                    onChange={(e) => setIrsaliyeNo(e.target.value)}
+                    onChange={(e) => setIrsaliyeNo(e.target.value.toLocaleUpperCase('tr-TR'))}
                     placeholder="Örn: IRS-2026-004"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono font-bold focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
+                    className={`w-full px-3.5 py-2 rounded-xl font-mono font-bold focus:outline-none text-sm transition-colors ${
+                      duplicateIrsaliyeTruck
+                        ? 'bg-rose-50 border-2 border-rose-500 text-rose-900 focus:border-rose-600'
+                        : 'bg-slate-50 border border-slate-300 text-slate-900 focus:border-amber-500 focus:bg-white'
+                    }`}
                     required
                   />
+                  {duplicateIrsaliyeTruck ? (
+                    <p className="mt-1 text-[11px] font-bold text-rose-700 leading-tight">
+                      ⚠️ Bu irsaliye no zaten kayıtlı: #{duplicateIrsaliyeTruck.tir_sirasi} ({duplicateIrsaliyeTruck.plaka} • {duplicateIrsaliyeTruck.tarih})
+                    </p>
+                  ) : irsaliyeNo.trim().length > 0 ? (
+                    <p className="mt-1 text-[10px] font-bold text-emerald-700">
+                      ✓ Benzersiz İrsaliye Numarası
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -739,10 +779,10 @@ export default function TonnagePage({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="btn-primary flex-1 font-bold"
+                  disabled={isSubmitting || Boolean(duplicateIrsaliyeTruck)}
+                  className="btn-primary flex-1 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSubmitting ? 'Kaydediliyor...' : 'Tırı Kaydet'}
+                  {isSubmitting ? 'Kaydediliyor...' : duplicateIrsaliyeTruck ? 'Mükerrer İrsaliye No!' : 'Tırı Kaydet'}
                 </button>
               </div>
             </form>
