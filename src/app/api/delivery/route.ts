@@ -47,6 +47,49 @@ export async function POST(request: NextRequest) {
     const { nowLocaleTr, nowEnCa } = getIstanbulDate();
     const localToday = nowEnCa;
     const localTimeStr = nowLocaleTr;
+    const callerStaff = (session.ad_soyad || session.username || 'Personel').trim();
+
+    // Server-side Active Route Mode Lock Check:
+    // Prevent modifying a beneficiary if they belong to an active route currently locked in Route Mode by another staff member
+    const LOCK_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+    const activeLockedRoutes = await routeCol.find({
+      durum: 'AKTIF',
+      aktif_rota_modu_personel: { $exists: true, $ne: null },
+    }).toArray();
+
+    for (const rawLockedRoute of activeLockedRoutes) {
+      const decRoute = mapDoc(rawLockedRoute);
+      const lockOwner = (decRoute.aktif_rota_modu_personel || '').trim();
+      if (!lockOwner) continue;
+
+      let isExpired = false;
+      if (decRoute.aktif_rota_modu_zaman_iso) {
+        const lockTime = new Date(decRoute.aktif_rota_modu_zaman_iso).getTime();
+        if (!isNaN(lockTime) && Date.now() - lockTime > LOCK_TIMEOUT_MS) {
+          isExpired = true;
+        }
+      }
+
+      if (!isExpired && lockOwner.toLocaleLowerCase('tr-TR') !== callerStaff.toLocaleLowerCase('tr-TR')) {
+        const stops = Array.isArray(decRoute.duraklar) ? decRoute.duraklar : [];
+        const isInLockedRoute = stops.some((s: any) =>
+          String(s.beneficiary_id) === String(beneficiary.id) ||
+          String(s.beneficiary_id) === String(beneficiary._id) ||
+          (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
+        );
+        if (isInLockedRoute) {
+          return NextResponse.json(
+            {
+              success: false,
+              rota_kilitli: true,
+              aktif_rota_modu_personel: lockOwner,
+              error: `Bu hane şu anda "${decRoute.rota_adi || decRoute.mahalle}" rotası kapsamında ${lockOwner} tarafından aktif Rota Modunda işlenmektedir! Aynı anda birden fazla personel aynı rotadaki kayıtlara müdahale edemez.`,
+            },
+            { status: 423 }
+          );
+        }
+      }
+    }
 
     if (action === 'TESLIMAT') {
       const hedef = beneficiary.hedef_torba || 34;
@@ -244,7 +287,7 @@ export async function POST(request: NextRequest) {
       });
     } else if (action === 'IPTAL') {
       const cancelReason = (iptal_nedeni || 'Hatalı teslimat kaydı').trim();
-      const staff = session.ad_soyad || session.username || body.personel || 'Personel';
+      const staff = callerStaff;
       const userRole = session.rol || 'PERSONEL';
 
       // Revert beneficiary status to BEKLIYOR

@@ -197,6 +197,13 @@ export function encryptBeneficiary(doc: any): any {
     }
   }
 
+  // Encrypt each warning string inside uyarilar array (may contain household member name & TC)
+  if (Array.isArray(cloned.uyarilar)) {
+    cloned.uyarilar = cloned.uyarilar.map((u: any) =>
+      u !== undefined && u !== null ? encryptField(String(u)) : u
+    );
+  }
+
   return cloned;
 }
 
@@ -211,6 +218,12 @@ export function decryptBeneficiary(doc: any): any {
     if (cloned[field] !== undefined && cloned[field] !== null) {
       cloned[field] = decryptField(cloned[field]);
     }
+  }
+
+  if (Array.isArray(cloned.uyarilar)) {
+    cloned.uyarilar = cloned.uyarilar.map((u: any) =>
+      typeof u === 'string' && isEncrypted(u) ? decryptField(u) : u
+    );
   }
 
   return cloned;
@@ -338,6 +351,14 @@ export function encryptActivityLog(doc: any): any {
     }
   }
 
+  // Encrypt ek_bilgi (which may contain old/new address, phone, or conflict details)
+  if (cloned.ek_bilgi !== undefined && cloned.ek_bilgi !== null) {
+    const serialized = typeof cloned.ek_bilgi === 'string'
+      ? cloned.ek_bilgi
+      : JSON.stringify(cloned.ek_bilgi);
+    cloned.ek_bilgi = encryptField(serialized);
+  }
+
   return cloned;
 }
 
@@ -348,6 +369,17 @@ export function decryptActivityLog(doc: any): any {
   for (const field of ACTIVITY_LOG_ENCRYPTED_FIELDS) {
     if (cloned[field] !== undefined && cloned[field] !== null) {
       cloned[field] = decryptField(cloned[field]);
+    }
+  }
+
+  if (typeof cloned.ek_bilgi === 'string' && isEncrypted(cloned.ek_bilgi)) {
+    const dec = decryptField(cloned.ek_bilgi);
+    if (dec) {
+      try {
+        cloned.ek_bilgi = JSON.parse(dec);
+      } catch {
+        cloned.ek_bilgi = dec;
+      }
     }
   }
 
@@ -362,6 +394,8 @@ export const USER_ENCRYPTED_FIELDS = [
   'ad_soyad',
   'telefon',
   'sifre',
+  'last_ip',
+  'last_device',
 ];
 
 export function encryptUser(doc: any): any {
@@ -566,6 +600,24 @@ export function verifyPassword(password: string, storedHash: string | null | und
     return false;
   } catch (err) {
     console.error('[Crypto] verifyPassword error:', err);
+    return false;
+  }
+}
+
+/**
+ * Constant-time token/string comparison to prevent timing side-channel attacks.
+ */
+export function timingSafeTokenEqual(
+  tokenA: string | null | undefined,
+  tokenB: string | null | undefined
+): boolean {
+  if (!tokenA || !tokenB) return false;
+  try {
+    const bufA = Buffer.from(String(tokenA).trim(), 'utf8');
+    const bufB = Buffer.from(String(tokenB).trim(), 'utf8');
+    if (bufA.length === 0 || bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
     return false;
   }
 }

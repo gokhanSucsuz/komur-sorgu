@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { encryptField, hashPassword, verifyPassword } from '@/lib/crypto';
+import { encryptField, hashPassword, verifyPassword, timingSafeTokenEqual } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { sanitizeUser, verifySession } from '@/lib/auth';
 
@@ -64,14 +64,14 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Check if another device has logged in with this username
-      if (rawUser.active_session_token && rawUser.active_session_token !== sessionToken) {
+      // Strictly require an active session token and verify in constant time
+      if (!rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, sessionToken)) {
         return NextResponse.json(
           {
             success: false,
             valid: false,
             code: 'SESSION_TERMINATED',
-            error: 'Bu kullanıcı hesabı ile başka bir cihazdan oturum açıldı! Güvenlik gereği aynı anda yalnızca tek bir cihaz sisteme girebilir.',
+            error: 'Bu kullanıcı hesabı ile başka bir cihazdan oturum açıldı veya oturumunuz sonlandırıldı! Güvenlik gereği aynı anda yalnızca tek bir cihaz sisteme girebilir.',
           },
           { status: 401 }
         );
@@ -86,39 +86,47 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Return active staff members for login screen
-    // KVKK & Security: Only expose minimal public fields (id, username, ad_soyad, rol) when unauthenticated
+    // KVKK & Security: Only expose minimal public personnel fields when unauthenticated; hide admin accounts from unauthenticated callers
     const session = await verifySession(request);
     const rawUsers = await usersCol
       .find({ aktif: 1 })
       .sort({ rol: 1 })
       .toArray();
 
-    const users = mapDocs(rawUsers)
+    const allMapped = mapDocs(rawUsers)
       .map(sanitizeUser)
-      .map((u: any) =>
-        session.valid
-          ? u
-          : {
-              id: u.id,
-              username: u.username,
-              ad_soyad: u.ad_soyad,
-              rol: u.rol,
-              aktif: u.aktif,
-            }
-      )
       .sort((a: any, b: any) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'));
+
+    if (!session.valid) {
+      const publicPersonnel = allMapped
+        .filter((u: any) => u.rol === 'PERSONEL')
+        .map((u: any) => ({
+          id: u.id,
+          username: u.username,
+          ad_soyad: u.ad_soyad,
+          rol: u.rol,
+          aktif: u.aktif,
+        }));
+
+      return NextResponse.json({
+        success: true,
+        users: publicPersonnel,
+        personnel: publicPersonnel,
+        admins: [],
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      users,
-      personnel: users.filter((u: any) => u.rol === 'PERSONEL'),
-      admins: users.filter((u: any) => u.rol === 'ADMIN'),
+      users: allMapped,
+      personnel: allMapped.filter((u: any) => u.rol === 'PERSONEL'),
+      admins: allMapped.filter((u: any) => u.rol === 'ADMIN'),
     });
   } catch (error: any) {
     console.error('Error fetching auth users:', error);
     return NextResponse.json({
       success: false,
-      error: error?.message || 'Kullanıcı listesi alınamadı.'
+      error: 'Kullanıcı listesi alınamadı.'
     }, { status: 500 });
   }
 }
@@ -150,14 +158,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Check if active session token matches
-      if (rawUser.active_session_token && rawUser.active_session_token !== targetToken) {
+      // Strictly require an active session token and verify in constant time
+      if (!rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, targetToken)) {
         return NextResponse.json(
           {
             success: false,
             valid: false,
             code: 'SESSION_TERMINATED',
-            error: 'Bu kullanıcı hesabı ile başka bir cihazdan giriş yapıldı! Güvenlik kuralı gereğince aynı kullanıcı hesabıyla aynı anda yalnızca tek bir cihaz sisteme girebilir.',
+            error: 'Bu kullanıcı hesabı ile başka bir cihazdan giriş yapıldı veya oturumunuz sonlandırıldı! Güvenlik kuralı gereğince aynı kullanıcı hesabıyla aynı anda yalnızca tek bir cihaz sisteme girebilir.',
           },
           { status: 401 }
         );
@@ -168,15 +176,14 @@ export async function POST(request: NextRequest) {
         valid: true,
       });
 
-      // Ensure HttpOnly cookie stays synchronized with valid active session token
-      if (rawUser.active_session_token === targetToken) {
-        res.cookies.set('komur_session_token', targetToken, {
-          httpOnly: true,
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 60 * 60 * 24 * 30,
-        });
-      }
+      // Ensure HttpOnly Secure cookie stays synchronized with valid active session token
+      res.cookies.set('komur_session_token', targetToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+      });
 
       return res;
     }
@@ -187,7 +194,7 @@ export async function POST(request: NextRequest) {
 
       if (trimmedUser && targetToken) {
         const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
-        if (rawUser && rawUser.active_session_token === targetToken) {
+        if (rawUser && rawUser.active_session_token && timingSafeTokenEqual(rawUser.active_session_token, targetToken)) {
           await usersCol.updateOne(
             { _id: rawUser._id },
             {
@@ -252,10 +259,13 @@ export async function POST(request: NextRequest) {
       if (rawUser.sifre_hash) {
         isPasswordCorrect = verifyPassword(trimmedPass, rawUser.sifre_hash);
       }
-      // Transparent fallback: if hash was false/not present, check decrypted/plaintext password
+      // Transparent fallback: if hash was false/not present, check decrypted/plaintext password in constant time
       if (!isPasswordCorrect) {
         const decUser = mapDoc(rawUser);
-        if (decUser.sifre === trimmedPass || rawUser.sifre === trimmedPass) {
+        if (
+          timingSafeTokenEqual(decUser.sifre, trimmedPass) ||
+          timingSafeTokenEqual(rawUser.sifre, trimmedPass)
+        ) {
           isPasswordCorrect = true;
           try {
             const newHash = hashPassword(trimmedPass);
@@ -331,8 +341,8 @@ export async function POST(request: NextRequest) {
         $set: {
           active_session_token: newSessionToken,
           last_login_at: nowIso,
-          last_device: userAgent.substring(0, 150),
-          last_ip: clientIp,
+          last_device: encryptField(userAgent.substring(0, 150)),
+          last_ip: encryptField(clientIp),
         },
       }
     );
@@ -406,7 +416,7 @@ export async function POST(request: NextRequest) {
     console.error('Error during login:', error);
     return NextResponse.json({
       success: false,
-      error: error?.message || 'Giriş yapılırken sunucu hatası oluştu.'
+      error: 'Giriş yapılırken sunucu hatası oluştu.'
     }, { status: 500 });
   }
 }
@@ -441,6 +451,31 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'İşlemi onaylamak için lütfen mevcut şifrenizi / PIN kodunuzu giriniz.' }, { status: 400 });
     }
 
+    // Brute-force protection on profile/password change endpoint
+    const clientIpRaw = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
+    const clientIp = clientIpRaw.split(',')[0].trim();
+    const rateLimitKey = `put_auth::${clientIp}::${trimmedUser.toLocaleLowerCase('tr-TR')}`;
+    const globalForAuth = globalThis as unknown as {
+      __loginAttempts?: Map<string, { count: number; firstAttemptAt: number; lockedUntil: number }>;
+    };
+    if (!globalForAuth.__loginAttempts) {
+      globalForAuth.__loginAttempts = new Map();
+    }
+    const attemptsMap = globalForAuth.__loginAttempts;
+    const nowMs = Date.now();
+    const attemptRecord = attemptsMap.get(rateLimitKey);
+
+    if (attemptRecord && attemptRecord.lockedUntil > nowMs) {
+      const waitSec = Math.ceil((attemptRecord.lockedUntil - nowMs) / 1000);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Çok fazla hatalı şifre doğrulama denemesi! Güvenliğiniz için lütfen ${waitSec} saniye bekleyiniz.`,
+        },
+        { status: 429 }
+      );
+    }
+
     const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
 
     if (!rawUser) {
@@ -457,21 +492,38 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verify current password with scrypt or legacy fallback
+    // Verify current password with scrypt or constant-time legacy fallback
     let isCurrentPassValid = false;
     if (rawUser.sifre_hash) {
       isCurrentPassValid = verifyPassword(trimmedCurrentPass, rawUser.sifre_hash);
     }
     if (!isCurrentPassValid) {
-      isCurrentPassValid = decUser.sifre === trimmedCurrentPass || rawUser.sifre === trimmedCurrentPass;
+      isCurrentPassValid =
+        timingSafeTokenEqual(decUser.sifre, trimmedCurrentPass) ||
+        timingSafeTokenEqual(rawUser.sifre, trimmedCurrentPass);
     }
 
     if (!isCurrentPassValid) {
+      const windowMs = 10 * 60 * 1000;
+      const lockDurationMs = 5 * 60 * 1000;
+      const prevCount =
+        attemptRecord && nowMs - attemptRecord.firstAttemptAt < windowMs
+          ? attemptRecord.count
+          : 0;
+      const nextCount = prevCount + 1;
+      attemptsMap.set(rateLimitKey, {
+        count: nextCount,
+        firstAttemptAt: prevCount === 0 ? nowMs : attemptRecord!.firstAttemptAt,
+        lockedUntil: nextCount >= 5 ? nowMs + lockDurationMs : 0,
+      });
+
       return NextResponse.json(
         { success: false, error: 'Mevcut şifrenizi / PIN kodunuzu hatalı girdiniz! Değişiklik kaydedilemedi.' },
         { status: 400 }
       );
     }
+
+    attemptsMap.delete(rateLimitKey);
 
     const updateFields: any = {
       updated_at: getIstanbulDate().fullStr,

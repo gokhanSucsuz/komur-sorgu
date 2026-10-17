@@ -320,9 +320,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await verifySession(request);
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
     if (!session.valid) {
-      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+      return session.response || NextResponse.json(
+        { success: false, error: 'Yetkisiz erişim! Yeni hak sahibi ekleme yetkisi sadece Sistem Yöneticisine aittir.' },
+        { status: 401 }
+      );
     }
 
     const { beneficiaries: benCol, systemSettings } = await getDbCollections();
@@ -447,9 +450,12 @@ export async function POST(request: NextRequest) {
     const res = await benCol.insertOne(encryptedDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
 
+    const creatorName = session.ad_soyad || session.username || 'Sistem Yöneticisi';
+
     await recordActivityLog({
       islem_tipi: 'HANE_EKLEME',
-      kullanici_adi: body.created_by || 'Sistem Yöneticisi',
+      kullanici_adi: creatorName,
+      kullanici_rolu: session.rol || 'ADMIN',
       baslik: `Yeni Hane Eklendi (${newDoc.ad_soyad})`,
       detay: `Yeni vatandaş/hane sisteme kaydedildi: ${newDoc.ad_soyad} (${newDoc.mahalle}) - TC: ${newDoc.tc_no}, Hedef: ${targetQuota} Torba`,
       hedef_kisi: newDoc.ad_soyad,
@@ -615,6 +621,8 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    const updaterName = session.ad_soyad || session.username || updated_by || 'Sistem Kullanıcısı';
+
     const updateSet: any = {
       mahalle: settlement.name,
       yerlesim_tipi: settlement.type,
@@ -630,26 +638,27 @@ export async function PUT(request: NextRequest) {
       hane_hash: newCleanHane ? hashHane(newCleanHane) : null,
       fiili_adres_guncellendi: isAddressChanged || Boolean(existing.fiili_adres_guncellendi),
       son_adres_guncelleme_tarihi: isAddressChanged || isPhoneChanged ? nowStr : existing.son_adres_guncelleme_tarihi,
-      son_guncelleyen_personel: updated_by || 'Sistem Kullanıcısı',
-      uyarilar: updatedWarnings,
+      son_guncelleyen_personel: updaterName,
+      uyarilar: updatedWarnings.map((u: any) => (u !== undefined && u !== null ? encryptField(String(u)) : u)),
       updated_at: nowStr,
     };
 
     if (guncelleme_notu) {
       updateSet.adres_guncelleme_notu = encryptField(guncelleme_notu);
-      updateSet.uyari_notu = guncelleme_notu;
+      updateSet.uyari_notu = encryptField(guncelleme_notu);
     }
 
     // Veritabanı güncellemesi
     await benCol.updateOne(buildIdFilter(id), { $set: updateSet });
 
     // Invalidate client cache and trigger sync pulse across all devices
-    await touchSyncPulse(updated_by || 'Adres Güncelleme');
+    await touchSyncPulse(updaterName);
 
     // 6. Denetim ve Faaliyet Kaydı (Audit Log)
     await recordActivityLog({
       islem_tipi: 'ADRES_VE_ILETISIM_GUNCELLEME',
-      kullanici_adi: updated_by || 'Sistem Kullanıcısı',
+      kullanici_adi: updaterName,
+      kullanici_rolu: session.rol || 'PERSONEL',
       baslik: `İkamet / Telefon Güncellendi (${existing.ad_soyad})`,
       detay: `${existing.ad_soyad} (TC: ${existing.tc_no}) adlı hak sahibinin ikamet/iletişim bilgileri güncellendi. ${changeSummaryParts.join(' | ')}`,
       hedef_kisi: existing.ad_soyad,

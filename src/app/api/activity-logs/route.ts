@@ -154,8 +154,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { kullanici_adi, kullanici_rolu, islem_tipi, baslik, detay, hedef_kisi, hedef_tc, mahalle, torba_sayisi, ek_bilgi } = body;
 
-    const finalUser = (kullanici_adi || session.ad_soyad || session.username || '').trim();
-    const finalRole = session.rol || kullanici_rolu || 'PERSONEL';
+    const finalUser = (session.ad_soyad || session.username || kullanici_adi || '').trim();
+    const finalRole = session.rol || 'PERSONEL';
 
     if (!finalUser || !islem_tipi || !baslik) {
       return NextResponse.json({ success: false, error: 'Kullanıcı adı, işlem tipi ve başlık zorunludur' }, { status: 400 });

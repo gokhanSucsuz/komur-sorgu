@@ -1352,7 +1352,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Geçersiz export tipi' }, { status: 400 });
   } catch (error: any) {
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw error;
     console.error('Error generating export:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Rapor dışa aktarılırken sunucu hatası oluştu.' }, { status: 500 });
   }
 }

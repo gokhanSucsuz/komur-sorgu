@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDoc } from './mongodb';
+import { timingSafeTokenEqual } from './crypto';
 
 export interface AuthSessionResult {
   valid: boolean;
@@ -39,14 +40,14 @@ export async function verifySession(
 ): Promise<AuthSessionResult> {
   const token = extractSessionToken(request);
 
-  if (!token) {
+  if (!token || typeof token !== 'string' || token.length < 32 || !/^[a-f0-9]+$/i.test(token)) {
     return {
       valid: false,
       response: NextResponse.json(
         {
           success: false,
           code: 'UNAUTHORIZED',
-          error: 'Oturum bilgisi bulunamadı. Lütfen sisteme giriş yapınız.',
+          error: 'Oturum bilgisi bulunamadı veya geçersiz. Lütfen sisteme giriş yapınız.',
         },
         { status: 401 }
       ),
@@ -60,7 +61,7 @@ export async function verifySession(
       aktif: 1,
     });
 
-    if (!rawUser) {
+    if (!rawUser || !rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, token)) {
       return {
         valid: false,
         response: NextResponse.json(

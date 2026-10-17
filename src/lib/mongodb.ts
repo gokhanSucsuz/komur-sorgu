@@ -169,11 +169,32 @@ export function mapDoc<T = any>(doc: any): T {
     'cakisan_ad_soyad',
     'cakisan_tc',
     'cakisan_hane_no',
+    'last_ip',
+    'last_device',
   ];
 
   for (const field of piiFields) {
     if (typeof mapped[field] === 'string' && isEncrypted(mapped[field])) {
       mapped[field] = decryptField(mapped[field]);
+    }
+  }
+
+  // Transparently decrypt uyarilar array items on beneficiary documents
+  if (Array.isArray(mapped.uyarilar)) {
+    mapped.uyarilar = mapped.uyarilar.map((u: any) =>
+      typeof u === 'string' && isEncrypted(u) ? decryptField(u) : u
+    );
+  }
+
+  // Transparently decrypt ek_bilgi on activity_logs documents
+  if (typeof mapped.ek_bilgi === 'string' && isEncrypted(mapped.ek_bilgi)) {
+    const decEk = decryptField(mapped.ek_bilgi);
+    if (decEk) {
+      try {
+        mapped.ek_bilgi = JSON.parse(decEk);
+      } catch {
+        mapped.ek_bilgi = decEk;
+      }
     }
   }
 
@@ -976,6 +997,81 @@ export async function migrateAndEncryptExistingData(db: Db) {
     await settings.updateOne(
       { key: 'migrations_complete_v3_cakisan_kvkk' },
       { $set: { key: 'migrations_complete_v3_cakisan_kvkk', value: 'true', completed_at: new Date().toISOString() } },
+      { upsert: true }
+    );
+  }
+
+  // 7. Resmi Kurum Üst Düzey KVKK v4 Migrasyonu:
+  // beneficiaries/archived_beneficiaries uyarilar dizisi & uyari_notu, activity_logs ek_bilgi, users last_ip & last_device
+  const migV4Flag = await settings.findOne({ key: 'migrations_complete_v4_gov_security' });
+  if (migV4Flag?.value !== 'true') {
+    const beneficiariesCol = db.collection('beneficiaries');
+    const archivedBenCol = db.collection('archived_beneficiaries');
+    const activityLogsCol = db.collection('activity_logs');
+    const usersCol = db.collection('users');
+
+    // A) Beneficiaries & Archived Beneficiaries uyarilar array + uyari_notu
+    for (const col of [beneficiariesCol, archivedBenCol]) {
+      const docsWithWarnings = await col.find({
+        $or: [
+          { 'uyarilar.0': { $exists: true } },
+          { uyari_notu: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } },
+          { adres_guncelleme_notu: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ } },
+        ]
+      }).toArray();
+
+      for (const b of docsWithWarnings) {
+        const updateSet: any = {};
+        if (Array.isArray(b.uyarilar) && b.uyarilar.some((u: any) => typeof u === 'string' && !isEncrypted(u))) {
+          updateSet.uyarilar = b.uyarilar.map((u: any) =>
+            typeof u === 'string' && !isEncrypted(u) ? encryptField(u) : u
+          );
+        }
+        if (b.uyari_notu && !isEncrypted(b.uyari_notu)) {
+          updateSet.uyari_notu = encryptField(String(b.uyari_notu));
+        }
+        if (b.adres_guncelleme_notu && !isEncrypted(b.adres_guncelleme_notu)) {
+          updateSet.adres_guncelleme_notu = encryptField(String(b.adres_guncelleme_notu));
+        }
+        if (Object.keys(updateSet).length > 0) {
+          await col.updateOne({ _id: b._id }, { $set: updateSet });
+        }
+      }
+    }
+
+    // B) Activity Logs ek_bilgi encryption
+    const unencryptedEkBilgiLogs = await activityLogsCol.find({
+      ek_bilgi: { $exists: true, $ne: null, $not: /^ENC:GCM:v1:/ }
+    }).toArray();
+
+    for (const act of unencryptedEkBilgiLogs) {
+      if (act.ek_bilgi && !isEncrypted(act.ek_bilgi)) {
+        const serialized = typeof act.ek_bilgi === 'string' ? act.ek_bilgi : JSON.stringify(act.ek_bilgi);
+        await activityLogsCol.updateOne(
+          { _id: act._id },
+          { $set: { ek_bilgi: encryptField(serialized) } }
+        );
+      }
+    }
+
+    // C) Users last_ip & last_device encryption
+    const allUsers = await usersCol.find({}).toArray();
+    for (const u of allUsers) {
+      const uSet: any = {};
+      if (u.last_ip && !isEncrypted(u.last_ip)) {
+        uSet.last_ip = encryptField(String(u.last_ip));
+      }
+      if (u.last_device && !isEncrypted(u.last_device)) {
+        uSet.last_device = encryptField(String(u.last_device));
+      }
+      if (Object.keys(uSet).length > 0) {
+        await usersCol.updateOne({ _id: u._id }, { $set: uSet });
+      }
+    }
+
+    await settings.updateOne(
+      { key: 'migrations_complete_v4_gov_security' },
+      { $set: { key: 'migrations_complete_v4_gov_security', value: 'true', completed_at: new Date().toISOString() } },
       { upsert: true }
     );
   }

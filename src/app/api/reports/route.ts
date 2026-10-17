@@ -437,7 +437,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw error;
     console.error('Error generating report:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Rapor verileri oluşturulurken sunucu hatası oluştu.' }, { status: 500 });
   }
 }

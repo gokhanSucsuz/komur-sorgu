@@ -167,7 +167,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw error;
     console.error('Error fetching dashboard stats:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'İstatistik verileri alınırken sunucu hatası oluştu.' }, { status: 500 });
   }
 }

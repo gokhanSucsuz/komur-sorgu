@@ -379,9 +379,20 @@ export async function POST(request: NextRequest) {
     const localTime = nowTimeHHmm;
     const nowStr = nowLocaleTr;
 
+    const sessionStaffName = (session.ad_soyad || session.username || '').trim();
+    const isAdminSession = session.rol === 'ADMIN';
+
     if (action === 'START') {
-      if (!personel_adi) {
+      const targetStaff = isAdminSession ? (personel_adi || sessionStaffName).trim() : sessionStaffName;
+      if (!targetStaff) {
         return NextResponse.json({ success: false, error: 'Personel adı zorunludur' }, { status: 400 });
+      }
+
+      if (!isAdminSession && personel_adi && personel_adi.trim().toLocaleLowerCase('tr-TR') !== sessionStaffName.toLocaleLowerCase('tr-TR')) {
+        return NextResponse.json(
+          { success: false, error: 'Yetkisiz işlem! Personeller yalnızca kendi adlarına mesai başlatabilir.' },
+          { status: 403 }
+        );
       }
 
       const shiftDate = tarih || localToday;
@@ -392,7 +403,7 @@ export async function POST(request: NextRequest) {
         durum: 'DEVAM_EDIYOR',
       }).toArray();
       const existing = mapDocs(rawActiveOnDate).find(
-        (s: any) => (s.personel_adi || '').trim().toLowerCase() === personel_adi.trim().toLowerCase()
+        (s: any) => (s.personel_adi || '').trim().toLowerCase() === targetStaff.toLowerCase()
       );
 
       if (existing) {
@@ -406,7 +417,7 @@ export async function POST(request: NextRequest) {
       const startTime = baslama_saati || localTime;
 
       const newDoc = {
-        personel_adi,
+        personel_adi: targetStaff,
         tarih: shiftDate,
         baslama_saati: startTime,
         bitis_saati: null,
@@ -426,11 +437,11 @@ export async function POST(request: NextRequest) {
       const inserted = await shiftsCol.findOne({ _id: result.insertedId });
 
       await recordActivityLog({
-        kullanici_adi: personel_adi,
-        kullanici_rolu: 'PERSONEL',
+        kullanici_adi: sessionStaffName || targetStaff,
+        kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'MESAI_BASLAT',
         baslik: 'Günlük Dağıtım Mesaisi Başlatıldı',
-        detay: `${personel_adi} tarafından saat ${startTime} itibarıyla mesai başlatıldı.`,
+        detay: `${targetStaff} tarafından saat ${startTime} itibarıyla mesai başlatıldı.`,
         ek_bilgi: { shiftDate, startTime },
       });
 
@@ -459,12 +470,9 @@ export async function POST(request: NextRequest) {
 
       const targetShift = mapDoc(rawTargetShift);
 
-      // Check shift ownership if non-admin
-      const callerRole = session.rol || request.headers.get('x-user-role') || body.callerRole;
-      const callerName = session.ad_soyad || request.headers.get('x-user-name') || body.callerName;
-
-      if (callerRole && callerRole !== 'ADMIN' && callerName) {
-        if (targetShift.personel_adi?.trim().toLowerCase() !== callerName.trim().toLowerCase()) {
+      // Strictly check shift ownership against server-verified session if non-admin
+      if (!isAdminSession) {
+        if ((targetShift.personel_adi || '').trim().toLocaleLowerCase('tr-TR') !== sessionStaffName.toLocaleLowerCase('tr-TR')) {
           return NextResponse.json(
             { success: false, error: 'Yetkisiz işlem! Personeller sadece kendi mesailerini sonlandırabilir.' },
             { status: 403 }
@@ -537,10 +545,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'CREATE') {
-      if (!personel_adi || !tarih || !baslama_saati || !bitis_saati) {
+      const targetStaff = isAdminSession ? (personel_adi || '').trim() : sessionStaffName;
+      if (!targetStaff || !tarih || !baslama_saati || !bitis_saati) {
         return NextResponse.json(
           { success: false, error: 'Personel adı, tarih, başlama ve bitiş saatleri zorunludur' },
           { status: 400 }
+        );
+      }
+
+      if (!isAdminSession && personel_adi && personel_adi.trim().toLocaleLowerCase('tr-TR') !== sessionStaffName.toLocaleLowerCase('tr-TR')) {
+        return NextResponse.json(
+          { success: false, error: 'Yetkisiz işlem! Personeller yalnızca kendi çalışma saatlerini kaydedebilir.' },
+          { status: 403 }
         );
       }
 
@@ -551,7 +567,7 @@ export async function POST(request: NextRequest) {
         tarih: tarih.trim(),
       }).toArray();
       const existingShifts = mapDocs(rawExistingShifts).filter(
-        (s: any) => (s.personel_adi || '').trim().toLowerCase() === personel_adi.trim().toLowerCase()
+        (s: any) => (s.personel_adi || '').trim().toLowerCase() === targetStaff.toLowerCase()
       );
 
       const conflictingShift = existingShifts.find((s: any) =>
@@ -562,14 +578,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `${personel_adi} için ${tarih} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) bir mesai kaydı mevcuttur. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
+            error: `${targetStaff} için ${tarih} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) bir mesai kaydı mevcuttur. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
           },
           { status: 400 }
         );
       }
 
       const newDoc = {
-        personel_adi: personel_adi.trim(),
+        personel_adi: targetStaff,
         tarih: tarih.trim(),
         baslama_saati: baslama_saati.trim(),
         bitis_saati: bitis_saati.trim(),
@@ -588,11 +604,11 @@ export async function POST(request: NextRequest) {
       const inserted = await shiftsCol.findOne({ _id: result.insertedId });
 
       await recordActivityLog({
-        kullanici_adi: personel_adi,
-        kullanici_rolu: 'PERSONEL',
+        kullanici_adi: sessionStaffName || targetStaff,
+        kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'MESAI_GIRIS',
         baslik: 'Günlük Çalışma Saati Kaydedildi',
-        detay: `${personel_adi} için ${tarih} tarihine çalışma saati girildi: ${baslama_saati} - ${bitis_saati} (${formatMinutes(totalMinutes)}).`,
+        detay: `${targetStaff} için ${tarih} tarihine çalışma saati girildi: ${baslama_saati} - ${bitis_saati} (${formatMinutes(totalMinutes)}).`,
         ek_bilgi: { tarih, baslama_saati, bitis_saati, totalMinutes },
       });
 
