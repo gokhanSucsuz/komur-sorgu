@@ -19,6 +19,9 @@ export async function GET(request: NextRequest) {
 
     const filter: any = {};
 
+    // Clean up any legacy 'BILGI' (same address, different TC) logs so they are never shown as errors
+    await logsCol.deleteMany({ durum: 'BILGI' });
+
     if (batchId && batchId !== 'ALL') {
       filter.batch_id = batchId;
     }
@@ -32,7 +35,7 @@ export async function GET(request: NextRequest) {
       .sort({ satir_no: 1, _id: -1 })
       .toArray();
 
-    let logs = mapDocs(rawLogs);
+    let logs = mapDocs(rawLogs).filter((l: any) => l.durum !== 'BILGI');
 
     if (islemSonucu === 'EKLENMEDI') {
       logs = logs.filter(

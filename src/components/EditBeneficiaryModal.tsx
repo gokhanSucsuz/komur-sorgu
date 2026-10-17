@@ -121,26 +121,59 @@ export default function EditBeneficiaryModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-slate-200 flex items-start justify-between gap-3 shrink-0">
+        <div
+          className="p-4 sm:p-5 bg-gradient-to-r from-amber-500 to-orange-600 border-b border-amber-600/30 flex items-start justify-between gap-3 shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+            color: '#ffffff',
+          }}
+        >
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
-              <Home className="w-5 h-5" />
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-md"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.22)',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                color: '#ffffff',
+              }}
+            >
+              <Home className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                <h3
+                  className="text-base sm:text-lg font-black text-white leading-tight"
+                  style={{ color: '#ffffff' }}
+                >
                   {beneficiary.ad_soyad}
                 </h3>
-                <span className="font-mono text-xs font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                <span
+                  className="font-mono text-xs font-extrabold px-2.5 py-0.5 rounded-md shadow-2xs"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    color: '#78350f',
+                    border: '1px solid #fde68a',
+                  }}
+                >
                   TC: {beneficiary.tc_no}
                 </span>
                 {beneficiary.hane_no && (
-                  <span className="font-mono text-xs font-bold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                  <span
+                    className="font-mono text-xs font-extrabold px-2.5 py-0.5 rounded-md shadow-2xs"
+                    style={{
+                      backgroundColor: '#eef2ff',
+                      color: '#312e81',
+                      border: '1px solid #c7d2fe',
+                    }}
+                  >
                     Hane: {beneficiary.hane_no}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-1">
+              <p
+                className="text-xs font-semibold mt-1"
+                style={{ color: '#fffbeb' }}
+              >
                 Fiili ikametgah adresi ve iletişim bilgilerini güncelleme formu
               </p>
             </div>
@@ -149,9 +182,14 @@ export default function EditBeneficiaryModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+            className="p-1.5 rounded-xl hover:bg-white/25 transition-colors shrink-0"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.16)',
+              color: '#ffffff',
+            }}
+            title="Pencereyi Kapat"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 text-white" />
           </button>
         </div>
 

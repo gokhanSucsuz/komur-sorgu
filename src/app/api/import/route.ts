@@ -685,48 +685,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // AYNI FİZİKSEL ADRESTE DİĞER HAK SAHİBİ BİLGİLENDİRMESİ
-      const otherMemberAtAddress = batchAddressMatches[0] || dbAddressMatches[0];
-
-      if (otherMemberAtAddress) {
-        const isSameName = cleanCurrentName && cleanTurkishText(otherMemberAtAddress.ad_soyad).replace(/[^a-z0-9]/g, '') === cleanCurrentName;
-        const otherTcDisplay = otherMemberAtAddress.tc_no?.startsWith('EKSİK_TC')
-          ? 'TC Belirtilmemiş'
-          : otherMemberAtAddress.tc_no;
-
-        const warningLabel = isSameName
-          ? `Aynı Adreste Aynı İsimli Diğer Hak Sahibi (${otherMemberAtAddress.ad_soyad})`
-          : `Aynı Adreste Diğer Hak Sahibi (${otherMemberAtAddress.ad_soyad})`;
-
-        rowWarnings.push(warningLabel);
-        uyariliCount++;
-
-        toInsertLogs.push({
-          batch_id: batchId,
-          satir_no: rowNum,
-          tc_no: tcNo || 'Eksik',
-          ad_soyad: adSoyad,
-          telefon: displayPhoneLog,
-          mahalle: mahalle || otherMemberAtAddress.mahalle || 'Merkez',
-          acik_adres: acikAdres || otherMemberAtAddress.acik_adres || 'Belirtilmedi',
-          hane_no: haneNo || null,
-          hata_nedeni: isSameName
-            ? `Aynı Adreste Aynı İsimli Diğer Hak Sahibi: Bu adreste aynı isimle (${otherMemberAtAddress.ad_soyad} - TC: ${otherTcDisplay}) kayıt bulunmaktadır. Farklı TC kimlik numarasına (${tcNo}) sahip olduğu için kayıt başarıyla sisteme eklendi.`
-            : `Aynı Adreste Diğer Hak Sahibi: Bu adreste kayıtlı diğer hak sahibi: ${otherMemberAtAddress.ad_soyad} (${otherTcDisplay}). Farklı TC kimlik numarasına sahip olduğu için kayıt sisteme başarıyla eklendi.`,
-          durum: 'BILGI',
-          islem_sonucu: 'EKLENDİ_UYARILI',
-          teslimat_durumu: 'BEKLIYOR',
-          torba_sayisi: 0,
-          hedef_torba: defaultQuota,
-          teslimat_tarihi: null,
-          teslim_alan: null,
-          teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı',
-          cakisan_ad_soyad: otherMemberAtAddress.ad_soyad,
-          cakisan_tc: otherMemberAtAddress.tc_no,
-          cakisan_hane_no: otherMemberAtAddress.hane_no || null,
-          tarih: nowStr,
-        });
-      }
+      // Gecekondu / müstakil yoğun bölgelerde aynı adreste birden fazla farklı aile (farklı TC Kimlik No ile)
+      // ikamet edebildiğinden, farklı TC'ye sahip aynı adresli kayıtlar hata veya uyarı olarak işaretlenmez;
+      // doğrudan geçerli hak sahibi olarak sisteme eklenir.
 
       // Passed all checks!
       const targetMahalle = mahalle || 'Merkez Mah.';

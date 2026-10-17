@@ -24,13 +24,12 @@ export async function GET(request: NextRequest) {
     let trucks = mapDocs(rawTrucks);
 
     if (q) {
-      const qClean = cleanTurkishText(q);
       trucks = trucks.filter((t: any) =>
-        (t.plaka && turkishIncludes(t.plaka, qClean)) ||
-        (t.dorse_plaka && turkishIncludes(t.dorse_plaka, qClean)) ||
-        (t.sofor_adi && turkishIncludes(t.sofor_adi, qClean)) ||
-        (t.irsaliye_no && turkishIncludes(t.irsaliye_no, qClean)) ||
-        (t.notlar && turkishIncludes(t.notlar, qClean))
+        (t.plaka && turkishIncludes(t.plaka, q)) ||
+        (t.dorse_plaka && turkishIncludes(t.dorse_plaka, q)) ||
+        (t.sofor_adi && turkishIncludes(t.sofor_adi, q)) ||
+        (t.irsaliye_no && turkishIncludes(t.irsaliye_no, q)) ||
+        (t.notlar && turkishIncludes(t.notlar, q))
       );
     }
 

@@ -362,8 +362,8 @@ export default function ExcelImportPage({
           <ul className="list-disc list-inside space-y-0.5 text-slate-600 text-[11px] font-medium">
             <li><strong>Çift Telefon Numarası Desteği:</strong> Dosyada iki telefon varsa (ayrı sütunlarda veya tek sütunda &quot;/&quot;, &quot;-&quot; ile ayrılmış) otomatik tespit edilir, sahada arama yaparken seçim sunulur.</li>
             <li><strong>Mükerrer TC Kontrolü:</strong> Veritabanında veya dosyada aynı TC varsa ikinci kayıt reddedilir.</li>
-            <li><strong>Aynı Hane/Adres Kontrolü:</strong> Aynı adreste veya hanede oturan başka hak sahibi varsa elenir.</li>
-            <li><strong>Hatalı Kayıtlar:</strong> Tüm reddedilen kayıtlar gerekçeleriyle aşağıdaki sonuç sayfasına kaydedilir.</li>
+            <li><strong>Mükerrer Hane No Kontrolü:</strong> Aynı hane numarası ikinci kez gelirse elenir; gecekondu ve müstakil bölgelerde aynı adreste oturan <strong>farklı TC kimlik numaralı</strong> aileler hata sayılmaz ve doğrudan sisteme eklenir.</li>
+            <li><strong>Hatalı / Eksik Kayıtlar:</strong> Mükerrer TC, mükerrer hane no veya eksik TC/adres/telefon içeren kayıtlar aşağıdaki sonuç listesinde gösterilir.</li>
           </ul>
         </div>
 
