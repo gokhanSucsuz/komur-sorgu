@@ -221,7 +221,9 @@ export default function RoutePage({
     let isMounted = true;
 
     const checkPulse = async () => {
-      if (typeof window !== 'undefined' && !navigator.onLine) return;
+      if (typeof window !== 'undefined') {
+        if (!navigator.onLine || document.visibilityState === 'hidden') return;
+      }
       try {
         const res = await fetch(`/api/sync/status?_t=${Date.now()}`, {
           cache: 'no-store',
@@ -250,8 +252,8 @@ export default function RoutePage({
       }
     };
 
-    // Ultra-fast poll every 1.5 seconds while viewing routes
-    const interval = setInterval(checkPulse, 1500);
+    // Smart quota-friendly poll every 4 seconds while viewing routes (pauses automatically when screen is off)
+    const interval = setInterval(checkPulse, 4000);
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {

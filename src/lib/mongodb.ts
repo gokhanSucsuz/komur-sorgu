@@ -68,8 +68,10 @@ export async function getMongoClient(): Promise<MongoClient> {
         strict: false,
         deprecationErrors: true,
       },
-      maxPoolSize: 10,
-      minPoolSize: 1,
+      maxPoolSize: 5,
+      minPoolSize: 0,
+      maxIdleTimeMS: 30000,
+      serverSelectionTimeoutMS: 8000,
       connectTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     });
@@ -529,9 +531,14 @@ async function initializeIndexesAndSeed(db: Db) {
       beneficiaries.createIndex({ adres_hash: 1 }, { sparse: true }),
       beneficiaries.createIndex({ mahalle: 1 }),
       beneficiaries.createIndex({ teslimat_durumu: 1 }),
+      beneficiaries.createIndex({ imza_durumu: 1, teslimat_durumu: 1 }),
 
       users.createIndex({ username: 1 }, { unique: true }),
       users.createIndex({ rol: 1 }),
+      users.createIndex({ active_session_token: 1 }, { sparse: true }),
+
+      db.collection('delivery_routes').createIndex({ durum: 1 }),
+      db.collection('delivery_routes').createIndex({ olusturma_tarihi: -1 }),
 
       history.createIndex({ gun_tarihi: -1 }),
       history.createIndex({ tc_hash: 1 }, { sparse: true }),
@@ -1122,11 +1129,16 @@ export async function migrateMahalleNames(db?: Db | null) {
 
   if (db) {
     try {
+      const settings = db.collection('system_settings');
+      const migFlag = await settings.findOne({ key: 'migrations_mahalle_100yil_done' });
+      if (migFlag?.value === 'true') {
+        return;
+      }
+
       const beneficiaries = db.collection('beneficiaries');
       const history = db.collection('delivery_history');
       const logs = db.collection('import_logs');
       const routes = db.collection('delivery_routes');
-      const shifts = db.collection('work_shifts');
       const activityLogs = db.collection('activity_logs');
 
       // 1. Beneficiaries
@@ -1175,6 +1187,12 @@ export async function migrateMahalleNames(db?: Db | null) {
       await activityLogs.updateMany(
         { mahalle: { $in: targetVariants } },
         { $set: { mahalle: '100. Yıl Mah.' } }
+      );
+
+      await settings.updateOne(
+        { key: 'migrations_mahalle_100yil_done' },
+        { $set: { key: 'migrations_mahalle_100yil_done', value: 'true', completed_at: new Date().toISOString() } },
+        { upsert: true }
       );
     } catch (err) {
       console.error('[Migration] 100. Yıl Mah migration error:', err);

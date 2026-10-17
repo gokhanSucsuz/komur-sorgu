@@ -6,6 +6,7 @@ import { getIstanbulDate } from '@/lib/dateUtils';
 import {
   sanitizeUser,
   verifySession,
+  clearSessionMicroCache,
   isSessionExpired,
   SESSION_MAX_AGE_SECONDS,
   checkDistributedRateLimit,
@@ -294,6 +295,9 @@ export async function POST(request: NextRequest) {
     // 2. Explicit Logout: Clean up active session
     if (action === 'logout') {
       const targetToken = (session_token || '').trim();
+      if (targetToken) {
+        clearSessionMicroCache(targetToken);
+      }
 
       if (trimmedUser && targetToken) {
         const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
@@ -673,6 +677,10 @@ export async function POST(request: NextRequest) {
 
     if (usedRecoveryCode) {
       loginUpdateDoc.totp_recovery_codes = remainingRecoveryCodes.map((c) => encryptField(c));
+    }
+
+    if (rawUser.active_session_token && rawUser.active_session_token !== newSessionToken) {
+      clearSessionMicroCache(rawUser.active_session_token);
     }
 
     await usersCol.updateOne(

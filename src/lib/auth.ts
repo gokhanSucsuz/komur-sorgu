@@ -44,6 +44,17 @@ export function extractSessionToken(request: NextRequest): string {
   return '';
 }
 
+const SESSION_MICRO_CACHE_TTL_MS = 4000;
+const sessionMicroCache = new Map<string, { expiresAt: number; user: any }>();
+
+export function clearSessionMicroCache(token?: string) {
+  if (token) {
+    sessionMicroCache.delete(token);
+  } else {
+    sessionMicroCache.clear();
+  }
+}
+
 /**
  * Verifies active single-device session, 24h absolute session TTL, and role against MongoDB
  */
@@ -67,6 +78,34 @@ export async function verifySession(
     };
   }
 
+  // Check 4-second micro-cache to prevent 6x redundant MongoDB user queries on parallel API bursts
+  const nowMs = Date.now();
+  const cached = sessionMicroCache.get(token);
+  if (cached && cached.expiresAt > nowMs) {
+    const user = cached.user;
+    if (options.requiredRole && options.requiredRole === 'ADMIN' && user.rol !== 'ADMIN') {
+      return {
+        valid: false,
+        response: NextResponse.json(
+          {
+            success: false,
+            code: 'FORBIDDEN',
+            error: 'Bu işlem için Sistem Yöneticisi (ADMIN) yetkisi gereklidir.',
+          },
+          { status: 403 }
+        ),
+      };
+    }
+    return {
+      valid: true,
+      user,
+      id: user.id || (user._id ? user._id.toString() : ''),
+      username: user.username,
+      ad_soyad: user.ad_soyad,
+      rol: user.rol,
+    };
+  }
+
   try {
     const { users: usersCol } = await getDbCollections();
     const rawUser = await usersCol.findOne({
@@ -75,6 +114,7 @@ export async function verifySession(
     });
 
     if (!rawUser || !rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, token)) {
+      sessionMicroCache.delete(token);
       return {
         valid: false,
         response: NextResponse.json(
@@ -90,6 +130,7 @@ export async function verifySession(
 
     // Enforce 24-hour institutional absolute session TTL
     if (isSessionExpired(rawUser.last_login_at)) {
+      sessionMicroCache.delete(token);
       await usersCol.updateOne(
         { _id: rawUser._id },
         { $set: { active_session_token: null } }
@@ -108,6 +149,7 @@ export async function verifySession(
     }
 
     const user = mapDoc(rawUser);
+    sessionMicroCache.set(token, { expiresAt: Date.now() + SESSION_MICRO_CACHE_TTL_MS, user });
 
     if (options.requiredRole && options.requiredRole === 'ADMIN' && user.rol !== 'ADMIN') {
       return {

@@ -211,8 +211,9 @@ export default function Home() {
     if (!isLoggedIn) return;
 
     const intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       checkActiveSession();
-    }, 25000); // Check every 25 seconds
+    }, 30000); // Check every 30 seconds when screen is active
 
     const handleWindowFocus = () => {
       checkActiveSession();
@@ -498,7 +499,9 @@ export default function Home() {
     if (!isLoggedIn) return;
 
     const checkSyncStatus = async () => {
-      if (typeof window !== 'undefined' && !navigator.onLine) return;
+      if (typeof window !== 'undefined') {
+        if (!navigator.onLine || document.visibilityState === 'hidden') return;
+      }
       try {
         const res = await fetch('/api/sync/status');
         const data = await res.json();
@@ -520,7 +523,7 @@ export default function Home() {
     };
 
     checkSyncStatus();
-    const interval = setInterval(checkSyncStatus, 9000);
+    const interval = setInterval(checkSyncStatus, 10000);
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
