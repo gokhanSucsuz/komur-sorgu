@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { turkishRecordMatches } from '@/lib/normalizer';
+import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 
@@ -35,22 +35,7 @@ export async function GET(request: NextRequest) {
     let records = mapDocs(rawRecords);
 
     if (q) {
-      records = records.filter((item: any) =>
-        turkishRecordMatches(
-          item,
-          [
-            'tc_no',
-            'ad_soyad',
-            'mahalle',
-            'personel',
-            'teslim_alan',
-            'acik_adres',
-            'notlar',
-            'iptal_nedeni',
-          ],
-          q
-        )
-      );
+      records = records.filter((item: any) => isBirebirBeneficiaryMatch(item, q));
     }
 
     // Group records by gun_tarihi

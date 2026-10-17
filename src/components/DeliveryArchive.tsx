@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin, Printer, X, FileText, CheckCircle2, Settings } from 'lucide-react';
-import { turkishRecordMatches } from '@/lib/normalizer';
+import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -53,17 +53,17 @@ export default function DeliveryArchive({
   // Filter delivered items
   const deliveredItems = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT');
 
-  // Search filter for deliveries
+  // Search filter for deliveries (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
   const filteredDelivered = deliveredItems.filter((r) => {
     if (selectedDay !== 'ALL' && r.gun_tarihi !== selectedDay) return false;
     if (!searchQuery) return true;
-    return turkishRecordMatches(r, ['tc_no', 'ad_soyad', 'mahalle', 'personel', 'acik_adres', 'notlar'], searchQuery);
+    return isBirebirBeneficiaryMatch(r, searchQuery);
   });
 
-  // Search filter for cancellations
+  // Search filter for cancellations (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
   const filteredCancelled = cancelledItems.filter((r) => {
     if (!searchQuery) return true;
-    return turkishRecordMatches(r, ['tc_no', 'ad_soyad', 'mahalle', 'iptal_nedeni', 'personel'], searchQuery);
+    return isBirebirBeneficiaryMatch(r, searchQuery);
   });
 
   // Re-group filtered deliveries by date
@@ -73,7 +73,7 @@ export default function DeliveryArchive({
       if (item.islem_tipi !== 'TESLIMAT') return false;
       if (selectedDay !== 'ALL' && item.gun_tarihi !== selectedDay) return false;
       if (!searchQuery) return true;
-      return turkishRecordMatches(item, ['tc_no', 'ad_soyad', 'mahalle', 'personel', 'acik_adres', 'notlar'], searchQuery);
+      return isBirebirBeneficiaryMatch(item, searchQuery);
     })
   })).filter((group) => group.items.length > 0);
 
@@ -206,7 +206,7 @@ export default function DeliveryArchive({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Arşivde TC, isim veya mahalle ara..."
+            placeholder="Arşivde TC Kimlik No veya Adı Soyadı ara..."
             className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-amber-500 font-medium"
           />
         </div>

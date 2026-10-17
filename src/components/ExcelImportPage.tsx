@@ -7,6 +7,7 @@ import {
   Eye, Phone, MapPin, Copy, Check, Users, Info, Hash, Building2, Trees
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
+import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 
 const isKoySettlement = (name: string, tip?: string) => {
   if (tip === 'KOY') return true;
@@ -107,16 +108,14 @@ export default function ExcelImportPage({
       return false;
     }
     if (modalSearch.trim()) {
-      const qClean = modalSearch.toLowerCase().trim();
-      const matchName = item.ad_soyad && item.ad_soyad.toLowerCase().includes(qClean);
-      const matchTc = item.tc_no && String(item.tc_no).includes(qClean);
-      const matchReason = item.hata_nedeni && item.hata_nedeni.toLowerCase().includes(qClean);
-      const matchMahalle = item.mahalle && item.mahalle.toLowerCase().includes(qClean);
-      const matchAdres = item.acik_adres && item.acik_adres.toLowerCase().includes(qClean);
-      const matchHane = item.hane_no && String(item.hane_no).toLowerCase().includes(qClean);
-      if (!matchName && !matchTc && !matchReason && !matchMahalle && !matchAdres && !matchHane) {
-        return false;
+      if (isBirebirBeneficiaryMatch(item, modalSearch)) return true;
+      if (
+        (item.cakisan_tc || item.cakisan_ad_soyad) &&
+        isBirebirBeneficiaryMatch({ tc_no: item.cakisan_tc, ad_soyad: item.cakisan_ad_soyad }, modalSearch)
+      ) {
+        return true;
       }
+      return false;
     }
     return true;
   });

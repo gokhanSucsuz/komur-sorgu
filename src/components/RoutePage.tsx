@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import CancelModal from '@/components/CancelModal';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
-import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc } from '@/lib/normalizer';
+import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 
 function getOrCreateClientId(): string {
   if (typeof window === 'undefined') return '';
@@ -1362,18 +1362,11 @@ export default function RoutePage({
     }
   };
 
-  // Filter beneficiaries in Create Modal
+  // Filter beneficiaries in Create Modal (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
   const modalDisplayList = useMemo(() => {
     const list = createSelectionTab === 'SIGNED' ? signedBeneficiaries : allPendingBeneficiaries;
     if (!createSearchQuery.trim()) return list;
-    const q = createSearchQuery.toLocaleLowerCase('tr');
-    return list.filter(
-      (b) =>
-        b.ad_soyad?.toLocaleLowerCase('tr').includes(q) ||
-        b.tc_no?.includes(q) ||
-        b.mahalle?.toLocaleLowerCase('tr').includes(q) ||
-        b.acik_adres?.toLocaleLowerCase('tr').includes(q)
-    );
+    return list.filter((b) => isBirebirBeneficiaryMatch(b, createSearchQuery));
   }, [createSelectionTab, signedBeneficiaries, allPendingBeneficiaries, createSearchQuery]);
 
   // Fast map to lookup beneficiaries by ID
@@ -2735,7 +2728,7 @@ export default function RoutePage({
                       type="text"
                       value={createSearchQuery}
                       onChange={(e) => setCreateSearchQuery(e.target.value)}
-                      placeholder="İsim veya sokak ara..."
+                      placeholder="TC Kimlik No veya Adı Soyadı ara..."
                       className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-sky-500"
                     />
                   </div>

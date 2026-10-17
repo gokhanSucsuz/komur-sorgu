@@ -35,6 +35,7 @@ import {
   KeyRound,
   FileCheck2
 } from 'lucide-react';
+import { turkishIncludes } from '@/lib/normalizer';
 
 interface GuidePageProps {
   userRole?: 'ADMIN' | 'PERSONEL';
@@ -331,17 +332,20 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             Yönetici, sistemin dağıtım dönemini belirleyebilir (örneğin <strong>2026-2027 Kömür Dağıtım Dönemi</strong>). Dağıtım sezonu sona erdiğinde tüm veriler mühürlenir ve arşivlenir.
           </p>
 
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-950 text-white shadow-xs">
-            <h5 className="font-black text-sm text-white flex items-center gap-1.5 mb-1">
-              <Archive className="w-4 h-4 text-blue-300" />
-              <span>Dönem Kapanışında Ne Olur?</span>
+          <div
+            className="p-4 sm:p-5 rounded-2xl text-white shadow-md border border-blue-800"
+            style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0f172a 100%)' }}
+          >
+            <h5 className="font-black text-sm text-white flex items-center gap-2 mb-2 pb-2 border-b border-white/20">
+              <Archive className="w-4 h-4 text-amber-300 shrink-0" />
+              <span style={{ color: '#ffffff' }}>Dönem Kapanışında Ne Olur?</span>
             </h5>
-            <ul className="text-[11px] text-blue-100 space-y-1.5 list-disc list-inside mt-2">
-              <li>Mevcut döneme ait tüm hak sahipleri, teslimatlar ve ıslak imzalar <strong>kalıcı arşive</strong> kilitlenir.</li>
+            <ul className="text-xs space-y-2 list-disc list-inside mt-2 font-medium" style={{ color: '#f8fafc' }}>
+              <li>Mevcut döneme ait tüm hak sahipleri, teslimatlar ve ıslak imzalar <strong style={{ color: '#fde68a' }}>kalıcı arşive</strong> kilitlenir.</li>
               <li>Mahalle/köy bazında nihai icmal tablosu ve başarı oranı arşiv snapshot&apos;ı olarak saklanır.</li>
-              <li>Aktif hak sahibi tablosu <strong>yeni dönem için tertemiz sıfırlanır</strong>.</li>
+              <li>Aktif hak sahibi tablosu <strong style={{ color: '#fde68a' }}>yeni dönem için tertemiz sıfırlanır</strong>.</li>
               <li>Yeni sezon (örneğin 2027-2028) başlar ve yeni Excel listesi yüklenmeye hazır hale gelir.</li>
-              <li><strong>Hiçbir veri kaybolmaz;</strong> geçmiş dönemlerin dökümleri istenildiği an Excel olarak indirilebilir.</li>
+              <li><strong style={{ color: '#6ee7b7' }}>Hiçbir veri kaybolmaz;</strong> geçmiş dönemlerin dökümleri istenildiği an Excel olarak indirilebilir.</li>
             </ul>
           </div>
 
@@ -516,40 +520,99 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
       content: (
         <div className="space-y-5 text-xs text-slate-700 leading-relaxed">
           {/* RESMİ KURUM ANTET VE BELGE KÜNYESİ */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white border border-slate-800 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/15">
+          <div
+            className="p-4 sm:p-5 rounded-2xl text-white shadow-md"
+            style={{
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 52%, #0f172a 100%)',
+              border: '1px solid #1e40af',
+            }}
+          >
+            <div
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3"
+              style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.2)' }}
+            >
               <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-300 block">
+                <span
+                  className="text-[10px] font-extrabold uppercase tracking-widest block"
+                  style={{ color: '#fcd34d' }}
+                >
                   T.C. EDİRNE VALİLİĞİ • SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
                 </span>
-                <h4 className="text-sm sm:text-base font-black text-white mt-0.5">
+                <h4 className="text-sm sm:text-base font-black mt-0.5" style={{ color: '#ffffff' }}>
                   Bilişim Sistemleri Güvenlik, KVKK ve Platform Uygunluk Raporu
                 </h4>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-black text-[11px] flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span
+                  className="px-3 py-1.5 rounded-lg font-black text-[11px] flex items-center gap-1.5 shadow-xs"
+                  style={{
+                    backgroundColor: '#059669',
+                    color: '#ffffff',
+                    border: '1px solid #34d399',
+                  }}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#ffffff' }} />
                   <span>TAM UYUMLU (10/10)</span>
                 </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 text-[11px]">
-              <div className="p-2 rounded-lg bg-white/10 border border-white/15">
-                <span className="text-slate-300 block text-[10px]">Belge Referans No</span>
-                <strong className="text-white font-bold">SYDV-BGYS-2026/10</strong>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3.5 text-[11px]">
+              <div
+                className="p-2.5 rounded-xl"
+                style={{
+                  backgroundColor: 'rgba(15, 23, 42, 0.72)',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
+                }}
+              >
+                <span className="block text-[10px] font-semibold" style={{ color: '#bae6fd' }}>
+                  Belge Referans No
+                </span>
+                <strong className="font-black text-xs mt-0.5 block" style={{ color: '#ffffff' }}>
+                  SYDV-BGYS-2026/10
+                </strong>
               </div>
-              <div className="p-2 rounded-lg bg-white/10 border border-white/15">
-                <span className="text-slate-300 block text-[10px]">Yasal Dayanak & Mevzuat</span>
-                <strong className="text-white font-bold">6698 Sayılı KVKK md.12</strong>
+              <div
+                className="p-2.5 rounded-xl"
+                style={{
+                  backgroundColor: 'rgba(15, 23, 42, 0.72)',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
+                }}
+              >
+                <span className="block text-[10px] font-semibold" style={{ color: '#bae6fd' }}>
+                  Yasal Dayanak &amp; Mevzuat
+                </span>
+                <strong className="font-black text-xs mt-0.5 block" style={{ color: '#ffffff' }}>
+                  6698 Sayılı KVKK md.12
+                </strong>
               </div>
-              <div className="p-2 rounded-lg bg-white/10 border border-white/15">
-                <span className="text-slate-300 block text-[10px]">Kriptografik Standart</span>
-                <strong className="text-emerald-300 font-bold">AES-256-GCM + SHA256</strong>
+              <div
+                className="p-2.5 rounded-xl"
+                style={{
+                  backgroundColor: 'rgba(15, 23, 42, 0.72)',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
+                }}
+              >
+                <span className="block text-[10px] font-semibold" style={{ color: '#bae6fd' }}>
+                  Kriptografik Standart
+                </span>
+                <strong className="font-black text-xs mt-0.5 block" style={{ color: '#6ee7b7' }}>
+                  AES-256-GCM + SHA256
+                </strong>
               </div>
-              <div className="p-2 rounded-lg bg-white/10 border border-white/15">
-                <span className="text-slate-300 block text-[10px]">Kimlik & Erişim Standardı</span>
-                <strong className="text-amber-300 font-bold">RFC 6238 TOTP (2FA)</strong>
+              <div
+                className="p-2.5 rounded-xl"
+                style={{
+                  backgroundColor: 'rgba(15, 23, 42, 0.72)',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
+                }}
+              >
+                <span className="block text-[10px] font-semibold" style={{ color: '#bae6fd' }}>
+                  Kimlik &amp; Erişim Standardı
+                </span>
+                <strong className="font-black text-xs mt-0.5 block" style={{ color: '#fde68a' }}>
+                  RFC 6238 TOTP (2FA)
+                </strong>
               </div>
             </div>
           </div>
@@ -796,14 +859,13 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
     },
   ];
 
-  // Search filter
+  // Search filter (%100 Türkçe Karakter Uyumlu)
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLocaleLowerCase('tr');
     return guideSections.filter((sec) => {
-      const titleMatch = sec.title.toLocaleLowerCase('tr').includes(q);
-      const descMatch = sec.description.toLocaleLowerCase('tr').includes(q);
-      const badgeMatch = sec.badge.toLocaleLowerCase('tr').includes(q);
+      const titleMatch = turkishIncludes(sec.title, searchQuery);
+      const descMatch = turkishIncludes(sec.description, searchQuery);
+      const badgeMatch = turkishIncludes(sec.badge, searchQuery);
       return titleMatch || descMatch || badgeMatch;
     });
   }, [guideSections, searchQuery]);
@@ -820,14 +882,35 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
   return (
     <div className="space-y-5 max-w-5xl mx-auto pb-16">
       {/* Banner / Header */}
-      <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white shadow-md border border-slate-800 relative overflow-hidden">
-        <div className="relative z-10 space-y-2.5">
+      <div
+        className="p-4 sm:p-6 rounded-2xl text-white shadow-lg relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0f172a 100%)',
+          border: '1px solid #1e40af',
+          borderRadius: '22px',
+        }}
+      >
+        <div className="relative z-10 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-black uppercase tracking-wider">
+              <span
+                className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider"
+                style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.16)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255, 255, 255, 0.35)',
+                }}
+              >
                 T.C. EDİRNE SYDV
               </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black uppercase tracking-wider">
+              <span
+                className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider"
+                style={{
+                  backgroundColor: '#059669',
+                  color: '#ffffff',
+                  border: '1px solid #34d399',
+                }}
+              >
                 KULLANIM KILAVUZU
               </span>
             </div>
@@ -838,40 +921,57 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                 setActiveTab('compliance');
                 setSearchQuery('');
               }}
-              className="px-3 py-1 rounded-full bg-amber-500/20 hover:bg-amber-400 text-amber-300 hover:text-slate-950 border border-amber-400/40 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              style={{
+                backgroundColor: '#fbbf24',
+                color: '#0f172a',
+                border: '1px solid #fde68a',
+              }}
             >
-              <Award className="w-3.5 h-3.5" />
+              <Award className="w-3.5 h-3.5" style={{ color: '#0f172a' }} />
               <span>Resmi Güvenlik &amp; Sistem Karnesi (10/10)</span>
             </button>
           </div>
 
           <div>
-            <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight leading-tight">
+            <h2
+              className="text-lg sm:text-2xl font-black tracking-tight leading-tight"
+              style={{ color: '#ffffff' }}
+            >
               Kömür Dağıtım ve Sorgulama Sistemi Kılavuzu
             </h2>
-            <p className="text-xs text-slate-300 mt-1 max-w-xl font-medium leading-relaxed hidden sm:block">
+            <p
+              className="text-xs mt-1.5 max-w-2xl font-semibold leading-relaxed hidden sm:block"
+              style={{ color: '#e0f2fe' }}
+            >
               Saha personeli ve yöneticiler için hak sahibi sorgulamadan ıslak imzalı kömür teslimatına ve 10/10 resmi güvenlik karnesine kadar tüm süreçler.
             </p>
           </div>
 
-          {/* Quick Search inside Guide with Fixed Mobile Positioning & Concise Placeholder */}
+          {/* Quick Search inside Guide with High-Contrast White Input */}
           <div className="pt-1 w-full max-w-sm">
             <div className="relative w-full flex items-center">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="w-4 h-4 text-blue-200" />
+                <Search className="w-4 h-4" style={{ color: '#475569' }} />
               </div>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Kılavuzda konu ara..."
-                className="w-full pl-9 pr-8 py-2 bg-white/15 border border-white/25 rounded-xl text-xs text-white placeholder:text-blue-200/80 focus:outline-hidden focus:bg-white/25 focus:border-white transition-all shadow-inner"
+                className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold transition-all shadow-sm"
+                style={{
+                  backgroundColor: '#ffffff',
+                  color: '#0f172a',
+                  border: '1px solid #cbd5e1',
+                }}
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-200 hover:text-white text-xs font-bold"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs font-bold"
+                  style={{ color: '#475569' }}
                 >
                   ✕
                 </button>
@@ -879,9 +979,6 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             </div>
           </div>
         </div>
-
-        {/* Decorative background glow */}
-        <div className="absolute right-0 top-0 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       {/* SEARCH MODE: If user is actively searching, display search results */}

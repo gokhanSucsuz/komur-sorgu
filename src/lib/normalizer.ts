@@ -20,102 +20,112 @@ export function cleanTurkishText(text: string | null | undefined): string {
 }
 
 /**
- * Normalizes text specifically for Turkish search matching.
- * Converts uppercase/lowercase Turkish characters and accented characters
- * to standard normalized forms (e.g. 'İ' -> 'i', 'I' -> 'i', 'ö' -> 'o', 'ş' -> 's').
+ * %100 Türkçe Karakter Uyumlu Küçük Harfe Çevirme (Exact Turkish Case Folding).
+ * Türkçe alfabedeki her harf yalnızca kendi büyük/küçük karşılığı ile eşleşir:
+ * - 'ı' <-> 'I' (Noktasız I; 'i' veya 'İ' ile ASLA eşleşmez)
+ * - 'i' <-> 'İ' (Noktalı İ; 'ı' veya 'I' ile ASLA eşleşmez)
+ * - 'ş' <-> 'Ş' ('s' veya 'S' ile ASLA eşleşmez)
+ * - 's' <-> 'S' ('ş' veya 'Ş' ile ASLA eşleşmez)
+ * - 'ç' <-> 'Ç' ('c' veya 'C' ile ASLA eşleşmez)
+ * - 'ğ' <-> 'Ğ' ('g' veya 'G' ile ASLA eşleşmez)
+ * - 'ö' <-> 'Ö' ('o' veya 'O' ile ASLA eşleşmez)
+ * - 'ü' <-> 'Ü' ('u' veya 'U' ile ASLA eşleşmez)
  */
-export function normalizeTurkishForSearch(text: string | null | undefined): string {
+export function toExactTurkishLower(text: string | null | undefined): string {
   if (!text) return '';
   return text
     .toString()
-    .replace(/[İîÎ]/g, 'i')
+    .normalize('NFC')
+    .replace(/i\u0307/g, 'i')
+    .replace(/I\u0307/g, 'i')
+    .replace(/İ/g, 'i')
     .replace(/I/g, 'ı')
+    .replace(/Ç/g, 'ç')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ü/g, 'ü')
     .toLocaleLowerCase('tr-TR')
-    .replace(/[çÇ]/g, 'c')
-    .replace(/[ğĞ]/g, 'g')
-    .replace(/[ıİiîÎ]/g, 'i')
-    .replace(/[öÖ]/g, 'o')
-    .replace(/[şŞ]/g, 's')
-    .replace(/[üÜûÛ]/g, 'u')
-    .replace(/[âÂ]/g, 'a')
+    .replace(/\u0307/g, '');
+}
+
+/**
+ * Normalizes text specifically for 100% Turkish-character compliant search matching.
+ * Preserves all Turkish letters (ç, ğ, ı, i, ö, ş, ü) distinctly while normalizing case
+ * according to Turkish grammar rules ('İ' -> 'i', 'I' -> 'ı', 'Ş' -> 'ş', 'S' -> 's', etc.).
+ */
+export function normalizeTurkishForSearch(text: string | null | undefined): string {
+  if (!text) return '';
+  return toExactTurkishLower(text)
     .trim()
     .replace(/\s+/g, ' ');
 }
 
 /**
- * Normalizes a name string specifically for exact ("birebir") Turkish matching.
- * Converts Turkish characters (İ->i, I->ı, etc.), removes punctuation,
- * collapses multiple spaces, and trims.
+ * Normalizes a name string specifically for exact ("birebir") 100% Turkish character matching.
+ * Preserves distinct Turkish letters (ı !== i, ş !== s, ç !== c, ğ !== g, ö !== o, ü !== u),
+ * removes punctuation, collapses multiple spaces, and trims.
  */
 export function normalizeTurkishNameForExactMatch(name: string | null | undefined): string {
   if (!name) return '';
-  return name
-    .toString()
-    .replace(/[^a-zA-Z0-9çÇğĞıİöÖşŞüÜâÂ\s]/g, ' ')
-    .replace(/[İîÎ]/g, 'i')
-    .replace(/I/g, 'ı')
-    .toLocaleLowerCase('tr-TR')
-    .replace(/[çÇ]/g, 'c')
-    .replace(/[ğĞ]/g, 'g')
-    .replace(/[ıİiîÎ]/g, 'i')
-    .replace(/[öÖ]/g, 'o')
-    .replace(/[şŞ]/g, 's')
-    .replace(/[üÜûÛ]/g, 'u')
-    .replace(/[âÂ]/g, 'a')
+  return toExactTurkishLower(name)
+    .replace(/[^a-z0-9çğıöşüâîû\s]/g, ' ')
     .trim()
     .replace(/\s+/g, ' ');
 }
 
 /**
  * Checks whether a beneficiary record matches a search query:
- * - Matches if TC Kimlik No matches (exact 11-digit match or partial match for 3+ digits).
- * - Matches if Hak Sahibi (Ad Soyad) matches:
- *   - Supports first name, last name, full name, or multiple names.
- *   - Word order independent (e.g. 'yilmaz ahmet' matches 'Ahmet Yılmaz').
- *   - Case-insensitive & Turkish diacritics insensitive (i/ı, ö/o, ü/u, ç/c, ş/s, ğ/g, â/a).
- *   - Substring / prefix-friendly as you type (e.g. 'ahm yil' matches 'Ahmet Yılmaz').
- *   - Punctuation stripped and multi-space collapsed.
- * - Strictly DOES NOT search in addresses (acik_adres, mahalle, sokak, hane_no) or phone numbers.
+ * - Searches ONLY in TC Kimlik No (`tc_no`) and Hak Sahibi / Adı Soyadı (`ad_soyad` / `hak_sahibi`).
+ * - Strictly DOES NOT search in addresses (`acik_adres`, `mahalle`, `sokak`, `hane_no`), phone numbers, or notes.
+ * - 100% Turkish character compliant:
+ *   - 'ı' / 'I' only matches 'ı' / 'I' (never 'i' / 'İ')
+ *   - 'i' / 'İ' only matches 'i' / 'İ' (never 'ı' / 'I')
+ *   - 'ş' / 'Ş' only matches 'ş' / 'Ş' (never 's' / 'S')
+ *   - 's' / 'S' only matches 's' / 'S' (never 'ş' / 'Ş')
+ *   - 'ç' / 'Ç', 'ğ' / 'Ğ', 'ö' / 'Ö', 'ü' / 'Ü' only match their own Turkish letter.
  */
 export function isBirebirBeneficiaryMatch(
-  record: { tc_no?: any; ad_soyad?: any } | null | undefined,
+  record: { tc_no?: any; ad_soyad?: any; hak_sahibi?: any } | null | undefined,
   query: string | null | undefined
 ): boolean {
   if (!query || !query.trim() || !record) return false;
   const rawQ = query.trim();
 
-  // 1. TC Kimlik No Eşleşmesi (Tam 11 hane veya en az 3 haneli sayısal arama)
+  // 1. TC Kimlik No Eşleşmesi (Yalnızca tc_no alanında arama yapar)
   const qDigits = rawQ.replace(/\D/g, '');
-  if (qDigits.length > 0 && record.tc_no) {
+  const isPureDigits = /^\d+$/.test(rawQ.replace(/\s+/g, ''));
+  if (isPureDigits && qDigits.length > 0 && record.tc_no) {
     const recordTcDigits = String(record.tc_no).replace(/\D/g, '');
     if (recordTcDigits) {
-      // 11 haneli tam TC eşleşmesi
       if (qDigits.length === 11 && recordTcDigits === qDigits) {
         return true;
       }
-      // Kullanıcı sadece rakamlardan oluşan bir sorgu yazdıysa ve en az 3 hane ise TC içinde ara
-      const isPureDigits = /^\d+$/.test(rawQ.replace(/\s+/g, ''));
-      if (isPureDigits && qDigits.length >= 3 && recordTcDigits.includes(qDigits)) {
+      if (recordTcDigits.includes(qDigits)) {
         return true;
       }
     }
   }
 
-  // 2. Hak Sahibi (Ad Soyad) Eşleşmesi
-  // Kullanıcının yazdığı her kelime, Hak Sahibi ad soyad alanında yer almalıdır
-  if (record.ad_soyad) {
-    const normTarget = normalizeTurkishNameForExactMatch(record.ad_soyad);
+  // Eğer kullanıcı sadece rakam girdiyse isim alanında aramaya gerek yok
+  if (isPureDigits) {
+    return false;
+  }
+
+  // 2. Hak Sahibi / Adı Soyadı Eşleşmesi (%100 Türkçe Karakter Uyumlu)
+  const rawName = record.ad_soyad || record.hak_sahibi || '';
+  if (rawName) {
+    const normTarget = normalizeTurkishNameForExactMatch(String(rawName));
     const normQuery = normalizeTurkishNameForExactMatch(rawQ);
 
     if (normTarget && normQuery) {
-      // Tam birebir eşitlik (örn: "ahmet yilmaz" === "ahmet yilmaz")
       if (normTarget === normQuery) {
         return true;
       }
 
       const queryTerms = normQuery.split(' ').filter(Boolean);
       if (queryTerms.length > 0) {
-        // Kullanıcının girdiği her arama terimi ad soyad içinde geçmelidir
+        // Kullanıcının girdiği her arama kelimesi (%100 Türkçe karakter uyumuyla) Ad Soyad içinde yer almalıdır
         const allTermsFound = queryTerms.every((term) => normTarget.includes(term));
         if (allTermsFound) {
           return true;
@@ -128,44 +138,42 @@ export function isBirebirBeneficiaryMatch(
 }
 
 /**
- * Builds a regex pattern that matches Turkish characters interchangeably with their Latin/English counterparts,
- * completely case-insensitively.
- *
- * Example:
- * 'yilmaz' -> '[yY][iıİIîÎ][lL][mM][aâÂA][zZ]'
- * 'öztürk' -> '[oöÖO][zZ][tT][uüÜUûÛ][rR][kK]'
+ * Builds a regex pattern that matches exact Turkish uppercase/lowercase pairs
+ * without conflating Turkish letters with ASCII letters (e.g., 'ı' -> '[ıI]', 'i' -> '[iİ]', 'ş' -> '[şŞ]', 's' -> '[sS]').
  */
 export function buildTurkishRegexPattern(text: string): string {
   if (!text) return '';
-  return text
+  return toExactTurkishLower(text)
     .split('')
     .map((ch) => {
       if (/\s/.test(ch)) return '\\s+';
-      const lower = ch.toLocaleLowerCase('tr-TR');
-      switch (lower) {
+      switch (ch) {
         case 'a':
-        case 'â':
-          return '[aâÂA]';
+          return '[aA]';
         case 'c':
+          return '[cC]';
         case 'ç':
-          return '[cçÇC]';
+          return '[çÇ]';
         case 'g':
+          return '[gG]';
         case 'ğ':
-          return '[gğĞG]';
+          return '[ğĞ]';
         case 'ı':
+          return '[ıI]';
         case 'i':
-        case 'î':
-          return '[iıİIîÎ]';
+          return '[iİ]';
         case 'o':
+          return '[oO]';
         case 'ö':
-          return '[oöÖO]';
+          return '[öÖ]';
         case 's':
+          return '[sS]';
         case 'ş':
-          return '[sşŞS]';
+          return '[şŞ]';
         case 'u':
+          return '[uU]';
         case 'ü':
-        case 'û':
-          return '[uüÜUûÛ]';
+          return '[üÜ]';
         default:
           return ch.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&');
       }
@@ -174,19 +182,18 @@ export function buildTurkishRegexPattern(text: string): string {
 }
 
 /**
- * Builds a multi-field, multi-word MongoDB query filter for Turkish search.
- * Splits the query into words, ensuring every word matches across at least one of the target fields.
+ * Builds a MongoDB query filter for exact Turkish character search across TC and Ad Soyad.
  */
 export function buildTurkishSearchFilter(
   query: string,
-  fields: string[] = ['tc_no', 'ad_soyad', 'telefon', 'telefon2', 'acik_adres', 'mahalle', 'hane_no', 'sokak']
+  fields: string[] = ['tc_no', 'ad_soyad']
 ): any {
   const terms = (query || '').trim().split(/\s+/).filter(Boolean);
   if (terms.length === 0) return {};
 
   const andClauses = terms.map((term) => {
     const pattern = buildTurkishRegexPattern(term);
-    const reg = new RegExp(pattern, 'i');
+    const reg = new RegExp(pattern);
     return {
       $or: fields.map((field) => ({ [field]: reg })),
     };
@@ -200,7 +207,7 @@ export function buildTurkishSearchFilter(
 
 /**
  * Checks whether a single target text contains all words in a query,
- * case-insensitively and respecting Turkish characters.
+ * 100% respecting Turkish character distinctions (ı !== i, ş !== s, ç !== c, ğ !== g, ö !== o, ü !== u).
  */
 export function turkishIncludes(target: string | null | undefined, query: string | null | undefined): boolean {
   if (!query || !query.trim()) return true;
@@ -214,12 +221,12 @@ export function turkishIncludes(target: string | null | undefined, query: string
 }
 
 /**
- * Checks whether an object record matches a search query across any of the specified fields.
- * Every word in the query must be found in at least one of the fields.
+ * Checks whether an object record matches a search query across the specified fields
+ * with 100% Turkish character fidelity.
  */
 export function turkishRecordMatches(
   record: Record<string, any>,
-  fields: string[],
+  fields: string[] = ['tc_no', 'ad_soyad'],
   query: string | null | undefined
 ): boolean {
   if (!query || !query.trim()) return true;
@@ -228,12 +235,7 @@ export function turkishRecordMatches(
   const terms = normalizeTurkishForSearch(query).split(' ').filter(Boolean);
   if (terms.length === 0) return true;
 
-  // Include telefon2 if present in record even if not explicitly passed
-  const targetFields = fields.includes('telefon') && !fields.includes('telefon2')
-    ? [...fields, 'telefon2']
-    : fields;
-
-  const combinedNormalized = targetFields
+  const combinedNormalized = fields
     .map((field) => normalizeTurkishForSearch(record[field]))
     .filter(Boolean)
     .join(' ');
