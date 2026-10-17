@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
           }
         ]).toArray(),
         histCol.countDocuments({ islem_tipi: 'IPTAL' }),
-        logsCol.countDocuments({}),
+        logsCol.countDocuments({ durum: { $ne: 'BILGI' } }),
       ]);
 
       if (benAggResult.length > 0) {
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
         gelenBrutTonaj += Number(t.brut_tonaj || 0);
       }
 
-      toplamHataSayisi = await logsCol.countDocuments({});
+      toplamHataSayisi = await logsCol.countDocuments({ durum: { $ne: 'BILGI' } });
     }
 
     const eksikKalanTorba = Math.max(0, toplamHedefTorba - toplamDagitilanTorba);

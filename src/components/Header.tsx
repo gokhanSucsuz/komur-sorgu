@@ -95,9 +95,7 @@ export default function Header({
     {
       id: 'import' as NavTab,
       label: 'Excel Aktarımı',
-      icon: FileSpreadsheet,
-      badge: importErrorsCount && importErrorsCount > 0 ? importErrorsCount : undefined,
-      badgeColor: 'bg-rose-600 text-white'
+      icon: FileSpreadsheet
     },
     {
       id: 'guide' as NavTab,

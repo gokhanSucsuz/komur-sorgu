@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
   Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
@@ -138,13 +138,12 @@ export default function ExcelImportPage({
   };
 
   const fetchLogs = async () => {
-    setIsLoadingLogs(true);
+    // Only show full loading skeleton on initial empty load so existing scroll height never collapses
+    if (logs.length === 0) {
+      setIsLoadingLogs(true);
+    }
     try {
-      let url = `/api/import/logs?durum=${selectedDurum}&q=${encodeURIComponent(searchLog)}`;
-      if (selectedBatch) {
-        url += `&batchId=${selectedBatch}`;
-      }
-      const res = await fetch(url);
+      const res = await fetch('/api/import/logs?durum=HEPSI');
       const data = await res.json();
       if (data.success) {
         setLogs(data.logs || []);
@@ -163,7 +162,46 @@ export default function ExcelImportPage({
       fetchLogs();
       fetchUploadedBatches();
     }
-  }, [userRole, selectedBatch, selectedDurum, searchLog]);
+  }, [userRole]);
+
+  const computedLogStats = useMemo(() => {
+    const baseList = selectedBatch
+      ? logs.filter((l: any) => l.batch_id === selectedBatch)
+      : logs;
+    let mukerrerTc = 0;
+    let mukerrerHane = 0;
+    let eksikHatali = 0;
+    for (const l of baseList) {
+      if (l.durum === 'MUKERRER_TC') mukerrerTc++;
+      else if (l.durum === 'MUKERRER_HANE') mukerrerHane++;
+      else if (l.durum === 'HATALI') eksikHatali++;
+    }
+    return {
+      toplamHata: baseList.length,
+      mukerrerTc,
+      mukerrerHane,
+      eksikHatali,
+    };
+  }, [logs, selectedBatch]);
+
+  const filteredLogs = useMemo(() => {
+    const q = searchLog.trim();
+    return logs.filter((item: any) => {
+      if (selectedBatch && item.batch_id !== selectedBatch) return false;
+      if (selectedDurum && selectedDurum !== 'HEPSI' && item.durum !== selectedDurum) return false;
+      if (q) {
+        if (isBirebirBeneficiaryMatch(item, q)) return true;
+        if (
+          (item.cakisan_tc || item.cakisan_ad_soyad) &&
+          isBirebirBeneficiaryMatch({ tc_no: item.cakisan_tc, ad_soyad: item.cakisan_ad_soyad }, q)
+        ) {
+          return true;
+        }
+        return false;
+      }
+      return true;
+    });
+  }, [logs, selectedBatch, selectedDurum, searchLog]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -959,45 +997,59 @@ export default function ExcelImportPage({
         </div>
 
         {/* Error Stats Badges */}
-        {logStats && (
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => setSelectedDurum('MUKERRER_TC')}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                selectedDurum === 'MUKERRER_TC'
-                  ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-xs'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <span className="text-[10px] uppercase font-bold block text-slate-500">Mükerrer TC</span>
-              <span className="text-xl font-black text-amber-800">{logStats.mukerrerTc || 0}</span>
-            </button>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button
+            type="button"
+            onClick={() => setSelectedDurum('HEPSI')}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              selectedDurum === 'HEPSI'
+                ? 'bg-slate-100 border-slate-400 text-slate-900 shadow-xs'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-[10px] uppercase font-bold block text-slate-500">Tüm Durumlar</span>
+            <span className="text-xl font-black text-slate-900">{computedLogStats.toplamHata || 0}</span>
+          </button>
 
-            <button
-              onClick={() => setSelectedDurum('MUKERRER_HANE')}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                selectedDurum === 'MUKERRER_HANE'
-                  ? 'bg-purple-50 border-purple-300 text-purple-900 shadow-xs'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <span className="text-[10px] uppercase font-bold block text-slate-500">Mükerrer Hane</span>
-              <span className="text-xl font-black text-purple-800">{logStats.mukerrerHane || 0}</span>
-            </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDurum(selectedDurum === 'MUKERRER_TC' ? 'HEPSI' : 'MUKERRER_TC')}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              selectedDurum === 'MUKERRER_TC'
+                ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-xs'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-[10px] uppercase font-bold block text-slate-500">Mükerrer TC</span>
+            <span className="text-xl font-black text-amber-800">{computedLogStats.mukerrerTc || 0}</span>
+          </button>
 
-            <button
-              onClick={() => setSelectedDurum('HATALI')}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                selectedDurum === 'HATALI'
-                  ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-xs'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <span className="text-[10px] uppercase font-bold block text-slate-500">Eksik/Geçersiz</span>
-              <span className="text-xl font-black text-rose-700">{logStats.eksikHatali || 0}</span>
-            </button>
-          </div>
-        )}
+          <button
+            type="button"
+            onClick={() => setSelectedDurum(selectedDurum === 'MUKERRER_HANE' ? 'HEPSI' : 'MUKERRER_HANE')}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              selectedDurum === 'MUKERRER_HANE'
+                ? 'bg-purple-50 border-purple-300 text-purple-900 shadow-xs'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-[10px] uppercase font-bold block text-slate-500">Mükerrer Hane</span>
+            <span className="text-xl font-black text-purple-800">{computedLogStats.mukerrerHane || 0}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedDurum(selectedDurum === 'HATALI' ? 'HEPSI' : 'HATALI')}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              selectedDurum === 'HATALI'
+                ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-xs'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-[10px] uppercase font-bold block text-slate-500">Eksik/Geçersiz</span>
+            <span className="text-xl font-black text-rose-700">{computedLogStats.eksikHatali || 0}</span>
+          </button>
+        </div>
 
         {/* Filter & Search Bar */}
         <div className="flex flex-col sm:flex-row gap-2">
@@ -1007,7 +1059,7 @@ export default function ExcelImportPage({
               type="text"
               value={searchLog}
               onChange={(e) => setSearchLog(e.target.value)}
-              placeholder="Hak sahibi, TC, adres veya hata nedeninde ara..."
+              placeholder="Hak sahibi adı soyadı veya TC kimlik no ile ara..."
               className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-400 text-xs focus:outline-none focus:border-amber-500 font-medium"
             />
           </div>
@@ -1032,24 +1084,24 @@ export default function ExcelImportPage({
               onChange={(e) => setSelectedDurum(e.target.value)}
               className="px-2.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500"
             >
-              <option value="HEPSI">Tüm Durumlar</option>
-              <option value="MUKERRER_TC">Mükerrer TC</option>
-              <option value="MUKERRER_HANE">Mükerrer Hane/Adres</option>
-              <option value="HATALI">Eksik/Geçersiz</option>
+              <option value="HEPSI">Tüm Durumlar ({computedLogStats.toplamHata || 0})</option>
+              <option value="MUKERRER_TC">Mükerrer TC ({computedLogStats.mukerrerTc || 0})</option>
+              <option value="MUKERRER_HANE">Mükerrer Hane ({computedLogStats.mukerrerHane || 0})</option>
+              <option value="HATALI">Eksik/Geçersiz ({computedLogStats.eksikHatali || 0})</option>
             </select>
           </div>
         </div>
 
         {/* Logs List - Light Mode */}
-        {isLoadingLogs ? (
+        {isLoadingLogs && logs.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs font-semibold">Kayıtlar yükleniyor...</div>
-        ) : logs.length === 0 ? (
+        ) : filteredLogs.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-xs font-medium shadow-xs">
-            Sorunlu veya elenen kayıt bulunmuyor.
+            Seçilen filtreye uygun sorunlu veya elenen kayıt bulunmuyor.
           </div>
         ) : (
           <div className="space-y-2">
-            {logs.map((item) => (
+            {filteredLogs.map((item) => (
               <div
                 key={item.id}
                 className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all space-y-2 shadow-xs"

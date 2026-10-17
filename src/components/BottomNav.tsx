@@ -61,9 +61,7 @@ export default function BottomNav({
     {
       id: 'import' as NavTab,
       label: 'Excel',
-      icon: FileSpreadsheet,
-      badge: importErrorsCount && importErrorsCount > 0 ? importErrorsCount : undefined,
-      badgeColor: 'bg-rose-600 text-white'
+      icon: FileSpreadsheet
     },
     {
       id: 'guide' as NavTab,
