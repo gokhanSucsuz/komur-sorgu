@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes } from '@/lib/normalizer';
 
@@ -22,6 +22,7 @@ export default function TonnagePage({
   const todayDefault = () => new Date().toISOString().split('T')[0];
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [plaka, setPlaka] = useState('');
   const [dorsePlaka, setDorsePlaka] = useState('');
@@ -61,11 +62,32 @@ export default function TonnagePage({
     setNotlar(t.notlar || '');
     setBrutTonaj(t.brut_tonaj !== undefined && t.brut_tonaj !== null ? String(t.brut_tonaj) : '');
     setNetTonaj(t.net_tonaj !== undefined && t.net_tonaj !== null ? String(t.net_tonaj) : '');
-    setIrsaliyeNo('');
+    if (!editingTruckId) {
+      setIrsaliyeNo('');
+    }
     if (t.ocak_cikis_tarihi) {
       setOcakCikisTarihi(t.ocak_cikis_tarihi);
     }
     setErrorMsg('');
+  };
+
+  // Open modal in Edit Mode for an existing truck record
+  const openEditTruckModal = (t: any) => {
+    if (!t) return;
+    setEditingTruckId(String(t.id || t._id));
+    setSelectedTemplateId('');
+    setTirSirasi(Number(t.tir_sirasi) || 1);
+    setPlaka((t.plaka || '').toUpperCase());
+    setDorsePlaka((t.dorse_plaka || '').toUpperCase());
+    setIrsaliyeNo((t.irsaliye_no || '').toLocaleUpperCase('tr-TR'));
+    setOcakCikisTarihi(t.ocak_cikis_tarihi || t.tarih || todayDefault());
+    setTarih(t.tarih || todayDefault());
+    setBrutTonaj(t.brut_tonaj !== undefined && t.brut_tonaj !== null ? String(t.brut_tonaj) : '');
+    setNetTonaj(t.net_tonaj !== undefined && t.net_tonaj !== null ? String(t.net_tonaj) : '');
+    setSoforAdi(t.sofor_adi || '');
+    setNotlar(t.notlar || '');
+    setErrorMsg('');
+    setShowAddModal(true);
   };
 
   // Normalize waybill number for primary/unique key check
@@ -80,12 +102,17 @@ export default function TonnagePage({
     const normInput = normalizeIrsaliyeClient(irsaliyeNo);
     if (!normInput) return null;
     return (
-      trucks.find((t: any) => normalizeIrsaliyeClient(t.irsaliye_no) === normInput) || null
+      trucks.find(
+        (t: any) =>
+          String(t.id || t._id) !== String(editingTruckId || '') &&
+          normalizeIrsaliyeClient(t.irsaliye_no) === normInput
+      ) || null
     );
-  }, [irsaliyeNo, trucks]);
+  }, [irsaliyeNo, trucks, editingTruckId]);
 
   const resetAddForm = () => {
     const todayStr = todayDefault();
+    setEditingTruckId(null);
     setSelectedTemplateId('');
     setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
     setPlaka('');
@@ -308,10 +335,12 @@ export default function TonnagePage({
     setErrorMsg('');
 
     try {
+      const isEdit = Boolean(editingTruckId);
       const res = await fetch('/api/trucks', {
-        method: 'POST',
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(isEdit ? { id: editingTruckId } : {}),
           tir_sirasi: tirSirasi,
           plaka,
           dorse_plaka: dorsePlaka,
@@ -327,8 +356,14 @@ export default function TonnagePage({
 
       const data = await res.json();
       if (!data.success) {
-        throw new Error(data.error || 'Tır kaydı eklenemedi');
+        throw new Error(data.error || (isEdit ? 'Tır kaydı güncellenemedi' : 'Tır kaydı eklenemedi'));
       }
+
+      showToast({
+        type: 'success',
+        title: isEdit ? 'Tır Kaydı Güncellendi' : 'Yeni Tır Kaydedildi',
+        message: `"${plaka.toUpperCase()}" plakalı tır (${netVal} Ton) ${isEdit ? 'güncellendi' : 'kaydedildi'}.`,
+      });
 
       setShowAddModal(false);
       resetAddForm();
@@ -659,7 +694,17 @@ export default function TonnagePage({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
+                      onClick={() => openEditTruckModal(t)}
+                      title="Bu tır kaydının bilgilerini düzenle"
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
+                    >
+                      <Pencil className="w-3 h-3 text-slate-600" />
+                      <span>Düzenle</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
+                        setEditingTruckId(null);
                         setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
                         const todayStr = todayDefault();
                         setTarih(todayStr);
@@ -737,7 +782,7 @@ export default function TonnagePage({
         </div>
       )}
 
-      {/* Add Truck Modal - Light Mode */}
+      {/* Add / Edit Truck Modal - Light Mode */}
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
@@ -747,8 +792,14 @@ export default function TonnagePage({
                   <Truck className="w-5 h-5 text-amber-700" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-900">Yeni Gelen Tır Kaydı</h3>
-                  <p className="text-xs text-slate-500">Kömür sevkiyatı, dorse plakası ve tonaj girişi</p>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {editingTruckId ? `Tır Kaydını Düzenle (#${tirSirasi})` : 'Yeni Gelen Tır Kaydı'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {editingTruckId
+                      ? 'Mevcut tır sevkiyatı, plaka, tarih ve tonaj bilgilerini güncelleyin'
+                      : 'Kömür sevkiyatı, dorse plakası ve tonaj girişi'}
+                  </p>
                 </div>
               </div>
               <button
@@ -766,8 +817,8 @@ export default function TonnagePage({
               </div>
             )}
 
-            {/* ÖNCEKİ KAYITLARDAN TEK TIKLA ŞABLON DOLDURMA ALANI */}
-            {trucks.length > 0 && (
+            {/* ÖNCEKİ KAYITLARDAN TEK TIKLA ŞABLON DOLDURMA ALANI (Sadece Yeni Kayıt Modunda) */}
+            {!editingTruckId && trucks.length > 0 && (
               <div className="p-3 mb-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950">
@@ -1048,7 +1099,13 @@ export default function TonnagePage({
                   disabled={isSubmitting || Boolean(duplicateIrsaliyeTruck)}
                   className="btn-primary flex-1 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSubmitting ? 'Kaydediliyor...' : duplicateIrsaliyeTruck ? 'Mükerrer İrsaliye No!' : 'Tırı Kaydet'}
+                  {isSubmitting
+                    ? 'Kaydediliyor...'
+                    : duplicateIrsaliyeTruck
+                      ? 'Mükerrer İrsaliye No!'
+                      : editingTruckId
+                        ? 'Değişiklikleri Kaydet'
+                        : 'Tırı Kaydet'}
                 </button>
               </div>
             </form>

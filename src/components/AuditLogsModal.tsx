@@ -20,7 +20,8 @@ import {
   Calendar,
   CheckCircle2,
   Trash2,
-  Phone
+  Phone,
+  Truck
 } from 'lucide-react';
 
 interface AuditLogsModalProps {
@@ -115,6 +116,19 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
           icon: <RouteIcon className="w-3.5 h-3.5 text-sky-700" />,
           label: 'Rota Hareketi',
           className: 'bg-sky-100 text-sky-900 border-sky-300',
+        };
+      case 'TIR_GIRIS':
+      case 'TIR_GUNCELLEME':
+        return {
+          icon: <Truck className="w-3.5 h-3.5 text-amber-700" />,
+          label: tip === 'TIR_GUNCELLEME' ? 'Tır Güncelleme' : 'Tır & Tonaj Girişi',
+          className: 'bg-amber-100 text-amber-950 border-amber-300',
+        };
+      case 'TIR_SILME':
+        return {
+          icon: <Trash2 className="w-3.5 h-3.5 text-rose-700" />,
+          label: 'Tır Kaydı Silme',
+          className: 'bg-rose-100 text-rose-900 border-rose-300',
         };
       case 'EXCEL_YUKLEME':
         return {
@@ -255,6 +269,7 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
               <option value="EKSIK_TESLIMAT">Yalnızca Eksik Teslimatlar</option>
               <option value="IPTAL">İptal Edilen Teslimatlar</option>
               <option value="ROTA">Rota İşlemleri</option>
+              <option value="TIR">Tır & Tonaj İşlemleri</option>
               <option value="EXCEL">Excel Yükleme & Geri Alma</option>
               <option value="MESAI">Mesai Başlat / Bitir</option>
               <option value="KOTA_DEGISTIRME">Kota Değişiklikleri</option>

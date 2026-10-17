@@ -391,26 +391,10 @@ export async function POST(request: NextRequest) {
     const settlement = detectSettlement(mahalle, body.koy, acik_adres);
     const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, cleanedHaneNo, settlement.name);
     const normAdres = normalizeAddress(settlement.name, acik_adres);
-    const normHash = hashAddress(normAdres);
 
-    let householdWarning: string | null = null;
-    if (normHash || normAdres) {
-      const addressOrList: any[] = [];
-      if (normHash) addressOrList.push({ adres_hash: normHash });
-      if (normAdres) addressOrList.push({ norm_adres: normAdres });
-
-      const existingAddressDoc = await benCol.findOne({ $or: addressOrList });
-      if (existingAddressDoc) {
-        const decAddress = mapDoc(existingAddressDoc);
-        const cleanExistingName = cleanTurkishText(decAddress.ad_soyad).replace(/[^a-z0-9]/g, '');
-        const cleanNewName = cleanTurkishText(ad_soyad).replace(/[^a-z0-9]/g, '');
-        const isSameName = cleanExistingName && cleanNewName && cleanExistingName === cleanNewName;
-
-        householdWarning = isSameName
-          ? `Aynı Adreste Aynı İsimli Birey: ${decAddress.ad_soyad} (TC: ${decAddress.tc_no})`
-          : `Aynı Adreste Diğer Birey: ${decAddress.ad_soyad} (TC: ${decAddress.tc_no})`;
-      }
-    }
+    // Not: Gecekonduların veya müstakil yapıların yoğun olduğu bölgelerde
+    // aynı adreste farklı TC Kimlik numarasına sahip birden fazla aile ikamet edebilmektedir.
+    // TC Kimlik No ve Hane No kontrolleri yukarıda yapıldığından, aynı adresli farklı TC'ler hata/uyarı olarak işaretlenmez.
 
     const phones = extractPhoneNumbers(telefon, telefon2);
 
@@ -439,8 +423,8 @@ export async function POST(request: NextRequest) {
       teslim_alan: null,
       teslim_eden_personel: null,
       teslimat_notu: null,
-      uyarilar: householdWarning ? [householdWarning] : [],
-      uyari_notu: householdWarning,
+      uyarilar: [],
+      uyari_notu: null,
       created_at: nowStr,
       updated_at: nowStr,
     };

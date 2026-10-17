@@ -410,24 +410,33 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
       title: '8. Kömür Tonajı, Tır Girişleri ve Depo Stok Takibi',
       badge: 'DEPO YÖNETİMİ',
       badgeColor: 'bg-slate-100 text-slate-700 border-slate-300',
-      description: 'Kantar fişleri ile kömür tırı kaydı, toplam gelen tonaj ve sahada dağıtılan kömürün stok mutabakatı.',
+      description: 'Kantar fişleri, dorse plakası, ocak çıkış tarihi, birincil irsaliye kontrolü, tek tıkla şablon doldurma ve stok mutabakatı.',
       content: (
         <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
           <p>
-            Kömür ocaklarından depoya gelen sevkiyatlar ve sahada dağıtılan kömür miktarı anlık olarak karşılaştırılır.
+            Kömür ocaklarından depoya gelen sevkiyatlar ve sahada dağıtılan kömür miktarı anlık olarak karşılaştırılır; tüm tır işlemleri (ekleme, düzenleme, silme) denetim loglarına kaydedilir.
           </p>
 
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-            <h5 className="font-bold text-slate-900 text-xs mb-1">Kantar Fişi Kaydı:</h5>
-            <p className="text-[11px] text-slate-600">
-              Depoya gelen her tır için Araç Plakası, İrsaliye No, Ocak Adı ve Net Kantar Tonajı girilir.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+              <h5 className="font-bold text-slate-900 text-xs mb-1">Kantar Fişi, Dorse & Ocak Çıkış Tarihi:</h5>
+              <p className="text-[11px] text-slate-600">
+                Her tır için <strong>Çekici Plakası</strong>, <strong>Dorse Plakası</strong>, <strong>Ocaktan Yükleme/Çıkış Tarihi</strong>, <strong>Sahaya Geliş Tarihi</strong>, <strong>Şoför Adı</strong> ve Brüt/Net Tonaj kaydedilir. İrsaliye / Teslimat No <strong>birincil anahtardır</strong>; aynı irsaliye numarasıyla mükerrer kayıt açılamaz.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200">
+              <h5 className="font-bold text-amber-950 text-xs mb-1">Tek Tıkla Şablon Doldurma & Düzenleme:</h5>
+              <p className="text-[11px] text-amber-800">
+                Aynı tır tekrar geldiğinde <strong>&quot;Şablon Al&quot;</strong> butonuyla plaka, dorse ve şoför bilgileri tek tıkla forma doldurulur. Kayıt sonrası olası yazım hataları <strong>&quot;Düzenle&quot;</strong> butonuyla silmeye gerek kalmadan güncellenebilir.
+              </p>
+            </div>
           </div>
 
           <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900">
-            <h5 className="font-bold text-xs text-blue-950 mb-1">Otomatik Depo Stok Hesabı:</h5>
+            <h5 className="font-bold text-xs text-blue-950 mb-1">Otomatik Depo Stok Hesabı & Türkçe Uyumlu Filtreleme:</h5>
             <p className="text-[11px] text-blue-800">
-              <strong>Depodaki Kalan Kömür</strong> = Gelen Toplam Kömür Tonajı - Sahada Hanelere Dağıtılan Kömür Tonajı formülü ile hiçbir fire ve açık olmadan otomatik hesaplanır.
+              <strong>Depodaki Kalan Kömür</strong> = Gelen Toplam Kömür Tonajı - Sahada Hanelere Dağıtılan Kömür Tonajı formülü ile otomatik hesaplanır. Tonaj sayfasındaki <strong>Ara / Bul / Filtrele</strong> paneliyle plaka, dorse, şoför, irsaliye ve tarih aralığına göre %100 Türkçe karakter uyumlu sorgulama yapılabilir.
             </p>
           </div>
         </div>
@@ -461,9 +470,9 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
           </div>
 
           <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-            <h5 className="font-bold text-xs text-emerald-950 mb-1">Akıllı Normalizasyon:</h5>
+            <h5 className="font-bold text-xs text-emerald-950 mb-1">Akıllı Normalizasyon & Çoklu Aile / Gecekondu Uyumu:</h5>
             <p className="text-[11px] text-emerald-800">
-              Yüklenen Excel dosyasındaki telefon numaralarında boşluk veya parantez olsa dahi sistem bunu otomatik olarak <code>05XXXXXXXXX</code> formatına dönüştürür.
+              Telefon numaraları otomatik olarak <code>05XXXXXXXXX</code> formatına dönüştürülür. TC Kimlik No ve Hane No benzersizliği sıkı denetlenirken, gecekondu ve müstakil bölgelerde <strong>aynı adreste ikamet eden farklı TC Kimlik numaralı aileler</strong> hata olarak işaretlenmeden sorunsuz kaydedilir.
             </p>
           </div>
         </div>

@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
         filter.islem_tipi = { $in: ['EXCEL_YUKLEME', 'EXCEL_SILME'] };
       } else if (islemTipi === 'MESAI') {
         filter.islem_tipi = { $in: ['MESAI_BASLAT', 'MESAI_BITIR', 'MESAI_GIRIS'] };
+      } else if (islemTipi === 'TIR') {
+        filter.islem_tipi = { $in: ['TIR_GIRIS', 'TIR_GUNCELLEME', 'TIR_SILME'] };
       } else {
         filter.islem_tipi = islemTipi;
       }

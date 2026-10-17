@@ -18,7 +18,23 @@ import { cleanTcNo, cleanHaneKey, normalizeAddress } from './normalizer';
 const DEFAULT_FALLBACK_KEY = 'acb6847010f6d2060e9fc8d875300e51d549e8732c4be718123746c231789ad9';
 const DEFAULT_FALLBACK_BLIND_KEY = 'aa1f4c899c6f92db4dba712e678e3a908ff06aaadb57a7a578d2d958c0440782';
 
+let hasWarnedMissingEnvKey = false;
+
+function warnIfProductionFallbackKeyUsed() {
+  if (
+    !hasWarnedMissingEnvKey &&
+    process.env.NODE_ENV === 'production' &&
+    !process.env.ENCRYPTION_MASTER_KEY
+  ) {
+    hasWarnedMissingEnvKey = true;
+    console.warn(
+      '[Security Warning] ENCRYPTION_MASTER_KEY ortam değişkeni tanımlanmamış! Üretim ortamında maksimum güvenlik için ENCRYPTION_MASTER_KEY tanımlanmalıdır.'
+    );
+  }
+}
+
 function getMasterKeyBuffer(): Buffer {
+  warnIfProductionFallbackKeyUsed();
   const hexKey = (process.env.ENCRYPTION_MASTER_KEY || DEFAULT_FALLBACK_KEY).trim();
   if (hexKey.length === 64) {
     return Buffer.from(hexKey, 'hex');
@@ -27,6 +43,7 @@ function getMasterKeyBuffer(): Buffer {
 }
 
 function getBlindIndexKeyBuffer(): Buffer {
+  warnIfProductionFallbackKeyUsed();
   const hexKey = (process.env.BLIND_INDEX_KEY || DEFAULT_FALLBACK_BLIND_KEY).trim();
   if (hexKey.length === 64) {
     return Buffer.from(hexKey, 'hex');
@@ -221,9 +238,13 @@ export function decryptBeneficiary(doc: any): any {
   }
 
   if (Array.isArray(cloned.uyarilar)) {
-    cloned.uyarilar = cloned.uyarilar.map((u: any) =>
-      typeof u === 'string' && isEncrypted(u) ? decryptField(u) : u
-    );
+    cloned.uyarilar = cloned.uyarilar
+      .map((u: any) => (typeof u === 'string' && isEncrypted(u) ? decryptField(u) : u))
+      .filter((u: any) => typeof u !== 'string' || !u.startsWith('Aynı Adreste'));
+  }
+
+  if (typeof cloned.uyari_notu === 'string' && cloned.uyari_notu.startsWith('Aynı Adreste')) {
+    cloned.uyari_notu = null;
   }
 
   return cloned;
