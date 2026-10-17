@@ -282,6 +282,17 @@ export default function RoutePage({
     wasLockedRef.current = isRouteLockedByOther;
   }, [isRouteLockedByOther, activeRoute]);
 
+  // KURAL: Yalnızca imzası alınmış, kömürü teslim edilmemiş ve başka aktif rotada olmayan hanelerle yeni rota başlatılabilir
+  const availableSignedBeneficiaries = useMemo(() => {
+    return (signedBeneficiaries || []).filter(
+      (b: any) =>
+        b.imza_durumu === 'IMZALANDI' &&
+        b.teslimat_durumu !== 'TAMAMLANDI' &&
+        b.teslimat_durumu !== 'TESLIM_EDILDI' &&
+        !activeAssignedSet.has(String(b.id))
+    );
+  }, [signedBeneficiaries, activeAssignedSet]);
+
   // Open Create Route Modal
   const handleOpenCreateModal = async () => {
     const todayStr = new Date().toLocaleDateString('tr-TR');
@@ -292,24 +303,51 @@ export default function RoutePage({
     setNewRouteNote('');
 
     try {
-      const res = await fetch('/api/routes');
+      const res = await fetch(`/api/routes?_t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
       if (data.success && data.signedBeneficiaries) {
         setSignedBeneficiaries(data.signedBeneficiaries);
-        // Exclude beneficiaries that are already assigned to an ongoing active route
+        // Exclude beneficiaries that are already assigned to an ongoing active route or already delivered
         const availableSigned = (data.signedBeneficiaries || []).filter(
-          (b: any) => !activeAssignedSet.has(String(b.id))
+          (b: any) =>
+            b.imza_durumu === 'IMZALANDI' &&
+            b.teslimat_durumu !== 'TAMAMLANDI' &&
+            b.teslimat_durumu !== 'TESLIM_EDILDI' &&
+            !activeAssignedSet.has(String(b.id))
         );
-        if (availableSigned.length > 0) {
-          setCreateSelectionTab('SIGNED');
-          setSelectedBeneficiaryIds(availableSigned.map((b: any) => String(b.id)));
-        } else {
-          setCreateSelectionTab('ALL');
-          setSelectedBeneficiaryIds([]);
+
+        if (availableSigned.length === 0) {
+          showAlert({
+            title: 'İmzalı Hane Bulunamadı',
+            message:
+              'İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz.\n\nLütfen önce Sorgu ekranından teslimat yapılacak hanelerin imzasını alınız.',
+            type: 'warning'
+          });
+          return;
         }
+
+        setCreateSelectionTab('SIGNED');
+        setSelectedBeneficiaryIds(availableSigned.map((b: any) => String(b.id)));
+      } else if (availableSignedBeneficiaries.length === 0) {
+        showAlert({
+          title: 'İmzalı Hane Bulunamadı',
+          message:
+            'İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz.\n\nLütfen önce Sorgu ekranından teslimat yapılacak hanelerin imzasını alınız.',
+          type: 'warning'
+        });
+        return;
       }
     } catch (e) {
       console.error(e);
+      if (availableSignedBeneficiaries.length === 0) {
+        showAlert({
+          title: 'İmzalı Hane Bulunamadı',
+          message:
+            'İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz.',
+          type: 'warning'
+        });
+        return;
+      }
     }
     setCreateModalStep('SELECT');
     setShowCreateModal(true);
@@ -1362,20 +1400,20 @@ export default function RoutePage({
     }
   };
 
-  // Filter beneficiaries in Create Modal (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
+  // Filter beneficiaries in Create Modal (Yalnızca İmzası Alınmış & Teslim Edilmemiş haneler ve TC/Ad-Soyad %100 Türkçe arama)
   const modalDisplayList = useMemo(() => {
-    const list = createSelectionTab === 'SIGNED' ? signedBeneficiaries : allPendingBeneficiaries;
+    const list = availableSignedBeneficiaries;
     if (!createSearchQuery.trim()) return list;
     return list.filter((b) => isBirebirBeneficiaryMatch(b, createSearchQuery));
-  }, [createSelectionTab, signedBeneficiaries, allPendingBeneficiaries, createSearchQuery]);
+  }, [availableSignedBeneficiaries, createSearchQuery]);
 
   // Fast map to lookup beneficiaries by ID
   const allBeneficiariesMap = useMemo(() => {
     const map = new Map<string, any>();
-    allPendingBeneficiaries.forEach((b) => map.set(String(b.id), b));
+    availableSignedBeneficiaries.forEach((b) => map.set(String(b.id), b));
     signedBeneficiaries.forEach((b) => map.set(String(b.id), b));
     return map;
-  }, [allPendingBeneficiaries, signedBeneficiaries]);
+  }, [availableSignedBeneficiaries, signedBeneficiaries]);
 
   // Ordered list of selected stops for create modal
   const orderedCreateStops = useMemo(() => {
@@ -1554,7 +1592,7 @@ export default function RoutePage({
                   Şu Anda Devam Eden Bir Rota Yok
                 </h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  Kamyon teslimatı için bugün kapıda imzası toplanan vatandaşlardan veya seçtiğiniz sokaklardan sıralı dağıtım rotası oluşturabilirsiniz.
+                  Kamyon teslimatı için yalnızca kapıda imzası alınmış ve kömürü henüz teslim edilmemiş hanelerden sıralı dağıtım rotası oluşturulabilir.
                 </p>
               </div>
 
@@ -1563,10 +1601,10 @@ export default function RoutePage({
                 <div className="flex items-center gap-2">
                   <PenTool className="w-4 h-4 text-amber-700 shrink-0" />
                   <span>
-                    Bugün Kapıda İmzası Alınan: <strong>{signedBeneficiaries.length} Hane Hazır</strong>
+                    Bugün Kapıda İmzası Alınan: <strong>{availableSignedBeneficiaries.length} Hane Hazır</strong>
                   </span>
                 </div>
-                {signedBeneficiaries.length === 0 && onNavigateToSearch && (
+                {availableSignedBeneficiaries.length === 0 && onNavigateToSearch && (
                   <button
                     type="button"
                     onClick={onNavigateToSearch}
@@ -1577,15 +1615,30 @@ export default function RoutePage({
                 )}
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
                 <button
                   type="button"
                   onClick={handleOpenCreateModal}
-                  className="btn-primary w-full max-w-md mx-auto py-3 text-sm font-black flex items-center justify-center gap-2 shadow-sm"
+                  disabled={availableSignedBeneficiaries.length === 0}
+                  className={`w-full max-w-md mx-auto py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all ${
+                    availableSignedBeneficiaries.length > 0
+                      ? 'btn-primary shadow-sm cursor-pointer'
+                      : 'bg-slate-200 text-slate-500 border border-slate-300 opacity-60 cursor-not-allowed'
+                  }`}
                 >
                   <Plus className="w-5 h-5" />
-                  <span>Yeni Dağıtım Rotası Başlat</span>
+                  <span>
+                    {availableSignedBeneficiaries.length > 0
+                      ? `Yeni Dağıtım Rotası Başlat (${availableSignedBeneficiaries.length} İmzalı Hane)`
+                      : 'Yeni Dağıtım Rotası Başlatılamaz (0 İmzalı Hane)'}
+                  </span>
                 </button>
+
+                {availableSignedBeneficiaries.length === 0 && (
+                  <p className="text-[11px] font-semibold text-rose-700 max-w-md mx-auto">
+                    İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -1604,10 +1657,24 @@ export default function RoutePage({
                 <button
                   type="button"
                   onClick={handleOpenCreateModal}
-                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                  disabled={availableSignedBeneficiaries.length === 0}
+                  title={
+                    availableSignedBeneficiaries.length === 0
+                      ? 'İmzası alınmış ve kömürü teslim edilmemiş yeni hane bulunmadığı için yeni rota başlatılamaz'
+                      : 'Yeni dağıtım rotası başlat'
+                  }
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                    availableSignedBeneficiaries.length > 0
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs active:scale-95 cursor-pointer'
+                      : 'bg-slate-200 text-slate-500 border border-slate-300 opacity-60 cursor-not-allowed'
+                  }`}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ Yeni Ekip / Rota Başlat</span>
+                  <span>
+                    {availableSignedBeneficiaries.length > 0
+                      ? `+ Yeni Ekip / Rota Başlat (${availableSignedBeneficiaries.length} Hazır)`
+                      : 'Yeni Rota Başlatılamaz (0 İmzalı Hane)'}
+                  </span>
                 </button>
               </div>
 
@@ -2686,38 +2753,12 @@ export default function RoutePage({
             {/* ADIM 1: HANE SEÇİMİ */}
             {createModalStep === 'SELECT' && (
               <>
-                {/* Hane Kaynak Seçimi: İmzası Alınanlar vs Tüm Kalanlar */}
-                <div className="p-1 bg-slate-100 rounded-xl border border-slate-200 grid grid-cols-2 gap-1 mb-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCreateSelectionTab('SIGNED');
-                      if (signedBeneficiaries.length > 0) {
-                        setSelectedBeneficiaryIds(signedBeneficiaries.map((b) => String(b.id)));
-                      }
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 ${
-                      createSelectionTab === 'SIGNED'
-                        ? 'bg-white text-slate-900 shadow-sm font-black'
-                        : 'text-slate-600'
-                    }`}
-                  >
-                    <PenTool className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>İmzası Alınanlar ({signedBeneficiaries.length})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCreateSelectionTab('ALL')}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 ${
-                      createSelectionTab === 'ALL'
-                        ? 'bg-white text-slate-900 shadow-sm font-black'
-                        : 'text-slate-600'
-                    }`}
-                  >
-                    <Users className="w-3.5 h-3.5 text-sky-600" />
-                    <span>Tüm Bekleyenler</span>
-                  </button>
+                {/* Hane Kaynak Bilgisi: Yalnızca İmzası Alınmış ve Teslim Edilmemiş Haneler */}
+                <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between gap-2 mb-2.5">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-900">
+                    <PenTool className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>İmzası Alınan &amp; Teslimat Bekleyen Haneler ({availableSignedBeneficiaries.length})</span>
+                  </div>
                 </div>
 
                 {/* Arama & Toplu Seçim */}
@@ -2738,7 +2779,7 @@ export default function RoutePage({
                     onClick={() => handleSelectAllInView(modalDisplayList)}
                     className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 shrink-0"
                   >
-                    {modalDisplayList.every((b) => selectedBeneficiaryIds.includes(String(b.id))) ? (
+                    {modalDisplayList.length > 0 && modalDisplayList.every((b) => selectedBeneficiaryIds.includes(String(b.id))) ? (
                       <>
                         <CheckSquare className="w-3.5 h-3.5 text-sky-600" />
                         <span>Seçimi Kaldır</span>
@@ -2803,9 +2844,7 @@ export default function RoutePage({
 
                   {modalDisplayList.length === 0 && (
                     <div className="p-6 text-center text-xs text-slate-500">
-                      {createSelectionTab === 'SIGNED'
-                        ? 'Henüz imzası alınan hane bulunamadı. "Tüm Bekleyenler" sekmesinden hane ekleyebilirsiniz.'
-                        : 'Eşleşen kayıt bulunamadı.'}
+                      İmzası alınmış ve kömürü teslim edilmemiş eşleşen hane bulunamadı.
                     </div>
                   )}
                 </div>

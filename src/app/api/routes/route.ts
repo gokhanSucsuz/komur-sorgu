@@ -73,11 +73,11 @@ export async function GET(request: NextRequest) {
     });
 
     // 3. Fetch beneficiaries with signed status (ready for route)
-    // Citizens whose signature is taken today or pending delivery
+    // Citizens whose signature is taken and coal is not yet delivered
     const pendingSignedDocs = await benCol
       .find({
         imza_durumu: 'IMZALANDI',
-        teslimat_durumu: { $ne: 'TAMAMLANDI' }
+        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI'] }
       })
       .toArray();
     const signedBeneficiaries = mapDocs(pendingSignedDocs).sort(compareByAddressAsc);
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
       } = body;
 
       if (!beneficiary_ids || beneficiary_ids.length === 0) {
-        return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir hane seçilmelidir' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir imzalı hane seçilmelidir' }, { status: 400 });
       }
 
       // Multi-Route Support: Check if all selected beneficiaries are already assigned to an ongoing active route
@@ -177,7 +177,24 @@ export async function POST(request: NextRequest) {
       if (numberIds.length > 0) orClauses.push({ id: { $in: numberIds } });
 
       const rawBeneficiaries = await benCol.find({ $or: orClauses }).toArray();
-      const fetchedBeneficiaries = mapDocs(rawBeneficiaries);
+      // KURAL: Yalnızca imzası alınmış (IMZALANDI) ve kömürü teslim edilmemiş haneler rotaya dahil edilebilir
+      const fetchedBeneficiaries = mapDocs(rawBeneficiaries).filter(
+        (b: any) =>
+          b.imza_durumu === 'IMZALANDI' &&
+          b.teslimat_durumu !== 'TAMAMLANDI' &&
+          b.teslimat_durumu !== 'TESLIM_EDILDI'
+      );
+
+      if (fetchedBeneficiaries.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz. Lütfen önce kapıda imza alınız.'
+          },
+          { status: 400 }
+        );
+      }
 
       // Map fetched beneficiaries to quickly lookup by ID
       const benMap = new Map<string, any>();
