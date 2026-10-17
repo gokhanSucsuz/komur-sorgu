@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
       const qClean = cleanTurkishText(q);
       trucks = trucks.filter((t: any) =>
         (t.plaka && turkishIncludes(t.plaka, qClean)) ||
+        (t.dorse_plaka && turkishIncludes(t.dorse_plaka, qClean)) ||
         (t.sofor_adi && turkishIncludes(t.sofor_adi, qClean)) ||
         (t.irsaliye_no && turkishIncludes(t.irsaliye_no, qClean)) ||
         (t.notlar && turkishIncludes(t.notlar, qClean))
@@ -92,10 +93,28 @@ export async function POST(request: NextRequest) {
 
     const { truckDeliveries: trucksCol } = await getDbCollections();
     const body = await request.json();
-    const { tir_sirasi, plaka, irsaliye_no, tarih, net_tonaj, brut_tonaj, sofor_adi, notlar } = body;
+    const {
+      tir_sirasi,
+      plaka,
+      dorse_plaka,
+      irsaliye_no,
+      ocak_cikis_tarihi,
+      tarih,
+      net_tonaj,
+      brut_tonaj,
+      sofor_adi,
+      notlar,
+    } = body;
 
     if (!plaka || !irsaliye_no || !tarih) {
-      return NextResponse.json({ success: false, error: 'Plaka, İrsaliye No ve Tarih zorunludur' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Tır Plakası, İrsaliye No ve Geliş Tarihi zorunludur' }, { status: 400 });
+    }
+
+    if (ocak_cikis_tarihi && tarih && ocak_cikis_tarihi > tarih) {
+      return NextResponse.json(
+        { success: false, error: 'Kömür ocağından çıkış tarihi, dağıtım sahasına geliş tarihinden ileri bir tarih olamaz!' },
+        { status: 400 }
+      );
     }
 
     const netVal = parseFloat(net_tonaj || '0');
@@ -126,7 +145,9 @@ export async function POST(request: NextRequest) {
     const newDoc = {
       tir_sirasi: orderNum,
       plaka: plaka.toUpperCase().trim(),
+      dorse_plaka: dorse_plaka ? dorse_plaka.toUpperCase().trim() : null,
       irsaliye_no: irsaliye_no.trim(),
+      ocak_cikis_tarihi: ocak_cikis_tarihi ? ocak_cikis_tarihi.trim() : tarih,
       tarih,
       net_tonaj: netVal,
       brut_tonaj: brutVal,

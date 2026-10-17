@@ -539,8 +539,10 @@ export async function GET(request: NextRequest) {
 
         return {
           'Tır Sırası': t.tir_sirasi || idx + 1,
-          'Geliş Tarihi': t.tarih || '-',
+          'Ocak Çıkış Tarihi': t.ocak_cikis_tarihi || t.tarih || '-',
+          'Sahaya Geliş Tarihi': t.tarih || '-',
           'Tır Plakası': t.plaka || '-',
+          'Dorse Plakası': t.dorse_plaka || '-',
           'İrsaliye / Fiş No': t.irsaliye_no || '-',
           'Şoför Adı': t.sofor_adi || '-',
           'Brüt Tonaj (Ton)': Number(brut.toFixed(3)),
@@ -559,8 +561,10 @@ export async function GET(request: NextRequest) {
         'Kantar Tonaj',
         exportData,
         [
-          { wch: 12 },
-          { wch: 14 },
+          { wch: 10 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
           { wch: 16 },
           { wch: 20 },
           { wch: 22 },

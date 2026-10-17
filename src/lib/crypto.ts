@@ -445,6 +445,7 @@ export function decryptUser(doc: any): any {
 export const TRUCK_ENCRYPTED_FIELDS = [
   'sofor_adi',
   'plaka',
+  'dorse_plaka',
   'irsaliye_no',
   'notlar',
 ];

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
+import { turkishIncludes } from '@/lib/normalizer';
 
 interface TonnagePageProps {
   trucks: any[];
@@ -18,10 +19,15 @@ export default function TonnagePage({
   onRefresh,
   isLoading = false
 }: TonnagePageProps) {
+  const todayDefault = () => new Date().toISOString().split('T')[0];
+
   const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [plaka, setPlaka] = useState('');
+  const [dorsePlaka, setDorsePlaka] = useState('');
   const [irsaliyeNo, setIrsaliyeNo] = useState('');
-  const [tarih, setTarih] = useState(() => new Date().toISOString().split('T')[0]);
+  const [ocakCikisTarihi, setOcakCikisTarihi] = useState(todayDefault);
+  const [tarih, setTarih] = useState(todayDefault);
   const [netTonaj, setNetTonaj] = useState('');
   const [brutTonaj, setBrutTonaj] = useState('');
   const [soforAdi, setSoforAdi] = useState('');
@@ -29,6 +35,53 @@ export default function TonnagePage({
   const [tirSirasi, setTirSirasi] = useState<number>(stats?.sonrakiTirSirasi || (trucks.length + 1));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Unique saved truck profiles (deduplicated by plaka + dorse_plaka + sofor_adi for quick 1-click template cards)
+  const uniqueTruckTemplates = useMemo(() => {
+    const seen = new Set<string>();
+    const list: any[] = [];
+    for (const t of trucks) {
+      const key = `${(t.plaka || '').trim().toUpperCase()}|${(t.dorse_plaka || '').trim().toUpperCase()}|${(t.sofor_adi || '').trim().toUpperCase()}`;
+      if (!seen.has(key) && t.plaka) {
+        seen.add(key);
+        list.push(t);
+      }
+    }
+    return list;
+  }, [trucks]);
+
+  // Apply a saved truck record as a template into the form with 1 click
+  const applyTruckTemplate = (t: any) => {
+    if (!t) return;
+    setSelectedTemplateId(String(t.id || t._id || t.tir_sirasi));
+    setPlaka((t.plaka || '').toUpperCase());
+    setDorsePlaka((t.dorse_plaka || '').toUpperCase());
+    setSoforAdi(t.sofor_adi || '');
+    setNotlar(t.notlar || '');
+    setBrutTonaj(t.brut_tonaj !== undefined && t.brut_tonaj !== null ? String(t.brut_tonaj) : '');
+    setNetTonaj(t.net_tonaj !== undefined && t.net_tonaj !== null ? String(t.net_tonaj) : '');
+    setIrsaliyeNo(t.irsaliye_no || '');
+    if (t.ocak_cikis_tarihi) {
+      setOcakCikisTarihi(t.ocak_cikis_tarihi);
+    }
+    setErrorMsg('');
+  };
+
+  const resetAddForm = () => {
+    const todayStr = todayDefault();
+    setSelectedTemplateId('');
+    setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
+    setPlaka('');
+    setDorsePlaka('');
+    setIrsaliyeNo('');
+    setOcakCikisTarihi(todayStr);
+    setTarih(todayStr);
+    setNetTonaj('');
+    setBrutTonaj('');
+    setSoforAdi('');
+    setNotlar('');
+    setErrorMsg('');
+  };
 
   // Tonnage Report Modal State & Filters
   const [showReportModal, setShowReportModal] = useState(false);
@@ -73,18 +126,18 @@ export default function TonnagePage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showReportModal]);
 
-  // Filtered trucks for report
+  // Filtered trucks for report (%100 Türkçe karakter uyumlu arama)
   const filteredReportTrucks = useMemo(() => {
     return trucks.filter((t: any) => {
       if (reportStartDate && t.tarih < reportStartDate) return false;
       if (reportEndDate && t.tarih > reportEndDate) return false;
       if (reportSearchQuery) {
-        const q = reportSearchQuery.toLocaleLowerCase('tr');
-        const plaka = (t.plaka || '').toLocaleLowerCase('tr');
-        const sofor = (t.sofor_adi || '').toLocaleLowerCase('tr');
-        const irsaliye = (t.irsaliye_no || '').toLocaleLowerCase('tr');
-        const notlar = (t.notlar || '').toLocaleLowerCase('tr');
-        if (!plaka.includes(q) && !sofor.includes(q) && !irsaliye.includes(q) && !notlar.includes(q)) {
+        const matchPlaka = turkishIncludes(t.plaka || '', reportSearchQuery);
+        const matchDorse = turkishIncludes(t.dorse_plaka || '', reportSearchQuery);
+        const matchSofor = turkishIncludes(t.sofor_adi || '', reportSearchQuery);
+        const matchIrsaliye = turkishIncludes(t.irsaliye_no || '', reportSearchQuery);
+        const matchNotlar = turkishIncludes(t.notlar || '', reportSearchQuery);
+        if (!matchPlaka && !matchDorse && !matchSofor && !matchIrsaliye && !matchNotlar) {
           return false;
         }
       }
@@ -103,7 +156,12 @@ export default function TonnagePage({
   const handleAddTruck = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!plaka || !irsaliyeNo || !tarih || !netTonaj || !brutTonaj) {
-      setErrorMsg('Lütfen zorunlu alanları doldurunuz');
+      setErrorMsg('Lütfen zorunlu alanları (Tır Plakası, İrsaliye No, Geliş Tarihi, Brüt ve Net Tonaj) doldurunuz');
+      return;
+    }
+
+    if (ocakCikisTarihi && tarih && ocakCikisTarihi > tarih) {
+      setErrorMsg('Kömür ocağından çıkış tarihi, dağıtım sahasına geliş tarihinden ileri bir tarih olamaz!');
       return;
     }
 
@@ -122,7 +180,9 @@ export default function TonnagePage({
         body: JSON.stringify({
           tir_sirasi: tirSirasi,
           plaka,
+          dorse_plaka: dorsePlaka,
           irsaliye_no: irsaliyeNo,
+          ocak_cikis_tarihi: ocakCikisTarihi || tarih,
           tarih,
           net_tonaj: netVal,
           brut_tonaj: brutVal,
@@ -137,12 +197,7 @@ export default function TonnagePage({
       }
 
       setShowAddModal(false);
-      setPlaka('');
-      setIrsaliyeNo('');
-      setNetTonaj('');
-      setBrutTonaj('');
-      setSoforAdi('');
-      setNotlar('');
+      resetAddForm();
       onRefresh();
     } catch (err: any) {
       setErrorMsg(err.message || 'Hata oluştu');
@@ -193,14 +248,14 @@ export default function TonnagePage({
     <div className="space-y-4">
       {/* Stock & Tonnage Overview - Light Mode */}
       <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200">
               <Truck className="w-5 h-5 text-amber-700" />
             </div>
             <div>
               <h3 className="text-base font-extrabold text-slate-900">Kömür Stok & Sevkiyat</h3>
-              <p className="text-xs text-slate-500 font-medium">Gelen Tırlar ve Net Tonaj Özeti</p>
+              <p className="text-xs text-slate-500 font-medium">Gelen Tırlar, Dorse Bilgileri ve Net Tonaj Özeti</p>
             </div>
           </div>
 
@@ -217,6 +272,7 @@ export default function TonnagePage({
 
             <button
               onClick={() => {
+                resetAddForm();
                 setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
                 setShowAddModal(true);
               }}
@@ -267,7 +323,7 @@ export default function TonnagePage({
           Gelen Tır Kayıtları ({trucks.length})
         </h4>
         <span className="text-[11px] text-slate-500 font-medium">
-          Her tırın net ve brüt tartım detayları
+          Her tırın ocak çıkış, saha geliş ve kantar tartım detayları
         </span>
       </div>
 
@@ -282,68 +338,112 @@ export default function TonnagePage({
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-          {trucks.map((t) => (
-            <div
-              key={t.id}
-              className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-slate-300 transition-all space-y-2.5"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center font-bold text-xs">
-                    #{t.tir_sirasi}
-                  </span>
-                  <div className="px-3 py-1 rounded-lg bg-slate-900 text-white font-mono font-bold tracking-wider text-sm shadow-inner">
-                    {t.plaka}
+          {trucks.map((t) => {
+            const hasDiffDeparture = Boolean(t.ocak_cikis_tarihi && t.ocak_cikis_tarihi !== t.tarih);
+            return (
+              <div
+                key={t.id}
+                className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-slate-300 transition-all space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center font-bold text-xs">
+                      #{t.tir_sirasi}
+                    </span>
+                    <div
+                      className="px-3 py-1 rounded-lg bg-slate-900 text-white font-mono font-bold tracking-wider text-sm shadow-inner"
+                      title="Tır (Çekici) Plakası"
+                    >
+                      {t.plaka}
+                    </div>
+                    {t.dorse_plaka && (
+                      <div
+                        className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-900 border border-sky-200 font-mono font-bold tracking-wider text-xs"
+                        title="Dorse Plakası"
+                      >
+                        Dorse: {t.dorse_plaka}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
+                        const todayStr = todayDefault();
+                        setTarih(todayStr);
+                        setOcakCikisTarihi(todayStr);
+                        applyTruckTemplate(t);
+                        setShowAddModal(true);
+                      }}
+                      title="Bu tırın bilgilerini şablon olarak kullanarak yeni tır girişi aç"
+                      className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Şablon Al</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTruck(t.id, t.plaka)}
+                      title="Tır Kaydını Sil"
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 flex items-center gap-1 font-semibold">
-                    <Calendar className="w-3.5 h-3.5" />
-                    {t.tarih}
+                {/* Ocak Çıkış & Sahaya Geliş Tarihleri Satırı */}
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-slate-500" />
+                    <span>Ocak Çıkış: <strong className="text-slate-900">{t.ocak_cikis_tarihi || t.tarih}</strong></span>
                   </span>
-                  <button
-                    onClick={() => handleDeleteTruck(t.id, t.plaka)}
-                    title="Tır Kaydını Sil"
-                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                  <span
+                    className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 ${
+                      hasDiffDeparture
+                        ? 'bg-amber-50 text-amber-900 border-amber-200'
+                        : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    }`}
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                    <Calendar className="w-3 h-3" />
+                    <span>Sahaya Geliş: <strong>{t.tarih}</strong></span>
+                  </span>
                 </div>
-              </div>
 
-              {/* Tonnage Detail Row */}
-              <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500">Brüt Tonaj</span>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">{t.brut_tonaj} Ton</p>
+                {/* Tonnage Detail Row */}
+                <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500">Brüt Tonaj</span>
+                    <p className="text-sm font-bold text-slate-900 mt-0.5">{t.brut_tonaj} Ton</p>
+                  </div>
+                  <div className="border-x border-slate-200">
+                    <span className="text-[10px] uppercase font-bold text-amber-800">Net Tonaj</span>
+                    <p className="text-sm font-black text-amber-700 mt-0.5">{t.net_tonaj} Ton</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500">Dara (Tara)</span>
+                    <p className="text-sm font-bold text-slate-700 mt-0.5">{t.tara_tonaj} Ton</p>
+                  </div>
                 </div>
-                <div className="border-x border-slate-200">
-                  <span className="text-[10px] uppercase font-bold text-amber-800">Net Tonaj</span>
-                  <p className="text-sm font-black text-amber-700 mt-0.5">{t.net_tonaj} Ton</p>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500">Dara (Tara)</span>
-                  <p className="text-sm font-bold text-slate-700 mt-0.5">{t.tara_tonaj} Ton</p>
-                </div>
-              </div>
 
-              {/* Details (Irsaliye, Sofor, Notlar) */}
-              <div className="flex items-center justify-between text-xs text-slate-600 pt-1 font-medium">
-                <span className="flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-slate-400" />
-                  İrsaliye / Teslimat No: <strong className="text-slate-900 font-bold">{t.irsaliye_no}</strong>
-                </span>
-                {t.sofor_adi && <span>Şoför: {t.sofor_adi}</span>}
-              </div>
+                {/* Details (Irsaliye, Sofor, Notlar) */}
+                <div className="flex items-center justify-between text-xs text-slate-600 pt-1 font-medium flex-wrap gap-1">
+                  <span className="flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-slate-400" />
+                    İrsaliye / Teslimat No: <strong className="text-slate-900 font-bold">{t.irsaliye_no}</strong>
+                  </span>
+                  {t.sofor_adi && <span>Şoför: <strong className="text-slate-800">{t.sofor_adi}</strong></span>}
+                </div>
 
-              {t.notlar && (
-                <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  {t.notlar}
-                </p>
-              )}
-            </div>
-          ))}
+                {t.notlar && (
+                  <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    {t.notlar}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -351,14 +451,14 @@ export default function TonnagePage({
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200">
                   <Truck className="w-5 h-5 text-amber-700" />
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-slate-900">Yeni Gelen Tır Kaydı</h3>
-                  <p className="text-xs text-slate-500">Kömür sevkiyatı ve tonaj girişi</p>
+                  <p className="text-xs text-slate-500">Kömür sevkiyatı, dorse plakası ve tonaj girişi</p>
                 </div>
               </div>
               <button
@@ -370,16 +470,107 @@ export default function TonnagePage({
             </div>
 
             {errorMsg && (
-              <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 font-medium">
+              <div className="p-3 mb-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
-            <form onSubmit={handleAddTruck} className="space-y-4">
+            {/* ÖNCEKİ KAYITLARDAN TEK TIKLA ŞABLON DOLDURMA ALANI */}
+            {trucks.length > 0 && (
+              <div className="p-3 mb-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950">
+                    <Copy className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <span>Önceki Kayıttan Tek Tıkla Doldur (Şablon Seç)</span>
+                  </div>
+                  {selectedTemplateId && (
+                    <button
+                      type="button"
+                      onClick={resetAddForm}
+                      className="text-[11px] font-bold text-slate-600 hover:text-rose-700 flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Temizle</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Hızlı Tır/Şoför Kartları (Tek Tıkla Seçim) */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {uniqueTruckTemplates.map((t) => {
+                    const tid = String(t.id || t._id || t.tir_sirasi);
+                    const isSelected = selectedTemplateId === tid;
+                    return (
+                      <button
+                        key={tid}
+                        type="button"
+                        onClick={() => applyTruckTemplate(t)}
+                        className={`px-2.5 py-1.5 rounded-xl border text-left shrink-0 transition-all active:scale-95 ${
+                          isSelected
+                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                            : 'bg-white hover:bg-amber-100/60 text-slate-800 border-amber-200/90'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-black">{t.plaka}</span>
+                          {t.dorse_plaka && (
+                            <span
+                              className={`font-mono text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                isSelected ? 'bg-amber-700 text-white' : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {t.dorse_plaka}
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`text-[10px] font-semibold truncate max-w-[160px] mt-0.5 ${
+                            isSelected ? 'text-amber-50' : 'text-slate-500'
+                          }`}
+                        >
+                          {t.sofor_adi || 'Şoför Belirtilmemiş'} • {t.net_tonaj} T
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Tüm Geçmiş Kayıtlar Açılır Seçim Kutusu */}
+                <div>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) {
+                        resetAddForm();
+                        return;
+                      }
+                      const found = trucks.find((item) => String(item.id || item._id || item.tir_sirasi) === val);
+                      if (found) applyTruckTemplate(found);
+                    }}
+                    className="w-full px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-600"
+                  >
+                    <option value="">— Veya Tüm Geçmiş Tır Kayıtlarından Seçin ({trucks.length} Kayıt) —</option>
+                    {trucks.map((t) => {
+                      const tid = String(t.id || t._id || t.tir_sirasi);
+                      return (
+                        <option key={tid} value={tid}>
+                          #{t.tir_sirasi} | {t.plaka}
+                          {t.dorse_plaka ? ` (Dorse: ${t.dorse_plaka})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {t.net_tonaj} Ton ({t.tarih})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleAddTruck} className="space-y-3.5">
+              {/* Sıra ve İrsaliye */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
                     Gelen Tır Sırası
                   </label>
                   <input
@@ -387,42 +578,13 @@ export default function TonnagePage({
                     min="1"
                     value={tirSirasi}
                     onChange={(e) => setTirSirasi(parseInt(e.target.value, 10) || 1)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:bg-white"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                    Geliş Tarihi
-                  </label>
-                  <input
-                    type="date"
-                    value={tarih}
-                    onChange={(e) => setTarih(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white font-medium"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                    Tır Plakası
-                  </label>
-                  <input
-                    type="text"
-                    value={plaka}
-                    onChange={(e) => setPlaka(e.target.value.toUpperCase())}
-                    placeholder="Örn: 06 KMR 101"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono uppercase font-black focus:outline-none focus:border-amber-500 focus:bg-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
                     İrsaliye / Teslimat No
                   </label>
                   <input
@@ -430,17 +592,76 @@ export default function TonnagePage({
                     value={irsaliyeNo}
                     onChange={(e) => setIrsaliyeNo(e.target.value)}
                     placeholder="Örn: IRS-2026-004"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono font-bold focus:outline-none focus:border-amber-500 focus:bg-white"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono font-bold focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
                     required
                   />
                 </div>
               </div>
 
+              {/* Ocak Yükleme/Çıkış Tarihi & Dağıtım Sahasına Geliş Tarihi */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Ocaktan Yükleme / Çıkış Tarihi
+                  </label>
+                  <input
+                    type="date"
+                    value={ocakCikisTarihi}
+                    onChange={(e) => setOcakCikisTarihi(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white font-medium text-xs sm:text-sm"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Sahaya Geliş Tarihi
+                  </label>
+                  <input
+                    type="date"
+                    value={tarih}
+                    onChange={(e) => setTarih(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white font-medium text-xs sm:text-sm"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Tır (Çekici) Plakası & Dorse Plakası */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Tır (Çekici) Plakası
+                  </label>
+                  <input
+                    type="text"
+                    value={plaka}
+                    onChange={(e) => setPlaka(e.target.value.toUpperCase())}
+                    placeholder="Örn: 06 KMR 101"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono uppercase font-black focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Dorse Plakası (Opsiyonel)
+                  </label>
+                  <input
+                    type="text"
+                    value={dorsePlaka}
+                    onChange={(e) => setDorsePlaka(e.target.value.toUpperCase())}
+                    placeholder="Örn: 06 DRS 202"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono uppercase font-bold focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
+                  />
+                </div>
+              </div>
+
               {/* Tonaj Alanları */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
                       Brüt Tonaj (Ton)
                     </label>
                     <input
@@ -449,13 +670,13 @@ export default function TonnagePage({
                       value={brutTonaj}
                       onChange={(e) => setBrutTonaj(e.target.value)}
                       placeholder="Örn: 42.150"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 font-bold focus:outline-none focus:border-amber-500"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 font-bold focus:outline-none focus:border-amber-500 text-sm"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">
                       Net Tonaj (Ton)
                     </label>
                     <input
@@ -464,7 +685,7 @@ export default function TonnagePage({
                       value={netTonaj}
                       onChange={(e) => setNetTonaj(e.target.value)}
                       placeholder="Örn: 27.200"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-amber-400 text-amber-900 font-black focus:outline-none focus:border-amber-500"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-amber-400 text-amber-900 font-black focus:outline-none focus:border-amber-500 text-sm"
                       required
                     />
                   </div>
@@ -481,7 +702,7 @@ export default function TonnagePage({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
                     Şoför Adı (Opsiyonel)
                   </label>
                   <input
@@ -494,7 +715,7 @@ export default function TonnagePage({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
                     Açıklama / Menşe
                   </label>
                   <input
@@ -779,15 +1000,17 @@ export default function TonnagePage({
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
-                          <th className="p-2.5 text-center w-12">Sıra</th>
-                          <th className="p-2.5 w-24">Geliş Tarihi</th>
-                          <th className="p-2.5 w-28">Tır Plakası</th>
-                          <th className="p-2.5 w-28">İrsaliye / Fiş No</th>
-                          <th className="p-2.5">Şoför Adı</th>
-                          <th className="p-2.5 text-right w-24">Brüt (Ton)</th>
-                          <th className="p-2.5 text-right w-24">Dara (Ton)</th>
-                          <th className="p-2.5 text-right w-24">Net (Ton)</th>
-                          <th className="p-2.5">Açıklama / Menşe</th>
+                          <th className="p-2 text-center w-10">Sıra</th>
+                          <th className="p-2 w-24">Ocak Çıkış</th>
+                          <th className="p-2 w-24">Saha Geliş</th>
+                          <th className="p-2 w-24">Tır Plakası</th>
+                          <th className="p-2 w-24">Dorse Plaka</th>
+                          <th className="p-2 w-24">İrsaliye / Fiş</th>
+                          <th className="p-2">Şoför Adı</th>
+                          <th className="p-2 text-right w-20">Brüt (Ton)</th>
+                          <th className="p-2 text-right w-20">Dara (Ton)</th>
+                          <th className="p-2 text-right w-20">Net (Ton)</th>
+                          <th className="p-2">Açıklama / Menşe</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -798,24 +1021,26 @@ export default function TonnagePage({
 
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-2.5 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
-                              <td className="p-2.5 font-mono text-slate-700">{t.tarih}</td>
-                              <td className="p-2.5 font-mono font-bold text-slate-900">{t.plaka}</td>
-                              <td className="p-2.5 font-mono text-slate-600 font-semibold">{t.irsaliye_no}</td>
-                              <td className="p-2.5 font-bold text-slate-800">{t.sofor_adi || '-'}</td>
-                              <td className="p-2.5 text-right font-mono text-slate-700">{brut.toFixed(3)}</td>
-                              <td className="p-2.5 text-right font-mono text-slate-500">{tara.toFixed(3)}</td>
-                              <td className="p-2.5 text-right font-mono font-black text-amber-800 bg-amber-50/40">
+                              <td className="p-2 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
+                              <td className="p-2 font-mono text-slate-600">{t.ocak_cikis_tarihi || t.tarih}</td>
+                              <td className="p-2 font-mono text-slate-700 font-semibold">{t.tarih}</td>
+                              <td className="p-2 font-mono font-bold text-slate-900">{t.plaka}</td>
+                              <td className="p-2 font-mono font-semibold text-sky-900">{t.dorse_plaka || '-'}</td>
+                              <td className="p-2 font-mono text-slate-600 font-semibold">{t.irsaliye_no}</td>
+                              <td className="p-2 font-bold text-slate-800">{t.sofor_adi || '-'}</td>
+                              <td className="p-2 text-right font-mono text-slate-700">{brut.toFixed(3)}</td>
+                              <td className="p-2 text-right font-mono text-slate-500">{tara.toFixed(3)}</td>
+                              <td className="p-2 text-right font-mono font-black text-amber-800 bg-amber-50/40">
                                 {net.toFixed(3)}
                               </td>
-                              <td className="p-2.5 text-slate-600 text-[11px]">{t.notlar || '-'}</td>
+                              <td className="p-2 text-slate-600 text-[11px]">{t.notlar || '-'}</td>
                             </tr>
                           );
                         })}
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
-                          <td colSpan={5} className="p-2.5 text-right uppercase">GENEL TOPLAM ({filteredReportTrucks.length} TIR):</td>
+                          <td colSpan={7} className="p-2.5 text-right uppercase">GENEL TOPLAM ({filteredReportTrucks.length} TIR):</td>
                           <td className="p-2.5 text-right font-mono">{reportTotalBrut.toFixed(3)} Ton</td>
                           <td className="p-2.5 text-right font-mono text-slate-600">{reportTotalTara.toFixed(3)} Ton</td>
                           <td className="p-2.5 text-right font-mono text-amber-800 bg-amber-100/50">{reportTotalNet.toFixed(3)} Ton</td>
