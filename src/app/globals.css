@@ -4148,12 +4148,23 @@ img[src*="edirne-sydv-logo"] {
   .border-l-amber-500 { border-left-color: #f59e0b !important; }
   .border-l-purple-500 { border-left-color: #a855f7 !important; }
   .border-l-transparent { border-left-color: transparent !important; }
+  .border-white\/15 { border-color: rgba(255, 255, 255, 0.15) !important; }
+  .text-emerald-400 { color: #34d399 !important; }
+  .text-amber-300 { color: #fcd34d !important; }
+  .hover\:text-slate-950:hover { color: #020617 !important; }
+  .bg-blue-950 { background-color: #172554 !important; }
+  .border-blue-800 { border-color: #1e40af !important; }
+  .bg-emerald-700 { background-color: #047857 !important; }
+  .border-emerald-700 { border-color: #047857 !important; }
+  .tracking-widest { letter-spacing: 0.1em !important; }
+  .gap-3\.5 { gap: 0.875rem !important; }
 
   @media (min-width: 640px) {
     .sm\:right-4 { right: 1rem !important; }
     .sm\:p-7 { padding: 1.75rem !important; }
     .sm\:text-xl { font-size: 1.25rem !important; line-height: 1.75rem !important; }
     .sm\:col-span-2 { grid-column: span 2 / span 2 !important; }
+    .sm\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
   }
 
 /* ==== END GENERATED UTILITIES ==== */
