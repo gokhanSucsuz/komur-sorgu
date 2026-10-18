@@ -36,12 +36,16 @@ export async function POST(request: NextRequest) {
 
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
-    const { username, ad_soyad, rol, sifre, telefon } = body;
+    const { username, ad_soyad, rol, sifre, telefon, ekip_adi, ekip_arkadaslari, ekip_arkadasi } = body;
 
     const trimmedUser = (username || '').trim().toLowerCase();
     const trimmedName = (ad_soyad || '').trim();
     const trimmedPass = (sifre || '').trim();
     const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : 'PERSONEL';
+    const trimmedEkip = (ekip_adi || '').trim();
+    const cleanPartners = Array.isArray(ekip_arkadaslari)
+      ? ekip_arkadaslari.map((p: any) => String(p).trim().toLowerCase()).filter(Boolean)
+      : (ekip_arkadasi ? [String(ekip_arkadasi).trim().toLowerCase()] : []);
 
     if (!trimmedUser || !trimmedName || !trimmedPass) {
       return NextResponse.json(
@@ -82,6 +86,9 @@ export async function POST(request: NextRequest) {
       sifre: trimmedPass,
       sifre_hash: hashPassword(trimmedPass),
       telefon: (telefon || '').trim(),
+      ekip_adi: trimmedEkip,
+      ekip_arkadaslari: cleanPartners,
+      ekip_arkadasi: cleanPartners[0] || '',
       aktif: 1,
       created_at: getIstanbulDate().fullStr,
     };
@@ -118,7 +125,7 @@ export async function PUT(request: NextRequest) {
 
     const { users: usersCol } = await getDbCollections();
     const body = await request.json();
-    const { id, username, ad_soyad, rol, sifre, telefon, aktif } = body;
+    const { id, username, ad_soyad, rol, sifre, telefon, aktif, ekip_adi, ekip_arkadaslari, ekip_arkadasi } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'Personel ID zorunludur' }, { status: 400 });
@@ -182,6 +189,14 @@ export async function PUT(request: NextRequest) {
       updateFields.sifre = encryptField(trimmedPass);
     }
     if (telefon !== undefined) updateFields.telefon = encryptField((telefon || '').trim());
+    if (ekip_adi !== undefined) updateFields.ekip_adi = (ekip_adi || '').trim();
+    if (ekip_arkadaslari !== undefined || ekip_arkadasi !== undefined) {
+      const cleanPartners = Array.isArray(ekip_arkadaslari)
+        ? ekip_arkadaslari.map((p: any) => String(p).trim().toLowerCase()).filter(Boolean)
+        : (ekip_arkadasi ? [String(ekip_arkadasi).trim().toLowerCase()] : []);
+      updateFields.ekip_arkadaslari = cleanPartners;
+      updateFields.ekip_arkadasi = cleanPartners[0] || '';
+    }
 
     // If deactivated, terminate active session immediately
     if (isActive === 0) {

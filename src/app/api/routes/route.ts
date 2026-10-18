@@ -15,6 +15,11 @@ export function checkRouteLock(
 ): { isLocked: boolean; lockedBy?: string } {
   if (!route || !route.kilitli_personel) return { isLocked: false };
 
+  // Eğer rota geçici durdurulduysa (DURAKLATILDI) veya aktif rota modunda değilse kilit serbesttir
+  if (route.durum === 'DURAKLATILDI' || !route.aktif_rota_modu) {
+    return { isLocked: false };
+  }
+
   const now = Date.now();
   const lockTime = Number(route.kilit_timestamp) || 0;
   // Kilit 25 dakikadan eski ise zaman aşımına uğramış kabul edilir
@@ -41,6 +46,116 @@ export function checkRouteLock(
   }
 
   return { isLocked: true, lockedBy };
+}
+
+/**
+ * Bir rotanın işletim ve teslimat yetkisini kontrol eder.
+ * Rota aktif veya duraklatılmış ise:
+ * - Admin her zaman yetkilidir.
+ * - Rotayı oluşturan / işleten / dağıtan personel yetkilidir.
+ * - Rotayı işleten personelin takım/ekip arkadaşları yetkilidir.
+ * - Ekip dışındaki diğer personeller İŞLEM YAPAMAZ.
+ */
+export async function checkRouteTeamAuthorization(
+  route: any,
+  session: any,
+  usersCol?: any
+): Promise<{
+  authorized: boolean;
+  isOwner: boolean;
+  isPartner: boolean;
+  ownerName: string;
+  error?: string;
+}> {
+  if (!route) {
+    return { authorized: false, isOwner: false, isPartner: false, ownerName: '', error: 'Rota bulunamadı.' };
+  }
+
+  const routeOperatorName = String(route.isleten_personel || route.dagitim_personeli || route.olusturan_personel || '').trim();
+
+  // Admin kullanıcılar her rotaya tam yetkilidir
+  if (session.rol === 'ADMIN') {
+    return { authorized: true, isOwner: true, isPartner: false, ownerName: routeOperatorName || 'Yönetici' };
+  }
+
+  const currentUsername = String(session.username || '').trim().toLowerCase();
+  const currentFullName = String(session.ad_soyad || session.username || '').trim().toLowerCase();
+
+  // Rotanın sahibi/işleteni:
+  const routeOperatorUsername = String(route.isleten_username || route.olusturan_username || '').trim().toLowerCase();
+  const routeOperatorNameLower = routeOperatorName.toLowerCase();
+
+  // Eğer rotanın henüz hiçbir sahibi atanmamışsa, ilk işleten kişi sahip olur
+  if (!routeOperatorUsername && !routeOperatorName) {
+    return { authorized: true, isOwner: true, isPartner: false, ownerName: session.ad_soyad || session.username };
+  }
+
+  // 1. Rotayı bizzat işleten personel mi?
+  if (
+    (routeOperatorUsername && routeOperatorUsername === currentUsername) ||
+    (routeOperatorNameLower && routeOperatorNameLower === currentFullName) ||
+    (route.dagitim_personeli && route.dagitim_personeli.toLowerCase().includes(currentFullName))
+  ) {
+    return { authorized: true, isOwner: true, isPartner: false, ownerName: routeOperatorName };
+  }
+
+  // 2. Ekip arkadaşı kontrolü:
+  // a) Rota üzerindeki ekip_adi veya ekip_arkadaslari kontrolü
+  const routeEkipAdi = String(route.ekip_adi || '').trim().toLowerCase();
+  const routeEkipArkadaslari: string[] = Array.isArray(route.ekip_arkadaslari)
+    ? route.ekip_arkadaslari.map((u: any) => String(u).trim().toLowerCase())
+    : [];
+
+  const userEkipAdi = String(session.user?.ekip_adi || '').trim().toLowerCase();
+  const userEkipArkadaslari: string[] = Array.isArray(session.user?.ekip_arkadaslari)
+    ? session.user.ekip_arkadaslari.map((u: any) => String(u).trim().toLowerCase())
+    : [];
+
+  // Aynı ekip adındalar mı?
+  if (routeEkipAdi && userEkipAdi && routeEkipAdi === userEkipAdi) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+
+  // Rota üzerindeki ekip arkadaşları listesinde bu kullanıcı var mı?
+  if (routeEkipArkadaslari.includes(currentUsername)) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+
+  // Kullanıcının kendi profilindeki ekip arkadaşları listesinde rota işleteni var mı?
+  if (routeOperatorUsername && userEkipArkadaslari.includes(routeOperatorUsername)) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+
+  // Veritabanındaki kullanıcı kayıtlarından derinlemesine ekip kontrolü
+  if (usersCol && routeOperatorUsername) {
+    try {
+      const operatorDoc = await usersCol.findOne({ username: routeOperatorUsername });
+      if (operatorDoc) {
+        const opPartners: string[] = Array.isArray(operatorDoc.ekip_arkadaslari)
+          ? operatorDoc.ekip_arkadaslari.map((u: any) => String(u).trim().toLowerCase())
+          : [];
+        const opTeam = String(operatorDoc.ekip_adi || '').trim().toLowerCase();
+
+        if (opPartners.includes(currentUsername)) {
+          return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+        }
+        if (opTeam && userEkipAdi && opTeam === userEkipAdi) {
+          return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+        }
+      }
+    } catch {
+      // ignore db error
+    }
+  }
+
+  // Yetkisiz: Başka personele ve ekibine ait rota!
+  return {
+    authorized: false,
+    isOwner: false,
+    isPartner: false,
+    ownerName: routeOperatorName,
+    error: `Bu rota "${routeOperatorName}" personeline ve ekibine aittir. Yalnızca ilgili personel veya ekip arkadaşı işlem yapabilir.`
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -114,7 +229,7 @@ export async function POST(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { deliveryRoutes: routeCol, beneficiaries: benCol, deliveryHistory: histCol } = await getDbCollections();
+    const { deliveryRoutes: routeCol, beneficiaries: benCol, deliveryHistory: histCol, users: usersCol } = await getDbCollections();
     const body = await request.json();
     const { action } = body;
 
@@ -279,7 +394,12 @@ export async function POST(request: NextRequest) {
         tarih: localToday,
         durum: 'AKTIF',
         olusturan_personel: olusturan_personel.trim(),
+        olusturan_username: session.username || '',
         dagitim_personeli: (dagitim_personeli || olusturan_personel).trim(),
+        isleten_personel: (dagitim_personeli || olusturan_personel).trim(),
+        isleten_username: session.username || '',
+        ekip_adi: session.user?.ekip_adi || '',
+        ekip_arkadaslari: Array.isArray(session.user?.ekip_arkadaslari) ? session.user.ekip_arkadaslari : [],
         arac_plaka: arac_plaka.trim(),
         mahalleler,
         duraklar,
@@ -335,6 +455,19 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
+
+      // Takım / Ekip arkadaşı yetki kontrolü
+      const authCheck = await checkRouteTeamAuthorization(route, session, usersCol);
+      if (!authCheck.authorized) {
+        return NextResponse.json({
+          success: false,
+          unauthorized_team: true,
+          locked: true,
+          lockedBy: authCheck.ownerName,
+          error: authCheck.error
+        }, { status: 403 });
+      }
+
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
@@ -349,6 +482,10 @@ export async function POST(request: NextRequest) {
       const nowTimestamp = Date.now();
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
+          isleten_personel: staffName,
+          isleten_username: session.username || '',
+          ekip_adi: session.user?.ekip_adi || route.ekip_adi || '',
+          ekip_arkadaslari: session.user?.ekip_arkadaslari || route.ekip_arkadaslari || [],
           kilitli_personel: staffName,
           kilitli_personel_username: session.username || '',
           kilitli_client_id: effectiveClientId,
@@ -493,6 +630,19 @@ export async function POST(request: NextRequest) {
           : (session.ad_soyad || session.username || body.personel || 'Personel')
       ).trim();
       const route = mapDoc(rawRoute);
+
+      // Takım / Ekip arkadaşı yetki kontrolü
+      const authCheck = await checkRouteTeamAuthorization(route, session, usersCol);
+      if (!authCheck.authorized) {
+        return NextResponse.json({
+          success: false,
+          unauthorized_team: true,
+          locked: true,
+          lockedBy: authCheck.ownerName,
+          error: authCheck.error
+        }, { status: 403 });
+      }
+
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked) {
@@ -593,6 +743,10 @@ export async function POST(request: NextRequest) {
         eksik_hane: eksikCount,
         teslim_edilemeyen_hane: undeliveredCount,
         toplam_dagitilan_torba: totalDeliveredBags,
+        isleten_personel: staffName,
+        isleten_username: session.username || '',
+        ekip_adi: session.user?.ekip_adi || route.ekip_adi || '',
+        ekip_arkadaslari: session.user?.ekip_arkadaslari || route.ekip_arkadaslari || [],
         updated_at: localTimeStr
       };
 
@@ -859,6 +1013,19 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
+
+      // Takım / Ekip arkadaşı yetki kontrolü
+      const authCheck = await checkRouteTeamAuthorization(route, session, usersCol);
+      if (!authCheck.authorized) {
+        return NextResponse.json({
+          success: false,
+          unauthorized_team: true,
+          locked: true,
+          lockedBy: authCheck.ownerName,
+          error: authCheck.error
+        }, { status: 403 });
+      }
+
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
@@ -873,6 +1040,10 @@ export async function POST(request: NextRequest) {
       const nextState = action === 'PAUSE_ROUTE' ? 'DURAKLATILDI' : 'AKTIF';
       const setObj: Record<string, any> = {
         durum: nextState,
+        isleten_personel: staffName,
+        isleten_username: session.username || '',
+        ekip_adi: session.user?.ekip_adi || route.ekip_adi || '',
+        ekip_arkadaslari: session.user?.ekip_arkadaslari || route.ekip_arkadaslari || [],
         updated_at: localTimeStr
       };
       if (notlar && notlar.trim()) {
@@ -927,6 +1098,19 @@ export async function POST(request: NextRequest) {
       const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
+
+      // Takım / Ekip arkadaşı yetki kontrolü
+      const authCheckReorder = await checkRouteTeamAuthorization(route, session, usersCol);
+      if (!authCheckReorder.authorized) {
+        return NextResponse.json({
+          success: false,
+          unauthorized_team: true,
+          locked: true,
+          lockedBy: authCheckReorder.ownerName,
+          error: authCheckReorder.error
+        }, { status: 403 });
+      }
+
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
@@ -974,6 +1158,19 @@ export async function POST(request: NextRequest) {
       const headerClientId = request.headers.get('x-client-id') || '';
       const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const route = mapDoc(rawRoute);
+
+      // Takım / Ekip arkadaşı yetki kontrolü
+      const authCheckFinalize = await checkRouteTeamAuthorization(route, session, usersCol);
+      if (!authCheckFinalize.authorized) {
+        return NextResponse.json({
+          success: false,
+          unauthorized_team: true,
+          locked: true,
+          lockedBy: authCheckFinalize.ownerName,
+          error: authCheckFinalize.error
+        }, { status: 403 });
+      }
+
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 

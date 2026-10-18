@@ -4,7 +4,15 @@ import { useState, useEffect } from 'react';
 import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone } from 'lucide-react';
 
 interface LoginPageProps {
-  onLoginSuccess: (user: { role: 'ADMIN' | 'PERSONEL'; name: string; username: string; session_token?: string }) => void;
+  onLoginSuccess: (user: {
+    role: 'ADMIN' | 'PERSONEL';
+    name: string;
+    username: string;
+    session_token?: string;
+    ekip_adi?: string;
+    ekip_arkadaslari?: string[];
+    ekip_arkadasi?: string;
+  }) => void;
   sessionTerminatedReason?: string | null;
 }
 
@@ -89,6 +97,9 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
         name: data.user.ad_soyad,
         username: data.user.username,
         session_token: data.session_token,
+        ekip_adi: data.user.ekip_adi,
+        ekip_arkadaslari: data.user.ekip_arkadaslari,
+        ekip_arkadasi: data.user.ekip_arkadasi,
       });
     } catch (err: any) {
       setErrorMsg(err.message || 'Hatalı kullanıcı adı veya şifre! Lütfen kontrol ediniz.');

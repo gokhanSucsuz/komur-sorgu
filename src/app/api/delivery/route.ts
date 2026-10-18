@@ -4,6 +4,7 @@ import { encryptField, encryptDeliveryHistory, encryptRouteStop, hashTc } from '
 import { cleanTcNo } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { checkRouteTeamAuthorization } from '@/app/api/routes/route';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol } = await getDbCollections();
+    const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol, users: usersCol } = await getDbCollections();
     const body = await request.json();
     const { action, beneficiary_id, tc_no, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;
 
@@ -49,41 +50,33 @@ export async function POST(request: NextRequest) {
     const localTimeStr = nowLocaleTr;
     const callerStaff = (session.ad_soyad || session.username || 'Personel').trim();
 
-    // Server-side Active Route Mode Lock Check:
-    // Prevent modifying a beneficiary if they belong to an active route currently locked in Route Mode by another staff member
-    const LOCK_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-    const activeLockedRoutes = await routeCol.find({
-      durum: 'AKTIF',
-      aktif_rota_modu_personel: { $exists: true, $ne: null },
+    // Server-side Route & Team Ownership Check:
+    // Eğer hane aktif veya duraklatılmış bir rotadaysa, yalnızca rotayı işleten personel veya ekip arkadaşı işlem yapabilir.
+    const activeOrPausedRoutes = await routeCol.find({
+      durum: { $in: ['AKTIF', 'DURAKLATILDI'] }
     }).toArray();
 
-    for (const rawLockedRoute of activeLockedRoutes) {
-      const decRoute = mapDoc(rawLockedRoute);
-      const lockOwner = (decRoute.aktif_rota_modu_personel || '').trim();
-      if (!lockOwner) continue;
+    for (const rawRoute of activeOrPausedRoutes) {
+      const decRoute = mapDoc(rawRoute);
+      const stops = Array.isArray(decRoute.duraklar) ? decRoute.duraklar : [];
+      const isInRoute = stops.some((s: any) =>
+        String(s.beneficiary_id) === String(beneficiary.id) ||
+        String(s.beneficiary_id) === String(beneficiary._id) ||
+        (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
+      );
 
-      let isExpired = false;
-      if (decRoute.aktif_rota_modu_zaman_iso) {
-        const lockTime = new Date(decRoute.aktif_rota_modu_zaman_iso).getTime();
-        if (!isNaN(lockTime) && Date.now() - lockTime > LOCK_TIMEOUT_MS) {
-          isExpired = true;
-        }
-      }
-
-      if (!isExpired && lockOwner.toLocaleLowerCase('tr-TR') !== callerStaff.toLocaleLowerCase('tr-TR')) {
-        const stops = Array.isArray(decRoute.duraklar) ? decRoute.duraklar : [];
-        const isInLockedRoute = stops.some((s: any) =>
-          String(s.beneficiary_id) === String(beneficiary.id) ||
-          String(s.beneficiary_id) === String(beneficiary._id) ||
-          (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
-        );
-        if (isInLockedRoute) {
+      if (isInRoute) {
+        // Ekip arkadaşı / yetki kontrolü
+        const teamCheck = await checkRouteTeamAuthorization(decRoute, session, usersCol);
+        if (!teamCheck.authorized) {
+          const owner = teamCheck.ownerName || decRoute.isleten_personel || decRoute.dagitim_personeli || 'başka bir personel';
           return NextResponse.json(
             {
               success: false,
               rota_kilitli: true,
-              aktif_rota_modu_personel: lockOwner,
-              error: `Bu hane şu anda "${decRoute.rota_adi || decRoute.mahalle}" rotası kapsamında ${lockOwner} tarafından aktif Rota Modunda işlenmektedir! Aynı anda birden fazla personel aynı rotadaki kayıtlara müdahale edemez.`,
+              unauthorized_team: true,
+              aktif_rota_modu_personel: owner,
+              error: `Bu hane "${decRoute.rota_adi || 'Aktif Rota'}" kapsamında ${owner} personeline ve ekibine aittir. Yalnızca rotayı işleten personel veya ekip arkadaşı teslimat yapabilir.`,
             },
             { status: 423 }
           );

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { encryptField, hashPassword, verifyPassword, timingSafeTokenEqual } from '@/lib/crypto';
+import { encryptField, decryptField, hashPassword, verifyPassword, timingSafeTokenEqual } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import {
   sanitizeUser,
@@ -278,6 +278,15 @@ export async function POST(request: NextRequest) {
         success: true,
         valid: true,
         totp_enabled: Boolean(rawUser.totp_enabled),
+        user: {
+          id: rawUser.id || rawUser._id,
+          username: rawUser.username,
+          ad_soyad: rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : rawUser.username,
+          rol: rawUser.rol,
+          ekip_adi: rawUser.ekip_adi || '',
+          ekip_arkadaslari: Array.isArray(rawUser.ekip_arkadaslari) ? rawUser.ekip_arkadaslari : [],
+          ekip_arkadasi: rawUser.ekip_arkadasi || '',
+        },
       });
 
       // Ensure HttpOnly Secure cookie stays synchronized with valid active session token (24h maxAge)
@@ -741,6 +750,9 @@ export async function POST(request: NextRequest) {
         ad_soyad: user.ad_soyad,
         rol: user.rol,
         telefon: user.telefon,
+        ekip_adi: rawUser.ekip_adi || '',
+        ekip_arkadaslari: Array.isArray(rawUser.ekip_arkadaslari) ? rawUser.ekip_arkadaslari : [],
+        ekip_arkadasi: rawUser.ekip_arkadasi || '',
         totp_enabled: Boolean(rawUser.totp_enabled),
       },
     });

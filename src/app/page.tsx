@@ -27,12 +27,34 @@ import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync
 import { signatureQueue } from '@/lib/signatureQueue';
 
 export default function Home() {
-  const [currentTab, setCurrentTab] = useState<NavTab>('search');
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('komur_active_tab') as NavTab | null;
+        if (saved && ['search', 'route', 'shift', 'analytics', 'archive', 'tonnage', 'import', 'guide'].includes(saved)) {
+          return saved;
+        }
+      } catch (e) {}
+    }
+    return 'search';
+  });
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
   const [userName, setUserName] = useState<string>('Saha Personeli');
+  const [userUsername, setUserUsername] = useState<string>('');
+  const [userTeam, setUserTeam] = useState<string>('');
+  const [userPartners, setUserPartners] = useState<string[]>([]);
   const [activeRouteStopsCount, setActiveRouteStopsCount] = useState<number>(0);
+
+  // Persist active tab across browser reloads, screen locks, and app switching
+  useEffect(() => {
+    if (typeof window !== 'undefined' && currentTab) {
+      try {
+        localStorage.setItem('komur_active_tab', currentTab);
+      } catch (e) {}
+    }
+  }, [currentTab]);
 
   // Offline Sync & Network States
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -122,12 +144,18 @@ export default function Home() {
     }
 
     setIsLoggedIn(false);
+    setUserUsername('');
+    setUserTeam('');
+    setUserPartners([]);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('komur_logged_in');
       localStorage.removeItem('komur_user_role');
       localStorage.removeItem('komur_user_name');
       localStorage.removeItem('komur_username');
+      localStorage.removeItem('komur_user_team');
+      localStorage.removeItem('komur_user_partners');
       localStorage.removeItem('komur_session_token');
+      localStorage.removeItem('komur_active_tab');
       try {
         sessionStorage.removeItem('komur_beneficiaries_cache');
       } catch (e) {
@@ -182,6 +210,18 @@ export default function Home() {
               'Bu kullanıcı adı ile başka bir cihazdan oturum açıldı veya 24 saatlik oturum süreniz doldu!'
           );
         }
+      } else if (data.user) {
+        if (data.user.username) {
+          setUserUsername(data.user.username);
+        }
+        if (data.user.ekip_adi !== undefined) {
+          setUserTeam(data.user.ekip_adi || '');
+          localStorage.setItem('komur_user_team', data.user.ekip_adi || '');
+        }
+        if (data.user.ekip_arkadaslari) {
+          setUserPartners(data.user.ekip_arkadaslari || []);
+          localStorage.setItem('komur_user_partners', JSON.stringify(data.user.ekip_arkadaslari || []));
+        }
       }
     } catch (err) {
       // network offline - preserve offline capability
@@ -194,11 +234,22 @@ export default function Home() {
       const savedLogin = localStorage.getItem('komur_logged_in');
       const savedRole = localStorage.getItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
       const savedName = localStorage.getItem('komur_user_name');
+      const savedUsername = localStorage.getItem('komur_username');
       const savedToken = localStorage.getItem('komur_session_token');
+      const savedTeam = localStorage.getItem('komur_user_team') || '';
+      let savedPartners: string[] = [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem('komur_user_partners') || '[]');
+        if (Array.isArray(parsed)) savedPartners = parsed;
+      } catch (e) {}
+
       if (savedLogin === 'true' && savedRole && savedName && savedToken) {
         setIsLoggedIn(true);
         setUserRole(savedRole);
         setUserName(savedName);
+        if (savedUsername) setUserUsername(savedUsername);
+        setUserTeam(savedTeam);
+        setUserPartners(savedPartners);
         // Verify session validity on initial load
         checkActiveSession();
       } else {
@@ -237,15 +288,28 @@ export default function Home() {
     };
   }, [isLoggedIn, checkActiveSession]);
 
-  const handleLoginSuccess = (user: { role: 'ADMIN' | 'PERSONEL'; name: string; username: string; session_token?: string }) => {
+  const handleLoginSuccess = (user: {
+    role: 'ADMIN' | 'PERSONEL';
+    name: string;
+    username: string;
+    session_token?: string;
+    ekip_adi?: string;
+    ekip_arkadaslari?: string[];
+    ekip_arkadasi?: string;
+  }) => {
     setUserRole(user.role);
     setUserName(user.name);
+    setUserUsername(user.username);
+    setUserTeam(user.ekip_adi || '');
+    setUserPartners(user.ekip_arkadaslari || []);
     setIsLoggedIn(true);
     setSessionTerminatedReason(null);
     localStorage.setItem('komur_logged_in', 'true');
     localStorage.setItem('komur_user_role', user.role);
     localStorage.setItem('komur_user_name', user.name);
     localStorage.setItem('komur_username', user.username);
+    localStorage.setItem('komur_user_team', user.ekip_adi || '');
+    localStorage.setItem('komur_user_partners', JSON.stringify(user.ekip_arkadaslari || []));
     if (user.session_token) {
       localStorage.setItem('komur_session_token', user.session_token);
     }
@@ -805,6 +869,9 @@ export default function Home() {
           <RoutePage
             userRole={userRole}
             userName={userName}
+            userUsername={userUsername}
+            userTeam={userTeam}
+            userPartners={userPartners}
             onRefreshAll={handleRefreshAll}
             onNavigateToSearch={() => setCurrentTab('search')}
           />

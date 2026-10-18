@@ -32,6 +32,9 @@ function getOrCreateClientId(): string {
 interface RoutePageProps {
   userRole: 'ADMIN' | 'PERSONEL';
   userName: string;
+  userUsername?: string;
+  userTeam?: string;
+  userPartners?: string[];
   onRefreshAll?: () => void;
   onNavigateToSearch?: () => void;
 }
@@ -39,6 +42,9 @@ interface RoutePageProps {
 export default function RoutePage({
   userRole,
   userName,
+  userUsername,
+  userTeam,
+  userPartners,
   onRefreshAll,
   onNavigateToSearch
 }: RoutePageProps) {
@@ -104,6 +110,59 @@ export default function RoutePage({
     message: string;
   } | null>(null);
 
+  // Check if current user is authorized to deliver / resume / manage this route (Admin, Operator, or Team Partner)
+  const isUserTeamAuthorized = useCallback((route: any): boolean => {
+    if (!route) return true;
+    if (userRole === 'ADMIN') return true;
+
+    const myUsername = (userUsername || '').trim().toLowerCase();
+    const myName = (userName || '').trim().toLowerCase();
+    const myTeam = (userTeam || '').trim().toLowerCase();
+    const myPartners = (userPartners || []).map((p: string) => String(p).trim().toLowerCase());
+
+    const routeOpUser = String(route.isleten_username || route.olusturan_username || '').trim().toLowerCase();
+    const routeOpName = String(route.isleten_personel || route.dagitim_personeli || '').trim().toLowerCase();
+    const routeTeam = String(route.ekip_adi || '').trim().toLowerCase();
+    const routePartners = Array.isArray(route.ekip_arkadaslari)
+      ? route.ekip_arkadaslari.map((p: any) => String(p).trim().toLowerCase())
+      : [];
+    if (route.ekip_arkadasi) {
+      routePartners.push(String(route.ekip_arkadasi).trim().toLowerCase());
+    }
+
+    // If route has no operator assigned yet, anyone can take it
+    if (!routeOpUser && !routeOpName) return true;
+
+    // 1. Direct ownership
+    if (myUsername && routeOpUser && myUsername === routeOpUser) return true;
+    if (myName && routeOpName && myName === routeOpName) return true;
+    if (myUsername && routeOpName && myUsername === routeOpName) return true;
+
+    // 2. Team name match
+    if (myTeam && routeTeam && myTeam === routeTeam) return true;
+
+    // 3. User has route operator in their partners list
+    if (routeOpUser && myPartners.includes(routeOpUser)) return true;
+    if (routeOpName && myPartners.includes(routeOpName)) return true;
+
+    // 4. Route lists user in route's partners list
+    if (myUsername && routePartners.includes(myUsername)) return true;
+    if (myName && routePartners.includes(myName)) return true;
+
+    return false;
+  }, [userRole, userName, userUsername, userTeam, userPartners]);
+
+  // Is this route operated by a teammate rather than directly by this user?
+  const isTeammateRoute = useMemo(() => {
+    if (!activeRoute) return false;
+    const myUsername = (userUsername || '').trim().toLowerCase();
+    const myName = (userName || '').trim().toLowerCase();
+    const routeOpUser = String(activeRoute.isleten_username || activeRoute.olusturan_username || '').trim().toLowerCase();
+    const routeOpName = String(activeRoute.isleten_personel || activeRoute.dagitim_personeli || '').trim().toLowerCase();
+    const isDirectOwner = (myUsername && routeOpUser === myUsername) || (myName && routeOpName === myName);
+    return !isDirectOwner && isUserTeamAuthorized(activeRoute);
+  }, [activeRoute, userUsername, userName, isUserTeamAuthorized]);
+
   // Route lock status: Is the selected activeRoute locked by another staff or another device?
   const isRouteLockedByOther = useMemo(() => {
     if (!activeRoute || !activeRoute.kilitli_personel) return false;
@@ -114,6 +173,12 @@ export default function RoutePage({
     // If THIS tab/device has Route Mode open AND route has our client_id:
     if (isRouteModeOpen && activeRoute.kilitli_client_id && activeRoute.kilitli_client_id === currentClientId) {
       return false; // I am the one actively running Route Mode!
+    }
+
+    // If the route is paused (DURAKLATILDI) and not in active route mode:
+    // the lock is free so either operator or team partner can resume it!
+    if (activeRoute.durum === 'DURAKLATILDI' || !activeRoute.aktif_rota_modu) {
+      return false;
     }
 
     // If locked to another client/device:
@@ -389,6 +454,131 @@ export default function RoutePage({
     }
   };
 
+  // ========================================================
+  // OTURUM SÜREKLİLİĞİ & ARKA PLAN / EKRAN KİLİDİ DEVAM ETME
+  // ========================================================
+  const sessionUserKey = userUsername || userName || 'personel';
+  const hasRestoredSessionRef = useRef<boolean>(false);
+  const wakeLockSentinelRef = useRef<any>(null);
+
+  // Screen Wake Lock API: Rota Modundayken telefon ekranının kapanmasını/uyumasını engelle
+  const requestWakeLock = useCallback(async () => {
+    if (typeof window === 'undefined' || !('wakeLock' in navigator)) return;
+    try {
+      if (!wakeLockSentinelRef.current) {
+        wakeLockSentinelRef.current = await (navigator as any).wakeLock.request('screen');
+        wakeLockSentinelRef.current.addEventListener('release', () => {
+          wakeLockSentinelRef.current = null;
+        });
+      }
+    } catch {
+      // Ekran kilidi düşük pil veya arka planda reddedilebilir
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(async () => {
+    if (wakeLockSentinelRef.current) {
+      try {
+        await wakeLockSentinelRef.current.release();
+      } catch {}
+      wakeLockSentinelRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isRouteModeOpen) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+    return () => {
+      releaseWakeLock();
+    };
+  }, [isRouteModeOpen, requestWakeLock, releaseWakeLock]);
+
+  // Oturum durumunu anlık olarak localStorage'a kaydet (Uygulama kapansa/telefon kapansa bile korunur)
+  const saveCurrentSession = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const storageKey = `komur_active_route_session_${sessionUserKey}`;
+    if (isRouteModeOpen && activeRoute) {
+      const routeId = String(activeRoute.id || activeRoute._id);
+      const sessionData = {
+        routeId,
+        isRouteModeOpen: true,
+        routeModeIndex,
+        routeModeTorba,
+        routeModeRecipient,
+        routeModeNote,
+        routeModeTab,
+        routeModeDeferType,
+        timestamp: Date.now()
+      };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(sessionData));
+      } catch (e) {}
+    }
+  }, [
+    isRouteModeOpen,
+    activeRoute,
+    routeModeIndex,
+    routeModeTorba,
+    routeModeRecipient,
+    routeModeNote,
+    routeModeTab,
+    routeModeDeferType,
+    sessionUserKey
+  ]);
+
+  const clearSavedSession = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const storageKey = `komur_active_route_session_${sessionUserKey}`;
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (e) {}
+  }, [sessionUserKey]);
+
+  // Rota Modu açıkken her veri değişiminde veya sayfa arka plana geçtiğinde/kapandığında kaydet
+  useEffect(() => {
+    if (isRouteModeOpen) {
+      saveCurrentSession();
+    }
+  }, [
+    isRouteModeOpen,
+    routeModeIndex,
+    routeModeTorba,
+    routeModeRecipient,
+    routeModeNote,
+    routeModeTab,
+    routeModeDeferType,
+    saveCurrentSession
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleBeforeUnload = () => {
+      saveCurrentSession();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        saveCurrentSession();
+      } else if (document.visibilityState === 'visible' && isRouteModeOpen) {
+        requestWakeLock();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [saveCurrentSession, isRouteModeOpen, requestWakeLock]);
+
   // Helper: Sync Rota Modu form inputs when switching to a stop
   const syncRouteModeInputsForStop = useCallback((stop: any) => {
     if (!stop) return;
@@ -444,6 +634,15 @@ export default function RoutePage({
   const handleOpenRouteMode = async (targetRoute?: any, forcedStopIndex?: number) => {
     const routeToUse = targetRoute || activeRoute;
     if (!routeToUse || !routeToUse.duraklar || routeToUse.duraklar.length === 0) return;
+
+    if (!isUserTeamAuthorized(routeToUse)) {
+      showAlert({
+        title: '🔒 Yetkisiz Erişim / Farklı Ekip',
+        message: `"${routeToUse.rota_adi}" rotası ${routeToUse.isleten_personel || routeToUse.dagitim_personeli || 'başka bir personel'} personeline aittir. Bu rotayı yalnızca kendisi veya tanımlı ekip arkadaşları işletebilir.`,
+        type: 'lock'
+      });
+      return;
+    }
 
     const routeId = routeToUse.id || routeToUse._id;
     const stops = routeToUse.duraklar;
@@ -542,6 +741,7 @@ export default function RoutePage({
 
   // Normal Exit Rota Modu (Release lock)
   const handleExitRouteMode = async () => {
+    clearSavedSession();
     setIsRouteModeOpen(false);
     setRouteModePausedNotice(false);
 
@@ -571,6 +771,7 @@ export default function RoutePage({
 
   // Pause Route and Exit Rota Modu (releases lock on backend)
   const handlePauseRouteAndExit = async (customReason?: string) => {
+    clearSavedSession();
     if (!activeRoute) {
       setIsRouteModeOpen(false);
       return;
@@ -695,6 +896,60 @@ export default function RoutePage({
 
     return () => clearInterval(interval);
   }, [isRouteModeOpen, activeRoute?.id, activeRoute?._id, routeModeIndex, userName, currentClientId]);
+
+  // Sayfa açıldığında veya yenilendiğinde, yarım kalan aktif Rota Modu oturumunu otomatik geri yükle
+  useEffect(() => {
+    if (hasRestoredSessionRef.current || !activeRoutes || activeRoutes.length === 0) return;
+    if (typeof window === 'undefined') return;
+
+    const storageKey = `komur_active_route_session_${sessionUserKey}`;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        hasRestoredSessionRef.current = true;
+        return;
+      }
+      const savedSession = JSON.parse(raw);
+      // Sadece son 24 saat içindeki oturumları geri yükle
+      if (savedSession && savedSession.routeId && Date.now() - savedSession.timestamp < 24 * 60 * 60 * 1000) {
+        const targetRoute = activeRoutes.find(
+          (r) => String(r.id || r._id) === String(savedSession.routeId)
+        );
+
+        if (targetRoute && targetRoute.durum !== 'TAMAMLANDI' && isUserTeamAuthorized(targetRoute)) {
+          hasRestoredSessionRef.current = true;
+          setSelectedRouteId(String(targetRoute.id || targetRoute._id));
+          const stopIdx =
+            typeof savedSession.routeModeIndex === 'number' &&
+            targetRoute.duraklar &&
+            targetRoute.duraklar[savedSession.routeModeIndex]
+              ? savedSession.routeModeIndex
+              : 0;
+
+          if (savedSession.isRouteModeOpen) {
+            if (savedSession.routeModeTorba) setRouteModeTorba(savedSession.routeModeTorba);
+            if (savedSession.routeModeRecipient) setRouteModeRecipient(savedSession.routeModeRecipient);
+            if (savedSession.routeModeNote) setRouteModeNote(savedSession.routeModeNote);
+            if (savedSession.routeModeTab) setRouteModeTab(savedSession.routeModeTab);
+            if (savedSession.routeModeDeferType) setRouteModeDeferType(savedSession.routeModeDeferType);
+
+            handleOpenRouteMode(targetRoute, stopIdx).then(() => {
+              showToast({
+                type: 'info',
+                title: '🔄 Oturum Devam Ettirildi',
+                message: `Yarım kalan "${targetRoute.rota_adi}" teslimat ekranınız kaldığınız yerden (#${stopIdx + 1}. Durak) otomatik olarak geri yüklendi.`
+              });
+            });
+            return;
+          }
+        }
+      }
+      hasRestoredSessionRef.current = true;
+    } catch (e) {
+      console.error('Error restoring route session:', e);
+      hasRestoredSessionRef.current = true;
+    }
+  }, [activeRoutes, isUserTeamAuthorized, sessionUserKey]);
 
   // Sign beneficiary directly inside Rota Modu (1-tap kapıda imza)
   const handleSignInRouteMode = async (stopIndex: number, stop: any) => {
@@ -848,6 +1103,7 @@ export default function RoutePage({
 
       // Case 1: All stops in the route are now TAMAMLANDI -> finalize route & exit Rota Modu!
       if (allCompleted) {
+        clearSavedSession();
         setIsRouteModeOpen(false);
         setRouteModePausedNotice(false);
         setRouteStatusBanner({
@@ -1216,6 +1472,7 @@ export default function RoutePage({
       if (data.success) {
         setShowStopModal(null);
         if (data.routeAutoCompleted) {
+          clearSavedSession();
           setRouteStatusBanner({
             type: 'COMPLETED',
             title: '🎉 Tüm Kayıtlar Tamamlandı — Rota "Tamamlandı" Durumuna Geçti!',
@@ -1364,6 +1621,7 @@ export default function RoutePage({
 
       const data = await res.json();
       if (data.success) {
+        clearSavedSession();
         setShowFinalizeModal(false);
         const remaining = activeRoutes.filter(r => String(r.id || r._id) !== String(activeRoute.id || activeRoute._id));
         setActiveRoutes(remaining);
@@ -1915,8 +2173,19 @@ export default function RoutePage({
                           )}
                           <span className="flex items-center gap-1 text-slate-600">
                             <Users className="w-3.5 h-3.5 text-slate-500" />
-                            Dağıtım: {activeRoute.dagitim_personeli}
+                            Dağıtım: {activeRoute.isleten_personel || activeRoute.dagitim_personeli}
                           </span>
+                          {activeRoute.ekip_adi && (
+                            <span className="flex items-center gap-1 text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                              <Users className="w-3.5 h-3.5 text-indigo-600" />
+                              Ekip: {activeRoute.ekip_adi}
+                            </span>
+                          )}
+                          {isTeammateRoute && (
+                            <span className="flex items-center gap-1 text-emerald-800 font-black bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
+                              🤝 Ekip Arkadaşısınız
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1982,6 +2251,29 @@ export default function RoutePage({
                     )}
 
                     {/* ======================================================== */}
+                    {/* FARKLI PERSONEL / EKİP UYARI BANNERI                      */}
+                    {/* ======================================================== */}
+                    {!isUserTeamAuthorized(activeRoute) && (
+                      <div className="p-3.5 rounded-2xl bg-rose-500/10 border-2 border-rose-500/30 text-rose-950 flex items-start justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <Shield className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-rose-900 bg-rose-200/90 px-1.5 py-0.5 rounded">
+                                🔒 Farklı Personele/Ekibe Ait Rota
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-rose-900 mt-0.5">
+                              Bu rota <strong>{activeRoute.isleten_personel || activeRoute.dagitim_personeli}</strong> {activeRoute.ekip_adi ? `(${activeRoute.ekip_adi})` : ''} tarafından işletilmektedir. Kural gereği bu rotadaki teslimatları yalnızca görevli personel veya tanımlı ekip arkadaşları yapabilir.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ======================================================== */}
                     {/* UBER/LYFT TARZI ROTA MODUNA GİRİŞ HERO BUTONU            */}
                     {/* ======================================================== */}
                     {(() => {
@@ -2036,6 +2328,40 @@ export default function RoutePage({
                         );
                       }
 
+                      if (!isUserTeamAuthorized(activeRoute)) {
+                        return (
+                          <div className="pt-1">
+                            <div
+                              className="w-full p-3.5 rounded-2xl text-left flex items-center justify-between gap-3 bg-slate-100 border-2 border-slate-300 text-slate-700 opacity-90 cursor-not-allowed select-none"
+                              title="Bu rota başka bir personele/ekibe aittir."
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-slate-400 text-white shadow-xs">
+                                  <Lock className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-sm font-black tracking-wide text-slate-800 uppercase">
+                                      Farklı Personele / Ekibe Ait
+                                    </span>
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
+                                      {activeRoute.isleten_personel || activeRoute.dagitim_personeli}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] font-medium text-slate-600 truncate mt-0.5">
+                                    Yalnızca görevli personel veya ekip arkadaşları bu rotayı işletebilir.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="px-2.5 py-1.5 rounded-xl text-xs font-black shrink-0 flex items-center gap-1 bg-slate-200 text-slate-700 border border-slate-300">
+                                <Shield className="w-3.5 h-3.5" />
+                                <span>Yetkisiz</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       return (
                         <div className="pt-1">
                           <button
@@ -2058,9 +2384,11 @@ export default function RoutePage({
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="text-sm font-black tracking-wide text-white uppercase">
-                                    {isPaused
+                                    {isTeammateRoute
+                                      ? (isPaused ? '🤝 Ekip Arkadaşı: Rotaya Devam Et' : '🤝 Ekip Arkadaşı: Rota Modunu Başlat')
+                                      : (isPaused
                                       ? 'Rota Moduna Devam Et'
-                                      : 'Rota Moduna Gir (Saha Modu)'}
+                                      : 'Rota Moduna Gir (Saha Modu)')}
                                   </span>
                                   <span
                                     className="text-[10px] font-black px-2 py-0.5 rounded-full"
@@ -2359,13 +2687,19 @@ export default function RoutePage({
                             <button
                               type="button"
                               onClick={() => handleOpenRouteMode(activeRoute, index)}
-                              disabled={isRouteLockedByOther}
+                              disabled={isRouteLockedByOther || !isUserTeamAuthorized(activeRoute)}
                               className={`px-1.5 py-1 rounded text-[10px] font-black flex items-center gap-0.5 ${
-                                isRouteLockedByOther
+                                isRouteLockedByOther || !isUserTeamAuthorized(activeRoute)
                                   ? 'text-slate-400 opacity-40 cursor-not-allowed'
                                   : 'text-sky-800 hover:bg-sky-100'
                               }`}
-                              title={isRouteLockedByOther ? `Bu rota ${routeLockedByName} tarafından kilitli` : 'Rota Modunu Bu Duraktan Başlat'}
+                              title={
+                                !isUserTeamAuthorized(activeRoute)
+                                  ? 'Bu rota başka bir personele/ekibe ait'
+                                  : isRouteLockedByOther
+                                  ? `Bu rota ${routeLockedByName} tarafından kilitli`
+                                  : 'Rota Modunu Bu Duraktan Başlat'
+                              }
                             >
                               <Play className="w-3 h-3 fill-current" />
                               <span className="hidden sm:inline">Odakla</span>
@@ -2373,7 +2707,7 @@ export default function RoutePage({
                             <button
                               type="button"
                               onClick={() => handleMoveStop(index, 'UP')}
-                              disabled={isRouteLockedByOther || index === 0}
+                              disabled={isRouteLockedByOther || !isUserTeamAuthorized(activeRoute) || index === 0}
                               className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
                               title="Yukarı Taşı"
                             >
@@ -2382,7 +2716,7 @@ export default function RoutePage({
                             <button
                               type="button"
                               onClick={() => handleMoveStop(index, 'DOWN')}
-                              disabled={isRouteLockedByOther || index === (activeRoute.duraklar?.length || 0) - 1}
+                              disabled={isRouteLockedByOther || !isUserTeamAuthorized(activeRoute) || index === (activeRoute.duraklar?.length || 0) - 1}
                               className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
                               title="Aşağı Taşı"
                             >
@@ -2391,9 +2725,9 @@ export default function RoutePage({
                             <button
                               type="button"
                               onClick={() => handleRemoveStop(index, stop)}
-                              disabled={isRouteLockedByOther}
+                              disabled={isRouteLockedByOther || !isUserTeamAuthorized(activeRoute)}
                               className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-0.5 border-l border-slate-200 pl-1 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Bu haneyi rotadan çıkar (Beklemeye döner)"
+                              title={!isUserTeamAuthorized(activeRoute) ? 'Yetkisiz erişim' : 'Bu haneyi rotadan çıkar (Beklemeye döner)'}
                             >
                               <UserMinus className="w-3.5 h-3.5" />
                             </button>
@@ -2475,6 +2809,14 @@ export default function RoutePage({
                                         message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
                                         type: 'lock',
                                         badge: routeLockedByName || undefined
+                                      });
+                                      return;
+                                    }
+                                    if (!isUserTeamAuthorized(activeRoute)) {
+                                      showAlert({
+                                        title: '🔒 Yetkisiz Erişim / Farklı Ekip',
+                                        message: `"${activeRoute.rota_adi}" rotası ${activeRoute.isleten_personel || activeRoute.dagitim_personeli || 'başka bir personel'} personeline aittir. Bu rotadaki teslimatları yalnızca kendisi veya tanımlı ekip arkadaşları geri alabilir.`,
+                                        type: 'lock'
                                       });
                                       return;
                                     }
@@ -4000,6 +4342,13 @@ export default function RoutePage({
                           >
                             ROTA MODU
                           </span>
+                          {isTeammateRoute && (
+                            <span
+                              className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-600 text-white"
+                            >
+                              🤝 EKİP ORTAKLIĞI
+                            </span>
+                          )}
                           <span className="text-xs font-black text-white truncate">
                             {activeRoute.rota_adi}
                           </span>
