@@ -161,7 +161,7 @@ export default function DeliveryArchive({
 
       {/* Today's Delivery Fast Actions Banner */}
       {subTab === 'DELIVERIES' && todayRecords.length > 0 && (
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <CheckCircle2 className="w-5 h-5" />
@@ -179,7 +179,7 @@ export default function DeliveryArchive({
             </div>
           </div>
 
-          <div className="w-full sm:w-auto flex items-center gap-2 justify-end">
+          <div className="w-full sm:w-auto grid grid-cols-2 sm:flex sm:items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -189,19 +189,22 @@ export default function DeliveryArchive({
                 };
                 setPrintDayGroup(todayGroup);
               }}
-              className="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs whitespace-nowrap cursor-pointer"
+              className="w-full sm:w-auto h-full min-h-[42px] px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center justify-center text-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
               title="Bugünün teslimat tutanağını resmi rapor formatında görüntüle ve yazdır"
             >
               <Printer className="w-4 h-4 shrink-0" />
-              <span>Günün Tutanağını Yazdır</span>
+              <span className="leading-snug">Günün Tutanağını Yazdır</span>
             </button>
             <a
               href={`/api/export?type=daily_deliveries&date=${todayStr}`}
               download={`Bugunku_Komur_Teslimat_Listesi_${todayStr}.xlsx`}
-              className="flex-1 sm:flex-initial justify-center px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs whitespace-nowrap cursor-pointer"
+              className="w-full sm:w-auto h-full min-h-[42px] px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center text-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
+              title="Bugünün teslimat listesini Excel olarak indir"
             >
               <Download className="w-4 h-4 shrink-0" />
-              <span>Günün Listesini İndir (Excel)</span>
+              <span className="leading-snug">
+                Günün Listesini İndir<span className="hidden sm:inline"> (Excel)</span>
+              </span>
             </a>
           </div>
         </div>
