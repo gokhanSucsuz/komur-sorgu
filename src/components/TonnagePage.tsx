@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
-import { turkishIncludes } from '@/lib/normalizer';
+import { turkishIncludes, formatTonnage, normalizeToTon } from '@/lib/normalizer';
 
 interface TonnagePageProps {
   trucks: any[];
@@ -221,10 +221,10 @@ export default function TonnagePage({
         return Number(a.tir_sirasi || 0) - Number(b.tir_sirasi || 0);
       }
       if (mainSortOrder === 'TON_DESC') {
-        return Number(b.net_tonaj || 0) - Number(a.net_tonaj || 0);
+        return normalizeToTon(b.net_tonaj) - normalizeToTon(a.net_tonaj);
       }
       if (mainSortOrder === 'TON_ASC') {
-        return Number(a.net_tonaj || 0) - Number(b.net_tonaj || 0);
+        return normalizeToTon(a.net_tonaj) - normalizeToTon(b.net_tonaj);
       }
       // NEWEST default
       if (b.tarih !== a.tarih) return (b.tarih || '').localeCompare(a.tarih || '');
@@ -233,7 +233,7 @@ export default function TonnagePage({
   }, [trucks, mainSearchQuery, mainDatePreset, mainStartDate, mainEndDate, mainPlakaFilter, mainSortOrder]);
 
   const filteredMainNetTonaj = useMemo(
-    () => filteredMainTrucks.reduce((acc: number, t: any) => acc + (Number(t.net_tonaj) || 0), 0),
+    () => filteredMainTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0),
     [filteredMainTrucks]
   );
 
@@ -299,13 +299,19 @@ export default function TonnagePage({
     });
   }, [trucks, reportStartDate, reportEndDate, reportSearchQuery]);
 
-  const reportTotalBrut = filteredReportTrucks.reduce((acc: number, t: any) => acc + (Number(t.brut_tonaj) || 0), 0);
-  const reportTotalNet = filteredReportTrucks.reduce((acc: number, t: any) => acc + (Number(t.net_tonaj) || 0), 0);
-  const reportTotalTara = filteredReportTrucks.reduce((acc: number, t: any) => acc + (Number(t.tara_tonaj) || (Number(t.brut_tonaj) - Number(t.net_tonaj)) || 0), 0);
+  const reportTotalBrut = filteredReportTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.brut_tonaj), 0);
+  const reportTotalNet = filteredReportTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0);
+  const reportTotalTara = filteredReportTrucks.reduce((acc: number, t: any) => {
+    const b = normalizeToTon(t.brut_tonaj);
+    const n = normalizeToTon(t.net_tonaj);
+    const tr = normalizeToTon(t.tara_tonaj);
+    return acc + (tr > 0 ? tr : (b > n ? b - n : 0));
+  }, 0);
 
-  const netVal = parseFloat(netTonaj) || 0;
-  const brutVal = parseFloat(brutTonaj) || 0;
-  const autoTara = brutVal > netVal ? (brutVal - netVal).toFixed(3) : '0.000';
+  const netVal = normalizeToTon(netTonaj);
+  const brutVal = normalizeToTon(brutTonaj);
+  const autoTaraVal = brutVal > netVal ? parseFloat((brutVal - netVal).toFixed(3)) : 0;
+  const autoTara = autoTaraVal.toFixed(3);
 
   const handleAddTruck = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,7 +368,7 @@ export default function TonnagePage({
       showToast({
         type: 'success',
         title: isEdit ? 'Tır Kaydı Güncellendi' : 'Yeni Tır Kaydedildi',
-        message: `"${plaka.toUpperCase()}" plakalı tır (${netVal} Ton) ${isEdit ? 'güncellendi' : 'kaydedildi'}.`,
+        message: `"${plaka.toUpperCase()}" plakalı tır (${formatTonnage(netVal).combined}) ${isEdit ? 'güncellendi' : 'kaydedildi'}.`,
       });
 
       setShowAddModal(false);
@@ -465,22 +471,30 @@ export default function TonnagePage({
           <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
             <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider">Gelen Net Kömür</span>
             <div className="text-xl font-black text-amber-800 mt-0.5">
-              {stats?.toplamNetTonaj?.toLocaleString('tr-TR') || '0'} <span className="text-xs font-normal text-slate-500">Ton</span>
+              {formatTonnage(stats?.toplamNetTonaj).tonStr}
+            </div>
+            <div className="text-[10px] text-amber-900 font-bold">
+              ({formatTonnage(stats?.toplamNetTonaj).kgStr})
             </div>
           </div>
 
           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
             <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür</span>
             <div className="text-xl font-black text-emerald-700 mt-0.5">
-              {stats?.dagitilanNetTonaj?.toLocaleString('tr-TR') || '0'} <span className="text-xs font-normal text-slate-500">Ton</span>
+              {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
             </div>
-            <div className="text-[10px] text-emerald-800 font-bold">({stats?.toplamDagitilanTorba || 0} Torba)</div>
+            <div className="text-[10px] text-emerald-800 font-bold">
+              {formatTonnage(stats?.dagitilanNetTonaj).kgStr} ({stats?.toplamDagitilanTorba || 0} Torba)
+            </div>
           </div>
 
           <div className="p-3 rounded-xl bg-sky-50 border border-sky-200">
             <span className="text-[10px] uppercase font-bold text-sky-800 tracking-wider">Kalan Stok</span>
-            <div className={`text-xl font-black mt-0.5 ${stats?.kalanStokTonaj < 5 ? 'text-rose-600' : 'text-sky-800'}`}>
-              {stats?.kalanStokTonaj?.toLocaleString('tr-TR') || '0'} <span className="text-xs font-normal text-slate-500">Ton</span>
+            <div className={`text-xl font-black mt-0.5 ${Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-sky-800'}`}>
+              {formatTonnage(stats?.kalanStokTonaj).tonStr}
+            </div>
+            <div className="text-[10px] text-sky-900 font-bold">
+              ({formatTonnage(stats?.kalanStokTonaj).kgStr})
             </div>
           </div>
         </div>
@@ -503,7 +517,7 @@ export default function TonnagePage({
               Listelenen: <strong className="text-slate-900">{filteredMainTrucks.length}</strong> / {trucks.length} Tır
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-bold">
-              Filtre Net Tonaj: <strong className="font-mono">{filteredMainNetTonaj.toFixed(3)} Ton</strong>
+              Filtre Net Tonaj: <strong className="font-mono">{formatTonnage(filteredMainNetTonaj).combined}</strong>
             </span>
             {hasActiveMainFilters && (
               <button
@@ -747,20 +761,32 @@ export default function TonnagePage({
                 </div>
 
                 {/* Tonnage Detail Row */}
-                <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500">Brüt Tonaj</span>
-                    <p className="text-sm font-bold text-slate-900 mt-0.5">{t.brut_tonaj} Ton</p>
-                  </div>
-                  <div className="border-x border-slate-200">
-                    <span className="text-[10px] uppercase font-bold text-amber-800">Net Tonaj</span>
-                    <p className="text-sm font-black text-amber-700 mt-0.5">{t.net_tonaj} Ton</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500">Dara (Tara)</span>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">{t.tara_tonaj} Ton</p>
-                  </div>
-                </div>
+                {(() => {
+                  const brutFmt = formatTonnage(t.brut_tonaj);
+                  const netFmt = formatTonnage(t.net_tonaj);
+                  const rawTara = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : Math.max(0, brutFmt.ton - netFmt.ton);
+                  const taraFmt = formatTonnage(rawTara);
+
+                  return (
+                    <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-500">Brüt Tonaj</span>
+                        <p className="text-sm font-bold text-slate-900 mt-0.5">{brutFmt.tonStr}</p>
+                        <span className="text-[10px] font-medium text-slate-500 block">({brutFmt.kgStr})</span>
+                      </div>
+                      <div className="border-x border-slate-200 bg-amber-50/60 rounded-lg py-0.5">
+                        <span className="text-[10px] uppercase font-extrabold text-amber-900">Net Tonaj</span>
+                        <p className="text-sm font-black text-amber-800 mt-0.5">{netFmt.tonStr}</p>
+                        <span className="text-[10px] font-bold text-amber-900 block">({netFmt.kgStr})</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-500">Dara (Tara)</span>
+                        <p className="text-sm font-bold text-slate-700 mt-0.5">{taraFmt.tonStr}</p>
+                        <span className="text-[10px] font-medium text-slate-500 block">({taraFmt.kgStr})</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Details (Irsaliye, Sofor, Notlar) */}
                 <div className="flex items-center justify-between text-xs text-slate-600 pt-1 font-medium flex-wrap gap-1">
@@ -870,7 +896,7 @@ export default function TonnagePage({
                             isSelected ? 'text-amber-50' : 'text-slate-500'
                           }`}
                         >
-                          {t.sofor_adi || 'Şoför Belirtilmemiş'} • {t.net_tonaj} T
+                          {t.sofor_adi || 'Şoför Belirtilmemiş'} • {formatTonnage(t.net_tonaj).compact}
                         </div>
                       </button>
                     );
@@ -898,7 +924,7 @@ export default function TonnagePage({
                       return (
                         <option key={tid} value={tid}>
                           #{t.tir_sirasi} | {t.plaka}
-                          {t.dorse_plaka ? ` (Dorse: ${t.dorse_plaka})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {t.net_tonaj} Ton ({t.tarih})
+                          {t.dorse_plaka ? ` (Dorse: ${t.dorse_plaka})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({t.tarih})
                         </option>
                       );
                     })}
@@ -1019,32 +1045,42 @@ export default function TonnagePage({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                      Brüt Tonaj (Ton)
+                      Brüt Tonaj (Ton veya kg)
                     </label>
                     <input
                       type="number"
-                      step="0.001"
+                      step="any"
                       value={brutTonaj}
                       onChange={(e) => setBrutTonaj(e.target.value)}
-                      placeholder="Örn: 42.150"
+                      placeholder="Örn: 42.15 veya 42150"
                       className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 font-bold focus:outline-none focus:border-amber-500 text-sm"
                       required
                     />
+                    {brutTonaj && (
+                      <span className="text-[11px] font-semibold text-slate-600 block mt-1">
+                        Karşılığı: <strong className="text-slate-900">{formatTonnage(brutTonaj).combined}</strong>
+                      </span>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">
-                      Net Tonaj (Ton)
+                      Net Tonaj (Ton veya kg)
                     </label>
                     <input
                       type="number"
-                      step="0.001"
+                      step="any"
                       value={netTonaj}
                       onChange={(e) => setNetTonaj(e.target.value)}
-                      placeholder="Örn: 27.200"
+                      placeholder="Örn: 27.85 veya 27850"
                       className="w-full px-3 py-2 rounded-xl bg-white border border-amber-400 text-amber-900 font-black focus:outline-none focus:border-amber-500 text-sm"
                       required
                     />
+                    {netTonaj && (
+                      <span className="text-[11px] font-semibold text-amber-900 block mt-1">
+                        Karşılığı: <strong className="text-amber-950 font-bold">{formatTonnage(netTonaj).combined}</strong>
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1052,7 +1088,7 @@ export default function TonnagePage({
                 <div className="flex items-center justify-between text-xs text-slate-600 pt-2 border-t border-slate-200 font-medium">
                   <span>Hesaplanan Dara / Tara Miktarı:</span>
                   <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                    {autoTara} Ton
+                    {formatTonnage(autoTaraVal).combined}
                   </span>
                 </div>
               </div>
@@ -1142,9 +1178,9 @@ export default function TonnagePage({
                     <span>•</span>
                     <span>Gelen Tır: <strong className="text-emerald-700">{filteredReportTrucks.length} Adet</strong></span>
                     <span>•</span>
-                    <span>Net Kömür: <strong className="text-amber-800">{reportTotalNet.toFixed(3)} Ton</strong></span>
+                    <span>Net Kömür: <strong className="text-amber-800">{formatTonnage(reportTotalNet).combined}</strong></span>
                     <span>•</span>
-                    <span>Brüt Ağırlık: <strong className="text-slate-800">{reportTotalBrut.toFixed(3)} Ton</strong></span>
+                    <span>Brüt Ağırlık: <strong className="text-slate-800">{formatTonnage(reportTotalBrut).combined}</strong></span>
                   </p>
                 </div>
               </div>
@@ -1370,17 +1406,18 @@ export default function TonnagePage({
                           <th className="p-2 w-24">Dorse Plaka</th>
                           <th className="p-2 w-24">İrsaliye / Fiş</th>
                           <th className="p-2">Şoför Adı</th>
-                          <th className="p-2 text-right w-20">Brüt (Ton)</th>
-                          <th className="p-2 text-right w-20">Dara (Ton)</th>
-                          <th className="p-2 text-right w-20">Net (Ton)</th>
+                          <th className="p-2 text-right w-24">Brüt (Ton / kg)</th>
+                          <th className="p-2 text-right w-24">Dara (Ton / kg)</th>
+                          <th className="p-2 text-right w-24">Net (Ton / kg)</th>
                           <th className="p-2">Açıklama / Menşe</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                         {filteredReportTrucks.map((t: any, index: number) => {
-                          const brut = Number(t.brut_tonaj) || 0;
-                          const net = Number(t.net_tonaj) || 0;
-                          const tara = Number(t.tara_tonaj) || (brut > net ? brut - net : 0);
+                          const brutFmt = formatTonnage(t.brut_tonaj);
+                          const netFmt = formatTonnage(t.net_tonaj);
+                          const rawTara = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : Math.max(0, brutFmt.ton - netFmt.ton);
+                          const taraFmt = formatTonnage(rawTara);
 
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
@@ -1391,10 +1428,17 @@ export default function TonnagePage({
                               <td className="p-2 font-mono font-semibold text-sky-900">{t.dorse_plaka || '-'}</td>
                               <td className="p-2 font-mono text-slate-600 font-semibold">{t.irsaliye_no}</td>
                               <td className="p-2 font-bold text-slate-800">{t.sofor_adi || '-'}</td>
-                              <td className="p-2 text-right font-mono text-slate-700">{brut.toFixed(3)}</td>
-                              <td className="p-2 text-right font-mono text-slate-500">{tara.toFixed(3)}</td>
-                              <td className="p-2 text-right font-mono font-black text-amber-800 bg-amber-50/40">
-                                {net.toFixed(3)}
+                              <td className="p-2 text-right font-mono text-slate-700">
+                                <div className="font-bold">{brutFmt.tonStr}</div>
+                                <div className="text-[10px] text-slate-500 font-normal">({brutFmt.kgStr})</div>
+                              </td>
+                              <td className="p-2 text-right font-mono text-slate-500">
+                                <div className="font-bold">{taraFmt.tonStr}</div>
+                                <div className="text-[10px] text-slate-400 font-normal">({taraFmt.kgStr})</div>
+                              </td>
+                              <td className="p-2 text-right font-mono font-black text-amber-800 bg-amber-50/50">
+                                <div className="font-black text-amber-900">{netFmt.tonStr}</div>
+                                <div className="text-[10px] text-amber-700 font-bold">({netFmt.kgStr})</div>
                               </td>
                               <td className="p-2 text-slate-600 text-[11px]">{t.notlar || '-'}</td>
                             </tr>
@@ -1404,9 +1448,18 @@ export default function TonnagePage({
                       <tfoot>
                         <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
                           <td colSpan={7} className="p-2.5 text-right uppercase">GENEL TOPLAM ({filteredReportTrucks.length} TIR):</td>
-                          <td className="p-2.5 text-right font-mono">{reportTotalBrut.toFixed(3)} Ton</td>
-                          <td className="p-2.5 text-right font-mono text-slate-600">{reportTotalTara.toFixed(3)} Ton</td>
-                          <td className="p-2.5 text-right font-mono text-amber-800 bg-amber-100/50">{reportTotalNet.toFixed(3)} Ton</td>
+                          <td className="p-2.5 text-right font-mono text-slate-800">
+                            <div className="font-black">{formatTonnage(reportTotalBrut).tonStr}</div>
+                            <div className="text-[10px] text-slate-600 font-medium">({formatTonnage(reportTotalBrut).kgStr})</div>
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-slate-600">
+                            <div className="font-black">{formatTonnage(reportTotalTara).tonStr}</div>
+                            <div className="text-[10px] text-slate-500 font-medium">({formatTonnage(reportTotalTara).kgStr})</div>
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-amber-900 bg-amber-100/60">
+                            <div className="font-black text-amber-950">{formatTonnage(reportTotalNet).tonStr}</div>
+                            <div className="text-[10px] text-amber-800 font-bold">({formatTonnage(reportTotalNet).kgStr})</div>
+                          </td>
                           <td className="p-2.5"></td>
                         </tr>
                       </tfoot>

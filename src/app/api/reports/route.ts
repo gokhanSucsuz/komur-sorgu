@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { getRecordStreetInfo } from '@/lib/normalizer';
+import { getRecordStreetInfo, normalizeToTon } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { decryptField, isEncrypted } from '@/lib/crypto';
 
@@ -389,12 +389,12 @@ export async function GET(request: NextRequest) {
     const trucks = mapDocs(rawTrucks);
 
     const toplamTirSayisi = trucks.length;
-    const gelenNetTonaj = parseFloat(trucks.reduce((acc, t) => acc + (t.net_tonaj || 0), 0).toFixed(3));
-    const gelenBrutTonaj = parseFloat(trucks.reduce((acc, t) => acc + (t.brut_tonaj || 0), 0).toFixed(3));
+    const gelenNetTonaj = parseFloat(trucks.reduce((acc, t) => acc + normalizeToTon(t.net_tonaj), 0).toFixed(3));
+    const gelenBrutTonaj = parseFloat(trucks.reduce((acc, t) => acc + normalizeToTon(t.brut_tonaj), 0).toFixed(3));
 
     // Overall Remaining Stock (All trucks vs All deliveries)
     const allAllTrucks = await trucksCol.find({}).toArray();
-    const sahadakiToplamGelenTon = allAllTrucks.reduce((acc: number, t: any) => acc + Number(t.net_tonaj || 0), 0);
+    const sahadakiToplamGelenTon = allAllTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0);
     const sahadakiToplamDagitilanBags = allBeneficiaries.reduce((acc: number, b: any) => acc + Number(b.torba_sayisi || 0), 0);
     const sahadakiToplamDagitilanTon = parseFloat((sahadakiToplamDagitilanBags * 0.025).toFixed(3));
     const kalanStokTonaj = parseFloat((sahadakiToplamGelenTon - sahadakiToplamDagitilanTon).toFixed(3));

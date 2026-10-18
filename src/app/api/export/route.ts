@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 
 /**
@@ -529,13 +529,14 @@ export async function GET(request: NextRequest) {
       let totalTara = 0;
 
       const exportData = records.map((t: any, idx: number) => {
-        const brut = Number(t.brut_tonaj) || 0;
-        const net = Number(t.net_tonaj) || 0;
-        const tara = Number(t.tara_tonaj) || (brut > net ? brut - net : 0);
+        const brutFmt = formatTonnage(t.brut_tonaj);
+        const netFmt = formatTonnage(t.net_tonaj);
+        const rawTara = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : Math.max(0, brutFmt.ton - netFmt.ton);
+        const taraFmt = formatTonnage(rawTara);
 
-        totalBrut += brut;
-        totalNet += net;
-        totalTara += tara;
+        totalBrut += brutFmt.ton;
+        totalNet += netFmt.ton;
+        totalTara += taraFmt.ton;
 
         return {
           'Tır Sırası': t.tir_sirasi || idx + 1,
@@ -545,9 +546,12 @@ export async function GET(request: NextRequest) {
           'Dorse Plakası': t.dorse_plaka || '-',
           'İrsaliye / Fiş No': t.irsaliye_no || '-',
           'Şoför Adı': t.sofor_adi || '-',
-          'Brüt Tonaj (Ton)': Number(brut.toFixed(3)),
-          'Dara / Tara (Ton)': Number(tara.toFixed(3)),
-          'Net Tonaj (Ton)': Number(net.toFixed(3)),
+          'Brüt Tonaj (Ton)': Number(brutFmt.ton.toFixed(3)),
+          'Brüt Ağırlık (kg)': brutFmt.kg,
+          'Dara / Tara (Ton)': Number(taraFmt.ton.toFixed(3)),
+          'Dara / Tara (kg)': taraFmt.kg,
+          'Net Tonaj (Ton)': Number(netFmt.ton.toFixed(3)),
+          'Net Kömür (kg)': netFmt.kg,
           'Açıklama / Menşe': t.notlar || '-'
         };
       });
@@ -557,7 +561,7 @@ export async function GET(request: NextRequest) {
       addStyledWorksheet(
         workbook,
         'KÖMÜR SEVKİYATI VE SAHA KANTAR TARTIM TONAJ LİSTESİ',
-        `Kapsam: ${dateLabel} | Toplam Tır: ${records.length} Adet | Net Kömür: ${totalNet.toFixed(3)} Ton | Brüt: ${totalBrut.toFixed(3)} Ton`,
+        `Kapsam: ${dateLabel} | Toplam Tır: ${records.length} Adet | Net Kömür: ${formatTonnage(totalNet).combined} | Brüt: ${formatTonnage(totalBrut).combined}`,
         'Kantar Tonaj',
         exportData,
         [
@@ -568,6 +572,9 @@ export async function GET(request: NextRequest) {
           { wch: 16 },
           { wch: 20 },
           { wch: 22 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
           { wch: 16 },
           { wch: 16 },
           { wch: 16 },

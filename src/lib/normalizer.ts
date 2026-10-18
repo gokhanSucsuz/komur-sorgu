@@ -940,3 +940,61 @@ export function formatDeliveryStatusSummary(record: {
   }
 }
 
+/**
+ * Kantar tartım fişlerinden veya kullanıcı girişlerinden gelen tonaj verilerini
+ * matematiksel olarak standart "Ton" birimine dönüştürür.
+ * 
+ * - Eğer girilen sayı >= 1000 ise (örn: 27850, 42150, 14300):
+ *   Değer kilogram (kg) cinsinden girilmiştir.
+ *   Matematiksel karşılığı: Ton = kg / 1000 (örn: 27850 kg -> 27,85 Ton)
+ * - Eğer girilen sayı < 1000 ise (örn: 27.85, 42.15, 14.3):
+ *   Değer doğrudan Ton cinsinden girilmiştir.
+ */
+export function normalizeToTon(val: string | number | null | undefined): number {
+  if (val === null || val === undefined || val === '') return 0;
+  let str = val.toString().trim().replace(/\s+/g, '');
+  if (str.includes(',') && !str.includes('.')) {
+    str = str.replace(',', '.');
+  } else if (str.includes('.') && str.includes(',')) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  }
+  const num = parseFloat(str);
+  if (isNaN(num)) return 0;
+  const sign = num < 0 ? -1 : 1;
+  const absNum = Math.abs(num);
+  const absTon = absNum >= 1000 ? absNum / 1000 : absNum;
+  return parseFloat((sign * absTon).toFixed(3));
+}
+
+/**
+ * Tonaj miktarını hem "Ton" hem de "kg" cinsinden Türkçe dil ve matematik kurallarına
+ * göre biçimlendirir.
+ * 
+ * Örnek çıktılar:
+ * - formatTonnage(27850) -> { ton: 27.85, kg: 27850, tonStr: "27,85 Ton", kgStr: "27.850 kg", combined: "27,85 Ton (27.850 kg)", compact: "27,85 T / 27.850 kg" }
+ * - formatTonnage(27.85) -> { ton: 27.85, kg: 27850, tonStr: "27,85 Ton", kgStr: "27.850 kg", combined: "27,85 Ton (27.850 kg)", compact: "27,85 T / 27.850 kg" }
+ */
+export function formatTonnage(val: string | number | null | undefined): {
+  ton: number;
+  kg: number;
+  tonStr: string;
+  kgStr: string;
+  combined: string;
+  compact: string;
+} {
+  const ton = normalizeToTon(val);
+  const kg = Math.round(ton * 1000);
+  const tonFormatted = ton.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+  const kgFormatted = kg.toLocaleString('tr-TR');
+
+  return {
+    ton,
+    kg,
+    tonStr: `${tonFormatted} Ton`,
+    kgStr: `${kgFormatted} kg`,
+    combined: `${tonFormatted} Ton (${kgFormatted} kg)`,
+    compact: `${tonFormatted} T / ${kgFormatted} kg`,
+  };
+}
+
+

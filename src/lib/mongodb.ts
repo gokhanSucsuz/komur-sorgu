@@ -1,5 +1,5 @@
 import { MongoClient, Db, ObjectId, ServerApiVersion } from 'mongodb';
-import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName, getRecordStreetInfo } from './normalizer';
+import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName, getRecordStreetInfo, normalizeToTon } from './normalizer';
 import {
   encryptBeneficiary,
   decryptBeneficiary,
@@ -1101,6 +1101,44 @@ export async function migrateAndEncryptExistingData(db: Db) {
     await settings.updateOne(
       { key: 'migrations_complete_v4_gov_security' },
       { $set: { key: 'migrations_complete_v4_gov_security', value: 'true', completed_at: new Date().toISOString() } },
+      { upsert: true }
+    );
+  }
+
+  // 8. Tır Sevkiyatları ve Tonaj Ölçekleme Migrasyonu (kg -> Ton standardizasyonu)
+  const migV5Flag = await settings.findOne({ key: 'migrations_trucks_tonnage_scale_v1_done' });
+  if (migV5Flag?.value !== 'true') {
+    const trucksCol = db.collection('truck_deliveries');
+    const allTrucks = await trucksCol.find({
+      $or: [
+        { net_tonaj: { $gte: 1000 } },
+        { brut_tonaj: { $gte: 1000 } },
+      ]
+    }).toArray();
+
+    if (allTrucks.length > 0) {
+      console.log(`[Tır Tonajı] ${allTrucks.length} tır kaydında kg cinsinden girilmiş veriler Ton birimine ölçekleniyor...`);
+      for (const t of allTrucks) {
+        const normNet = normalizeToTon(t.net_tonaj);
+        const normBrut = normalizeToTon(t.brut_tonaj);
+        const normTara = parseFloat((normBrut - normNet).toFixed(3));
+        await trucksCol.updateOne(
+          { _id: t._id },
+          {
+            $set: {
+              net_tonaj: normNet,
+              brut_tonaj: normBrut,
+              tara_tonaj: normTara,
+            }
+          }
+        );
+      }
+      console.log(`[Tır Tonajı] ${allTrucks.length} tır kaydı başarıyla Ton birimine ölçeklendi.`);
+    }
+
+    await settings.updateOne(
+      { key: 'migrations_trucks_tonnage_scale_v1_done' },
+      { $set: { key: 'migrations_trucks_tonnage_scale_v1_done', value: 'true', completed_at: new Date().toISOString() } },
       { upsert: true }
     );
   }

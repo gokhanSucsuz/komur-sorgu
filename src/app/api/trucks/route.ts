@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptTruck, normalizeIrsaliyeNo, hashIrsaliye } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
-import { turkishIncludes } from '@/lib/normalizer';
+import { turkishIncludes, normalizeToTon, formatTonnage } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
@@ -41,9 +41,12 @@ export async function GET(request: NextRequest) {
     let maxSira = 0;
 
     for (const t of allTrucks) {
-      toplamNetTonaj += Number(t.net_tonaj || 0);
-      toplamBrutTonaj += Number(t.brut_tonaj || 0);
-      toplamTaraTonaj += Number(t.tara_tonaj || 0);
+      const netT = normalizeToTon(t.net_tonaj);
+      const brutT = normalizeToTon(t.brut_tonaj);
+      const taraT = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : (brutT > netT ? brutT - netT : 0);
+      toplamNetTonaj += netT;
+      toplamBrutTonaj += brutT;
+      toplamTaraTonaj += taraT;
       if (Number(t.tir_sirasi) > maxSira) {
         maxSira = Number(t.tir_sirasi);
       }
@@ -124,8 +127,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const netVal = parseFloat(net_tonaj || '0');
-    const brutVal = parseFloat(brut_tonaj || '0');
+    const netVal = normalizeToTon(net_tonaj);
+    const brutVal = normalizeToTon(brut_tonaj);
 
     if (isNaN(netVal) || isNaN(brutVal) || netVal <= 0 || brutVal <= 0) {
       return NextResponse.json({ success: false, error: 'Geçerli bir net ve brüt tonaj miktarı giriniz' }, { status: 400 });
@@ -194,7 +197,7 @@ export async function POST(request: NextRequest) {
       kullanici_rolu: session.rol || 'ADMIN',
       islem_tipi: 'TIR_GIRIS',
       baslik: `Yeni Kömür Tırı Kaydedildi (#${orderNum} - ${newDoc.plaka})`,
-      detay: `#${orderNum} Sıra No | Tır Plakası: ${newDoc.plaka}${newDoc.dorse_plaka ? ` (Dorse: ${newDoc.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${newDoc.ocak_cikis_tarihi} → Saha Geliş: ${tarih} | Net Tonaj: ${netVal.toFixed(3)} Ton (Brüt: ${brutVal.toFixed(3)} T, Dara: ${taraVal.toFixed(3)} T)${newDoc.sofor_adi ? ` | Şoför: ${newDoc.sofor_adi}` : ''}`,
+      detay: `#${orderNum} Sıra No | Tır Plakası: ${newDoc.plaka}${newDoc.dorse_plaka ? ` (Dorse: ${newDoc.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${newDoc.ocak_cikis_tarihi} → Saha Geliş: ${tarih} | Net Tonaj: ${formatTonnage(netVal).combined} (Brüt: ${formatTonnage(brutVal).combined}, Dara: ${formatTonnage(taraVal).combined})${newDoc.sofor_adi ? ` | Şoför: ${newDoc.sofor_adi}` : ''}`,
       ek_bilgi: {
         id: newId,
         tir_sirasi: orderNum,
@@ -279,8 +282,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const netVal = parseFloat(net_tonaj || '0');
-    const brutVal = parseFloat(brut_tonaj || '0');
+    const netVal = normalizeToTon(net_tonaj);
+    const brutVal = normalizeToTon(brut_tonaj);
 
     if (isNaN(netVal) || isNaN(brutVal) || netVal <= 0 || brutVal <= 0) {
       return NextResponse.json({ success: false, error: 'Geçerli bir net ve brüt tonaj miktarı giriniz' }, { status: 400 });
@@ -339,7 +342,7 @@ export async function PUT(request: NextRequest) {
       kullanici_rolu: session.rol || 'ADMIN',
       islem_tipi: 'TIR_GUNCELLEME',
       baslik: `Kömür Tırı Kaydı Güncellendi (#${orderNum} - ${updatedFields.plaka})`,
-      detay: `#${orderNum} Sıra No | Tır Plakası: ${updatedFields.plaka}${updatedFields.dorse_plaka ? ` (Dorse: ${updatedFields.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${updatedFields.ocak_cikis_tarihi} → Saha Geliş: ${tarih} | Net Tonaj: ${netVal.toFixed(3)} Ton (Brüt: ${brutVal.toFixed(3)} T, Dara: ${taraVal.toFixed(3)} T)`,
+      detay: `#${orderNum} Sıra No | Tır Plakası: ${updatedFields.plaka}${updatedFields.dorse_plaka ? ` (Dorse: ${updatedFields.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${updatedFields.ocak_cikis_tarihi} → Saha Geliş: ${tarih} | Net Tonaj: ${formatTonnage(netVal).combined} (Brüt: ${formatTonnage(brutVal).combined}, Dara: ${formatTonnage(taraVal).combined})`,
       ek_bilgi: {
         id: String(id),
         eski_plaka: existingTarget.plaka,

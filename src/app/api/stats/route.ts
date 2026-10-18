@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
+import { normalizeToTon } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -73,8 +74,24 @@ export async function GET(request: NextRequest) {
             $group: {
               _id: null,
               toplamTirSayisi: { $sum: 1 },
-              gelenNetTonaj: { $sum: { $ifNull: ['$net_tonaj', 0] } },
-              gelenBrutTonaj: { $sum: { $ifNull: ['$brut_tonaj', 0] } },
+              gelenNetTonaj: {
+                $sum: {
+                  $cond: [
+                    { $gte: [{ $ifNull: ['$net_tonaj', 0] }, 1000] },
+                    { $divide: [{ $ifNull: ['$net_tonaj', 0] }, 1000] },
+                    { $ifNull: ['$net_tonaj', 0] }
+                  ]
+                }
+              },
+              gelenBrutTonaj: {
+                $sum: {
+                  $cond: [
+                    { $gte: [{ $ifNull: ['$brut_tonaj', 0] }, 1000] },
+                    { $divide: [{ $ifNull: ['$brut_tonaj', 0] }, 1000] },
+                    { $ifNull: ['$brut_tonaj', 0] }
+                  ]
+                }
+              },
             }
           }
         ]).toArray(),
@@ -123,8 +140,8 @@ export async function GET(request: NextRequest) {
       const allTrucks = await trucksCol.find({}).toArray();
       toplamTirSayisi = allTrucks.length;
       for (const t of allTrucks) {
-        gelenNetTonaj += Number(t.net_tonaj || 0);
-        gelenBrutTonaj += Number(t.brut_tonaj || 0);
+        gelenNetTonaj += normalizeToTon(t.net_tonaj || 0);
+        gelenBrutTonaj += normalizeToTon(t.brut_tonaj || 0);
       }
 
       toplamHataSayisi = await logsCol.countDocuments({ durum: { $ne: 'BILGI' } });

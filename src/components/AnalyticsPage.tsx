@@ -8,6 +8,7 @@ import {
   Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, 
   Layers, ArrowUpDown, ChevronDown, Archive, X, FileText, Download
 } from 'lucide-react';
+import { formatTonnage } from '@/lib/normalizer';
 
 interface AnalyticsPageProps {
   onRefreshAll?: () => void;
@@ -650,10 +651,10 @@ export default function AnalyticsPage({
                 <div className="space-y-2">
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
                     <span>Gelen Tır Sayısı: <strong className="text-slate-900">{donemStats?.toplamTirSayisi} Adet</strong></span>
-                    <span>Toplam Net Kömür: <strong className="text-amber-800 font-bold">{donemStats?.gelenNetTonaj} Ton</strong></span>
+                    <span>Toplam Net Kömür: <strong className="text-amber-800 font-bold">{formatTonnage(donemStats?.gelenNetTonaj).combined}</strong></span>
                   </div>
                   <p className="text-[11px] text-slate-600 font-medium italic">
-                    Depo / Saha Kalan Güncel Stok: <strong className="text-sky-700">{summary?.kalanStokTonaj} Ton</strong>
+                    Depo / Saha Kalan Güncel Stok: <strong className="text-sky-700">{formatTonnage(summary?.kalanStokTonaj).combined}</strong>
                   </p>
                 </div>
               )}

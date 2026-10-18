@@ -8,7 +8,7 @@ import {
   recordActivityLog, 
   touchSyncPulse 
 } from '@/lib/mongodb';
-import { normalizeMahalleName } from '@/lib/normalizer';
+import { normalizeMahalleName, normalizeToTon } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
 
@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
       const trucks = await truckCol.find({}).toArray();
       let totalGelenTon = 0;
       trucks.forEach((t: any) => {
-        totalGelenTon += Number(t.net_tonaj || 0);
+        totalGelenTon += normalizeToTon(t.net_tonaj || 0);
       });
 
       // 3. Quota setting
