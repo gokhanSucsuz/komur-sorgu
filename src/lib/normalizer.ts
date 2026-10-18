@@ -576,6 +576,7 @@ export function extractStreetAndDoor(
 ): {
   sokak: string;
   kapiNo: string | number;
+  katNo: number;
   daireNo: number;
 } {
   let explicitStreet = (rawStreet || '').toString().trim();
@@ -636,13 +637,17 @@ export function extractStreetAndDoor(
     street = 'Köy İçi / Sokak Belirtilmemiş';
   }
 
-  // Extract door number
-  // 1. Önce açık adres metninde (acik_adres) yer alan gerçek kapı/bina ve blok numarasını ara
+  // Extract door, kat, and apartment numbers
   let door: string | number = 999999;
+  let kat = 0;
+  let apt = 0;
+
   if (addr) {
     const doorParsed = extractDoorAndSuffix(addr);
     if (doorParsed) {
       door = doorParsed.doorStr;
+      if (doorParsed.kat) kat = doorParsed.kat;
+      if (doorParsed.daire) apt = doorParsed.daire;
     }
   }
 
@@ -654,29 +659,78 @@ export function extractStreetAndDoor(
       const expParsed = extractDoorAndSuffix(strExp);
       if (expParsed) {
         door = expParsed.doorStr;
+        if (expParsed.kat && kat === 0) kat = expParsed.kat;
+        if (expParsed.daire && apt === 0) apt = expParsed.daire;
       }
     }
   }
 
-  // Extract apartment number (Daire No / İç Kapı No)
-  let apt = 0;
-  if (addr) {
+  // Kat match if not already extracted (e.g. Kat: 2 or Kat 2)
+  if (kat === 0 && addr) {
+    const katMatch = addr.match(/\bKat\s*[:.]?\s*(\d+)/i);
+    if (katMatch) {
+      kat = parseInt(katMatch[1], 10);
+    }
+  }
+
+  // Extract apartment number (Daire No / İç Kapı No) if not already extracted
+  // NOT: \bD\b ve \bD\. sınır kontrolü zorunludur; aksi halde "CAD." sonundaki "D." daire sanılıyordu!
+  if (apt === 0 && addr) {
     const aptMatch =
-      addr.match(/(?:İç\s*Kapı|Ic\s*Kapi|Daire|\bD\b|D\.|Kat)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
-      addr.match(/(?:No\s*[:.]?\s*\d+\s*[\/-]\s*|\/\s*)(\d+)/i);
+      addr.match(/(?:İç\s*Kapı|Ic\s*Kapi|Daire|\bD\b|\bD\.)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
+      addr.match(/(?:No\s*[:.]?\s*\d+\s*[\/-]\s*)\s*(\d+)(?!\/\d)/i);
     if (aptMatch) {
       apt = parseInt(aptMatch[1], 10);
     }
   }
 
-  return { sokak: street, kapiNo: door, daireNo: apt };
+  return { sokak: street, kapiNo: door, katNo: kat, daireNo: apt };
 }
 
 /**
- * Helper to extract door number and optional block letter (e.g. 7D, 14A, 12, 7)
+ * Helper to extract door number, optional block letter (e.g. 7D, 14A, 31),
+ * and 3-part / 2-part slash formats (e.g. 31/2/1 -> door: 31, kat: 2, daire: 1)
  */
-export function extractDoorAndSuffix(addr: string): { doorStr: string; doorNum: number } | null {
+export function extractDoorAndSuffix(addr: string): {
+  doorStr: string;
+  doorNum: number;
+  kat?: number;
+  daire?: number;
+} | null {
   if (!addr) return null;
+
+  // Pattern 0: Three-part slash (No: 31/2/1, 31A/2/1, No: 31 / 2 / 1) -> Door/Kat/Daire
+  const threePartSlash =
+    addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*[:.]?\s*(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?!\d)/i) ||
+    addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?!\d)/i) ||
+    addr.match(/\b(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?!\d)/i);
+
+  if (threePartSlash) {
+    const rawDoor = threePartSlash[1].replace(/[\s\/-]/g, '').toLocaleUpperCase('tr');
+    const num = parseInt(rawDoor.replace(/[^0-9]/g, ''), 10);
+    return {
+      doorStr: rawDoor,
+      doorNum: num,
+      kat: parseInt(threePartSlash[2], 10) || 0,
+      daire: parseInt(threePartSlash[3], 10) || 0,
+    };
+  }
+
+  // Pattern 0.5: Two-part slash with explicit No/Kapı/Sokak prefix (e.g. No: 31/1) -> Door/Daire
+  const twoPartSlash =
+    addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*[:.]?\s*(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)(?!\s*\/\s*\d|\d)/i) ||
+    addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)(?!\s*\/\s*\d|\d)/i);
+
+  if (twoPartSlash) {
+    const rawDoor = twoPartSlash[1].replace(/[\s\/-]/g, '').toLocaleUpperCase('tr');
+    const num = parseInt(rawDoor.replace(/[^0-9]/g, ''), 10);
+    return {
+      doorStr: rawDoor,
+      doorNum: num,
+      kat: 0,
+      daire: parseInt(twoPartSlash[2], 10) || 0,
+    };
+  }
 
   // Pattern 1: No: 7 D Blok, No: 7 Blok D, No: 7-D Blok, No: 7/D Blok, No: 7 D. Blok
   const blockMatch =
@@ -724,9 +778,10 @@ export function extractDoorAndSuffix(addr: string): { doorStr: string; doorNum: 
 export function getRecordStreetInfo(record: Record<string, any> | null | undefined): {
   sokak: string;
   kapiNo: string | number;
+  katNo: number;
   daireNo: number;
 } {
-  if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, daireNo: 0 };
+  if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, katNo: 0, daireNo: 0 };
 
   // Defensive check: If encrypted ciphertext is passed, ignore to prevent leaking ciphertext
   let rawSokak = record.sokak;
@@ -769,17 +824,32 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
     }
   }
 
-  let finalDaireNo = extracted.daireNo > 0 ? extracted.daireNo : (record.daire_no || 0);
+  let finalKatNo = extracted.katNo;
+  if (finalKatNo === 0 && record.kat_no) {
+    const parsedKat = parseInt(String(record.kat_no), 10);
+    if (!isNaN(parsedKat) && parsedKat > 0) finalKatNo = parsedKat;
+  }
+
+  let finalDaireNo = extracted.daireNo;
+  if (finalDaireNo === 0 && record.daire_no) {
+    const parsedDaire = parseInt(String(record.daire_no), 10);
+    const kapiNum = parseInt(String(finalKapiNo).replace(/[^0-9]/g, ''), 10);
+    // Eski CAD. hatasından kalma daire_no == kapi_no veya 999999 değerlerini tek katlı yer evlerine daire olarak yazma!
+    if (!isNaN(parsedDaire) && parsedDaire > 0 && parsedDaire !== 999999 && parsedDaire !== kapiNum) {
+      finalDaireNo = parsedDaire;
+    }
+  }
 
   return {
     sokak: finalSokak || 'Köy İçi / Sokak Belirtilmemiş',
     kapiNo: finalKapiNo,
+    katNo: finalKatNo,
     daireNo: finalDaireNo,
   };
 }
 
 /**
- * Natural address comparison function (Street name -> Door number 1 to 99 -> Apartment number -> Person name)
+ * Natural address comparison function (Street name -> Door number 1 to 99 -> Block -> Floor -> Apartment -> Person name)
  */
 export function compareByAddressAsc(a: any, b: any): number {
   const sa = getRecordStreetInfo(a);
@@ -802,6 +872,7 @@ export function compareByAddressAsc(a: any, b: any): number {
     return strA.localeCompare(strB, 'tr', { numeric: true });
   }
 
+  if (sa.katNo !== sb.katNo) return sa.katNo - sb.katNo;
   if (sa.daireNo !== sb.daireNo) return sa.daireNo - sb.daireNo;
 
   return (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr');

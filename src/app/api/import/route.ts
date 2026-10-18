@@ -333,6 +333,7 @@ export async function POST(request: NextRequest) {
       const streetInfo = extractStreetAndDoor(acikAdres, rawStreet, rawKapiNo, mahalle);
       const sokak = streetInfo.sokak;
       const kapiNo = streetInfo.kapiNo;
+      const katNo = streetInfo.katNo;
       let daireNo = streetInfo.daireNo;
       if (daireNo === 0 && rawDaireNo) {
         const parsedDaire = parseInt(rawDaireNo.replace(/[^0-9]/g, ''), 10);
@@ -769,6 +770,7 @@ export async function POST(request: NextRequest) {
         yerlesim_tipi: yerlesimTipi,
         sokak: sokak,
         kapi_no: kapiNo,
+        kat_no: katNo,
         daire_no: daireNo,
         acik_adres: acikAdres || 'Adres belirtilmedi',
         hane_no: haneNo || null,

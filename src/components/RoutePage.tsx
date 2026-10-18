@@ -2306,7 +2306,8 @@ export default function RoutePage({
                               <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
                               <span>{stop.sokak}</span>
                               {stop.kapi_no && stop.kapi_no !== 999999 && stop.kapi_no !== '999999' && <strong>No: {stop.kapi_no}</strong>}
-                              {stop.daire_no && <span>D: {stop.daire_no}</span>}
+                              {stop.kat_no && stop.kat_no > 0 ? <span>Kat: {stop.kat_no}</span> : null}
+                              {stop.daire_no ? <span>D: {stop.daire_no}</span> : null}
                             </span>
                           )}
                           <span className="text-slate-600 truncate max-w-full font-medium">
@@ -2832,7 +2833,7 @@ export default function RoutePage({
                               )}
                             </div>
                             <div className="text-[11px] text-slate-500 truncate">
-                              {person.mahalle} • {st.sokak || person.acik_adres} {st.kapiNo && st.kapiNo !== 999999 && st.kapiNo !== '999999' ? `No: ${st.kapiNo}` : ''}
+                              {person.mahalle} • {st.sokak || person.acik_adres} {st.kapiNo && st.kapiNo !== 999999 && st.kapiNo !== '999999' ? `No: ${st.kapiNo}` : ''}{st.katNo > 0 ? ` Kat: ${st.katNo}` : ''}{st.daireNo > 0 ? ` D: ${st.daireNo}` : ''}
                             </div>
                           </div>
                         </div>
@@ -2954,6 +2955,7 @@ export default function RoutePage({
                               <strong className="text-slate-800">{person.mahalle}</strong>
                               {st.sokak && <span> • {st.sokak}</span>}
                               {st.kapiNo && st.kapiNo !== 999999 && st.kapiNo !== '999999' ? <span> No:{st.kapiNo}</span> : null}
+                              {st.katNo && st.katNo > 0 ? <span> Kat:{st.katNo}</span> : null}
                               {st.daireNo && st.daireNo > 0 ? <span> D:{st.daireNo}</span> : null}
                             </div>
                           </div>
@@ -4132,6 +4134,11 @@ export default function RoutePage({
                                   {currentStop.kapi_no && currentStop.kapi_no !== 999999 && currentStop.kapi_no !== '999999' && (
                                     <span className="px-2.5 py-1 rounded-xl bg-amber-500 text-white font-black text-sm sm:text-base shadow-2xs">
                                       KAPI NO: {currentStop.kapi_no}
+                                    </span>
+                                  )}
+                                  {currentStop.kat_no && currentStop.kat_no > 0 && (
+                                    <span className="px-2.5 py-1 rounded-xl bg-amber-700 text-white font-black text-xs sm:text-sm shadow-2xs">
+                                      KAT: {currentStop.kat_no}
                                     </span>
                                   )}
                                   {currentStop.daire_no && currentStop.daire_no > 0 && (

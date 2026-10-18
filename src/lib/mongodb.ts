@@ -1163,6 +1163,7 @@ export async function migrateMahalleNames(db?: Db | null) {
         if (streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş') {
           updateSet.sokak = encryptField(streetInfo.sokak);
           updateSet.kapi_no = streetInfo.kapiNo;
+          updateSet.kat_no = streetInfo.katNo;
           updateSet.daire_no = streetInfo.daireNo;
         }
         await beneficiaries.updateOne({ _id: b._id }, { $set: updateSet });
@@ -1252,7 +1253,7 @@ export async function migrateKapiNoAndStreets(db?: Db | null) {
   if (db) {
     try {
       const settings = db.collection('system_settings');
-      const migFlag = await settings.findOne({ key: 'migrations_kapi_no_sync_v2_letters_done' });
+      const migFlag = await settings.findOne({ key: 'migrations_kapi_no_sync_v3_kat_done' });
       if (migFlag?.value === 'true') {
         return;
       }
@@ -1268,17 +1269,19 @@ export async function migrateKapiNoAndStreets(db?: Db | null) {
         const streetInfo = getRecordStreetInfo(b);
         const shouldUpdateKapi = streetInfo.kapiNo !== 999999 && streetInfo.kapiNo !== '999999' && b.kapi_no !== streetInfo.kapiNo;
         const shouldUpdateSokak = streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş' && b.sokak !== streetInfo.sokak;
+        const shouldUpdateKat = (b.kat_no || 0) !== streetInfo.katNo;
+        const shouldUpdateDaire = (b.daire_no || 0) !== streetInfo.daireNo;
 
-        if (shouldUpdateKapi || shouldUpdateSokak) {
+        if (shouldUpdateKapi || shouldUpdateSokak || shouldUpdateKat || shouldUpdateDaire) {
           const updateFields: any = {
             updated_at: new Date().toLocaleString('tr-TR'),
           };
           if (streetInfo.kapiNo !== 999999 && streetInfo.kapiNo !== '999999') {
             updateFields.kapi_no = streetInfo.kapiNo;
           }
-          if (streetInfo.daireNo > 0) {
-            updateFields.daire_no = streetInfo.daireNo;
-          }
+          updateFields.kat_no = streetInfo.katNo;
+          updateFields.daire_no = streetInfo.daireNo;
+
           if (streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş') {
             updateFields.sokak = isEncrypted(rawB.sokak) ? encryptField(streetInfo.sokak) : streetInfo.sokak;
           }
@@ -1289,8 +1292,8 @@ export async function migrateKapiNoAndStreets(db?: Db | null) {
       }
 
       await settings.updateOne(
-        { key: 'migrations_kapi_no_sync_v2_letters_done' },
-        { $set: { key: 'migrations_kapi_no_sync_v2_letters_done', value: 'true', updated_count: updatedCount, completed_at: new Date().toISOString() } },
+        { key: 'migrations_kapi_no_sync_v3_kat_done' },
+        { $set: { key: 'migrations_kapi_no_sync_v3_kat_done', value: 'true', updated_count: updatedCount, completed_at: new Date().toISOString() } },
         { upsert: true }
       );
     } catch (err) {
@@ -1306,9 +1309,8 @@ export async function migrateKapiNoAndStreets(db?: Db | null) {
       if (streetInfo.kapiNo !== 999999 && streetInfo.kapiNo !== '999999') {
         b.kapi_no = streetInfo.kapiNo;
       }
-      if (streetInfo.daireNo > 0) {
-        b.daire_no = streetInfo.daireNo;
-      }
+      b.kat_no = streetInfo.katNo;
+      b.daire_no = streetInfo.daireNo;
       if (streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş') {
         b.sokak = streetInfo.sokak;
       }
