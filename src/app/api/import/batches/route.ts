@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         if ((!mahalleOzet || mahalleOzet.length === 0) && matchingBeneficiaries.length > 0) {
           const mCounters = new Map<string, number>();
           for (const item of matchingBeneficiaries) {
-            const m = item.mahalle || 'Merkez';
+            const m = item.mahalle || 'Genel';
             mCounters.set(m, (mCounters.get(m) || 0) + 1);
           }
           mahalleOzet = Array.from(mCounters.entries()).map(([m, cnt]) => ({

@@ -1644,7 +1644,7 @@ export default function ExcelImportPage({
                     {(item.mahalle || item.acik_adres) && (
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 px-1 font-medium">
                         <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span className="font-bold text-slate-800">{item.mahalle || 'Merkez'}:</span>
+                        <span className="font-bold text-slate-800">{item.mahalle || 'Genel'}:</span>
                         <span className="truncate">{item.acik_adres || 'Adres belirtilmedi'}</span>
                       </div>
                     )}

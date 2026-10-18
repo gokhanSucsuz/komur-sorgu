@@ -728,7 +728,7 @@ export async function GET(request: NextRequest) {
       // Group records by Mahalle
       const mahalleGroups = new Map<string, any[]>();
       for (const r of records) {
-        const m = normalizeMahalleName(r.mahalle || 'Merkez Mah.');
+        const m = normalizeMahalleName(r.mahalle) || r.mahalle || 'Genel';
         if (!mahalleGroups.has(m)) {
           mahalleGroups.set(m, []);
         }
@@ -1218,7 +1218,7 @@ export async function GET(request: NextRequest) {
       const eksikList: any[] = [];
 
       for (const r of records) {
-        const m = normalizeMahalleName(r.mahalle || 'Merkez Mah.');
+        const m = normalizeMahalleName(r.mahalle) || r.mahalle || 'Genel';
         if (!mahalleGroups.has(m)) {
           mahalleGroups.set(m, []);
         }

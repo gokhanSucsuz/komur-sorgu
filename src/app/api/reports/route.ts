@@ -338,7 +338,7 @@ export async function GET(request: NextRequest) {
       let del = 0;
       let pend = 0;
       for (const b of unbatchedList) {
-        const m = b.mahalle || 'Merkez';
+        const m = b.mahalle || 'Genel';
         if (!mBatchMap.has(m)) {
           mBatchMap.set(m, { mahalle: m, ekListeAdi: 'Ana Liste', siraNoList: [], toplamKayit: 0, teslimEdilen: 0, bekleyen: 0 });
         }

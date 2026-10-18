@@ -1,5 +1,5 @@
 import { MongoClient, Db, ObjectId, ServerApiVersion } from 'mongodb';
-import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName, getRecordStreetInfo, normalizeToTon } from './normalizer';
+import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName, getRecordStreetInfo, normalizeToTon, detectSettlement } from './normalizer';
 import {
   encryptBeneficiary,
   decryptBeneficiary,
@@ -457,6 +457,7 @@ export async function getDbCollections() {
       if (!mahalleMigrationDone) {
         mahalleMigrationDone = true;
         await migrateMahalleNames(db);
+        await migrateFixMerkezAndStreets(db);
       }
       return {
         isFallback: false,
@@ -487,6 +488,7 @@ export async function getDbCollections() {
   if (!mahalleMigrationDone) {
     mahalleMigrationDone = true;
     await migrateMahalleNames(null);
+    await migrateFixMerkezAndStreets(null);
   }
   return {
     isFallback: true,
@@ -632,6 +634,9 @@ async function initializeIndexesAndSeed(db: Db) {
 
   // 5. Kapı No ve Sokak Senkronizasyonu: Açık adresteki gerçek kapı no ve sokak ile eşitle
   await migrateKapiNoAndStreets(db);
+
+  // 6. Merkez Mahallesi ve Sokak İyileştirmesi: Merkez Mah. kayıtlarını gerçek köy/mahallere dönüştür, kadastro _ eklerini temizle ve Köy İçi etiketini düzelt
+  await migrateFixMerkezAndStreets(db);
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
@@ -1356,6 +1361,127 @@ export async function migrateKapiNoAndStreets(db?: Db | null) {
       if (streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş') {
         b.sokak = streetInfo.sokak;
       }
+    }
+  }
+}
+
+/**
+ * Migration 6: Converts non-existent "Merkez Mah." / "Merkez Mahallesi" records into their true Edirne villages/neighborhoods,
+ * cleans cadastre/GIS revision tags (e.g. 2._2 SK. -> 2. Sok.), and ensures non-village records are never labeled "Köy İçi".
+ */
+export async function migrateFixMerkezAndStreets(db?: Db | null) {
+  if (db) {
+    try {
+      const settings = db.collection('system_settings');
+      const migFlag = await settings.findOne({ key: 'migrations_fix_merkez_and_streets_v1_done' });
+      if (migFlag?.value === 'true') {
+        return;
+      }
+
+      const benCol = db.collection('beneficiaries');
+      const allBens = await benCol.find({}).toArray();
+      let updatedCount = 0;
+
+      for (const rawB of allBens) {
+        const plainAdres = isEncrypted(rawB.acik_adres) ? decryptField(rawB.acik_adres) : (rawB.acik_adres || '');
+        const plainSokak = isEncrypted(rawB.sokak) ? decryptField(rawB.sokak) : (rawB.sokak || '');
+        const plainHane = isEncrypted(rawB.hane_no) ? decryptField(rawB.hane_no) : (rawB.hane_no || null);
+        const currentMahalle = rawB.mahalle || '';
+        const currentYerlesim = rawB.yerlesim_tipi || 'MAHALLE';
+
+        let newMahalle = currentMahalle;
+        let newYerlesim = currentYerlesim;
+
+        // 1. Merkez Mah. veya Merkez mahallesini açık adresteki gerçek köy veya mahalleye dönüştür
+        if (/^(?:Edirne\s+)?Merkez(?:\s+Mahallesi|\s+Mah\.?|\s+Mh\.?)?$/i.test(currentMahalle) || currentMahalle === 'Merkez Mah.') {
+          const det = detectSettlement(null, null, plainAdres);
+          newMahalle = det.name;
+          newYerlesim = det.type;
+        }
+
+        // 2. Sokak ve Kapı No ayıklama ve kadastro '_' temizliği
+        const streetInfo = extractStreetAndDoor(plainAdres, plainSokak, rawB.kapi_no, newMahalle);
+
+        const mahalleChanged = newMahalle !== currentMahalle;
+        const yerlesimChanged = newYerlesim !== currentYerlesim;
+        const sokakChanged = streetInfo.sokak && streetInfo.sokak !== plainSokak;
+        const kapiChanged = streetInfo.kapiNo !== 999999 && streetInfo.kapiNo !== '999999' && rawB.kapi_no !== streetInfo.kapiNo;
+        const daireChanged = (rawB.daire_no || 0) !== streetInfo.daireNo;
+
+        if (mahalleChanged || yerlesimChanged || sokakChanged || kapiChanged || daireChanged) {
+          const updateFields: any = {
+            updated_at: new Date().toLocaleString('tr-TR'),
+          };
+
+          if (mahalleChanged) {
+            updateFields.mahalle = newMahalle;
+          }
+          if (yerlesimChanged) {
+            updateFields.yerlesim_tipi = newYerlesim;
+          }
+          if (sokakChanged) {
+            updateFields.sokak = isEncrypted(rawB.sokak) ? encryptField(streetInfo.sokak) : streetInfo.sokak;
+          }
+          if (kapiChanged) {
+            updateFields.kapi_no = streetInfo.kapiNo;
+          }
+          if (daireChanged) {
+            updateFields.daire_no = streetInfo.daireNo;
+          }
+
+          if (mahalleChanged || sokakChanged || kapiChanged) {
+            const newNorm = normalizeAddress(newMahalle, plainAdres, plainHane);
+            updateFields.norm_adres = encryptField(newNorm);
+            updateFields.adres_hash = hashAddress(newNorm);
+          }
+
+          await benCol.updateOne({ _id: rawB._id }, { $set: updateFields });
+          updatedCount++;
+        }
+      }
+
+      // Also update delivery_history, import_logs, and delivery_routes if they contain "Merkez Mah."
+      const historyCol = db.collection('delivery_history');
+      const logsCol = db.collection('import_logs');
+
+      await historyCol.updateMany(
+        { mahalle: { $in: ['Merkez Mah.', 'Merkez Mahallesi', 'Merkez'] } },
+        { $set: { mahalle: 'Genel (Belirtilmemiş)' } }
+      );
+
+      await logsCol.updateMany(
+        { mahalle: { $in: ['Merkez Mah.', 'Merkez Mahallesi', 'Merkez'] } },
+        { $set: { mahalle: 'Genel (Belirtilmemiş)' } }
+      );
+
+      await settings.updateOne(
+        { key: 'migrations_fix_merkez_and_streets_v1_done' },
+        { $set: { key: 'migrations_fix_merkez_and_streets_v1_done', value: 'true', updated_count: updatedCount, completed_at: new Date().toISOString() } },
+        { upsert: true }
+      );
+      console.log(`[Migration] fix_merkez_and_streets tamamlandı. ${updatedCount} kayıt güncellendi.`);
+    } catch (err) {
+      console.error('[Migration] fix_merkez_and_streets hatası:', err);
+    }
+  }
+
+  // Also migrate in-memory store if active
+  if (global._inMemoryMongoStore && global._inMemoryMongoStore.beneficiaries) {
+    for (const b of global._inMemoryMongoStore.beneficiaries) {
+      if (!b.acik_adres) continue;
+      if (/^(?:Edirne\s+)?Merkez(?:\s+Mahallesi|\s+Mah\.?|\s+Mh\.?)?$/i.test(b.mahalle) || b.mahalle === 'Merkez Mah.') {
+        const det = detectSettlement(null, null, b.acik_adres);
+        b.mahalle = det.name;
+        b.yerlesim_tipi = det.type;
+      }
+      const streetInfo = extractStreetAndDoor(b.acik_adres, b.sokak, b.kapi_no, b.mahalle);
+      if (streetInfo.sokak) {
+        b.sokak = streetInfo.sokak;
+      }
+      if (streetInfo.kapiNo !== 999999 && streetInfo.kapiNo !== '999999') {
+        b.kapi_no = streetInfo.kapiNo;
+      }
+      b.daire_no = streetInfo.daireNo;
     }
   }
 }

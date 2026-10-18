@@ -461,7 +461,7 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo,
           ad_soyad: adSoyad,
           telefon: 'Eksik',
-          mahalle: mahalle || 'Merkez',
+          mahalle: mahalle || 'Genel (Belirtilmemiş)',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo || null,
           hata_nedeni: 'Telefon Numarası Eksik (Kayıt Sisteme Eklendi)',
@@ -492,7 +492,7 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo,
           ad_soyad: adSoyad,
           telefon: displayPhoneLog,
-          mahalle: mahalle || 'Merkez',
+          mahalle: mahalle || 'Genel (Belirtilmemiş)',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo || null,
           hata_nedeni: `Mükerrer TC: Yüklenen Excel dosyası içerisinde aynı TC kimlik numarası (${tcNo}) birden fazla satırda tekrarlanıyor. Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} | Kömür Teslim Durumu: BEKLİYOR (Henüz Dağıtıma Çıkmadı). Kayıt sisteme eklenmedi ve elendi.`,
@@ -523,7 +523,7 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo,
           ad_soyad: adSoyad,
           telefon: displayPhoneLog,
-          mahalle: mahalle || existing.mahalle || 'Merkez',
+          mahalle: mahalle || existing.mahalle || 'Genel (Belirtilmemiş)',
           acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
           hane_no: haneNo || existing.hane_no || null,
           hata_nedeni: `Mükerrer TC: Sistemde bu TC kimlik numarası (${tcNo}) ile kayıtlı hak sahibi zaten mevcuttur. [Mevcut Hak Sahibi: ${existing.ad_soyad} - Hane No: ${existing.hane_no || 'Belirtilmemiş'}] | Kömür Teslim Durumu: ${statusSummary}. Kayıt sisteme eklenmedi ve elendi.`,
@@ -561,7 +561,7 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo || 'Eksik',
           ad_soyad: adSoyad,
           telefon: displayPhoneLog,
-          mahalle: mahalle || 'Merkez',
+          mahalle: mahalle || 'Genel (Belirtilmemiş)',
           acik_adres: acikAdres || 'Belirtilmedi',
           hane_no: haneNo,
           hata_nedeni: `Mükerrer Hane Numarası: Yüklenen Excel dosyası içerisinde aynı hane numarası (Hane No: ${haneNo}) birden fazla satırda tekrarlanıyor. Sistemde her hane numarası TC kimlik gibi yalnızca 1 adet bulunabilir. [Önceki Satır #${prev.rowNum}: ${prev.ad_soyad} - TC: ${prev.tc_no} | Kömür Teslim Durumu: BEKLİYOR]. Aynı haneye mükerrer kömür yardımı tahsis edilmemesi için bu kayıt sisteme eklenmedi ve elendi.`,
@@ -593,7 +593,7 @@ export async function POST(request: NextRequest) {
           tc_no: tcNo || 'Eksik',
           ad_soyad: adSoyad,
           telefon: displayPhoneLog,
-          mahalle: mahalle || existing.mahalle || 'Merkez',
+          mahalle: mahalle || existing.mahalle || 'Genel (Belirtilmemiş)',
           acik_adres: acikAdres || existing.acik_adres || 'Belirtilmedi',
           hane_no: haneNo,
           hata_nedeni: `Mükerrer Hane Numarası: Sistemde bu hane numarası (Hane No: ${haneNo}) ile kayıtlı hane zaten mevcuttur. Sistemde her hane numarası TC kimlik gibi yalnızca 1 adet bulunabilir. [Mevcut Hak Sahibi: ${existing.ad_soyad} - TC: ${existing.tc_no} | Mahalle: ${existing.mahalle || '-'}] | Kömür Teslim Durumu: ${statusSummary}. Aynı haneye mükerrer kömür yardımı tahsis edilmemesi için bu kayıt sisteme eklenmedi ve elendi.`,
@@ -618,7 +618,7 @@ export async function POST(request: NextRequest) {
       // KURAL: Aynı adreste farklı TC kimlik ve farklı hane no var ise sisteme eklenir.
       // Sadece aynı TC (Check 5), aynı hane no (Check 6) veya TC'siz mükerrer aynı isim varsa elenir.
       // ==========================================
-      const normAdres = normalizeAddress(mahalle || 'Merkez', acikAdres || 'Adres Belirtilmedi');
+      const normAdres = normalizeAddress(mahalle || '', acikAdres || 'Adres Belirtilmedi');
 
       const batchAddressMatches: BatchRecordInfo[] = [];
       if (normAdres && normAdres.length > 5 && seenAddressesInBatch.has(normAdres)) {
@@ -648,7 +648,7 @@ export async function POST(request: NextRequest) {
             tc_no: tcNo || 'Eksik',
             ad_soyad: adSoyad,
             telefon: displayPhoneLog,
-            mahalle: mahalle || 'Merkez',
+            mahalle: mahalle || 'Genel (Belirtilmemiş)',
             acik_adres: acikAdres || 'Belirtilmedi',
             hane_no: haneNo || null,
             hata_nedeni: `Mükerrer Kayıt (Eksik TC): Yüklenen Excel dosyası içerisinde aynı adreste aynı isimle (${adSoyad}) kayıt tekrarlanıyor ve satırda geçerli bir TC bulunmadığından mükerrer kabul edildi (Önceki Satır #${duplicateNameInBatch.rowNum}). Mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
@@ -683,7 +683,7 @@ export async function POST(request: NextRequest) {
             tc_no: tcNo || 'Eksik',
             ad_soyad: adSoyad,
             telefon: displayPhoneLog,
-            mahalle: mahalle || duplicateNameInDb.mahalle || 'Merkez',
+            mahalle: mahalle || duplicateNameInDb.mahalle || 'Genel (Belirtilmemiş)',
             acik_adres: acikAdres || duplicateNameInDb.acik_adres || 'Belirtilmedi',
             hane_no: haneNo || null,
             hata_nedeni: `Mükerrer Kayıt (Eksik TC): Sistemde bu adreste aynı isimle (${duplicateNameInDb.ad_soyad}) hak sahibi zaten mevcuttur ve bu satırda geçerli bir TC bulunmadığından mükerrer kabul edildi [Mevcut TC: ${duplicateNameInDb.tc_no} | Durum: ${statusSummary}]. Mükerrer kayıt oluşturulmaması için bu satır sisteme eklenmedi ve elendi.`,
@@ -709,7 +709,7 @@ export async function POST(request: NextRequest) {
       // doğrudan geçerli hak sahibi olarak sisteme eklenir.
 
       // Passed all checks!
-      const targetMahalle = mahalle || 'Merkez Mah.';
+      const targetMahalle = mahalle || 'Genel (Belirtilmemiş)';
       const batchItem: BatchRecordInfo = {
         rowNum,
         ad_soyad: adSoyad,

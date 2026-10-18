@@ -4355,7 +4355,7 @@ export default function RoutePage({
                               TESLİMAT ADRESİ BİLGİLERİ
                             </span>
                             <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-sky-900 text-white">
-                              {currentStop.mahalle || 'MERKEZ'} MAHALLESİ
+                              {currentStop.mahalle || 'Belirtilmemiş'}
                             </span>
                           </div>
 

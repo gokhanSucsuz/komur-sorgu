@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
       }>();
 
       for (const b of allActiveDocs) {
-        const m = normalizeMahalleName(b.mahalle || 'Merkez Mah.');
+        const m = normalizeMahalleName(b.mahalle) || b.mahalle || 'Genel';
         const isKoy = m.toLowerCase().includes('köy') || m.toLowerCase().includes('koyu');
         
         if (!mahalleMap.has(m)) {

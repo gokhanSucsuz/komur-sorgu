@@ -531,7 +531,7 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'PERSONEL',
         islem_tipi: 'MESAI_BITIR',
         baslik: 'Günlük Dağıtım Mesaisi Tamamlandı',
-        detay: `${targetShift.personel_adi} mesaiyi tamamladı (${startTime} - ${endTime}, ${formatMinutes(totalMinutes)}). Toplam ${finalTorba} torba kömür, ${finalHane} haneye teslim edildi. Mahalleler: ${finalMahalleler || 'Merkez'}`,
+        detay: `${targetShift.personel_adi} mesaiyi tamamladı (${startTime} - ${endTime}, ${formatMinutes(totalMinutes)}). Toplam ${finalTorba} torba kömür, ${finalHane} haneye teslim edildi. Mahalleler: ${finalMahalleler || 'Belirtilmemiş'}`,
         ek_bilgi: { totalMinutes, finalTorba, finalHane, finalMahalleler },
       });
 
