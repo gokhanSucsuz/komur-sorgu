@@ -44,20 +44,58 @@ export async function GET(request: NextRequest) {
           (l: any) => l.islem_sonucu === 'EKLENDİ_UYARILI'
         ).length;
 
-        let mahalleOzet = b.mahalle_ozet;
-        if ((!mahalleOzet || mahalleOzet.length === 0) && matchingBeneficiaries.length > 0) {
-          const mCounters = new Map<string, number>();
+        let mahalleOzet: any[] = [];
+        if (matchingBeneficiaries.length > 0) {
+          const mGroupMap = new Map<string, {
+            mahalle: string;
+            kayit_sayisi: number;
+            ek_liste_no: number;
+            ek_liste_adi: string;
+            liste_turu: string;
+            tip: 'KOY' | 'MAHALLE';
+          }>();
+
           for (const item of matchingBeneficiaries) {
             const m = item.mahalle || 'Genel';
-            mCounters.set(m, (mCounters.get(m) || 0) + 1);
+            const isKoy = m.endsWith('Köyü') || item.yerlesim_tipi === 'KOY';
+            if (!mGroupMap.has(m)) {
+              mGroupMap.set(m, {
+                mahalle: m,
+                kayit_sayisi: 0,
+                ek_liste_no: item.ek_liste_no ?? 0,
+                ek_liste_adi: item.ek_liste_adi || 'Ana Liste',
+                liste_turu: item.liste_turu || 'ANA_LISTE',
+                tip: isKoy ? 'KOY' : 'MAHALLE',
+              });
+            }
+            const group = mGroupMap.get(m)!;
+            group.kayit_sayisi += 1;
           }
-          mahalleOzet = Array.from(mCounters.entries()).map(([m, cnt]) => ({
-            mahalle: m,
-            kayit_sayisi: cnt,
-            ek_liste_no: 0,
-            ek_liste_adi: 'Ana Liste',
-            sira_araligi: `1 - ${cnt}`,
-          }));
+
+          mahalleOzet = Array.from(mGroupMap.values()).map(g => {
+            let siraAraligi = `1 - ${g.kayit_sayisi}`;
+            if (g.liste_turu === 'SIGORTALI') {
+              siraAraligi = g.kayit_sayisi === 1 ? `Sigortalı - 1` : `Sigortalı - 1'den Sigortalı - ${g.kayit_sayisi}'ye`;
+            } else if (g.ek_liste_no > 0) {
+              siraAraligi = `Ek${g.ek_liste_no} - 1'den Ek${g.ek_liste_no} - ${g.kayit_sayisi}'e`;
+            }
+            return {
+              mahalle: g.mahalle,
+              kayit_sayisi: g.kayit_sayisi,
+              ek_liste_no: g.ek_liste_no,
+              ek_liste_adi: g.ek_liste_adi,
+              liste_turu: g.liste_turu,
+              sira_araligi: siraAraligi,
+              tip: g.tip,
+            };
+          });
+
+          mahalleOzet.sort((a, b) => {
+            if (a.tip !== b.tip) return a.tip === 'MAHALLE' ? -1 : 1;
+            return a.mahalle.localeCompare(b.mahalle, 'tr');
+          });
+        } else if (b.mahalle_ozet && b.mahalle_ozet.length > 0) {
+          mahalleOzet = b.mahalle_ozet;
         }
 
         return {
