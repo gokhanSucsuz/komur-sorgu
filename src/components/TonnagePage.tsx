@@ -2,26 +2,30 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon } from '@/lib/normalizer';
+import InstitutionTonnageModal from './InstitutionTonnageModal';
 
 interface TonnagePageProps {
   trucks: any[];
   stats: any;
   onRefresh: () => void;
   isLoading?: boolean;
+  userRole?: 'ADMIN' | 'PERSONEL';
 }
 
 export default function TonnagePage({
   trucks,
   stats,
   onRefresh,
-  isLoading = false
+  isLoading = false,
+  userRole = 'PERSONEL'
 }: TonnagePageProps) {
   const todayDefault = () => new Date().toISOString().split('T')[0];
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTahsisModal, setShowTahsisModal] = useState(false);
   const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [plaka, setPlaka] = useState('');
@@ -308,8 +312,8 @@ export default function TonnagePage({
     return acc + (tr > 0 ? tr : (b > n ? b - n : 0));
   }, 0);
 
-  const netVal = normalizeToTon(netTonaj);
-  const brutVal = normalizeToTon(brutTonaj);
+  const netVal = normalizeToTon(netTonaj, true);
+  const brutVal = normalizeToTon(brutTonaj, true);
   const autoTaraVal = brutVal > netVal ? parseFloat((brutVal - netVal).toFixed(3)) : 0;
   const autoTara = autoTaraVal.toFixed(3);
 
@@ -435,6 +439,19 @@ export default function TonnagePage({
           </div>
 
           <div className="flex items-center gap-2">
+            {userRole === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={() => setShowTahsisModal(true)}
+                className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all active:scale-95"
+                title="Kuruma Gelecek Sezonluk Toplam Kömür Tahsisini Belirle / Değiştir"
+              >
+                <Target className="w-4 h-4 text-indigo-700" />
+                <span className="hidden sm:inline">Kurum Tahsisi Belirle</span>
+                <span className="sm:hidden">Tahsis</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowReportModal(true)}
@@ -459,44 +476,152 @@ export default function TonnagePage({
           </div>
         </div>
 
-        {/* 4 Stats Cards - Light Mode */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-100">
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Gelen Tır Sayısı</span>
-            <div className="text-xl font-black text-slate-900 mt-0.5">
-              {stats?.toplamTirSayisi || 0} <span className="text-xs font-normal text-slate-500">Adet</span>
+        {/* 5 Stats Cards & Institutional Progress - Light Mode */}
+        <div className="pt-2 border-t border-slate-100 space-y-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {/* Card 1: Kurum Toplam Tahsisi */}
+            <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider flex items-center gap-1">
+                  <Target className="w-3 h-3 text-indigo-600" />
+                  <span>Kurum Tahsisi</span>
+                </span>
+                {Number(stats?.toplamTahsisTonaj || 0) > 0 ? (
+                  <>
+                    <div className="text-lg font-black text-indigo-950 mt-0.5">
+                      {formatTonnage(stats?.toplamTahsisTonaj).tonStr}
+                    </div>
+                    <div className="text-[10px] text-indigo-800 font-bold">
+                      ({formatTonnage(stats?.toplamTahsisTonaj).kgStr})
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm font-extrabold text-slate-400 mt-1">
+                    Belirlenmedi
+                  </div>
+                )}
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-indigo-100">
+                {userRole === 'ADMIN' ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowTahsisModal(true)}
+                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 transition-colors"
+                  >
+                    <Pencil className="w-2.5 h-2.5" />
+                    <span>{Number(stats?.toplamTahsisTonaj || 0) > 0 ? 'Tahsis Değiştir' : 'Tahsis Belirle'}</span>
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-indigo-600 font-medium">Sezonluk Hedef</span>
+                )}
+              </div>
+            </div>
+
+            {/* Card 2: Gelen Net Kömür */}
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider flex items-center gap-1">
+                  <Truck className="w-3 h-3 text-amber-700" />
+                  <span>Gelen Net Kömür</span>
+                </span>
+                <div className="text-lg font-black text-amber-900 mt-0.5">
+                  {formatTonnage(stats?.toplamNetTonaj).tonStr}
+                </div>
+                <div className="text-[10px] text-amber-800 font-bold">
+                  ({formatTonnage(stats?.toplamNetTonaj).kgStr})
+                </div>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-amber-100 text-[10px] text-amber-700 font-semibold">
+                {stats?.toplamTirSayisi || 0} Tır Sahaya İndi
+              </div>
+            </div>
+
+            {/* Card 3: Sevkiyatı Bekleyen Kalan Kömür (User explicit request) */}
+            <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sky-800 tracking-wider flex items-center gap-1">
+                  <Weight className="w-3 h-3 text-sky-600" />
+                  <span>Sevkiyatı Bekleyen Kalan</span>
+                </span>
+                <div className="text-lg font-black text-sky-950 mt-0.5">
+                  {formatTonnage(stats?.kalanTahsisTonaj).tonStr}
+                </div>
+                <div className="text-[10px] text-sky-800 font-bold">
+                  ({formatTonnage(stats?.kalanTahsisTonaj).kgStr})
+                </div>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-sky-100 text-[10px] text-sky-700 font-semibold truncate">
+                {Number(stats?.toplamTahsisTonaj || 0) > 0 ? (
+                  Number(stats?.kalanTahsisTonaj || 0) <= 0 ? (
+                    <span className="text-emerald-700 font-bold">Tüm Tahsis Ulaştı (%100)</span>
+                  ) : (
+                    <span>Tahsisin %{stats?.tahsisTamamlanmaYuzdesi || 0}&apos;i Ulaştı</span>
+                  )
+                ) : (
+                  <span className="text-slate-400">Tahsis Belirlenmedi</span>
+                )}
+              </div>
+            </div>
+
+            {/* Card 4: Dağıtılan Kömür */}
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür</span>
+                <div className="text-lg font-black text-emerald-800 mt-0.5">
+                  {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
+                </div>
+                <div className="text-[10px] text-emerald-800 font-bold">
+                  ({formatTonnage(stats?.dagitilanNetTonaj).kgStr})
+                </div>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-emerald-100 text-[10px] text-emerald-700 font-semibold">
+                {stats?.toplamDagitilanTorba || 0} Torba Teslim Edildi
+              </div>
+            </div>
+
+            {/* Card 5: Sahada Kalan Güncel Stok */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between col-span-2 sm:col-span-1">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">Kalan Saha Stoku</span>
+                <div className={`text-lg font-black mt-0.5 ${Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-slate-900'}`}>
+                  {formatTonnage(stats?.kalanStokTonaj).tonStr}
+                </div>
+                <div className="text-[10px] text-slate-600 font-bold">
+                  ({formatTonnage(stats?.kalanStokTonaj).kgStr})
+                </div>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-slate-200 text-[10px] text-slate-500 font-medium">
+                Dağıtıma Hazır Depo Stoku
+              </div>
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
-            <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider">Gelen Net Kömür</span>
-            <div className="text-xl font-black text-amber-800 mt-0.5">
-              {formatTonnage(stats?.toplamNetTonaj).tonStr}
+          {/* Sezonluk Kurum Sevkiyat İlerleme Çubuğu */}
+          {Number(stats?.toplamTahsisTonaj || 0) > 0 && (
+            <div className="p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 flex-wrap gap-1">
+                <span className="flex items-center gap-1.5 text-slate-700">
+                  <Target className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Kurumsal Kömür Sevkiyatı Gerçekleşme Durumu:</span>
+                </span>
+                <span>
+                  <strong className="text-amber-800">{formatTonnage(stats?.toplamNetTonaj).combined}</strong>
+                  {' / '}
+                  <strong className="text-slate-900">{formatTonnage(stats?.toplamTahsisTonaj).combined}</strong>
+                  {' '}
+                  <span className="text-indigo-800 font-extrabold">
+                    (%{stats?.tahsisTamamlanmaYuzdesi || 0} Ulaştı - Kalan: {formatTonnage(stats?.kalanTahsisTonaj).combined})
+                  </span>
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-amber-500 via-indigo-600 to-emerald-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.max(0, Number(stats?.tahsisTamamlanmaYuzdesi) || 0))}%` }}
+                />
+              </div>
             </div>
-            <div className="text-[10px] text-amber-900 font-bold">
-              ({formatTonnage(stats?.toplamNetTonaj).kgStr})
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-            <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür</span>
-            <div className="text-xl font-black text-emerald-700 mt-0.5">
-              {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
-            </div>
-            <div className="text-[10px] text-emerald-800 font-bold">
-              {formatTonnage(stats?.dagitilanNetTonaj).kgStr} ({stats?.toplamDagitilanTorba || 0} Torba)
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-sky-50 border border-sky-200">
-            <span className="text-[10px] uppercase font-bold text-sky-800 tracking-wider">Kalan Stok</span>
-            <div className={`text-xl font-black mt-0.5 ${Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-sky-800'}`}>
-              {formatTonnage(stats?.kalanStokTonaj).tonStr}
-            </div>
-            <div className="text-[10px] text-sky-900 font-bold">
-              ({formatTonnage(stats?.kalanStokTonaj).kgStr})
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1179,8 +1304,14 @@ export default function TonnagePage({
                     <span>Gelen Tır: <strong className="text-emerald-700">{filteredReportTrucks.length} Adet</strong></span>
                     <span>•</span>
                     <span>Net Kömür: <strong className="text-amber-800">{formatTonnage(reportTotalNet).combined}</strong></span>
-                    <span>•</span>
-                    <span>Brüt Ağırlık: <strong className="text-slate-800">{formatTonnage(reportTotalBrut).combined}</strong></span>
+                    {Number(stats?.toplamTahsisTonaj || 0) > 0 && (
+                      <>
+                        <span>•</span>
+                        <span>Kurum Tahsisi: <strong className="text-indigo-800">{formatTonnage(stats?.toplamTahsisTonaj).combined}</strong></span>
+                        <span>•</span>
+                        <span>Kalan Sevkiyat: <strong className="text-sky-800">{formatTonnage(stats?.kalanTahsisTonaj).combined}</strong></span>
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1348,39 +1479,99 @@ export default function TonnagePage({
 
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
                   <span className="text-[10px] font-bold text-amber-800 uppercase block">Gelen Net Kömür</span>
-                  <div className="text-lg font-black text-amber-800 mt-0.5">
-                    {reportTotalNet.toFixed(3)} <span className="text-xs font-normal text-slate-500">Ton</span>
+                  <div className="text-lg font-black text-amber-900 mt-0.5">
+                    {formatTonnage(reportTotalNet).tonStr}
+                  </div>
+                  <div className="text-[10px] text-amber-800 font-bold">
+                    ({formatTonnage(reportTotalNet).kgStr})
                   </div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Brüt Ağırlık</span>
                   <div className="text-lg font-black text-slate-900 mt-0.5">
-                    {reportTotalBrut.toFixed(3)} <span className="text-xs font-normal text-slate-500">Ton</span>
+                    {formatTonnage(reportTotalBrut).tonStr}
+                  </div>
+                  <div className="text-[10px] text-slate-600 font-bold">
+                    ({formatTonnage(reportTotalBrut).kgStr})
                   </div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Dara / Tara</span>
                   <div className="text-lg font-black text-slate-700 mt-0.5">
-                    {reportTotalTara.toFixed(3)} <span className="text-xs font-normal text-slate-500">Ton</span>
+                    {formatTonnage(reportTotalTara).tonStr}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-bold">
+                    ({formatTonnage(reportTotalTara).kgStr})
                   </div>
                 </div>
               </div>
 
-              {/* Sahadaki Kömür Stok & Dağıtım Dengesi */}
-              <div className="p-3 sm:p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Genel Kömür Stok & Dağıtım Bilançosu</span>
-                  <p className="text-slate-700 font-medium">
-                    Sahaya Giren Toplam: <strong className="text-amber-800 font-bold">{stats?.toplamNetTonaj || '0'} Ton</strong> ({stats?.toplamTirSayisi || 0} Tır)
-                    <span className="mx-2">•</span>
-                    Vatandaşa Dağıtılan: <strong className="text-emerald-700 font-bold">{stats?.dagitilanNetTonaj || '0'} Ton</strong> ({stats?.toplamDagitilanTorba || 0} Torba)
-                  </p>
+              {/* Kurumsal Sevkiyat, Tahsis ve Saha Stok Bilançosu */}
+              <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 flex-wrap gap-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <Target className="w-3.5 h-3.5 text-indigo-600 no-print" />
+                    <span>Kurumsal Sevkiyat, Tahsis ve Saha Stok Bilançosu</span>
+                  </span>
+                  {Number(stats?.toplamTahsisTonaj || 0) > 0 && (
+                    <span className="text-[11px] font-bold text-indigo-900">
+                      Tahsis Gerçekleşme Oranı: <strong className="font-mono text-indigo-950">%{stats?.tahsisTamamlanmaYuzdesi || 0}</strong>
+                    </span>
+                  )}
                 </div>
-                <div className="text-right">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Sahada Kalan Güncel Stok:</span>
-                  <span className="text-base font-black text-sky-800">{stats?.kalanStokTonaj || '0'} Ton</span>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                  <div className="p-2.5 rounded-lg bg-white border border-indigo-200">
+                    <span className="text-[9px] font-bold text-indigo-900 uppercase block">Kuruma Tahsis Edilen</span>
+                    <div className="text-base font-black text-indigo-950 mt-0.5">
+                      {formatTonnage(stats?.toplamTahsisTonaj).tonStr}
+                    </div>
+                    <div className="text-[9px] font-bold text-indigo-700">
+                      ({formatTonnage(stats?.toplamTahsisTonaj).kgStr})
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-amber-200">
+                    <span className="text-[9px] font-bold text-amber-800 uppercase block">Sahaya Gelen Net</span>
+                    <div className="text-base font-black text-amber-900 mt-0.5">
+                      {formatTonnage(stats?.toplamNetTonaj).tonStr}
+                    </div>
+                    <div className="text-[9px] font-bold text-amber-700">
+                      ({formatTonnage(stats?.toplamNetTonaj).kgStr})
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-sky-200">
+                    <span className="text-[9px] font-bold text-sky-800 uppercase block">Sevkiyatı Bekleyen Kalan</span>
+                    <div className="text-base font-black text-sky-950 mt-0.5">
+                      {formatTonnage(stats?.kalanTahsisTonaj).tonStr}
+                    </div>
+                    <div className="text-[9px] font-bold text-sky-700">
+                      ({formatTonnage(stats?.kalanTahsisTonaj).kgStr})
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-emerald-200">
+                    <span className="text-[9px] font-bold text-emerald-800 uppercase block">Vatandaşa Dağıtılan</span>
+                    <div className="text-base font-black text-emerald-800 mt-0.5">
+                      {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
+                    </div>
+                    <div className="text-[9px] font-bold text-emerald-600">
+                      ({formatTonnage(stats?.dagitilanNetTonaj).kgStr})
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200 col-span-2 sm:col-span-1">
+                    <span className="text-[9px] font-bold text-slate-700 uppercase block">Sahada Kalan Stok</span>
+                    <div className="text-base font-black text-slate-900 mt-0.5">
+                      {formatTonnage(stats?.kalanStokTonaj).tonStr}
+                    </div>
+                    <div className="text-[9px] font-bold text-slate-500">
+                      ({formatTonnage(stats?.kalanStokTonaj).kgStr})
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1529,6 +1720,19 @@ export default function TonnagePage({
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Kurum Toplam Kömür Tahsisi Belirleme Modalı (Sadece Yönetici) */}
+      {showTahsisModal && (
+        <InstitutionTonnageModal
+          currentQuotaTon={Number(stats?.toplamTahsisTonaj || 0)}
+          toplamNetTonaj={Number(stats?.toplamNetTonaj || 0)}
+          onClose={() => setShowTahsisModal(false)}
+          onSuccess={() => {
+            onRefresh();
+            setShowTahsisModal(false);
+          }}
+        />
       )}
     </div>
   );

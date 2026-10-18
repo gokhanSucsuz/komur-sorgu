@@ -950,7 +950,7 @@ export function formatDeliveryStatusSummary(record: {
  * - Eğer girilen sayı < 1000 ise (örn: 27.85, 42.15, 14.3):
  *   Değer doğrudan Ton cinsinden girilmiştir.
  */
-export function normalizeToTon(val: string | number | null | undefined): number {
+export function normalizeToTon(val: string | number | null | undefined, isTruckRecord: boolean = false): number {
   if (val === null || val === undefined || val === '') return 0;
   let str = val.toString().trim().replace(/\s+/g, '');
   if (str.includes(',') && !str.includes('.')) {
@@ -962,7 +962,19 @@ export function normalizeToTon(val: string | number | null | undefined): number 
   if (isNaN(num)) return 0;
   const sign = num < 0 ? -1 : 1;
   const absNum = Math.abs(num);
-  const absTon = absNum >= 1000 ? absNum / 1000 : absNum;
+  
+  // Karayolları azami yük sınırına göre tek bir tır asla 100 tondan fazla kömür taşıyamaz.
+  // Bu yüzden tek tır tartım kaydı formunda 100'den büyük tüm değerler doğrudan kilogramdır (örn: 27850 -> 27.85 Ton).
+  //
+  // Genel / kurumsal / toplam tonaj bağlamında ise:
+  // Kurum tahsisi veya saha toplamı 1.000 - 5.000 Ton olabilir (örn: 1500 Ton, 2500 Ton).
+  // Kilogram olarak girilen değerler ise 10.000 ve üzeri olur (örn: 27850 kg, 1500000 kg).
+  let absTon: number;
+  if (isTruckRecord) {
+    absTon = absNum > 100 ? absNum / 1000 : absNum;
+  } else {
+    absTon = absNum >= 10000 ? absNum / 1000 : absNum;
+  }
   return parseFloat((sign * absTon).toFixed(3));
 }
 

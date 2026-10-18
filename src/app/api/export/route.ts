@@ -303,7 +303,8 @@ export async function GET(request: NextRequest) {
       seasonArchives: seasonCol,
       archivedBeneficiaries: archBenCol,
       workShifts: shiftsCol,
-      truckDeliveries: trucksCol
+      truckDeliveries: trucksCol,
+      systemSettings: settingsCol
     } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
@@ -556,12 +557,40 @@ export async function GET(request: NextRequest) {
         };
       });
 
+      const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
+      const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
+      const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? Math.max(0, toplamTahsisTonaj - totalNet) : 0;
+
+      // Summary row at the bottom
+      if (exportData.length > 0) {
+        exportData.push({
+          'Tır Sırası': '' as any,
+          'Ocak Çıkış Tarihi': 'GENEL TOPLAM:',
+          'Sahaya Geliş Tarihi': `${records.length} Tır`,
+          'Tır Plakası': '',
+          'Dorse Plakası': '',
+          'İrsaliye / Fiş No': '',
+          'Şoför Adı': '',
+          'Brüt Tonaj (Ton)': Number(totalBrut.toFixed(3)),
+          'Brüt Ağırlık (kg)': Math.round(totalBrut * 1000),
+          'Dara / Tara (Ton)': Number(totalTara.toFixed(3)),
+          'Dara / Tara (kg)': Math.round(totalTara * 1000),
+          'Net Tonaj (Ton)': Number(totalNet.toFixed(3)),
+          'Net Kömür (kg)': Math.round(totalNet * 1000),
+          'Açıklama / Menşe': toplamTahsisTonaj > 0 ? `Kurum Tahsisi: ${formatTonnage(toplamTahsisTonaj).tonStr} (Kalan: ${formatTonnage(kalanTahsisTonaj).tonStr})` : '-'
+        });
+      }
+
       const dateLabel = startDate && endDate ? `${startDate} - ${endDate}` : (startDate ? `${startDate} Sonrası` : (endDate ? `${endDate} Öncesi` : 'Tüm Dönem'));
+
+      const subtitleText = toplamTahsisTonaj > 0
+        ? `Kapsam: ${dateLabel} | Kurum Tahsisi: ${formatTonnage(toplamTahsisTonaj).combined} | Gelen Net: ${formatTonnage(totalNet).combined} | Sevkiyatı Bekleyen Kalan: ${formatTonnage(kalanTahsisTonaj).combined} | Tır: ${records.length} Adet`
+        : `Kapsam: ${dateLabel} | Toplam Tır: ${records.length} Adet | Gelen Net: ${formatTonnage(totalNet).combined} | Brüt: ${formatTonnage(totalBrut).combined}`;
 
       addStyledWorksheet(
         workbook,
         'KÖMÜR SEVKİYATI VE SAHA KANTAR TARTIM TONAJ LİSTESİ',
-        `Kapsam: ${dateLabel} | Toplam Tır: ${records.length} Adet | Net Kömür: ${formatTonnage(totalNet).combined} | Brüt: ${formatTonnage(totalBrut).combined}`,
+        subtitleText,
         'Kantar Tonaj',
         exportData,
         [

@@ -399,6 +399,11 @@ export async function GET(request: NextRequest) {
     const sahadakiToplamDagitilanTon = parseFloat((sahadakiToplamDagitilanBags * 0.025).toFixed(3));
     const kalanStokTonaj = parseFloat((sahadakiToplamGelenTon - sahadakiToplamDagitilanTon).toFixed(3));
 
+    const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
+    const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
+    const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? parseFloat(Math.max(0, toplamTahsisTonaj - sahadakiToplamGelenTon).toFixed(3)) : 0;
+    const tahsisTamamlanmaYuzdesi = toplamTahsisTonaj > 0 ? parseFloat(((sahadakiToplamGelenTon / toplamTahsisTonaj) * 100).toFixed(1)) : 0;
+
     return NextResponse.json({
       success: true,
       reportData: {
@@ -417,6 +422,9 @@ export async function GET(request: NextRequest) {
           eksikTonaj,
           tamamlamaYuzdesi,
           kalanStokTonaj,
+          toplamTahsisTonaj,
+          kalanTahsisTonaj,
+          tahsisTamamlanmaYuzdesi,
         },
         donemStats: {
           donemTeslimatSayisi,

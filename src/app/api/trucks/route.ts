@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { truckDeliveries: trucksCol, beneficiaries: benCol } = await getDbCollections();
+    const { truckDeliveries: trucksCol, beneficiaries: benCol, systemSettings: settingsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const q = (searchParams.get('q') || '').trim();
 
@@ -63,6 +63,12 @@ export async function GET(request: NextRequest) {
     const kalanStokTonaj = parseFloat((toplamNetTonaj - dagitilanNetTonaj).toFixed(3));
     const sonrakiTirSirasi = maxSira + 1;
 
+    // Kuruma Gelecek Toplam Kömür Tahsisi ve Geriye Kalan Sevkiyat Miktarı
+    const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
+    const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
+    const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? parseFloat(Math.max(0, toplamTahsisTonaj - toplamNetTonaj).toFixed(3)) : 0;
+    const tahsisTamamlanmaYuzdesi = toplamTahsisTonaj > 0 ? parseFloat(((toplamNetTonaj / toplamTahsisTonaj) * 100).toFixed(1)) : 0;
+
     return NextResponse.json({
       success: true,
       trucks,
@@ -75,6 +81,9 @@ export async function GET(request: NextRequest) {
         dagitilanNetTonaj,
         kalanStokTonaj,
         sonrakiTirSirasi,
+        toplamTahsisTonaj,
+        kalanTahsisTonaj,
+        tahsisTamamlanmaYuzdesi,
       },
     });
   } catch (error: any) {
@@ -127,8 +136,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const netVal = normalizeToTon(net_tonaj);
-    const brutVal = normalizeToTon(brut_tonaj);
+    const netVal = normalizeToTon(net_tonaj, true);
+    const brutVal = normalizeToTon(brut_tonaj, true);
 
     if (isNaN(netVal) || isNaN(brutVal) || netVal <= 0 || brutVal <= 0) {
       return NextResponse.json({ success: false, error: 'Geçerli bir net ve brüt tonaj miktarı giriniz' }, { status: 400 });
@@ -282,8 +291,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const netVal = normalizeToTon(net_tonaj);
-    const brutVal = normalizeToTon(brut_tonaj);
+    const netVal = normalizeToTon(net_tonaj, true);
+    const brutVal = normalizeToTon(brut_tonaj, true);
 
     if (isNaN(netVal) || isNaN(brutVal) || netVal <= 0 || brutVal <= 0) {
       return NextResponse.json({ success: false, error: 'Geçerli bir net ve brüt tonaj miktarı giriniz' }, { status: 400 });

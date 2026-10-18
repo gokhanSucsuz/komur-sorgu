@@ -842,6 +842,7 @@ export default function Home() {
             trucks={trucks}
             stats={truckStats}
             onRefresh={fetchTrucks}
+            userRole={userRole}
           />
         )}
 

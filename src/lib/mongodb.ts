@@ -582,10 +582,15 @@ async function initializeIndexesAndSeed(db: Db) {
     console.warn('[MongoDB] Index initialization notice:', err);
   }
 
-  // 1. Seed Settings (Quota & Active Season)
+  // 1. Seed Settings (Quota, Total Allocation & Active Season)
   const existingSetting = await settings.findOne({ key: 'varsayilan_hedef_torba' });
   if (!existingSetting) {
     await settings.insertOne({ key: 'varsayilan_hedef_torba', value: '34' });
+  }
+
+  const existingTahsis = await settings.findOne({ key: 'toplam_tahsis_tonaj' });
+  if (!existingTahsis) {
+    await settings.insertOne({ key: 'toplam_tahsis_tonaj', value: '0' });
   }
 
   const existingSeason = await settings.findOne({ key: 'aktif_donem' });
@@ -632,7 +637,10 @@ async function initializeIndexesAndSeed(db: Db) {
 function seedInMemoryStore(store: Record<string, any[]>) {
   const { nowLocaleTr } = getIstanbulDate();
   const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
-  store.system_settings = [{ key: 'varsayilan_hedef_torba', value: '34' }];
+  store.system_settings = [
+    { key: 'varsayilan_hedef_torba', value: '34' },
+    { key: 'toplam_tahsis_tonaj', value: '0' },
+  ];
   store.users = [
     encryptUser({
       id: '1',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
+import { normalizeToTon, formatTonnage } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
     const { systemSettings } = await getDbCollections();
     const doc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const varsayilanHedefTorba = doc ? parseInt(doc.value, 10) : 34;
+
+    const tahsisDoc = await systemSettings.findOne({ key: 'toplam_tahsis_tonaj' });
+    const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
 
     const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
     let aktifDonem = { kod: '2026-2027', baslik: '2026-2027 Kömür Dağıtım Dönemi' };
@@ -25,6 +29,7 @@ export async function GET(request: NextRequest) {
       success: true,
       settings: {
         varsayilan_hedef_torba: varsayilanHedefTorba,
+        toplam_tahsis_tonaj: toplamTahsisTonaj,
         aktif_donem: aktifDonem,
       },
     });
@@ -39,14 +44,46 @@ export async function POST(request: NextRequest) {
     const session = await verifySession(request, { requiredRole: 'ADMIN' });
     if (!session.valid) {
       return session.response || NextResponse.json(
-        { success: false, error: 'Yetkisiz erişim! Kömür kotasını sadece Sistem Yöneticisi belirleyebilir veya değiştirebilir.' },
+        { success: false, error: 'Yetkisiz erişim! Bu ayarı sadece Sistem Yöneticisi belirleyebilir veya değiştirebilir.' },
         { status: 401 }
       );
     }
 
     const { systemSettings, beneficiaries } = await getDbCollections();
     const body = await request.json();
-    const { varsayilan_hedef_torba, updateExisting } = body;
+    const { varsayilan_hedef_torba, updateExisting, toplam_tahsis_tonaj } = body;
+    const adminName = session.ad_soyad || session.username || 'Sistem Yöneticisi';
+
+    // 1. Kuruma Gelecek Toplam Kömür Tonajı / Tahsisi Belirleme
+    if (toplam_tahsis_tonaj !== undefined) {
+      const tonVal = normalizeToTon(toplam_tahsis_tonaj);
+      if (isNaN(tonVal) || tonVal < 0) {
+        return NextResponse.json({ success: false, error: 'Geçersiz kömür tonaj miktarı' }, { status: 400 });
+      }
+
+      await systemSettings.updateOne(
+        { key: 'toplam_tahsis_tonaj' },
+        { $set: { key: 'toplam_tahsis_tonaj', value: String(tonVal) } },
+        { upsert: true }
+      );
+
+      const fmt = formatTonnage(tonVal);
+      await recordActivityLog({
+        kullanici_adi: adminName,
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'TAHSIS_GUNCELLEME',
+        baslik: 'Kurum Toplam Kömür Tahsisi Güncellendi',
+        detay: `Kuruma gelecek toplam kömür miktarı ${fmt.combined} olarak belirlendi.`,
+        ek_bilgi: { toplam_tahsis_tonaj: tonVal },
+      });
+      await touchSyncPulse('SETTINGS_UPDATE');
+
+      return NextResponse.json({
+        success: true,
+        message: `Kurum toplam kömür tahsisi ${fmt.combined} olarak başarıyla kaydedildi.`,
+        toplam_tahsis_tonaj: tonVal,
+      });
+    }
 
     const bagVal = parseInt(varsayilan_hedef_torba, 10);
     if (isNaN(bagVal) || bagVal <= 0 || bagVal > 200) {
@@ -88,8 +125,6 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-
-    const adminName = session.ad_soyad || session.username || 'Sistem Yöneticisi';
 
     await recordActivityLog({
       kullanici_adi: adminName,
