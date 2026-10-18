@@ -1355,7 +1355,7 @@ export default function BeneficiaryList({
                               <div className="font-bold text-sky-950 flex items-start gap-1 break-words whitespace-normal leading-snug">
                                 <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
                                 <div className="min-w-0 flex-1 break-words">
-                                  <span>{stInfo.sokak}{stInfo.kapiNo !== 999999 ? ` No: ${stInfo.kapiNo}` : ''}</span>
+                                  <span>{stInfo.sokak}{stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' ? ` No: ${stInfo.kapiNo}` : ''}</span>
                                   {stInfo.daireNo > 0 && <span className="text-sky-700 ml-1">D: {stInfo.daireNo}</span>}
                                   {person.fiili_adres_guncellendi && (
                                     <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1 py-0.2 rounded border border-sky-300 ml-1 inline-block shrink-0" title="Fiili ikamet adresi güncellendi">
@@ -1567,7 +1567,7 @@ export default function BeneficiaryList({
                               <span className="inline-flex items-center gap-1 font-bold text-sky-900 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
                                 <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
                                 <span>{stInfo.sokak}</span>
-                                {stInfo.kapiNo !== 999999 && (
+                                {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
                                   <strong className="text-sky-950 font-black">No: {stInfo.kapiNo}</strong>
                                 )}
                                 {stInfo.daireNo > 0 && (

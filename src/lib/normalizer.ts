@@ -575,7 +575,7 @@ export function extractStreetAndDoor(
   mahalleName?: string | null
 ): {
   sokak: string;
-  kapiNo: number;
+  kapiNo: string | number;
   daireNo: number;
 } {
   let explicitStreet = (rawStreet || '').toString().trim();
@@ -637,25 +637,24 @@ export function extractStreetAndDoor(
   }
 
   // Extract door number
-  // 1. Önce açık adres metninde (acik_adres) yer alan gerçek kapı/bina numarasını ara
-  let door = 999999;
+  // 1. Önce açık adres metninde (acik_adres) yer alan gerçek kapı/bina ve blok numarasını ara
+  let door: string | number = 999999;
   if (addr) {
-    const doorMatch =
-      addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
-      addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+)/i) ||
-      addr.match(/\b(\d+)\s*(?:\/|\s+Daire|\s+D:|\s*Kat)/i);
-
-    if (doorMatch) {
-      door = parseInt(doorMatch[1], 10);
+    const doorParsed = extractDoorAndSuffix(addr);
+    if (doorParsed) {
+      door = doorParsed.doorStr;
     }
   }
 
   // 2. Eğer açık adreste kapı no bulunamadıysa ve harici açık bir kapı no (rawHane / explicitDoor) verilmişse kullan
   // (NOT: Hane dosya numarası kapı numarası yerine KULLANILMAZ!)
-  if (door === 999999 && rawHane !== undefined && rawHane !== null) {
-    const parsedDoor = parseInt(rawHane.toString().replace(/[^0-9]/g, ''), 10);
-    if (!isNaN(parsedDoor) && parsedDoor > 0 && parsedDoor !== 999999) {
-      door = parsedDoor;
+  if ((door === 999999 || door === '999999') && rawHane !== undefined && rawHane !== null) {
+    const strExp = String(rawHane).trim();
+    if (strExp && strExp !== '999999') {
+      const expParsed = extractDoorAndSuffix(strExp);
+      if (expParsed) {
+        door = expParsed.doorStr;
+      }
     }
   }
 
@@ -663,7 +662,7 @@ export function extractStreetAndDoor(
   let apt = 0;
   if (addr) {
     const aptMatch =
-      addr.match(/(?:İç\s*Kapı|Ic\s*Kapi|Daire|D\.|Kat)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
+      addr.match(/(?:İç\s*Kapı|Ic\s*Kapi|Daire|\bD\b|D\.|Kat)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
       addr.match(/(?:No\s*[:.]?\s*\d+\s*[\/-]\s*|\/\s*)(\d+)/i);
     if (aptMatch) {
       apt = parseInt(aptMatch[1], 10);
@@ -674,11 +673,57 @@ export function extractStreetAndDoor(
 }
 
 /**
+ * Helper to extract door number and optional block letter (e.g. 7D, 14A, 12, 7)
+ */
+export function extractDoorAndSuffix(addr: string): { doorStr: string; doorNum: number } | null {
+  if (!addr) return null;
+
+  // Pattern 1: No: 7 D Blok, No: 7 Blok D, No: 7-D Blok, No: 7/D Blok, No: 7 D. Blok
+  const blockMatch =
+    addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)\s*(?:[-/]?\s*([A-Za-zÇŞĞÜÖİçşğüöı])\s*(?:[-.]?\s*Blok\b)|(?:[-.]?\s*Blok\s*[:.]?\s*([A-Za-zÇŞĞÜÖİçşğüöı])))/i) ||
+    addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+)\s*(?:[-/]?\s*([A-Za-zÇŞĞÜÖİçşğüöı])\s*(?:[-.]?\s*Blok\b)|(?:[-.]?\s*Blok\s*[:.]?\s*([A-Za-zÇŞĞÜÖİçşğüöı])))/i);
+
+  if (blockMatch) {
+    const num = parseInt(blockMatch[1], 10);
+    const letter = (blockMatch[2] || blockMatch[3] || '').toLocaleUpperCase('tr');
+    if (letter) {
+      return { doorStr: `${num}${letter}`, doorNum: num };
+    }
+  }
+
+  // Pattern 2: No: 7D, No: 7-D, No: 7/D, No: 7 D
+  // (Single letter attached or separated by - or / or space, NOT followed by colon or word characters)
+  // Negative lookahead: (?![A-Za-zÇŞĞÜÖİçşğüöı:]|\s*[:=]) ensures it won't match "7 D: 3" or "7 Daire"
+  const directLetterMatch =
+    addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)\s*[-/]?\s*([A-Za-zÇŞĞÜÖİçşğüöı])(?![A-Za-zÇŞĞÜÖİçşğüöı:]|\s*[:=])/i) ||
+    addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+)\s*[-/]?\s*([A-Za-zÇŞĞÜÖİçşğüöı])(?![A-Za-zÇŞĞÜÖİçşğüöı:]|\s*[:=])/i);
+
+  if (directLetterMatch) {
+    const num = parseInt(directLetterMatch[1], 10);
+    const letter = directLetterMatch[2].toLocaleUpperCase('tr');
+    return { doorStr: `${num}${letter}`, doorNum: num };
+  }
+
+  // Pattern 3: Standard numeric door number (No: 7, Kapı: 14, Sokak 12)
+  const numMatch =
+    addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
+    addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+)/i) ||
+    addr.match(/\b(\d+)\s*(?:\/|\s+Daire|\s+D:|\s*Kat)/i);
+
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    return { doorStr: String(num), doorNum: num };
+  }
+
+  return null;
+}
+
+/**
  * Helper to get clean street info from any beneficiary record
  */
 export function getRecordStreetInfo(record: Record<string, any> | null | undefined): {
   sokak: string;
-  kapiNo: number;
+  kapiNo: string | number;
   daireNo: number;
 } {
   if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, daireNo: 0 };
@@ -704,16 +749,23 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
   }
 
   // Kapı no belirleme:
-  // 1. Açık adresten başarıyla ayıklanan kapı no daima önceliklidir (örneğin "No: 14" varsa 14)
-  let finalKapiNo = extracted.kapiNo;
+  // 1. Açık adresten başarıyla ayıklanan kapı no daima önceliklidir (örneğin "No: 7D" veya "No: 14" varsa o gelir)
+  let finalKapiNo: string | number = extracted.kapiNo;
 
   // 2. Eğer açık adreste kapı no bulunamadıysa ve veritabanında geçerli bir kapi_no varsa
   // (ancak hane_no ile birebir aynı olmamalı - eski hatalı import kalıntısını engellemek için)
-  if (finalKapiNo === 999999 && record.kapi_no !== undefined && record.kapi_no !== null && record.kapi_no !== 999999) {
-    const dbKapi = typeof record.kapi_no === 'number' ? record.kapi_no : parseInt(record.kapi_no, 10);
-    const dbHane = record.hane_no ? parseInt(String(record.hane_no).replace(/[^0-9]/g, ''), 10) : null;
-    if (!isNaN(dbKapi) && dbKapi > 0 && dbKapi !== dbHane) {
-      finalKapiNo = dbKapi;
+  if (
+    (finalKapiNo === 999999 || finalKapiNo === '999999') &&
+    record.kapi_no !== undefined &&
+    record.kapi_no !== null &&
+    record.kapi_no !== 999999 &&
+    record.kapi_no !== '999999'
+  ) {
+    const strKapi = String(record.kapi_no).trim();
+    const dbHane = record.hane_no ? String(record.hane_no).replace(/[^0-9]/g, '') : null;
+    const cleanKapiDigits = strKapi.replace(/[^0-9]/g, '');
+    if (cleanKapiDigits && cleanKapiDigits !== dbHane) {
+      finalKapiNo = strKapi;
     }
   }
 
@@ -736,7 +788,20 @@ export function compareByAddressAsc(a: any, b: any): number {
   const streetComp = sa.sokak.localeCompare(sb.sokak, 'tr');
   if (streetComp !== 0) return streetComp;
 
-  if (sa.kapiNo !== sb.kapiNo) return sa.kapiNo - sb.kapiNo;
+  // Alphanumeric natural door comparison (e.g. 7 < 7A < 7B < 7D < 8)
+  const numA = parseInt(String(sa.kapiNo).replace(/[^0-9]/g, ''), 10) || 999999;
+  const numB = parseInt(String(sb.kapiNo).replace(/[^0-9]/g, ''), 10) || 999999;
+
+  if (numA !== numB) {
+    return numA - numB;
+  }
+
+  const strA = String(sa.kapiNo || '');
+  const strB = String(sb.kapiNo || '');
+  if (strA !== strB) {
+    return strA.localeCompare(strB, 'tr', { numeric: true });
+  }
+
   if (sa.daireNo !== sb.daireNo) return sa.daireNo - sb.daireNo;
 
   return (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr');

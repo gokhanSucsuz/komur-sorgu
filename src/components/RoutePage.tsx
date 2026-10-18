@@ -2305,7 +2305,7 @@ export default function RoutePage({
                             <span className="inline-flex items-center gap-1 font-bold text-sky-900 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
                               <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
                               <span>{stop.sokak}</span>
-                              {stop.kapi_no && <strong>No: {stop.kapi_no}</strong>}
+                              {stop.kapi_no && stop.kapi_no !== 999999 && stop.kapi_no !== '999999' && <strong>No: {stop.kapi_no}</strong>}
                               {stop.daire_no && <span>D: {stop.daire_no}</span>}
                             </span>
                           )}
@@ -2832,7 +2832,7 @@ export default function RoutePage({
                               )}
                             </div>
                             <div className="text-[11px] text-slate-500 truncate">
-                              {person.mahalle} • {st.sokak || person.acik_adres} {st.kapiNo && st.kapiNo !== 999999 ? `No: ${st.kapiNo}` : ''}
+                              {person.mahalle} • {st.sokak || person.acik_adres} {st.kapiNo && st.kapiNo !== 999999 && st.kapiNo !== '999999' ? `No: ${st.kapiNo}` : ''}
                             </div>
                           </div>
                         </div>
@@ -2953,7 +2953,7 @@ export default function RoutePage({
                             <div className="text-[11px] text-slate-600 truncate mt-0.5">
                               <strong className="text-slate-800">{person.mahalle}</strong>
                               {st.sokak && <span> • {st.sokak}</span>}
-                              {st.kapiNo && st.kapiNo !== 999999 ? <span> No:{st.kapiNo}</span> : null}
+                              {st.kapiNo && st.kapiNo !== 999999 && st.kapiNo !== '999999' ? <span> No:{st.kapiNo}</span> : null}
                               {st.daireNo && st.daireNo > 0 ? <span> D:{st.daireNo}</span> : null}
                             </div>
                           </div>
