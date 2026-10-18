@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone } from 'lucide-react';
+import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone, QrCode, RefreshCw, X, Check } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: (user: {
@@ -31,6 +31,56 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
   const [requires2fa, setRequires2fa] = useState(false);
   const [totpCode, setTotpCode] = useState('');
 
+  // Device Whitelisting & Method A Pairing States
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isDeviceChecking, setIsDeviceChecking] = useState(true);
+  const [isDeviceAuthorized, setIsDeviceAuthorized] = useState(false);
+  const [deviceSlotName, setDeviceSlotName] = useState('');
+
+  // Activation modal state for mobile
+  const [showActivationModal, setShowActivationModal] = useState(false);
+  const [activationCodeInput, setActivationCodeInput] = useState('');
+  const [isActivating, setIsActivating] = useState(false);
+  const [activationError, setActivationError] = useState('');
+  const [activationSuccess, setActivationSuccess] = useState('');
+
+  // Check device authorization and mobile status
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
+      setIsMobileDevice(isMobile);
+
+      const checkDevice = async () => {
+        try {
+          const savedDeviceToken = localStorage.getItem('komur_device_token') || '';
+          if (!savedDeviceToken) {
+            setIsDeviceAuthorized(false);
+            setIsDeviceChecking(false);
+            return;
+          }
+
+          const res = await fetch('/api/devices?action=check_status', {
+            headers: { 'x-device-token': savedDeviceToken },
+          });
+          const data = await res.json();
+          if (data.success && data.authorized) {
+            setIsDeviceAuthorized(true);
+            setDeviceSlotName(data.slot_name || '');
+          } else {
+            setIsDeviceAuthorized(false);
+            localStorage.removeItem('komur_device_token');
+          }
+        } catch (e) {
+          console.error('Error checking device status:', e);
+        } finally {
+          setIsDeviceChecking(false);
+        }
+      };
+
+      checkDevice();
+    }
+  }, []);
+
   // Fetch registered staff on mount
   useEffect(() => {
     const fetchStaff = async () => {
@@ -54,6 +104,50 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
     fetchStaff();
   }, []);
 
+  const handleActivateDevice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsActivating(true);
+    setActivationError('');
+    setActivationSuccess('');
+
+    try {
+      const codeClean = activationCodeInput.trim().toUpperCase().replace(/\s+/g, '');
+      if (codeClean.length !== 6) {
+        throw new Error('Lütfen 6 haneli aktivasyon kodunu eksiksiz giriniz.');
+      }
+
+      const res = await fetch('/api/devices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ACTIVATE_DEVICE',
+          code: codeClean,
+          device_model: typeof navigator !== 'undefined' ? navigator.userAgent.substring(0, 150) : 'Mobil Cihaz',
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Aktivasyon kodu doğrulanamadı.');
+      }
+
+      localStorage.setItem('komur_device_token', data.device_token);
+      setIsDeviceAuthorized(true);
+      setDeviceSlotName(data.slot_name || '');
+      setActivationSuccess(`Başarılı! Bu telefon "${data.slot_name}" olarak eşlendi.`);
+
+      setTimeout(() => {
+        setShowActivationModal(false);
+        setActivationCodeInput('');
+        setActivationSuccess('');
+      }, 1400);
+    } catch (err: any) {
+      setActivationError(err.message || 'Cihaz aktivasyonu başarısız oldu');
+    } finally {
+      setIsActivating(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -67,14 +161,20 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
         targetUser = selectedStaff.username;
       }
 
+      const deviceToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_device_token') || '') : '';
+
       const res = await fetch('/api/auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-device-token': deviceToken,
+        },
         body: JSON.stringify({
           role: activeTab,
           username: targetUser,
           password: password.trim(),
           totp_code: requires2fa ? totpCode.trim() : undefined,
+          device_token: deviceToken,
         }),
       });
 
@@ -180,6 +280,62 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
               </button>
             </div>
           </div>
+
+          {/* Hardware & Device Enforcement Banners */}
+          {activeTab === 'PERSONEL' && (
+            <div className="px-6 pt-3 pb-0">
+              {!isMobileDevice ? (
+                <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-700 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold text-amber-950">Masaüstü / Bilgisayar Kısıtı Aktiftir</p>
+                    <p className="text-[11px] text-amber-800 font-medium mt-0.5">
+                      Saha personelleri sisteme yalnızca kurumca yetkilendirilmiş 4 telefondan giriş yapabilir. Bilgisayar erişimi yalnızca Yönetici (Admin) hesabına aittir.
+                    </p>
+                  </div>
+                </div>
+              ) : isDeviceChecking ? (
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 text-xs flex items-center justify-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                  <span className="text-[11px]">Cihaz yetki durumu denetleniyor...</span>
+                </div>
+              ) : isDeviceAuthorized ? (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="font-extrabold text-[11px]">Yetkili Cihaz: {deviceSlotName || 'Saha Telefonu'}</span>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-emerald-600 text-white rounded">
+                    ONAYLI
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 text-xs space-y-2 shadow-2xs">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <div>
+                      <p className="font-extrabold text-rose-950">Yetkisiz Saha Cihazı</p>
+                      <p className="text-[11px] text-rose-800 font-medium mt-0.5">
+                        Bu telefon henüz 4 yetkili saha cihazı arasına kaydedilmemiştir. Personel girişi için Yönetici aktivasyon kodu gereklidir.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActivationModal(true);
+                      setActivationError('');
+                      setActivationSuccess('');
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-white" />
+                    <span>Cihazı Eşle / Aktivasyon Kodu Gir</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Form Body */}
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -407,6 +563,83 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
           </div>
         </div>
       </div>
+
+      {/* Device Activation Modal for Mobile Phones */}
+      {showActivationModal && (
+        <div className="modal-overlay" onClick={() => setShowActivationModal(false)}>
+          <div className="modal-sheet max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  <Smartphone className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Saha Telefonunu Eşle</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Yönetici Aktivasyon Kodu</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowActivationModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleActivateDevice} className="space-y-3">
+              <p className="text-xs text-slate-600">
+                Sistem Yöneticinizin (Admin) panelinden bu telefon için ürettiği <b>6 haneli aktivasyon kodunu</b> giriniz:
+              </p>
+
+              {activationError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{activationError}</span>
+                </div>
+              )}
+
+              {activationSuccess && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-bold">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>{activationSuccess}</span>
+                </div>
+              )}
+
+              <div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  value={activationCodeInput}
+                  onChange={(e) => setActivationCodeInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="6 Haneli Kod (Örn: 482915)"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-indigo-400 text-slate-900 text-center font-mono text-2xl font-black tracking-[0.25em] focus:outline-none focus:border-indigo-600 focus:bg-white shadow-inner"
+                  required
+                />
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowActivationModal(false)}
+                  className="btn-secondary flex-1 py-2 text-xs"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="submit"
+                  disabled={isActivating || activationCodeInput.length !== 6}
+                  className="btn-primary flex-1 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
+                >
+                  {isActivating ? 'Eşleniyor...' : 'Cihazı Onayla'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

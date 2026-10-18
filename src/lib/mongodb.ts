@@ -252,6 +252,7 @@ function getInMemoryStore() {
       archived_truck_deliveries: [],
       archived_delivery_history: [],
       security_rate_limits: [],
+      authorized_devices: [],
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
@@ -485,6 +486,7 @@ export async function getDbCollections() {
         archivedTruckDeliveries: db.collection<any>('archived_truck_deliveries'),
         archivedDeliveryHistory: db.collection<any>('archived_delivery_history'),
         securityRateLimits: db.collection<any>('security_rate_limits'),
+        authorizedDevices: db.collection<any>('authorized_devices'),
       };
     } catch (err) {
       console.error('[MongoDB] Atlas connection failure:', err);
@@ -516,6 +518,7 @@ export async function getDbCollections() {
     archivedTruckDeliveries: new InMemoryCollection('archived_truck_deliveries') as any,
     archivedDeliveryHistory: new InMemoryCollection('archived_delivery_history') as any,
     securityRateLimits: new InMemoryCollection('security_rate_limits') as any,
+    authorizedDevices: new InMemoryCollection('authorized_devices') as any,
   };
 }
 
@@ -652,6 +655,19 @@ async function initializeIndexesAndSeed(db: Db) {
 
   // 6. Merkez Mahallesi ve Sokak İyileştirmesi: Merkez Mah. kayıtlarını gerçek köy/mahallere dönüştür, kadastro _ eklerini temizle ve Köy İçi etiketini düzelt
   await migrateFixMerkezAndStreets(db);
+
+  // 7. Initial 4 Authorized Device Slots (Kurumsal 4 Saha Telefonu Kuralı)
+  const devicesCol = db.collection('authorized_devices');
+  const deviceSlotCount = await devicesCol.countDocuments();
+  if (deviceSlotCount === 0) {
+    const initialSlots = [
+      { slot_no: 1, slot_name: '1. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowStr },
+      { slot_no: 2, slot_name: '2. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowStr },
+      { slot_no: 3, slot_name: '3. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowStr },
+      { slot_no: 4, slot_name: '4. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowStr },
+    ];
+    await devicesCol.insertMany(initialSlots);
+  }
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
@@ -684,6 +700,12 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.archived_beneficiaries = [];
   store.archived_truck_deliveries = [];
   store.archived_delivery_history = [];
+  store.authorized_devices = [
+    { slot_no: 1, slot_name: '1. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
+    { slot_no: 2, slot_name: '2. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
+    { slot_no: 3, slot_name: '3. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
+    { slot_no: 4, slot_name: '4. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
+  ];
 }
 
 /**

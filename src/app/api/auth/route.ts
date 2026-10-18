@@ -560,6 +560,86 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 3D. ADMIN OVERRIDE FOR PERSONNEL (Reset 2FA, Force Logout)
+    if (action === 'admin_reset_user_2fa') {
+      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      if (!session.valid) {
+        return session.response || NextResponse.json({ success: false, error: 'Yönetici oturumu gerekli.' }, { status: 403 });
+      }
+
+      const targetUsername = String(body.target_username || '').trim().toLowerCase();
+      if (!targetUsername) {
+        return NextResponse.json({ success: false, error: 'Hedef personel kullanıcı adı belirtilmedi.' }, { status: 400 });
+      }
+
+      const targetRaw = await findActiveUserByIdentifier(usersCol, targetUsername);
+      if (!targetRaw) {
+        return NextResponse.json({ success: false, error: 'Personel hesabı bulunamadı.' }, { status: 404 });
+      }
+
+      const { fullStr: nowFullStr } = getIstanbulDate();
+      await usersCol.updateOne(
+        { _id: targetRaw._id },
+        {
+          $set: {
+            totp_enabled: false,
+            totp_secret: null,
+            totp_pending_secret: null,
+            totp_recovery_codes: [],
+            totp_enabled_at: null,
+            updated_at: nowFullStr,
+          },
+        }
+      );
+
+      const targetDec = mapDoc(targetRaw);
+      await recordActivityLog({
+        kullanici_adi: session.username || 'ADMIN',
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: '2FA_DEVRE_DISI',
+        baslik: 'Personel 2FA Sıfırlandı (Admin Yetkisiyle)',
+        detay: `Sistem Yöneticisi, "${targetDec.ad_soyad || targetDec.username}" personeli için Google Authenticator 2FA korumasını sıfırladı.`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `"${targetDec.ad_soyad || targetDec.username}" personelinin 2FA doğrulaması başarıyla sıfırlandı. Personel artık doğrudan şifresiyle giriş yapabilir.`,
+      });
+    }
+
+    if (action === 'admin_force_logout_user') {
+      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      if (!session.valid) {
+        return session.response || NextResponse.json({ success: false, error: 'Yönetici oturumu gerekli.' }, { status: 403 });
+      }
+
+      const targetUsername = String(body.target_username || '').trim().toLowerCase();
+      const targetRaw = await findActiveUserByIdentifier(usersCol, targetUsername);
+      if (!targetRaw) {
+        return NextResponse.json({ success: false, error: 'Personel hesabı bulunamadı.' }, { status: 404 });
+      }
+
+      if (targetRaw.active_session_token) {
+        clearSessionMicroCache(targetRaw.active_session_token);
+      }
+
+      await usersCol.updateOne(
+        { _id: targetRaw._id },
+        {
+          $set: {
+            active_session_token: null,
+            last_logout_at: getIstanbulDate().iso,
+          },
+        }
+      );
+
+      const targetDec = mapDoc(targetRaw);
+      return NextResponse.json({
+        success: true,
+        message: `"${targetDec.ad_soyad || targetDec.username}" personelinin açık oturumu sonlandırıldı.`,
+      });
+    }
+
     // =========================================================================
     // 4. USER LOGIN & ADMIN ELEVATION PROCESS
     // (Distributed Brute-Force Rate Limiting + Scrypt + TOTP 2FA + Single Device)
@@ -621,6 +701,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz / Tarayıcı';
+
+    // =========================================================================
+    // 4A. DEVICE & HARDWARE RESTRICTION ENFORCEMENT
+    // (Desktop: STRICTLY ADMIN only. Mobile: STRICTLY 4 Whitelisted Phones for Personel)
+    // =========================================================================
+    const isMobileClient = /android|iphone|ipad|ipod|mobile/i.test(userAgent);
+
+    // KURAL 1: Bilgisayardan (Desktop/Laptop) SADECE ADMIN giriş yapabilir. Personel bilgisayardan erişemez.
+    if (!isMobileClient && user.rol !== 'ADMIN') {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'DESKTOP_ACCESS_DENIED',
+          error: 'Yetkisiz Cihaz Türü: Saha personelleri bilgisayardan sisteme giriş yapamaz. Bilgisayar erişimi yalnızca Sistem Yöneticisine (Admin) aittir. Lütfen kurumca yetkilendirilmiş 4 saha telefonundan giriş yapınız.',
+        },
+        { status: 403 }
+      );
+    }
+
+    // KURAL 2: Personel girişi SADECE Admin tarafından eşlenmiş 4 yetkili telefondan yapılabilir.
+    let matchedDeviceSlot: any = null;
+    if (user.rol !== 'ADMIN') {
+      const { authorizedDevices: devCol } = await getDbCollections();
+      const providedDeviceToken = (
+        request.headers.get('x-device-token') ||
+        body.device_token ||
+        request.cookies.get('komur_device_token')?.value ||
+        ''
+      ).trim();
+
+      if (!providedDeviceToken) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'DEVICE_NOT_AUTHORIZED',
+            error: 'Bu telefon kurumun yetkili 4 saha cihazı arasında kayıtlı değildir! Giriş yapabilmek için lütfen Sistem Yöneticisinden (Admin) aktivasyon kodu alarak cihazınızı eşleyiniz.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const tokenHash = crypto.createHash('sha256').update(providedDeviceToken).digest('hex');
+      matchedDeviceSlot = await devCol.findOne({ device_token_hash: tokenHash, durum: 'AKTIF' });
+
+      if (!matchedDeviceSlot) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'DEVICE_NOT_AUTHORIZED',
+            error: 'Bu telefonun cihaz yetkilendirmesi bulunamadı veya yöneticiniz tarafından iptal edilmiş! Lütfen Sistem Yöneticisiyle iletişime geçiniz.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // 2FA (Google Authenticator) Challenge for Accounts with totp_enabled
     let usedRecoveryCode = false;
     let remainingRecoveryCodes: string[] = Array.isArray(decUser.totp_recovery_codes) ? decUser.totp_recovery_codes : [];
@@ -679,7 +816,6 @@ export async function POST(request: NextRequest) {
     const newSessionToken = (is_elevation && rawUser.active_session_token)
       ? rawUser.active_session_token
       : crypto.randomUUID();
-    const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz / Tarayıcı';
     const { iso: nowIso } = getIstanbulDate();
 
     const loginUpdateDoc: any = {
@@ -701,6 +837,20 @@ export async function POST(request: NextRequest) {
       { _id: rawUser._id },
       { $set: loginUpdateDoc }
     );
+
+    if (matchedDeviceSlot) {
+      const { authorizedDevices: devCol } = await getDbCollections();
+      await devCol.updateOne(
+        { _id: matchedDeviceSlot._id },
+        {
+          $set: {
+            last_used_at: nowIso,
+            last_personel: user.ad_soyad || user.username,
+            last_ip: encryptField(clientIp),
+          },
+        }
+      );
+    }
 
     if (is_elevation) {
       await recordActivityLog({

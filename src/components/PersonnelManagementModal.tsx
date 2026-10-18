@@ -1,19 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, Edit3, Trash2, Key, Phone, Shield, User, X, Check, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { 
+  Users, UserPlus, Edit3, Trash2, Key, Phone, Shield, User, X, Check, Eye, EyeOff, 
+  AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert 
+} from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 
 interface PersonnelManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRefresh?: () => void;
+  onOpenDeviceManagement?: () => void;
 }
 
 export default function PersonnelManagementModal({
   isOpen,
   onClose,
-  onRefresh
+  onRefresh,
+  onOpenDeviceManagement,
 }: PersonnelManagementModalProps) {
   const [personnelList, setPersonnelList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -186,6 +191,97 @@ export default function PersonnelManagementModal({
     }
   };
 
+  const handleReset2FA = async (person: any) => {
+    const confirmed = await showConfirm({
+      title: 'Google Authenticator (2FA) Sıfırla',
+      message: `"${person.ad_soyad}" (@${person.username}) personeline ait 2FA doğrulamasını sıfırlamak istediğinize emin misiniz?\n\nBu işlem personelin telefon kaybetmesi, değiştirmesi veya Google Authenticator sorunlarında tek yetkili Admin tarafından uygulanır. Sıfırlandıktan sonra personel doğrudan kendi şifresiyle giriş yapabilecektir.`,
+      type: 'warning',
+      confirmText: 'Evet, 2FA Sıfırla',
+      cancelText: 'Vazgeç',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify({
+          action: 'admin_reset_user_2fa',
+          target_username: person.username,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '2FA sıfırlanamadı');
+      }
+
+      showToast({
+        type: 'success',
+        title: '2FA Sıfırlandı',
+        message: `"${person.ad_soyad}" personeline ait 2FA kaldırıldı. Artık şifresiyle girebilir.`,
+      });
+
+      fetchPersonnel();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      showAlert({
+        title: 'Hata',
+        message: err.message || '2FA sıfırlanırken hata oluştu',
+        type: 'error',
+      });
+    }
+  };
+
+  const handleForceLogout = async (person: any) => {
+    const confirmed = await showConfirm({
+      title: 'Kullanıcı Oturumunu Kapat',
+      message: `"${person.ad_soyad}" (@${person.username}) personeline ait tüm cihazlardaki açık oturumu sonlandırmak istediğinize emin misiniz?`,
+      type: 'warning',
+      confirmText: 'Evet, Oturumu Kapat',
+      cancelText: 'Vazgeç',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify({
+          action: 'admin_force_logout_user',
+          target_username: person.username,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Oturum kapatılamadı');
+      }
+
+      showToast({
+        type: 'success',
+        title: 'Oturum Kapatıldı',
+        message: `"${person.ad_soyad}" kullanıcısının oturumu başarıyla kapatıldı.`,
+      });
+    } catch (err: any) {
+      showAlert({
+        title: 'Hata',
+        message: err.message || 'Oturum kapatılırken hata oluştu',
+        type: 'error',
+      });
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -212,20 +308,35 @@ export default function PersonnelManagementModal({
 
         {/* Action Bar */}
         {!showForm && (
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-600">
               Kayıtlı Kullanıcılar ({personnelList.length})
             </span>
-            <button
-              onClick={() => {
-                resetForm();
-                setShowForm(true);
-              }}
-              className="btn-primary py-2 px-3 text-xs font-bold shadow-sm"
-            >
-              <UserPlus className="w-4 h-4 text-white" />
-              <span>Yeni Personel Ekle</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {onOpenDeviceManagement && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenDeviceManagement();
+                  }}
+                  className="py-2 px-3 text-xs font-bold rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-900 flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>Yetkili 4 Cihaz</span>
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowForm(true);
+                }}
+                className="btn-primary py-2 px-3 text-xs font-bold shadow-sm"
+              >
+                <UserPlus className="w-4 h-4 text-white" />
+                <span>Yeni Personel Ekle</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -470,13 +581,24 @@ export default function PersonnelManagementModal({
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 font-medium">
+                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 font-medium flex-wrap">
                     <span className="font-mono text-slate-700">@{person.username}</span>
                     <span>•</span>
                     <span className="flex items-center gap-1 font-mono text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px]">
                       <Key className="w-3 h-3 text-emerald-600" />
                       PIN Korumalı
                     </span>
+                    <span>•</span>
+                    {person.totp_enabled ? (
+                      <span className="flex items-center gap-1 font-mono text-indigo-800 font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 text-[10px]">
+                        <Shield className="w-3 h-3 text-indigo-600" />
+                        2FA Aktif
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                        2FA Kapalı
+                      </span>
+                    )}
                     {person.telefon && (
                       <>
                         <span>•</span>
@@ -499,6 +621,22 @@ export default function PersonnelManagementModal({
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
+                  {person.totp_enabled && (
+                    <button
+                      onClick={() => handleReset2FA(person)}
+                      className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors"
+                      title="Google Authenticator (2FA) Sıfırla"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleForceLogout(person)}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                    title="Açık Oturumu Kapat (Çıkışa Zorla)"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     onClick={() => handleStartEdit(person)}
                     className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"

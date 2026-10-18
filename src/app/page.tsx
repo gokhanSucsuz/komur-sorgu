@@ -15,6 +15,7 @@ import HouseholdModal from '@/components/HouseholdModal';
 import QuotaModal from '@/components/QuotaModal';
 import LoginPage from '@/components/LoginPage';
 import PersonnelManagementModal from '@/components/PersonnelManagementModal';
+import DeviceManagementModal from '@/components/DeviceManagementModal';
 import AuditLogsModal from '@/components/AuditLogsModal';
 import ShiftPage from '@/components/ShiftPage';
 import RoutePage from '@/components/RoutePage';
@@ -66,6 +67,7 @@ export default function Home() {
   const [defaultQuota, setDefaultQuota] = useState<number>(34);
   const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
   const [showPersonnelModal, setShowPersonnelModal] = useState<boolean>(false);
+  const [showDeviceModal, setShowDeviceModal] = useState<boolean>(false);
   const [showAuditLogsModal, setShowAuditLogsModal] = useState<boolean>(false);
   const [showAdminAuthModal, setShowAdminAuthModal] = useState<boolean>(false);
   const [showSeasonModal, setShowSeasonModal] = useState<boolean>(false);
@@ -827,6 +829,7 @@ export default function Home() {
         isOnline={isOnline}
         onOpenQuotaModal={() => setShowQuotaModal(true)}
         onOpenPersonnelModal={() => setShowPersonnelModal(true)}
+        onOpenDeviceModal={() => setShowDeviceModal(true)}
         onOpenAuditLogs={() => setShowAuditLogsModal(true)}
         onOpenSeasonModal={() => setShowSeasonModal(true)}
         activeSeasonCode={activeSeasonCode}
@@ -1073,6 +1076,15 @@ export default function Home() {
           isOpen={showPersonnelModal}
           onClose={() => setShowPersonnelModal(false)}
           onRefresh={handleRefreshAll}
+          onOpenDeviceManagement={() => setShowDeviceModal(true)}
+        />
+      )}
+
+      {/* 5B. Yetkili 4 Saha Cihazı Yönetim Modalı (Yöntem A Donanım Koruması) */}
+      {showDeviceModal && (
+        <DeviceManagementModal
+          isOpen={showDeviceModal}
+          onClose={() => setShowDeviceModal(false)}
         />
       )}
 

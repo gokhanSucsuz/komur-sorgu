@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen
+  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 import ProfileModal from '@/components/ProfileModal';
@@ -23,6 +23,7 @@ interface HeaderProps {
   isOnline?: boolean;
   onOpenQuotaModal?: () => void;
   onOpenPersonnelModal?: () => void;
+  onOpenDeviceModal?: () => void;
   onOpenAuditLogs?: () => void;
   onOpenSeasonModal?: () => void;
   activeSeasonCode?: string;
@@ -47,6 +48,7 @@ export default function Header({
   isOnline = true,
   onOpenQuotaModal,
   onOpenPersonnelModal,
+  onOpenDeviceModal,
   onOpenAuditLogs,
   onOpenSeasonModal,
   activeSeasonCode = '2026-2027',
@@ -156,6 +158,18 @@ export default function Header({
                   >
                     <Users className="w-3.5 h-3.5 text-purple-700" />
                     <span>Personel</span>
+                  </button>
+                )}
+
+                {/* Admin Authorized 4 Devices Shortcut - Admin Only */}
+                {userRole === 'ADMIN' && onOpenDeviceModal && (
+                  <button
+                    onClick={onOpenDeviceModal}
+                    title="Yetkili 4 Saha Cihazı Yönetimi (Yöntem A Donanım Koruması)"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 border border-violet-200 text-xs font-bold text-violet-900 transition-all active:scale-95 shadow-sm shrink-0"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-violet-700" />
+                    <span>Yetkili Cihazlar</span>
                   </button>
                 )}
 
@@ -329,6 +343,18 @@ export default function Header({
               >
                 <Users className="w-3 h-3 text-purple-700" />
                 <span>Personel</span>
+              </button>
+            )}
+
+            {/* Admin Authorized 4 Devices Shortcut - Admin Only */}
+            {userRole === 'ADMIN' && onOpenDeviceModal && (
+              <button
+                onClick={onOpenDeviceModal}
+                title="Yetkili 4 Saha Cihazı Yönetimi"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 hover:bg-violet-100 border border-violet-200 text-[11px] font-extrabold text-violet-900 shrink-0 shadow-2xs active:scale-95"
+              >
+                <Smartphone className="w-3 h-3 text-violet-700" />
+                <span>Cihazlar</span>
               </button>
             )}
 
