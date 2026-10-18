@@ -832,19 +832,12 @@ export async function PATCH(request: NextRequest) {
         beneficiary: updatedDoc,
       });
     } else if (action === 'KOMUR_IPTAL_GERI_AL') {
-      const updateSet: any = {
-        komur_verilmeyecek: false,
-        komur_iptal_nedeni: null,
-        komur_iptal_aciklama: null,
-        komur_iptal_tarihi: null,
-        komur_iptal_eden: null,
-        updated_at: nowStr,
-      };
-
       await benCol.updateOne(buildIdFilter(id), {
-        $set: updateSet,
+        $set: {
+          komur_verilmeyecek: false,
+          updated_at: nowStr,
+        },
         $unset: {
-          komur_verilmeyecek: '',
           komur_iptal_nedeni: '',
           komur_iptal_aciklama: '',
           komur_iptal_tarihi: '',
