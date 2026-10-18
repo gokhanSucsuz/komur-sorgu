@@ -53,7 +53,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedMahalleler, setSelectedMahalleler] = useState<string[]>([]);
-  const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED'>('PENDING_AND_PARTIAL');
+  const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL'>('PENDING_AND_PARTIAL');
   const [selectedDurumFilter, setSelectedDurumFilter] = useState<string>('HEPSI');
 
   // Debounce search query to prevent input stutter and out-of-order race conditions

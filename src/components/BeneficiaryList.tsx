@@ -32,8 +32,8 @@ interface BeneficiaryListProps {
   onSearchChange: (q: string) => void;
   selectedMahalleler: string[];
   onMahallelerChange: (m: string[]) => void;
-  selectedQueueTab: 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED';
-  onQueueTabChange: (tab: 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED') => void;
+  selectedQueueTab: 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL';
+  onQueueTabChange: (tab: 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL') => void;
   selectedDurumFilter: string;
   onDurumFilterChange: (d: string) => void;
   onOpenDelivery: (person: any) => void;
@@ -277,23 +277,46 @@ export default function BeneficiaryList({
     return records.filter((r) => Boolean(r.komur_verilmeyecek));
   }, [records]);
 
+  // Aktif sekmenin temel kayıt listesi:
+  // - PENDING_AND_PARTIAL: Yalnızca teslimatı yapılmamış ve iptal edilmemiş olanlar
+  // - DELIVERED: Yalnızca kömür teslimatı yapılmış olanlar
+  // - EXCLUDED: Yalnızca kömür iptal edilen (verilmeyecek) olanlar
+  // - ALL: Tüm kayıtlar
+  const currentTabBaseList = useMemo(() => {
+    switch (selectedQueueTab) {
+      case 'PENDING_AND_PARTIAL':
+        return filteredPendingRecords;
+      case 'DELIVERED':
+        return deliveredRecords;
+      case 'EXCLUDED':
+        return excludedRecords;
+      case 'ALL':
+      default:
+        return records;
+    }
+  }, [selectedQueueTab, filteredPendingRecords, deliveredRecords, excludedRecords, records]);
+
   const isSearching = Boolean(searchQuery && searchQuery.trim().length > 0);
 
-  // In-memory Turkish-aware search across all cached records:
-  // TC Kimlik No ve Ad Soyad alanlarında BİREBİR arama (Adreslerde arama yapılmaz)
+  // ARAMA FİLTRESİ: Hangi sekme aktifse YALNIZCA o sekmenin listesinde ara!
   const searchFilteredRecords = useMemo(() => {
     if (!isSearching) return [];
-    return records.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery));
-  }, [records, isSearching, searchQuery]);
+    return currentTabBaseList.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery));
+  }, [currentTabBaseList, isSearching, searchQuery]);
 
-  // Active list to display based on search mode or selectedQueueTab
-  const activeDisplayList = isSearching
-    ? searchFilteredRecords
-    : selectedQueueTab === 'PENDING_AND_PARTIAL'
-    ? filteredPendingRecords
-    : selectedQueueTab === 'DELIVERED'
-    ? deliveredRecords
-    : excludedRecords;
+  // Arama yapıldığında her sekmede kaç adet eşleşme olduğunu gösteren dinamik sayılar
+  const tabSearchCounts = useMemo(() => {
+    if (!isSearching) return null;
+    return {
+      pending: filteredPendingRecords.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
+      delivered: deliveredRecords.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
+      excluded: excludedRecords.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
+      all: records.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
+    };
+  }, [isSearching, searchQuery, filteredPendingRecords, deliveredRecords, excludedRecords, records]);
+
+  // Görüntülenecek aktif liste: Arama yapılıyorsa seçili sekmenin arama sonuçları, değilse sekmenin tüm listesi
+  const activeDisplayList = isSearching ? searchFilteredRecords : currentTabBaseList;
 
   // Filter by selected neighborhoods (if any)
   const mahalleFilteredList = useMemo(() => {
@@ -602,6 +625,77 @@ export default function BeneficiaryList({
         </div>
       </div>
 
+      {/* 4 DİNAMİK KUYRUK SEKMESİ (Teslim Edilecek vs Teslim Edilen vs Verilmeyecek vs Tüm Kayıtlar) */}
+      <div className="p-1 rounded-2xl bg-slate-200/90 border border-slate-300/70 grid grid-cols-2 sm:grid-cols-4 gap-1 shadow-inner">
+        {/* 1. Teslim Edilecek (Bekleyen & Eksik) */}
+        <button
+          type="button"
+          onClick={() => onQueueTabChange('PENDING_AND_PARTIAL')}
+          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+            selectedQueueTab === 'PENDING_AND_PARTIAL'
+              ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+          title="Henüz kömürü teslim edilmemiş ve iptal edilmemiş haneler"
+        >
+          <PackageCheck className="w-4 h-4 text-amber-600 shrink-0" />
+          <span className="truncate">
+            Teslim Edilecek ({isSearching ? (tabSearchCounts?.pending ?? 0) : totalPendingCount})
+          </span>
+        </button>
+
+        {/* 2. Teslim Edilenler */}
+        <button
+          type="button"
+          onClick={() => onQueueTabChange('DELIVERED')}
+          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+            selectedQueueTab === 'DELIVERED'
+              ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/90'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+          title="Kömür teslimatı tamamlanmış haneler"
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="truncate">
+            Teslim Edilen ({isSearching ? (tabSearchCounts?.delivered ?? 0) : deliveredRecords.length})
+          </span>
+        </button>
+
+        {/* 3. Verilmeyecek (İptal Edilenler) */}
+        <button
+          type="button"
+          onClick={() => onQueueTabChange('EXCLUDED')}
+          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+            selectedQueueTab === 'EXCLUDED'
+              ? 'bg-white text-rose-800 shadow-sm border border-rose-300'
+              : 'text-slate-600 hover:text-rose-900'
+          }`}
+          title="Eşi kömür almış, doğalgaza geçmiş vb. kömür verilmeyecek (iptal) hak sahipleri"
+        >
+          <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+          <span className="truncate">
+            Verilmeyecek ({isSearching ? (tabSearchCounts?.excluded ?? 0) : excludedRecords.length})
+          </span>
+        </button>
+
+        {/* 4. Tüm Kayıtlar (YENİ SEKME!) */}
+        <button
+          type="button"
+          onClick={() => onQueueTabChange('ALL')}
+          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+            selectedQueueTab === 'ALL'
+              ? 'bg-white text-sky-900 shadow-sm border border-sky-300'
+              : 'text-slate-600 hover:text-sky-900'
+          }`}
+          title="Sistemdeki tüm kayıtları (teslim edilecek, teslim edilmiş ve iptal olanlar) bir arada görüntüleyin"
+        >
+          <List className="w-4 h-4 text-sky-600 shrink-0" />
+          <span className="truncate">
+            Tüm Kayıtlar ({isSearching ? (tabSearchCounts?.all ?? 0) : records.length})
+          </span>
+        </button>
+      </div>
+
       {/* ARAMA MODU: Sade, Hızlı ve Pratik Arama Bilgi Çubuğu */}
       {isSearching && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 shadow-xs space-y-2">
@@ -610,6 +704,17 @@ export default function BeneficiaryList({
               <Search className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span>Arama Sonucu:</span>
               <strong className="text-slate-900 font-extrabold">{totalFilteredRecords} Hane Bulundu</strong>
+              <span className="text-[11px] font-semibold text-amber-800">
+                (
+                {selectedQueueTab === 'PENDING_AND_PARTIAL'
+                  ? 'Teslim Edilecek sekmesinde'
+                  : selectedQueueTab === 'DELIVERED'
+                  ? 'Teslim Edilen sekmesinde'
+                  : selectedQueueTab === 'EXCLUDED'
+                  ? 'Verilmeyecek sekmesinde'
+                  : 'Tüm Kayıtlar sekmesinde'}
+                )
+              </span>
 
               {/* Aktif Filtre Etiketleri */}
               {selectedMahalleler.length > 0 && (
@@ -689,11 +794,11 @@ export default function BeneficiaryList({
             </div>
           </div>
 
-          {/* Filtreli Mahallede/Sokakta 0 kayıt çıkıp diğer mahallelerde eşleşen kayıt varsa kullanıcıya anında çözüm sun */}
+          {/* Filtreli Mahallede/Sokakta 0 kayıt çıkıp seçili sekmedeki diğer mahallelerde eşleşen kayıt varsa */}
           {totalFilteredRecords === 0 && searchFilteredRecords.length > 0 && (
             <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-amber-900 font-medium">
-                Seçili filtrelerde kayıt bulunamadı ancak diğer mahallelerde <strong className="text-slate-900 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
+                Seçili filtrelerde kayıt bulunamadı ancak bu sekmedeki diğer mahallelerde <strong className="text-slate-900 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
               </span>
               <button
                 type="button"
@@ -713,48 +818,6 @@ export default function BeneficiaryList({
       {/* NORMAL MOD (Arama yapılmadığında görünen kontroller) */}
       {!isSearching && (
         <>
-          {/* DYNAMIC QUEUE TOGGLE TABS (Teslim Edilecekler vs Teslim Edilenler vs Kömür Verilmeyecekler) */}
-          <div className="p-1 rounded-2xl bg-slate-200/90 border border-slate-300/70 grid grid-cols-3 gap-1 shadow-inner">
-            <button
-              type="button"
-              onClick={() => onQueueTabChange('PENDING_AND_PARTIAL')}
-              className={`py-2.5 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-                selectedQueueTab === 'PENDING_AND_PARTIAL'
-                  ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <PackageCheck className="w-4 h-4 text-amber-600 shrink-0" />
-              <span className="truncate">Teslim Edilecek ({totalPendingCount})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onQueueTabChange('DELIVERED')}
-              className={`py-2.5 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-                selectedQueueTab === 'DELIVERED'
-                  ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/90'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="truncate">Teslim Edilen ({deliveredRecords.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onQueueTabChange('EXCLUDED')}
-              className={`py-2.5 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-                selectedQueueTab === 'EXCLUDED'
-                  ? 'bg-white text-rose-800 shadow-sm border border-rose-300'
-                  : 'text-slate-600 hover:text-rose-900'
-              }`}
-              title="Eşi kömür almış, doğalgaza geçmiş vb. kömür verilmeyecek (iptal) hak sahipleri"
-            >
-              <Ban className="w-4 h-4 text-rose-600 shrink-0" />
-              <span className="truncate">Verilmeyecek ({excludedRecords.length})</span>
-            </button>
-          </div>
 
           {/* MOBİL VE MASAÜSTÜ ERGONOMİK FİLTRE VE GÖRÜNÜM KONTROL PANELİ */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-2.5 space-y-2">
@@ -1261,7 +1324,9 @@ export default function BeneficiaryList({
                 ? 'Kömür Dağıtılacak: '
                 : selectedQueueTab === 'DELIVERED'
                 ? 'Teslim Edilen: '
-                : 'Kömür Verilmeyecek (İptal): '}
+                : selectedQueueTab === 'EXCLUDED'
+                ? 'Kömür Verilmeyecek (İptal): '
+                : 'Tüm Kayıtlar: '}
               <strong className="text-slate-900 font-bold">{totalFilteredRecords} Hane</strong> • Hedef Kota: <strong className="text-amber-700">{defaultQuota} Torba</strong>
             </span>
           </div>
@@ -1291,7 +1356,7 @@ export default function BeneficiaryList({
                 <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
                   Seçili bölge filtresinde (<strong className="text-slate-900 font-bold">{selectedMahalleler.join(', ')}</strong>) <strong className="text-amber-800 font-bold">&ldquo;{searchQuery}&rdquo;</strong> için hak sahibi bulunamadı.
                   <br />
-                  Ancak sistemdeki diğer mahallelerde <strong className="text-emerald-700 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
+                  Ancak seçili sekmedeki diğer mahallelerde <strong className="text-emerald-700 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                   <button
@@ -1314,24 +1379,73 @@ export default function BeneficiaryList({
                 </div>
               </div>
             ) : (
-              <>
-                <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-                  <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> için TC Kimlik No veya Hak Sahibi (Ad Soyad) kaydı bulunamadı.
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> için {selectedQueueTab === 'PENDING_AND_PARTIAL' ? 'Teslim Edilecekler' : selectedQueueTab === 'DELIVERED' ? 'Teslim Edilenler' : selectedQueueTab === 'EXCLUDED' ? 'Verilmeyecekler' : 'Tüm Kayıtlar'} sekmesinde eşleşen kayıt bulunamadı.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => onSearchChange('')}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 border border-slate-200 shadow-2xs"
-                >
-                  <span>✕ Aramayı Temizle</span>
-                </button>
-              </>
+
+                {tabSearchCounts && tabSearchCounts.all > 0 && (
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2 max-w-md mx-auto">
+                    <span className="font-extrabold text-slate-700 block">💡 Diğer sekmelerde eşleşen kayıtlar bulundu:</span>
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      {selectedQueueTab !== 'PENDING_AND_PARTIAL' && tabSearchCounts.pending > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onQueueTabChange('PENDING_AND_PARTIAL')}
+                          className="px-3 py-1.5 rounded-lg bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs active:scale-95"
+                        >
+                          📦 Teslim Edilecek ({tabSearchCounts.pending}) →
+                        </button>
+                      )}
+                      {selectedQueueTab !== 'DELIVERED' && tabSearchCounts.delivered > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onQueueTabChange('DELIVERED')}
+                          className="px-3 py-1.5 rounded-lg bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs shadow-2xs active:scale-95"
+                        >
+                          ✓ Teslim Edilen ({tabSearchCounts.delivered}) →
+                        </button>
+                      )}
+                      {selectedQueueTab !== 'EXCLUDED' && tabSearchCounts.excluded > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onQueueTabChange('EXCLUDED')}
+                          className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-900 border border-rose-300 font-bold text-xs shadow-2xs active:scale-95"
+                        >
+                          🚫 Verilmeyecek ({tabSearchCounts.excluded}) →
+                        </button>
+                      )}
+                      {selectedQueueTab !== 'ALL' && (
+                        <button
+                          type="button"
+                          onClick={() => onQueueTabChange('ALL')}
+                          className="px-3 py-1.5 rounded-lg bg-white hover:bg-sky-50 text-sky-900 border border-sky-300 font-bold text-xs shadow-2xs active:scale-95"
+                        >
+                          📋 Tüm Kayıtlarda Gör ({tabSearchCounts.all}) →
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onSearchChange('')}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 border border-slate-200 shadow-2xs"
+                  >
+                    <span>✕ Aramayı Temizle</span>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         ) : (
           <div className="p-10 text-center rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
             {selectedQueueTab === 'EXCLUDED' ? (
               <Ban className="w-10 h-10 text-rose-500 mx-auto" />
+            ) : selectedQueueTab === 'ALL' ? (
+              <List className="w-10 h-10 text-sky-500 mx-auto" />
             ) : (
               <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
             )}
@@ -1340,14 +1454,18 @@ export default function BeneficiaryList({
                 ? 'Tebrikler! Seçilen mahallelerde teslim edilecek hane kalmadı.'
                 : selectedQueueTab === 'DELIVERED'
                 ? 'Seçilen mahallelerde henüz tamamlanmış teslimat bulunmuyor.'
-                : 'Seçilen filtrelerde kömür yardımı iptal edilmiş (verilmeyecek) hane bulunmuyor.'}
+                : selectedQueueTab === 'EXCLUDED'
+                ? 'Seçilen filtrelerde kömür yardımı iptal edilmiş (verilmeyecek) hane bulunmuyor.'
+                : 'Seçilen filtrelerde listelenecek hane bulunamadı.'}
             </p>
             <p className="text-xs text-slate-500 max-w-xs mx-auto">
               {selectedQueueTab === 'PENDING_AND_PARTIAL'
                 ? 'Tamamlanan teslimatları incelemek için yukarıdaki "Teslim Edilenler" sekmesine geçebilirsiniz.'
                 : selectedQueueTab === 'DELIVERED'
                 ? 'Dağıtıma başlamak için "Teslim Edilecekler" sekmesine dönün.'
-                : 'Bir vatandaşın kömür yardımını iptal etmek için hane kartındaki "Kömür İptal" butonunu kullanabilirsiniz.'}
+                : selectedQueueTab === 'EXCLUDED'
+                ? 'Bir vatandaşın kömür yardımını iptal etmek için hane kartındaki "Kömür İptal" butonunu kullanabilirsiniz.'
+                : 'Filtreleri temizleyerek tüm kayıtları görüntüleyebilirsiniz.'}
             </p>
           </div>
         )
