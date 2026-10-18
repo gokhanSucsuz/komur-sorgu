@@ -56,14 +56,23 @@ export async function POST(request: NextRequest) {
       durum: { $in: ['AKTIF', 'DURAKLATILDI'] }
     }).toArray();
 
+    const benIdStr = String(beneficiary.id || beneficiary._id || '');
+    const benTcStr = String(beneficiary.tc_no || '').trim();
+    const benTcHash = beneficiary.tc_hash || '';
+
     for (const rawRoute of activeOrPausedRoutes) {
       const decRoute = mapDoc(rawRoute);
       const stops = Array.isArray(decRoute.duraklar) ? decRoute.duraklar : [];
-      const isInRoute = stops.some((s: any) =>
-        String(s.beneficiary_id) === String(beneficiary.id) ||
-        String(s.beneficiary_id) === String(beneficiary._id) ||
-        (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
-      );
+      const isInRoute = stops.some((s: any) => {
+        const sBenId = String(s.beneficiary_id || s.id || '');
+        const sTc = String(s.tc_no || '').trim();
+        const sTcHash = s.tc_hash || '';
+        return (
+          (benIdStr && sBenId && benIdStr === sBenId) ||
+          (benTcStr && sTc && benTcStr === sTc) ||
+          (benTcHash && sTcHash && benTcHash === sTcHash)
+        );
+      });
 
       if (isInRoute) {
         // Ekip arkadaşı / yetki kontrolü
@@ -76,7 +85,7 @@ export async function POST(request: NextRequest) {
               rota_kilitli: true,
               unauthorized_team: true,
               aktif_rota_modu_personel: owner,
-              error: `Bu hane "${decRoute.rota_adi || 'Aktif Rota'}" kapsamında ${owner} personeline ve ekibine aittir. Yalnızca rotayı işleten personel veya ekip arkadaşı teslimat yapabilir.`,
+              error: `Bu hane "${decRoute.rota_adi || 'Aktif Rota'}" kapsamında ${owner} personeline ve ekibine aittir. Yalnızca rotayı işleten personel veya tanımlı ekip arkadaşı teslimat yapabilir.`,
             },
             { status: 423 }
           );
@@ -203,11 +212,15 @@ export async function POST(request: NextRequest) {
         const stops = decR.duraklar || [];
         let modified = false;
         stops.forEach((s: any) => {
-          if (
-            String(s.beneficiary_id) === String(beneficiary.id) ||
-            String(s.beneficiary_id) === String(beneficiary._id) ||
-            (beneficiary.tc_no && s.tc_no === beneficiary.tc_no)
-          ) {
+          const sBenId = String(s.beneficiary_id || s.id || '');
+          const sTc = String(s.tc_no || '').trim();
+          const sTcHash = s.tc_hash || '';
+          const isMatch =
+            (benIdStr && sBenId && benIdStr === sBenId) ||
+            (benTcStr && sTc && benTcStr === sTc) ||
+            (benTcHash && sTcHash && benTcHash === sTcHash);
+
+          if (isMatch) {
             s.durum = newStatus;
             s.teslim_edilen_torba = newTotalBags;
             s.teslim_tarihi = localTimeStr;
@@ -225,26 +238,63 @@ export async function POST(request: NextRequest) {
           let undeliveredCount = 0;
           let totalDeliveredBags = 0;
           stops.forEach((s: any) => {
-            if (s.durum === 'TAMAMLANDI') {
+            const isComplete =
+              s.durum === 'TAMAMLANDI' ||
+              s.durum === 'TESLIM_EDILDI' ||
+              (Number(s.teslim_edilen_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
+            if (isComplete) {
+              s.durum = 'TAMAMLANDI';
               completedCount++;
-              totalDeliveredBags += s.teslim_edilen_torba || s.hedef_torba || 34;
+              totalDeliveredBags += Number(s.teslim_edilen_torba) || Number(s.hedef_torba) || 34;
             } else if (s.durum === 'EKSIK') {
               eksikCount++;
-              totalDeliveredBags += s.teslim_edilen_torba || 0;
+              totalDeliveredBags += Number(s.teslim_edilen_torba) || 0;
             } else if (s.durum === 'TESLIM_EDILEMEDI') {
               undeliveredCount++;
             }
           });
+
+          const isAllStopsCompleted = stops.length > 0 && completedCount === stops.length;
+
+          const routeUpdateFields: any = {
+            duraklar: stops.map(encryptRouteStop),
+            tamamlanan_hane: completedCount,
+            eksik_hane: eksikCount,
+            teslim_edilemeyen_hane: undeliveredCount,
+            toplam_dagitilan_torba: totalDeliveredBags,
+            updated_at: localTimeStr,
+          };
+
+          if (isAllStopsCompleted) {
+            routeUpdateFields.durum = 'TAMAMLANDI';
+            routeUpdateFields.completed_at = localTimeStr;
+            routeUpdateFields.kapatan_personel = staff;
+            routeUpdateFields.kapanis_notu = encryptField(
+              'Saha teslimatı sırasında tüm duraklar eksiksiz tamamlanarak rota otomatik kapatıldı ve arşivlendi.'
+            );
+            routeUpdateFields.kilitli_personel = null;
+            routeUpdateFields.kilitli_personel_username = null;
+            routeUpdateFields.kilitli_client_id = null;
+            routeUpdateFields.kilit_tarihi = null;
+            routeUpdateFields.kilit_timestamp = null;
+            routeUpdateFields.aktif_rota_modu = false;
+          }
+
           await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
-            $set: {
-              duraklar: stops.map(encryptRouteStop),
-              tamamlanan_hane: completedCount,
-              eksik_hane: eksikCount,
-              teslim_edilemeyen_hane: undeliveredCount,
-              toplam_dagitilan_torba: totalDeliveredBags,
-              updated_at: localTimeStr,
-            },
+            $set: routeUpdateFields,
           });
+
+          if (isAllStopsCompleted) {
+            await recordActivityLog({
+              kullanici_adi: staff,
+              kullanici_rolu: session.rol || 'PERSONEL',
+              islem_tipi: 'ROTA_KAPATMA',
+              baslik: 'Dağıtım Rotası Otomatik Tamamlandı & Arşivlendi',
+              detay: `"${decR.rota_adi}" rotasındaki tüm duraklar (${completedCount} hane, ${totalDeliveredBags} torba) eksiksiz tamamlandığı için rota otomatik olarak TAMAMLANDI durumuna alındı.`,
+              ek_bilgi: { route_id: decR.id || decR._id, completedCount, totalDeliveredBags }
+            });
+          }
         }
       }
 

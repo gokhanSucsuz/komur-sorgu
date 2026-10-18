@@ -115,6 +115,9 @@ export default function RoutePage({
     if (!route) return true;
     if (userRole === 'ADMIN') return true;
 
+    const GENERIC_NAMES = ['personel', 'saha personeli', 'dağıtım personeli', 'dagitim personeli', 'dağıtım ekibi', 'dagitim ekibi', 'ekip', 'admin', 'kullanıcı', 'kullanici', 'user'];
+    const isGeneric = (str: string) => !str || str.length < 3 || GENERIC_NAMES.includes(str.trim().toLowerCase());
+
     const myUsername = (userUsername || '').trim().toLowerCase();
     const myName = (userName || '').trim().toLowerCase();
     const myTeam = (userTeam || '').trim().toLowerCase();
@@ -123,31 +126,37 @@ export default function RoutePage({
     const routeOpUser = String(route.isleten_username || route.olusturan_username || '').trim().toLowerCase();
     const routeOpName = String(route.isleten_personel || route.dagitim_personeli || '').trim().toLowerCase();
     const routeTeam = String(route.ekip_adi || '').trim().toLowerCase();
-    const routePartners = Array.isArray(route.ekip_arkadaslari)
-      ? route.ekip_arkadaslari.map((p: any) => String(p).trim().toLowerCase())
-      : [];
-    if (route.ekip_arkadasi) {
-      routePartners.push(String(route.ekip_arkadasi).trim().toLowerCase());
-    }
+    const routePartners = [
+      ...(Array.isArray(route.ekip_arkadaslari) ? route.ekip_arkadaslari : []),
+      ...(route.ekip_arkadasi ? [route.ekip_arkadasi] : [])
+    ].map((p: any) => String(p).trim().toLowerCase()).filter(Boolean);
 
-    // If route has no operator assigned yet, anyone can take it
-    if (!routeOpUser && !routeOpName) return true;
+    // If route has no operator assigned yet and name is generic/empty, anyone can take it
+    if (!routeOpUser && (!routeOpName || isGeneric(routeOpName))) return true;
 
-    // 1. Direct ownership
+    // 1. Direct ownership by username
     if (myUsername && routeOpUser && myUsername === routeOpUser) return true;
-    if (myName && routeOpName && myName === routeOpName) return true;
-    if (myUsername && routeOpName && myUsername === routeOpName) return true;
+
+    // 1b. Direct ownership by full name (only if non-generic)
+    if (!isGeneric(myName) && !isGeneric(routeOpName) && myName === routeOpName) return true;
 
     // 2. Team name match
     if (myTeam && routeTeam && myTeam === routeTeam) return true;
 
     // 3. User has route operator in their partners list
     if (routeOpUser && myPartners.includes(routeOpUser)) return true;
-    if (routeOpName && myPartners.includes(routeOpName)) return true;
+    if (!isGeneric(routeOpName) && myPartners.includes(routeOpName)) return true;
 
     // 4. Route lists user in route's partners list
     if (myUsername && routePartners.includes(myUsername)) return true;
-    if (myName && routePartners.includes(myName)) return true;
+    if (!isGeneric(myName) && routePartners.includes(myName)) return true;
+
+    // 5. Multiple operators in dagitim_personeli (e.g. "Ahmet Yılmaz / Mehmet Demir")
+    if (routeOpName) {
+      const splitOps = routeOpName.split(/[,/&+]/).map((s: string) => s.trim().toLowerCase()).filter((s: string) => !isGeneric(s));
+      if (!isGeneric(myName) && splitOps.includes(myName)) return true;
+      if (myUsername && splitOps.includes(myUsername)) return true;
+    }
 
     return false;
   }, [userRole, userName, userUsername, userTeam, userPartners]);
@@ -579,6 +588,25 @@ export default function RoutePage({
     };
   }, [saveCurrentSession, isRouteModeOpen, requestWakeLock]);
 
+  // Tüm duraklar tamamlandığında rotanın otomatik olarak kapanmasını ve arşivlenmesini garanti et
+  useEffect(() => {
+    if (!activeRoute || activeRoute.durum === 'TAMAMLANDI') return;
+    const stops = activeRoute.duraklar || [];
+    if (stops.length === 0) return;
+    const allStopsFinished = stops.every((s: any) =>
+      s.durum === 'TAMAMLANDI' ||
+      s.durum === 'TESLIM_EDILDI' ||
+      (Number(s.teslim_edilen_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34))
+    );
+    if (allStopsFinished) {
+      if (isRouteModeOpen) {
+        setIsRouteModeOpen(false);
+        clearSavedSession();
+      }
+      fetchRoutes(true);
+    }
+  }, [activeRoute, isRouteModeOpen, fetchRoutes, clearSavedSession]);
+
   // Helper: Sync Rota Modu form inputs when switching to a stop
   const syncRouteModeInputsForStop = useCallback((stop: any) => {
     if (!stop) return;
@@ -1004,15 +1032,35 @@ export default function RoutePage({
     const currentStop = stops[routeModeIndex];
     if (!currentStop) return;
 
+    if (!isUserTeamAuthorized(activeRoute)) {
+      showAlert({
+        title: '🔒 Yetkisiz Erişim / Farklı Ekip',
+        message: `"${activeRoute.rota_adi}" rotası ${activeRoute.isleten_personel || activeRoute.dagitim_personeli || 'başka bir personel'} personeline ve ekibine aittir. Yalnızca ilgili personel veya tanımlı ekip arkadaşı işlem yapabilir.`,
+        type: 'lock'
+      });
+      return;
+    }
+
     const hedef = Number(currentStop.hedef_torba) || 34;
     let targetDurum: 'TAMAMLANDI' | 'EKSIK' | 'TESLIM_EDILEMEDI' = 'TAMAMLANDI';
     let targetTorba = hedef;
     let targetNote = routeModeNote.trim();
 
     if (submitKind === 'COMPLETE') {
+      const prevDelivered = Number(currentStop.teslim_edilen_torba) || 0;
       const parsed = parseInt(routeModeTorba, 10);
-      targetTorba = !isNaN(parsed) && parsed > 0 ? parsed : hedef;
-      targetDurum = targetTorba < hedef ? 'EKSIK' : 'TAMAMLANDI';
+      if (!isNaN(parsed) && parsed > 0) {
+        if (parsed >= hedef) {
+          targetTorba = parsed;
+        } else if (prevDelivered > 0) {
+          targetTorba = Math.max(hedef, prevDelivered + parsed);
+        } else {
+          targetTorba = hedef;
+        }
+      } else {
+        targetTorba = hedef;
+      }
+      targetDurum = 'TAMAMLANDI';
     } else {
       // DEFER_LATER ("Daha Sonra Tamamlanacak")
       if (routeModeDeferType === 'PARTIAL') {
@@ -1099,7 +1147,13 @@ export default function RoutePage({
 
       const allCompleted =
         Boolean(data.routeAutoCompleted) ||
-        (updatedStops.length > 0 && updatedStops.every((s: any) => s.durum === 'TAMAMLANDI'));
+        (updatedStops.length > 0 &&
+          updatedStops.every(
+            (s: any) =>
+              s.durum === 'TAMAMLANDI' ||
+              s.durum === 'TESLIM_EDILDI' ||
+              (Number(s.teslim_edilen_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34))
+          ));
 
       // Case 1: All stops in the route are now TAMAMLANDI -> finalize route & exit Rota Modu!
       if (allCompleted) {
@@ -1413,6 +1467,14 @@ export default function RoutePage({
       });
       return;
     }
+    if (!isUserTeamAuthorized(activeRoute)) {
+      showAlert({
+        title: '🔒 Yetkisiz Erişim / Farklı Ekip',
+        message: `"${activeRoute.rota_adi}" rotası ${activeRoute.isleten_personel || activeRoute.dagitim_personeli || 'başka bir personel'} personeline ve ekibine aittir. Yalnızca ilgili personel veya tanımlı ekip arkadaşı işlem yapabilir.`,
+        type: 'lock'
+      });
+      return;
+    }
     const hedef = stop.hedef_torba || 34;
     setShowStopModal({ stopIndex, stop, mode });
     setStopTorbaInput(mode === 'TAMAMLANDI' ? String(hedef) : mode === 'EKSIK' ? '20' : '0');
@@ -1430,6 +1492,14 @@ export default function RoutePage({
   // Submit Stop Action
   const handleStopActionSubmit = async () => {
     if (!showStopModal || !activeRoute) return;
+    if (!isUserTeamAuthorized(activeRoute)) {
+      showAlert({
+        title: '🔒 Yetkisiz Erişim / Farklı Ekip',
+        message: `"${activeRoute.rota_adi}" rotası ${activeRoute.isleten_personel || activeRoute.dagitim_personeli || 'başka bir personel'} personeline ve ekibine aittir. Yalnızca ilgili personel veya tanımlı ekip arkadaşı işlem yapabilir.`,
+        type: 'lock'
+      });
+      return;
+    }
 
     const { stopIndex, stop, mode } = showStopModal;
 

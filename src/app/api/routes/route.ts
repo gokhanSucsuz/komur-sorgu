@@ -52,10 +52,33 @@ export function checkRouteLock(
  * Bir rotanın işletim ve teslimat yetkisini kontrol eder.
  * Rota aktif veya duraklatılmış ise:
  * - Admin her zaman yetkilidir.
- * - Rotayı oluşturan / işleten / dağıtan personel yetkilidir.
+/**
+ * Ekip ve Personel Yetkilendirme Kontrolü:
+ * - Admin her zaman yetkilidir.
+ * - Rotayı oluşturan / işleten personel yetkilidir.
  * - Rotayı işleten personelin takım/ekip arkadaşları yetkilidir.
  * - Ekip dışındaki diğer personeller İŞLEM YAPAMAZ.
  */
+const GENERIC_NAMES = new Set([
+  'personel',
+  'saha personeli',
+  'dağıtım personeli',
+  'dagitim personeli',
+  'dağıtım ekibi',
+  'dagitim ekibi',
+  'ekip',
+  'admin',
+  'kullanıcı',
+  'kullanici',
+  'user'
+]);
+
+function isGenericStaffName(name: string): boolean {
+  if (!name) return true;
+  const clean = name.trim().toLowerCase();
+  return clean.length < 3 || GENERIC_NAMES.has(clean);
+}
+
 export async function checkRouteTeamAuthorization(
   route: any,
   session: any,
@@ -79,73 +102,108 @@ export async function checkRouteTeamAuthorization(
   }
 
   const currentUsername = String(session.username || '').trim().toLowerCase();
-  const currentFullName = String(session.ad_soyad || session.username || '').trim().toLowerCase();
+  const currentFullName = String(session.ad_soyad || '').trim().toLowerCase();
 
   // Rotanın sahibi/işleteni:
   const routeOperatorUsername = String(route.isleten_username || route.olusturan_username || '').trim().toLowerCase();
   const routeOperatorNameLower = routeOperatorName.toLowerCase();
 
-  // Eğer rotanın henüz hiçbir sahibi atanmamışsa, ilk işleten kişi sahip olur
-  if (!routeOperatorUsername && !routeOperatorName) {
-    return { authorized: true, isOwner: true, isPartner: false, ownerName: session.ad_soyad || session.username };
+  // Eğer rotanın henüz hiçbir sahibi atanmamışsa ve adı da boş/jenerik ise, ilk işleten kişi sahip olur
+  if (!routeOperatorUsername && (!routeOperatorName || isGenericStaffName(routeOperatorName))) {
+    return { authorized: true, isOwner: true, isPartner: false, ownerName: session.ad_soyad || session.username || 'Personel' };
   }
 
-  // 1. Rotayı bizzat işleten personel mi?
-  if (
-    (routeOperatorUsername && routeOperatorUsername === currentUsername) ||
-    (routeOperatorNameLower && routeOperatorNameLower === currentFullName) ||
-    (route.dagitim_personeli && route.dagitim_personeli.toLowerCase().includes(currentFullName))
-  ) {
+  // 1. Doğrudan kullanıcı adı kontrolü (En kesin ve güvenilir eşleşme):
+  if (currentUsername && routeOperatorUsername && currentUsername === routeOperatorUsername) {
     return { authorized: true, isOwner: true, isPartner: false, ownerName: routeOperatorName };
   }
 
-  // 2. Ekip arkadaşı kontrolü:
-  // a) Rota üzerindeki ekip_adi veya ekip_arkadaslari kontrolü
-  const routeEkipAdi = String(route.ekip_adi || '').trim().toLowerCase();
-  const routeEkipArkadaslari: string[] = Array.isArray(route.ekip_arkadaslari)
-    ? route.ekip_arkadaslari.map((u: any) => String(u).trim().toLowerCase())
-    : [];
-
-  const userEkipAdi = String(session.user?.ekip_adi || '').trim().toLowerCase();
-  const userEkipArkadaslari: string[] = Array.isArray(session.user?.ekip_arkadaslari)
-    ? session.user.ekip_arkadaslari.map((u: any) => String(u).trim().toLowerCase())
-    : [];
-
-  // Aynı ekip adındalar mı?
-  if (routeEkipAdi && userEkipAdi && routeEkipAdi === userEkipAdi) {
-    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  // 1b. Eğer kullanıcı adı boşsa ama ad-soyad jenerik değilse ve birebir aynıysa:
+  if (!isGenericStaffName(currentFullName) && !isGenericStaffName(routeOperatorNameLower)) {
+    if (currentFullName === routeOperatorNameLower) {
+      return { authorized: true, isOwner: true, isPartner: false, ownerName: routeOperatorName };
+    }
   }
 
-  // Rota üzerindeki ekip arkadaşları listesinde bu kullanıcı var mı?
-  if (routeEkipArkadaslari.includes(currentUsername)) {
-    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  // 1c. Rota dağıtım personeli alanında birden fazla isim virgül veya / ile listelenmişse
+  if (route.dagitim_personeli) {
+    const splitStaff = String(route.dagitim_personeli)
+      .split(/[,/&+]/)
+      .map((s: string) => s.trim().toLowerCase())
+      .filter((s: string) => !isGenericStaffName(s));
+
+    if (currentUsername && splitStaff.includes(currentUsername)) {
+      return { authorized: true, isOwner: true, isPartner: false, ownerName: routeOperatorName };
+    }
+    if (!isGenericStaffName(currentFullName) && splitStaff.includes(currentFullName)) {
+      return { authorized: true, isOwner: true, isPartner: false, ownerName: routeOperatorName };
+    }
   }
 
-  // Kullanıcının kendi profilindeki ekip arkadaşları listesinde rota işleteni var mı?
-  if (routeOperatorUsername && userEkipArkadaslari.includes(routeOperatorUsername)) {
-    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
-  }
-
-  // Veritabanındaki kullanıcı kayıtlarından derinlemesine ekip kontrolü
-  if (usersCol && routeOperatorUsername) {
+  // 2. Ekip Arkadaşı Kontrolleri:
+  // Veritabanından güncel kullanıcı ve operatör dokümanlarını çek
+  let currentUserDbDoc: any = null;
+  let operatorDbDoc: any = null;
+  if (!usersCol) {
     try {
-      const operatorDoc = await usersCol.findOne({ username: routeOperatorUsername });
-      if (operatorDoc) {
-        const opPartners: string[] = Array.isArray(operatorDoc.ekip_arkadaslari)
-          ? operatorDoc.ekip_arkadaslari.map((u: any) => String(u).trim().toLowerCase())
-          : [];
-        const opTeam = String(operatorDoc.ekip_adi || '').trim().toLowerCase();
+      const db = await getDbCollections();
+      usersCol = db.users;
+    } catch {
+      // ignore
+    }
+  }
 
-        if (opPartners.includes(currentUsername)) {
-          return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
-        }
-        if (opTeam && userEkipAdi && opTeam === userEkipAdi) {
-          return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
-        }
+  if (usersCol) {
+    try {
+      if (currentUsername) {
+        currentUserDbDoc = await usersCol.findOne({ username: currentUsername });
+      }
+      if (routeOperatorUsername) {
+        operatorDbDoc = await usersCol.findOne({ username: routeOperatorUsername });
       }
     } catch {
       // ignore db error
     }
+  }
+
+  // Kullanıcının ve operatörün ekip adı
+  const routeEkipAdi = String(route.ekip_adi || operatorDbDoc?.ekip_adi || '').trim().toLowerCase();
+  const userEkipAdi = String(currentUserDbDoc?.ekip_adi || session.user?.ekip_adi || '').trim().toLowerCase();
+
+  if (routeEkipAdi && userEkipAdi && routeEkipAdi === userEkipAdi) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+
+  // Rota üzerindeki ve operatörün ekip arkadaşları listesi
+  const routePartners = [
+    ...(Array.isArray(route.ekip_arkadaslari) ? route.ekip_arkadaslari : []),
+    ...(Array.isArray(operatorDbDoc?.ekip_arkadaslari) ? operatorDbDoc.ekip_arkadaslari : []),
+    ...(route.ekip_arkadasi ? [route.ekip_arkadasi] : []),
+    ...(operatorDbDoc?.ekip_arkadasi ? [operatorDbDoc.ekip_arkadasi] : [])
+  ].map((p: any) => String(p).trim().toLowerCase()).filter(Boolean);
+
+  // Kullanıcının kendi profilindeki ekip arkadaşları listesi
+  const userPartners = [
+    ...(Array.isArray(currentUserDbDoc?.ekip_arkadaslari) ? currentUserDbDoc.ekip_arkadaslari : []),
+    ...(Array.isArray(session.user?.ekip_arkadaslari) ? session.user.ekip_arkadaslari : []),
+    ...(currentUserDbDoc?.ekip_arkadasi ? [currentUserDbDoc.ekip_arkadasi] : []),
+    ...(session.user?.ekip_arkadasi ? [session.user.ekip_arkadasi] : [])
+  ].map((p: any) => String(p).trim().toLowerCase()).filter(Boolean);
+
+  // Bu kullanıcı rotanın veya operatörün ekip arkadaşları listesinde var mı?
+  if (currentUsername && routePartners.includes(currentUsername)) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+  if (!isGenericStaffName(currentFullName) && routePartners.includes(currentFullName)) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+
+  // Operatör bu kullanıcının ekip arkadaşları listesinde var mı?
+  if (routeOperatorUsername && userPartners.includes(routeOperatorUsername)) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+  if (!isGenericStaffName(routeOperatorNameLower) && userPartners.includes(routeOperatorNameLower)) {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
   }
 
   // Yetkisiz: Başka personele ve ekibine ait rota!
@@ -154,7 +212,7 @@ export async function checkRouteTeamAuthorization(
     isOwner: false,
     isPartner: false,
     ownerName: routeOperatorName,
-    error: `Bu rota "${routeOperatorName}" personeline ve ekibine aittir. Yalnızca ilgili personel veya ekip arkadaşı işlem yapabilir.`
+    error: `Bu rota "${routeOperatorName || 'başka bir personel'}" personeline ve ekibine aittir. Yalnızca ilgili personel veya tanımlı ekip arkadaşı işlem yapabilir.`
   };
 }
 
@@ -174,14 +232,94 @@ export async function GET(request: NextRequest) {
       .find({ durum: { $in: ['AKTIF', 'DURAKLATILDI'] } })
       .sort({ created_at: -1 })
       .toArray();
-    const activeRoutes = mapDocs(activeRouteDocs);
+    const rawActiveRoutes = mapDocs(activeRouteDocs);
+
+    const localNow = new Date().toLocaleDateString('tr-TR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).replace(/\./g, '.');
+
+    // Auto-heal / Auto-archive: If any active/paused route has all stops completed, update DB and move to archived
+    const activeRoutes: any[] = [];
+    const autoArchivedRoutes: any[] = [];
+
+    for (const route of rawActiveRoutes) {
+      const stops = Array.isArray(route.duraklar) ? route.duraklar : [];
+      const isCompleteStop = (s: any) =>
+        s.durum === 'TAMAMLANDI' ||
+        s.durum === 'TESLIM_EDILDI' ||
+        (Number(s.teslim_edilen_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
+      const isAllComplete = stops.length > 0 && stops.every(isCompleteStop);
+
+      if (isAllComplete) {
+        // Auto-heal in MongoDB
+        try {
+          let totalBags = 0;
+          stops.forEach((s: any) => {
+            totalBags += Number(s.teslim_edilen_torba) || Number(s.hedef_torba) || 34;
+          });
+          await routeCol.updateOne(buildIdFilter(route.id || route._id), {
+            $set: {
+              durum: 'TAMAMLANDI',
+              tamamlanan_hane: stops.length,
+              eksik_hane: 0,
+              teslim_edilemeyen_hane: 0,
+              toplam_dagitilan_torba: totalBags,
+              completed_at: route.completed_at || localNow,
+              kapatan_personel: route.kapatan_personel || route.isleten_personel || route.dagitim_personeli || 'Sistem',
+              kapanis_notu: encryptField('Tüm duraklar eksiksiz tamamlandığı için rota otomatik kapatıldı ve arşivlendi.'),
+              kilitli_personel: null,
+              kilitli_personel_username: null,
+              kilitli_client_id: null,
+              kilit_tarihi: null,
+              kilit_timestamp: null,
+              aktif_rota_modu: false,
+              updated_at: localNow
+            }
+          });
+          autoArchivedRoutes.push({
+            ...route,
+            durum: 'TAMAMLANDI',
+            tamamlanan_hane: stops.length,
+            eksik_hane: 0,
+            teslim_edilemeyen_hane: 0,
+            toplam_dagitilan_torba: totalBags,
+            completed_at: route.completed_at || localNow,
+            aktif_rota_modu: false
+          });
+        } catch (e) {
+          console.error('Error auto-healing completed route:', e);
+          activeRoutes.push(route);
+        }
+      } else {
+        activeRoutes.push(route);
+      }
+    }
+
     const activeRoute = activeRoutes[0] || null;
 
     // 2. Fetch Archived / Completed Routes (sorted descending by date)
     const archivedDocs = await routeCol
       .find({ durum: { $in: ['TAMAMLANDI', 'ARSIVLENDI'] } })
       .toArray();
-    const archivedRoutes = mapDocs(archivedDocs).sort((a: any, b: any) => {
+    const fetchedArchived = mapDocs(archivedDocs);
+    const combinedArchived = [...autoArchivedRoutes, ...fetchedArchived];
+    
+    // Deduplicate by ID
+    const seenArchivedIds = new Set<string>();
+    const uniqueArchived = combinedArchived.filter((r) => {
+      const idStr = String(r.id || r._id);
+      if (seenArchivedIds.has(idStr)) return false;
+      seenArchivedIds.add(idStr);
+      return true;
+    });
+
+    const archivedRoutes = uniqueArchived.sort((a: any, b: any) => {
       const dateA = new Date(b.created_at || b.completed_at || 0).getTime();
       const dateB = new Date(a.created_at || a.completed_at || 0).getTime();
       return dateA - dateB;
@@ -666,7 +804,11 @@ export async function POST(request: NextRequest) {
       let deliveredBags = 0;
 
       if (durum === 'TAMAMLANDI') {
-        deliveredBags = parseInt(torba_sayisi || String(hedef), 10);
+        const parsed = parseInt(torba_sayisi || String(hedef), 10);
+        deliveredBags = !isNaN(parsed) && parsed > 0 ? parsed : hedef;
+        if (deliveredBags < hedef && previousDelivered > 0) {
+          deliveredBags = Math.min(hedef, previousDelivered + deliveredBags);
+        }
       } else if (durum === 'EKSIK') {
         deliveredBags = parseInt(torba_sayisi || '0', 10);
         if (isNaN(deliveredBags) || deliveredBags <= 0) {
@@ -707,12 +849,18 @@ export async function POST(request: NextRequest) {
       let totalDeliveredBags = 0;
 
       stops.forEach((s: any) => {
-        if (s.durum === 'TAMAMLANDI') {
+        const isComplete =
+          s.durum === 'TAMAMLANDI' ||
+          s.durum === 'TESLIM_EDILDI' ||
+          (Number(s.teslim_edilen_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
+        if (isComplete) {
+          s.durum = 'TAMAMLANDI';
           completedCount++;
-          totalDeliveredBags += s.teslim_edilen_torba || s.hedef_torba || 34;
+          totalDeliveredBags += Number(s.teslim_edilen_torba) || Number(s.hedef_torba) || 34;
         } else if (s.durum === 'EKSIK') {
           eksikCount++;
-          totalDeliveredBags += s.teslim_edilen_torba || 0;
+          totalDeliveredBags += Number(s.teslim_edilen_torba) || 0;
         } else if (s.durum === 'TESLIM_EDILEMEDI') {
           undeliveredCount++;
         } else {
