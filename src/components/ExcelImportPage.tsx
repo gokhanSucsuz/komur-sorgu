@@ -30,6 +30,7 @@ export default function ExcelImportPage({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [selectedListeTuru, setSelectedListeTuru] = useState<'STANDART' | 'SIGORTALI' | 'EK_LISTE'>('STANDART');
   
   // Logs state
   const [logs, setLogs] = useState<any[]>([]);
@@ -226,6 +227,7 @@ export default function ExcelImportPage({
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('userRole', userRole);
+    formData.append('listeTuru', selectedListeTuru);
 
     try {
       const res = await fetch('/api/import', {
@@ -406,7 +408,99 @@ export default function ExcelImportPage({
         </div>
 
         {/* Upload Form */}
-        <form onSubmit={handleUpload} className="space-y-3">
+        <form onSubmit={handleUpload} className="space-y-4">
+          {/* Liste Türü Seçimi */}
+          <div className="space-y-2">
+            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <span>📋 Yüklenecek Liste Türü ve Islak İmza Dosya Kategorisi:</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* 1. Standart Liste */}
+              <div
+                onClick={() => setSelectedListeTuru('STANDART')}
+                className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                  selectedListeTuru === 'STANDART'
+                    ? 'border-sky-500 bg-sky-50/70 shadow-sm ring-1 ring-sky-400/50'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${selectedListeTuru === 'STANDART' ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-black text-slate-900">Standart Liste</span>
+                  </div>
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selectedListeTuru === 'STANDART' ? 'border-sky-600 bg-sky-600' : 'border-slate-300'}`}>
+                    {selectedListeTuru === 'STANDART' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                  Mahallede ilk kayıt ise <strong>Ana Liste</strong> (1, 2...), önceden kayıt varsa otomatik <strong>Ek Liste</strong> olarak numaralandırılır.
+                </p>
+                <span className="text-[10px] font-bold text-sky-800 bg-sky-100/70 px-2 py-0.5 rounded-md self-start border border-sky-200">
+                  Otomatik Gruplama
+                </span>
+              </div>
+
+              {/* 2. Sigortalılar Listesi */}
+              <div
+                onClick={() => setSelectedListeTuru('SIGORTALI')}
+                className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                  selectedListeTuru === 'SIGORTALI'
+                    ? 'border-purple-500 bg-purple-50/80 shadow-sm ring-1 ring-purple-400/50'
+                    : 'border-slate-200 bg-white hover:border-purple-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${selectedListeTuru === 'SIGORTALI' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      <Shield className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-black text-slate-900">Sigortalılar Listesi</span>
+                  </div>
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selectedListeTuru === 'SIGORTALI' ? 'border-purple-600 bg-purple-600' : 'border-slate-300'}`}>
+                    {selectedListeTuru === 'SIGORTALI' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                  Sigortalı hak sahipleri. Mahalle/köye göre gruplanır; sıra no <strong>Sigortalı - 1, Sigortalı - 2</strong> şeklinde verilir.
+                </p>
+                <span className="text-[10px] font-bold text-purple-900 bg-purple-100 px-2 py-0.5 rounded-md self-start border border-purple-200">
+                  Ayrı Islak İmza Dosyası
+                </span>
+              </div>
+
+              {/* 3. Zorunlu Ek Liste */}
+              <div
+                onClick={() => setSelectedListeTuru('EK_LISTE')}
+                className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                  selectedListeTuru === 'EK_LISTE'
+                    ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-1 ring-amber-400/50'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${selectedListeTuru === 'EK_LISTE' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-black text-slate-900">Zorunlu Ek Liste</span>
+                  </div>
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selectedListeTuru === 'EK_LISTE' ? 'border-amber-600 bg-amber-600' : 'border-slate-300'}`}>
+                    {selectedListeTuru === 'EK_LISTE' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                  İlk yükleme olsa dahi doğrudan <strong>Ek Liste (Ek1, Ek2...)</strong> olarak işaretlenir ve dosyalanır.
+                </p>
+                <span className="text-[10px] font-bold text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded-md self-start border border-amber-200">
+                  Ek Dağıtım Dosyası
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
@@ -794,6 +888,24 @@ export default function ExcelImportPage({
                         <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span className="truncate max-w-[240px] sm:max-w-none">{batch.dosya_adi}</span>
                       </span>
+                      {(batch.liste_turu === 'SIGORTALI' || batch.liste_adi === 'Sigortalılar Listesi') && (
+                        <span className="text-[10px] font-black text-purple-900 bg-purple-100 px-2 py-0.5 rounded border border-purple-300 flex items-center gap-1 shrink-0">
+                          <Shield className="w-3 h-3 text-purple-700" />
+                          <span>Sigortalılar Listesi</span>
+                        </span>
+                      )}
+                      {batch.liste_turu === 'EK_LISTE' && (
+                        <span className="text-[10px] font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 flex items-center gap-1 shrink-0">
+                          <FileSpreadsheet className="w-3 h-3 text-amber-700" />
+                          <span>Ek Liste</span>
+                        </span>
+                      )}
+                      {batch.liste_turu === 'STANDART' && (
+                        <span className="text-[10px] font-bold text-sky-900 bg-sky-100 px-2 py-0.5 rounded border border-sky-300 flex items-center gap-1 shrink-0">
+                          <FileText className="w-3 h-3 text-sky-700" />
+                          <span>Standart Liste</span>
+                        </span>
+                      )}
                       <span className="text-[11px] font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
                         {batch.created_at}
                       </span>

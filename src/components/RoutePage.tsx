@@ -8,11 +8,11 @@ import {
   CheckSquare, Square, Search, RefreshCw, FileText, ChevronDown, ChevronUp,
   AlertCircle, ShieldCheck, PenTool, Check, ArrowRight, Download, Printer,
   ArrowUpDown, X, UserMinus, Play, Pause, SkipForward, ChevronLeft, ChevronRight,
-  Undo2, Lock, Unlock, ListOrdered
+  Undo2, Lock, Unlock, ListOrdered, Shield, FileSpreadsheet
 } from 'lucide-react';
 import CancelModal from '@/components/CancelModal';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
-import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch } from '@/lib/normalizer';
+import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
 
 function getOrCreateClientId(): string {
   if (typeof window === 'undefined') return '';
@@ -2269,6 +2269,7 @@ export default function RoutePage({
                       isRouteLockedByOther &&
                       (activeRoute.aktif_durak_index ?? 0) === index &&
                       !isTamam;
+                    const stopListInfo = getBeneficiaryListTypeInfo(stop);
 
                     return (
                       <div
@@ -2328,6 +2329,13 @@ export default function RoutePage({
                                 </span>
                                 <span>•</span>
                                 <span className="text-slate-700 font-medium">{stop.mahalle}</span>
+                                <span>•</span>
+                                <span
+                                  className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${stopListInfo.badgeClass}`}
+                                  title={`${stopListInfo.folderLabel}${stop.sira_no ? ` (Sıra: #${stop.sira_no})` : ''}`}
+                                >
+                                  {stopListInfo.label} {stop.sira_no ? `(#${stop.sira_no})` : ''}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -2909,6 +2917,7 @@ export default function RoutePage({
                   {modalDisplayList.map((person) => {
                     const isSelected = selectedBeneficiaryIds.includes(String(person.id));
                     const st = getRecordStreetInfo(person);
+                    const personListInfo = getBeneficiaryListTypeInfo(person);
 
                     return (
                       <div
@@ -2930,9 +2939,15 @@ export default function RoutePage({
                           </div>
 
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-xs font-bold text-slate-900 truncate">
                                 {person.ad_soyad}
+                              </span>
+                              <span
+                                className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${personListInfo.badgeClass}`}
+                                title={`${personListInfo.folderLabel} (Sıra: #${person.sira_no || person.mahalle_sira || person.id})`}
+                              >
+                                {personListInfo.badgeLabel}
                               </span>
                               {person.imza_durumu === 'IMZALANDI' && (
                                 <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-100 px-1 py-0.2 rounded border border-emerald-200">
@@ -3748,11 +3763,20 @@ export default function RoutePage({
                       const isTamam = stop.durum === 'TAMAMLANDI';
                       const isEksik = stop.durum === 'EKSIK';
                       const isUndelivered = stop.durum === 'TESLIM_EDILEMEDI';
+                      const stopListInfo = getBeneficiaryListTypeInfo(stop);
                       return (
                         <tr key={index} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-2.5 text-center font-bold text-slate-500">{stop.sira || index + 1}</td>
+                          <td className="p-2.5 text-center font-bold text-slate-500">
+                            <div>{stop.sira || index + 1}</div>
+                            {stop.sira_no && (
+                              <div className="text-[9px] text-slate-400 font-normal">#{stop.sira_no}</div>
+                            )}
+                          </td>
                           <td className="p-2.5 font-mono text-slate-800 font-semibold">{stop.tc_no || '-'}</td>
-                          <td className="p-2.5 font-bold text-slate-900 break-words whitespace-normal max-w-[140px] leading-snug">{stop.ad_soyad}</td>
+                          <td className="p-2.5 font-bold text-slate-900 break-words whitespace-normal max-w-[140px] leading-snug">
+                            <div>{stop.ad_soyad}</div>
+                            <span className="text-[10px] text-slate-500 font-normal block">{stopListInfo.label}</span>
+                          </td>
                           <td className="p-2.5 text-slate-600 break-words whitespace-normal max-w-[180px] leading-snug">
                             <span className="font-semibold text-slate-900">{stop.mahalle}</span>
                             {stop.sokak && <span className="block text-[11px] text-slate-500 font-medium">{stop.sokak}{stop.kapi_no && stop.kapi_no !== 999999 && stop.kapi_no !== '999999' ? ` No: ${stop.kapi_no}` : ''}</span>}
@@ -3873,6 +3897,7 @@ export default function RoutePage({
           const totalStops = stops.length;
           const safeIndex = Math.min(Math.max(0, routeModeIndex), Math.max(0, totalStops - 1));
           const currentStop = stops[safeIndex] || null;
+          const currentStopListInfo = getBeneficiaryListTypeInfo(currentStop);
           const nextStopInOrder = safeIndex + 1 < totalStops ? stops[safeIndex + 1] : null;
 
           const completedCount = stops.filter((s) => s.durum === 'TAMAMLANDI').length;
@@ -4380,6 +4405,17 @@ export default function RoutePage({
                                   T.C.: {currentStop.tc_no}
                                 </span>
 
+                                <span
+                                  className={`text-xs font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1 ${currentStopListInfo.badgeClass}`}
+                                  title={currentStopListInfo.folderLabel}
+                                >
+                                  {currentStopListInfo.type === 'SIGORTALI' && <Shield className="w-3.5 h-3.5 text-purple-700" />}
+                                  {currentStopListInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-700" />}
+                                  {currentStopListInfo.type === 'ANA_LISTE' && <FileText className="w-3.5 h-3.5 text-emerald-700" />}
+                                  <span>{currentStopListInfo.label}</span>
+                                  {currentStop.sira_no && <span className="font-mono">#{currentStop.sira_no}</span>}
+                                </span>
+
                                 {currentStop.imza_durumu === 'IMZALANDI' ? (
                                   <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
                                     <PenTool className="w-3.5 h-3.5 text-emerald-700" />
@@ -4395,6 +4431,24 @@ export default function RoutePage({
                                     <PenTool className="w-3.5 h-3.5 text-amber-800" />
                                     <span>✍️ Kapıda İmza Alındı İşaretle</span>
                                   </button>
+                                )}
+                              </div>
+
+                              <div className={`mt-2 p-2 rounded-xl border flex items-center justify-between text-xs ${
+                                currentStopListInfo.type === 'SIGORTALI'
+                                  ? 'bg-purple-50/70 border-purple-200 text-purple-950'
+                                  : currentStopListInfo.type === 'EK_LISTE'
+                                  ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950'
+                                  : 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                              }`}>
+                                <span className="font-bold flex items-center gap-1.5">
+                                  <span>📁 Islak İmza Dosyası:</span>
+                                  <u>{currentStopListInfo.folderLabel}</u>
+                                </span>
+                                {currentStop.sira_no && (
+                                  <span className="font-mono font-black bg-white px-2 py-0.5 rounded-md border border-slate-300 shadow-2xs">
+                                    Sıra: #{currentStop.sira_no}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -5078,6 +5132,7 @@ export default function RoutePage({
                           const isDone = pStop.durum === 'TAMAMLANDI';
                           const isDeferred =
                             pStop.durum === 'EKSIK' || pStop.durum === 'TESLIM_EDILEMEDI';
+                          const pListInfo = getBeneficiaryListTypeInfo(pStop);
 
                           return (
                             <button
@@ -5125,6 +5180,12 @@ export default function RoutePage({
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-black text-xs sm:text-sm text-slate-900 truncate">
                                       {pStop.ad_soyad}
+                                    </span>
+                                    <span
+                                      className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${pListInfo.badgeClass}`}
+                                      title={`${pListInfo.folderLabel}${pStop.sira_no ? ` (Sıra: #${pStop.sira_no})` : ''}`}
+                                    >
+                                      {pListInfo.badgeLabel}
                                     </span>
                                     {isCurrent && (
                                       <span className="px-1.5 py-0.5 rounded bg-sky-600 text-white text-[9px] font-black uppercase">

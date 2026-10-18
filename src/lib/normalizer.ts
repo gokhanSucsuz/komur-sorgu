@@ -863,9 +863,87 @@ export function compareByAddressAsc(a: any, b: any): number {
  * Then Ek 1: Ek1 - 1, Ek1 - 2...
  * Then Ek 2: Ek2 - 1, Ek2 - 2...
  */
+export type BeneficiaryListType = 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI';
+
+export interface ListTypeInfo {
+  type: BeneficiaryListType;
+  label: string;
+  badgeLabel: string;
+  badgeClass: string;
+  folderLabel: string;
+}
+
+/**
+ * Hak sahibinin hangi listeye (Ana Liste, Ek Liste veya Sigortalılar Listesi) ait olduğunu tespit eder.
+ * Saha personelinin ıslak imza formunu fiziksel klasörden anında bulmasını sağlar.
+ */
+export function getBeneficiaryListTypeInfo(item: any): ListTypeInfo {
+  if (!item) {
+    return {
+      type: 'ANA_LISTE',
+      label: 'Ana Liste',
+      badgeLabel: 'Ana Liste',
+      badgeClass: 'bg-sky-50 text-sky-900 border-sky-200 font-bold',
+      folderLabel: 'Ana Liste Klasörü',
+    };
+  }
+
+  const isSigortali =
+    item.liste_turu === 'SIGORTALI' ||
+    item.ek_liste_adi === 'Sigortalılar Listesi' ||
+    item.ek_liste_adi === 'Sigortalı Listesi' ||
+    (item.sira_no && typeof item.sira_no === 'string' && /^(sigortal[ıi]|sigortali)/i.test(item.sira_no.trim())) ||
+    item.ek_liste_no === 1000 ||
+    item.ek_liste_no === -1;
+
+  if (isSigortali) {
+    return {
+      type: 'SIGORTALI',
+      label: 'Sigortalılar Listesi',
+      badgeLabel: 'Sigortalı',
+      badgeClass: 'bg-purple-100 text-purple-950 border-purple-300 font-bold',
+      folderLabel: 'Sigortalılar Listesi Klasörü',
+    };
+  }
+
+  const isEk =
+    item.liste_turu === 'EK_LISTE' ||
+    (typeof item.ek_liste_no === 'number' && item.ek_liste_no > 0 && item.ek_liste_no < 1000) ||
+    (item.sira_no && typeof item.sira_no === 'string' && /^Ek\s*\d+/i.test(item.sira_no.trim())) ||
+    (item.ek_liste_adi && /^Ek\s*\d+/i.test(item.ek_liste_adi.trim()));
+
+  if (isEk) {
+    const match = (item.sira_no && typeof item.sira_no === 'string') ? item.sira_no.match(/^(Ek\s*\d+)/i) : null;
+    const ekLabel = item.ek_liste_adi || (match ? match[1] : 'Ek Liste');
+    return {
+      type: 'EK_LISTE',
+      label: ekLabel,
+      badgeLabel: ekLabel,
+      badgeClass: 'bg-amber-100 text-amber-950 border-amber-300 font-bold',
+      folderLabel: `${ekLabel} Klasörü`,
+    };
+  }
+
+  return {
+    type: 'ANA_LISTE',
+    label: 'Ana Liste',
+    badgeLabel: 'Ana Liste',
+    badgeClass: 'bg-sky-50 text-sky-900 border-sky-200 font-bold',
+    folderLabel: 'Ana Liste Klasörü',
+  };
+}
+
 export function compareBySiraNo(a: any, b: any): number {
   const getEkNo = (item: any): number => {
-    if (typeof item.ek_liste_no === 'number') return item.ek_liste_no;
+    if (
+      item.liste_turu === 'SIGORTALI' ||
+      item.ek_liste_adi === 'Sigortalılar Listesi' ||
+      item.ek_liste_no === 1000 ||
+      (item.sira_no && typeof item.sira_no === 'string' && /^(sigortal[ıi]|sigortali)/i.test(item.sira_no.trim()))
+    ) {
+      return 1000; // Sigortalı list comes after Ana Liste (0) and Ek listeler (1, 2, 3...)
+    }
+    if (typeof item.ek_liste_no === 'number' && item.ek_liste_no >= 0) return item.ek_liste_no;
     if (item.sira_no && typeof item.sira_no === 'string') {
       const match = item.sira_no.match(/^Ek\s*(\d+)/i);
       if (match) return parseInt(match[1], 10);

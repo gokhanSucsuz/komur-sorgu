@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
+    const listeTuru = (formData.get('listeTuru') as string) || 'STANDART';
 
     if (!file) {
       return NextResponse.json({ success: false, error: 'Excel dosyası seçilmedi' }, { status: 400 });
@@ -194,6 +195,24 @@ export async function POST(request: NextRequest) {
       }
       if (ekNo > curr.maxEkNo) {
         curr.maxEkNo = ekNo;
+      }
+    }
+
+    // Sigortalılar listesi için mahalle bazında önceden kayıtlı kişi sayısını tespit et
+    const existingMahalleSigortaliCountMap = new Map<string, number>();
+    for (const b of existingList) {
+      const rawM = b.mahalle ? b.mahalle.trim() : '';
+      if (!rawM) continue;
+      const m = normalizeMahalleName(rawM);
+      const isSig =
+        b.liste_turu === 'SIGORTALI' ||
+        b.ek_liste_adi === 'Sigortalılar Listesi' ||
+        b.ek_liste_adi === 'Sigortalı Listesi' ||
+        (b.sira_no && typeof b.sira_no === 'string' && /^(sigortal[ıi]|sigortali)/i.test(b.sira_no.trim())) ||
+        b.ek_liste_no === 1000 ||
+        b.ek_liste_no === -1;
+      if (isSig) {
+        existingMahalleSigortaliCountMap.set(m, (existingMahalleSigortaliCountMap.get(m) || 0) + 1);
       }
     }
 
@@ -739,24 +758,42 @@ export async function POST(request: NextRequest) {
       let siraNo: string;
       let ekListeNo: number;
       let ekListeAdi: string;
+      let recordListeTuru: string;
 
-      if (!existingData || !existingData.hasRecords) {
-        // Bu mahalle ilk defa sisteme yükleniyor (Ana Liste) -> Sıra no 1'den başlar
-        siraNo = String(counter);
-        ekListeNo = 0;
-        ekListeAdi = 'Ana Liste';
-      } else {
-        // Bu mahalleye ait daha önce veritabanında kayıt vardı!
-        // Sonradan eklenen dosya Ek1, Ek2 olarak adlandırılır ve format Ek1 - 1, Ek1 - 2 şeklinde olur
-        const nextEkNo = existingData.maxEkNo + 1;
+      if (listeTuru === 'SIGORTALI') {
+        // Sigortalılar Listesi: Mahalle ve köye göre gruplanır, sıra no "Sigortalı - 1", "Sigortalı - 2"...
+        const existingSigCount = existingMahalleSigortaliCountMap.get(targetMahalle) || 0;
+        const sigSira = existingSigCount + counter;
+        siraNo = `Sigortalı - ${sigSira}`;
+        ekListeNo = 1000;
+        ekListeAdi = 'Sigortalılar Listesi';
+        recordListeTuru = 'SIGORTALI';
+      } else if (listeTuru === 'EK_LISTE') {
+        const nextEkNo = (!existingData || !existingData.hasRecords || existingData.maxEkNo === 0) ? 1 : existingData.maxEkNo + 1;
         siraNo = `Ek${nextEkNo} - ${counter}`;
         ekListeNo = nextEkNo;
         ekListeAdi = `Ek ${nextEkNo}`;
+        recordListeTuru = 'EK_LISTE';
+      } else {
+        // STANDART (Otomatik: ilk yükleme Ana Liste, sonraki Ek Liste)
+        if (!existingData || !existingData.hasRecords) {
+          siraNo = String(counter);
+          ekListeNo = 0;
+          ekListeAdi = 'Ana Liste';
+          recordListeTuru = 'ANA_LISTE';
+        } else {
+          const nextEkNo = existingData.maxEkNo + 1;
+          siraNo = `Ek${nextEkNo} - ${counter}`;
+          ekListeNo = nextEkNo;
+          ekListeAdi = `Ek ${nextEkNo}`;
+          recordListeTuru = 'EK_LISTE';
+        }
       }
 
       toInsertBeneficiaries.push({
         batch_id: batchId,
         dosya_adi: file.name,
+        liste_turu: recordListeTuru,
         sira_no: siraNo,
         mahalle_sira: counter,
         ek_liste_no: ekListeNo,
@@ -798,17 +835,43 @@ export async function POST(request: NextRequest) {
       await logsCol.insertMany(encryptedLogs);
     }
 
-    // Mahalle bazında yükleme özetleri (Hangi mahalleden kaç kişi, hangi ek liste numarasıyla yüklendi)
+    // Mahalle bazında yükleme özetleri (Hangi mahalleden kaç kişi, hangi liste türü ve sıra aralığıyla yüklendi)
     const mahalleOzet = Array.from(mahalleCounters.entries()).map(([m, cnt]) => {
-      const info = existingMahalleEkMap.get(m);
-      const ekNo = (!info || !info.hasRecords) ? 0 : info.maxEkNo + 1;
-      return {
-        mahalle: m,
-        kayit_sayisi: cnt,
-        ek_liste_no: ekNo,
-        ek_liste_adi: ekNo === 0 ? 'Ana Liste' : `Ek ${ekNo}`,
-        sira_araligi: ekNo === 0 ? `1 - ${cnt}` : `Ek${ekNo} - 1'den Ek${ekNo} - ${cnt}'e`,
-      };
+      if (listeTuru === 'SIGORTALI') {
+        const existingSigCount = existingMahalleSigortaliCountMap.get(m) || 0;
+        const startNo = existingSigCount + 1;
+        const endNo = existingSigCount + cnt;
+        return {
+          mahalle: m,
+          kayit_sayisi: cnt,
+          ek_liste_no: 1000,
+          ek_liste_adi: 'Sigortalılar Listesi',
+          liste_turu: 'SIGORTALI',
+          sira_araligi: startNo === endNo ? `Sigortalı - ${startNo}` : `Sigortalı - ${startNo}'den Sigortalı - ${endNo}'ye`,
+        };
+      } else if (listeTuru === 'EK_LISTE') {
+        const info = existingMahalleEkMap.get(m);
+        const ekNo = (!info || !info.hasRecords || info.maxEkNo === 0) ? 1 : info.maxEkNo + 1;
+        return {
+          mahalle: m,
+          kayit_sayisi: cnt,
+          ek_liste_no: ekNo,
+          ek_liste_adi: `Ek ${ekNo}`,
+          liste_turu: 'EK_LISTE',
+          sira_araligi: `Ek${ekNo} - 1'den Ek${ekNo} - ${cnt}'e`,
+        };
+      } else {
+        const info = existingMahalleEkMap.get(m);
+        const ekNo = (!info || !info.hasRecords) ? 0 : info.maxEkNo + 1;
+        return {
+          mahalle: m,
+          kayit_sayisi: cnt,
+          ek_liste_no: ekNo,
+          ek_liste_adi: ekNo === 0 ? 'Ana Liste' : `Ek ${ekNo}`,
+          liste_turu: ekNo === 0 ? 'ANA_LISTE' : 'EK_LISTE',
+          sira_araligi: ekNo === 0 ? `1 - ${cnt}` : `Ek${ekNo} - 1'den Ek${ekNo} - ${cnt}'e`,
+        };
+      }
     });
 
     const elenenKayitlar = toInsertLogs.filter(
@@ -818,11 +881,20 @@ export async function POST(request: NextRequest) {
       l => l.islem_sonucu === 'EKLENDİ_UYARILI'
     );
 
+    const listeAdiLabel =
+      listeTuru === 'SIGORTALI'
+        ? 'Sigortalılar Listesi'
+        : listeTuru === 'EK_LISTE'
+        ? 'Ek Liste'
+        : 'Standart Liste';
+
     // Record batch metadata in import_batches
     await batchesCol.insertOne({
       batch_id: batchId,
       dosya_adi: file.name,
       dosya_boyutu: file.size,
+      liste_turu: listeTuru,
+      liste_adi: listeAdiLabel,
       toplam_satir: totalRows,
       eklenen_kisi: insertedCount,
       elenen_kisi: elenenKayitlar.length,
@@ -837,9 +909,9 @@ export async function POST(request: NextRequest) {
       kullanici_adi: session.ad_soyad || session.username || 'Sistem Yöneticisi',
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'EXCEL_YUKLEME',
-      baslik: 'Excel Dosyası Yüklendi',
-      detay: `"${file.name}" dosyasından ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${elenenKayitlar.length} mükerrer kayıt elendi.`,
-      ek_bilgi: { batch_id: batchId, totalRows, insertedCount, elenenCount: elenenKayitlar.length, uyariliCount: uyariliKayitlar.length },
+      baslik: `Excel Dosyası Yüklendi (${listeAdiLabel})`,
+      detay: `"${file.name}" dosyasından [${listeAdiLabel}] kapsamında ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${elenenKayitlar.length} mükerrer kayıt elendi.`,
+      ek_bilgi: { batch_id: batchId, listeTuru, listeAdi: listeAdiLabel, totalRows, insertedCount, elenenCount: elenenKayitlar.length, uyariliCount: uyariliKayitlar.length },
     });
 
     const mukerrerTcCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_TC').length;
@@ -853,6 +925,8 @@ export async function POST(request: NextRequest) {
       success: true,
       batchId,
       dosyaAdi: file.name,
+      listeTuru,
+      listeAdi: listeAdiLabel,
       totalRows,
       insertedCount,
       failedCount: elenenKayitlar.length,

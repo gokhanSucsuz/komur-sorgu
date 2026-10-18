@@ -7,7 +7,7 @@ import {
   ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid, Edit3
+  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { 
@@ -19,7 +19,8 @@ import {
   cleanTurkishText,
   cleanTcNo,
   turkishIncludes,
-  isBirebirBeneficiaryMatch
+  isBirebirBeneficiaryMatch,
+  getBeneficiaryListTypeInfo
 } from '@/lib/normalizer';
 
 interface BeneficiaryListProps {
@@ -84,10 +85,13 @@ export default function BeneficiaryList({
   const [signatureFilter, setSignatureFilter] = useState<'ALL' | 'SIGNED' | 'UNSIGNED'>('ALL');
   const [isBulkSignLoading, setIsBulkSignLoading] = useState(false);
 
+  // Liste Türü Filtresi (Tümü, Ana Liste, Ek Listeler, Sigortalılar Listesi)
+  const [selectedListTypeFilter, setSelectedListTypeFilter] = useState<'HEPSI' | 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI'>('HEPSI');
+
   // Filtre veya arama değiştiğinde sayfa numarasını otomatik olarak 1'e sıfırla
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedMahalleler, selectedSokak, selectedDurumFilter, selectedQueueTab, signatureFilter]);
+  }, [searchQuery, selectedMahalleler, selectedSokak, selectedDurumFilter, selectedQueueTab, signatureFilter, selectedListTypeFilter]);
 
   const handleToggleCardSelect = (personId: string) => {
     setSelectedIds((prev) => {
@@ -305,7 +309,7 @@ export default function BeneficiaryList({
     }).length;
   }, [mahalleFilteredList, localSignatures]);
 
-  // Filter records by selected street and signature status
+  // Filter records by selected street, signature status and list type
   const streetFilteredList = useMemo(() => {
     let list = mahalleFilteredList;
     if (selectedSokak !== 'HEPSI') {
@@ -326,8 +330,24 @@ export default function BeneficiaryList({
         return !signed;
       });
     }
+    if (selectedListTypeFilter !== 'HEPSI') {
+      list = list.filter((r) => getBeneficiaryListTypeInfo(r).type === selectedListTypeFilter);
+    }
     return list;
-  }, [mahalleFilteredList, selectedSokak, signatureFilter, localSignatures]);
+  }, [mahalleFilteredList, selectedSokak, signatureFilter, localSignatures, selectedListTypeFilter]);
+
+  const listTypeCounts = useMemo(() => {
+    let ana = 0;
+    let ek = 0;
+    let sig = 0;
+    for (const r of mahalleFilteredList) {
+      const t = getBeneficiaryListTypeInfo(r).type;
+      if (t === 'SIGORTALI') sig++;
+      else if (t === 'EK_LISTE') ek++;
+      else ana++;
+    }
+    return { ana, ek, sig, total: mahalleFilteredList.length };
+  }, [mahalleFilteredList]);
 
   // Sayfalama Hesaplamaları (Sayfa başına varsayılan 250 kayıt)
   const totalFilteredRecords = streetFilteredList.length;
@@ -590,6 +610,29 @@ export default function BeneficiaryList({
                     onClick={() => setSelectedSokak('HEPSI')}
                     className="hover:text-rose-700 ml-0.5 font-black text-xs"
                     title="Sokak filtresini kaldır"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
+              {selectedListTypeFilter !== 'HEPSI' && (
+                <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg border ${
+                  selectedListTypeFilter === 'SIGORTALI'
+                    ? 'bg-purple-100 text-purple-950 border-purple-300'
+                    : selectedListTypeFilter === 'EK_LISTE'
+                    ? 'bg-amber-100 text-amber-950 border-amber-300'
+                    : 'bg-sky-100 text-sky-950 border-sky-300'
+                }`}>
+                  {selectedListTypeFilter === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-700" />}
+                  {selectedListTypeFilter === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-amber-700" />}
+                  {selectedListTypeFilter === 'ANA_LISTE' && <FileText className="w-3 h-3 text-sky-700" />}
+                  <span>{selectedListTypeFilter === 'SIGORTALI' ? 'Sigortalılar Listesi' : selectedListTypeFilter === 'EK_LISTE' ? 'Ek Listeler' : 'Ana Liste'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('HEPSI')}
+                    className="hover:text-rose-700 ml-0.5 font-black text-xs"
+                    title="Liste filtresini kaldır"
                   >
                     ✕
                   </button>
@@ -969,6 +1012,62 @@ export default function BeneficiaryList({
                 )}
               </button>
             </div>
+
+            {/* Liste / Islak İmza Dosyası Türü Filtresi */}
+            <div className="pt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 overflow-x-auto text-xs w-full sm:w-auto">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0">İmza Dosyası:</span>
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold overflow-x-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('HEPSI')}
+                    className={`px-2.5 py-1 rounded-lg transition-all whitespace-nowrap ${
+                      selectedListTypeFilter === 'HEPSI'
+                        ? 'bg-white text-slate-900 shadow-2xs font-black'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Tüm Listeler ({listTypeCounts.total})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('ANA_LISTE')}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap ${
+                      selectedListTypeFilter === 'ANA_LISTE'
+                        ? 'bg-sky-600 text-white shadow-2xs font-black'
+                        : 'text-sky-900 hover:bg-sky-50'
+                    }`}
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>Ana Liste ({listTypeCounts.ana})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('EK_LISTE')}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap ${
+                      selectedListTypeFilter === 'EK_LISTE'
+                        ? 'bg-amber-600 text-white shadow-2xs font-black'
+                        : 'text-amber-900 hover:bg-amber-50'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-3 h-3" />
+                    <span>Ek Listeler ({listTypeCounts.ek})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('SIGORTALI')}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap ${
+                      selectedListTypeFilter === 'SIGORTALI'
+                        ? 'bg-purple-600 text-white shadow-2xs font-black'
+                        : 'text-purple-900 hover:bg-purple-50'
+                    }`}
+                  >
+                    <Shield className="w-3 h-3 text-purple-600 group-hover:text-purple-800" />
+                    <span>Sigortalılar ({listTypeCounts.sig})</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Toplu İmza Seçim Yardımcı Çubuğu */}
@@ -1269,14 +1368,23 @@ export default function BeneficiaryList({
                       const phones = getRecordPhones(person);
                       const stInfo = getRecordStreetInfo(person);
                       const hasHouseholdDuplicate = (householdCounts[person.norm_adres] || 0) > 1;
+                      const listInfo = getBeneficiaryListTypeInfo(person);
 
                       return (
                         <tr key={person.id} className={isPartial ? 'row-incomplete' : ''}>
-                          {/* Sıra No (İmza Listesi Sırası: 1, 2... veya Ek1 - 1, Ek1 - 2...) */}
+                          {/* Sıra No & Liste Türü */}
                           <td className="text-center font-mono font-black w-14">
-                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs">
-                              #{person.sira_no || person.mahalle_sira || person.id}
-                            </span>
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs whitespace-nowrap">
+                                #{person.sira_no || person.mahalle_sira || person.id}
+                              </span>
+                              <span
+                                className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded border whitespace-nowrap ${listInfo.badgeClass}`}
+                                title={`${listInfo.folderLabel} (Sıra: #${person.sira_no || person.mahalle_sira || person.id})`}
+                              >
+                                {listInfo.badgeLabel}
+                              </span>
+                            </div>
                           </td>
 
                           {/* Hak Sahibi (Daraltılmış & Aşağı Doğru Uzayan) */}
@@ -1488,6 +1596,7 @@ export default function BeneficiaryList({
                 const kalan = Math.max(0, hedef - teslim);
                 const phones = getRecordPhones(person);
                 const stInfo = getRecordStreetInfo(person);
+                const listInfo = getBeneficiaryListTypeInfo(person);
 
                 const isExpanded = expandedAddresses[person.id] !== undefined
                   ? expandedAddresses[person.id]
@@ -1539,6 +1648,15 @@ export default function BeneficiaryList({
                           )}
                           <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
                             #{person.sira_no || person.mahalle_sira || person.id}
+                          </span>
+                          <span
+                            className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
+                            title={listInfo.folderLabel}
+                          >
+                            {listInfo.type === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-600" />}
+                            {listInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-indigo-600" />}
+                            {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
+                            <span>{listInfo.label}</span>
                           </span>
                           <h4 className="text-base font-extrabold text-slate-900 leading-tight">
                             {person.ad_soyad}

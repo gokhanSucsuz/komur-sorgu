@@ -1,7 +1,7 @@
 'use client';
 
-import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3 } from 'lucide-react';
-import { getRecordPhones, formatPhoneDisplay } from '@/lib/normalizer';
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText } from 'lucide-react';
+import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
 
 interface HouseholdModalProps {
   person: any;
@@ -22,6 +22,7 @@ export default function HouseholdModal({
 }: HouseholdModalProps) {
   const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
   const isPartial = person.teslimat_durumu === 'EKSIK';
+  const listInfo = getBeneficiaryListTypeInfo(person);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -70,6 +71,48 @@ export default function HouseholdModal({
                   Bekliyor ({person.hedef_torba || 34})
                 </span>
               )}
+            </div>
+          </div>
+
+          {/* Islak İmza Formu ve Dosya Bilgisi Banner */}
+          <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+            listInfo.type === 'SIGORTALI'
+              ? 'bg-purple-50/80 border-purple-200 text-purple-950'
+              : listInfo.type === 'EK_LISTE'
+              ? 'bg-indigo-50/80 border-indigo-200 text-indigo-950'
+              : 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+          }`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border shadow-2xs ${
+                listInfo.type === 'SIGORTALI'
+                  ? 'bg-purple-100 text-purple-800 border-purple-300'
+                  : listInfo.type === 'EK_LISTE'
+                  ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                  : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              }`}>
+                {listInfo.type === 'SIGORTALI' && <Shield className="w-5 h-5 text-purple-700" />}
+                {listInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-5 h-5 text-indigo-700" />}
+                {listInfo.type === 'ANA_LISTE' && <FileText className="w-5 h-5 text-emerald-700" />}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Islak İmza Dosyası
+                  </span>
+                  <span className={`text-[11px] font-black px-1.5 py-0.2 rounded border ${listInfo.badgeClass}`}>
+                    {listInfo.label}
+                  </span>
+                </div>
+                <p className="font-extrabold text-xs text-slate-900 mt-0.5">
+                  📁 {listInfo.folderLabel}
+                </p>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-[10px] font-bold text-slate-500 block uppercase">Dosya Sıra No</span>
+              <span className="font-mono font-black text-sm text-slate-900 bg-white px-2 py-0.5 rounded-lg border border-slate-300 shadow-2xs inline-block">
+                #{person.sira_no || person.mahalle_sira || person.id}
+              </span>
             </div>
           </div>
 
@@ -258,15 +301,25 @@ export default function HouseholdModal({
               <p className="text-[11px] text-purple-900 font-semibold leading-tight">
                 ⚠️ Dikkat: Aynı hanede kayıtlı birden fazla vatandaş tespit edildi!
               </p>
-              {householdMembers.map((member) => (
-                <div
-                  key={member.id}
-                  className="p-3 rounded-xl bg-white border border-purple-200 flex items-center justify-between gap-2 shadow-xs"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-extrabold text-slate-900 truncate">{member.ad_soyad}</p>
-                    <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
-                      <span className="font-mono font-bold text-purple-800">TC: {member.tc_no}</span>
+              {householdMembers.map((member) => {
+                const memberListInfo = getBeneficiaryListTypeInfo(member);
+                return (
+                  <div
+                    key={member.id}
+                    className="p-3 rounded-xl bg-white border border-purple-200 flex items-center justify-between gap-2 shadow-xs"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-extrabold text-slate-900 truncate">{member.ad_soyad}</p>
+                        <span
+                          className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded border ${memberListInfo.badgeClass}`}
+                          title={`${memberListInfo.folderLabel} (Sıra: #${member.sira_no || member.mahalle_sira || member.id})`}
+                        >
+                          {memberListInfo.label} (#{member.sira_no || member.mahalle_sira || member.id})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
+                        <span className="font-mono font-bold text-purple-800">TC: {member.tc_no}</span>
                       {(() => {
                         const mPhones = getRecordPhones(member);
                         if (mPhones.length === 0) return null;
@@ -322,7 +375,8 @@ export default function HouseholdModal({
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
