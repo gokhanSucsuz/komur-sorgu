@@ -542,9 +542,9 @@ export default function Home() {
     };
   }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount]);
 
-  // Tab protection: Non-admin can never view 'analytics', 'archive', or 'import' tabs
+  // Tab protection: Non-admin can never view 'analytics' or 'import' tabs (Archive is open to all users)
   useEffect(() => {
-    const adminOnlyTabs: NavTab[] = ['analytics', 'archive', 'import'];
+    const adminOnlyTabs: NavTab[] = ['analytics', 'import'];
     if (userRole !== 'ADMIN' && adminOnlyTabs.includes(currentTab)) {
       setCurrentTab('search');
     }
@@ -829,8 +829,8 @@ export default function Home() {
           />
         )}
 
-        {/* Tab 3: Teslimat Arşivi & İptal Edilenler (Sadece Yönetici) */}
-        {currentTab === 'archive' && userRole === 'ADMIN' && (
+        {/* Tab 3: Teslimat Arşivi & İptal Edilenler (Tüm Kullanıcılar) */}
+        {currentTab === 'archive' && (
           <DeliveryArchive
             groupedDays={archiveGroupedDays}
             allRecords={archiveAllRecords}
