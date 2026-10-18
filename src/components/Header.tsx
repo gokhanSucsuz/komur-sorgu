@@ -262,7 +262,7 @@ export default function Header({
                 {userRole === 'ADMIN' ? (
                   <>
                     <Shield className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span className="text-amber-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Yönetici'}</span>
+                    <span className="text-amber-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Gökhan SUÇSUZ'}</span>
                   </>
                 ) : (
                   <>

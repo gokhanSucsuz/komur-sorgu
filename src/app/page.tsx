@@ -214,6 +214,11 @@ export default function Home() {
         if (data.user.username) {
           setUserUsername(data.user.username);
         }
+        const effectiveName = data.user.ad_soyad || data.user.name;
+        if (effectiveName) {
+          setUserName(effectiveName);
+          localStorage.setItem('komur_user_name', effectiveName);
+        }
         if (data.user.ekip_adi !== undefined) {
           setUserTeam(data.user.ekip_adi || '');
           localStorage.setItem('komur_user_team', data.user.ekip_adi || '');
@@ -246,7 +251,11 @@ export default function Home() {
       if (savedLogin === 'true' && savedRole && savedName && savedToken) {
         setIsLoggedIn(true);
         setUserRole(savedRole);
-        setUserName(savedName);
+        const resolvedName = (savedRole === 'ADMIN' && (!savedName || savedName === 'Sistem Yöneticisi')) ? 'Gökhan SUÇSUZ' : savedName;
+        setUserName(resolvedName);
+        if (resolvedName !== savedName) {
+          localStorage.setItem('komur_user_name', resolvedName);
+        }
         if (savedUsername) setUserUsername(savedUsername);
         setUserTeam(savedTeam);
         setUserPartners(savedPartners);

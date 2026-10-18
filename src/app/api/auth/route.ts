@@ -133,11 +133,14 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const decAdSoyad = rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : rawUser.username);
       return NextResponse.json({
         success: true,
         valid: true,
         username: rawUser.username,
         role: rawUser.rol,
+        ad_soyad: decAdSoyad,
+        name: decAdSoyad,
         totp_enabled: Boolean(rawUser.totp_enabled),
       });
     }
@@ -274,6 +277,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const decAdSoyad = rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : rawUser.username);
       const res = NextResponse.json({
         success: true,
         valid: true,
@@ -281,7 +285,8 @@ export async function POST(request: NextRequest) {
         user: {
           id: rawUser.id || rawUser._id,
           username: rawUser.username,
-          ad_soyad: rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : rawUser.username,
+          ad_soyad: decAdSoyad,
+          name: decAdSoyad,
           rol: rawUser.rol,
           ekip_adi: rawUser.ekip_adi || '',
           ekip_arkadaslari: Array.isArray(rawUser.ekip_arkadaslari) ? rawUser.ekip_arkadaslari : [],

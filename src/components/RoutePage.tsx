@@ -4275,7 +4275,8 @@ export default function RoutePage({
                   <div className="space-y-4 sm:space-y-6 p-3 sm:p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 flex flex-col justify-between min-h-[110px]">
                     <div>
                       <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
-                      <p className="text-[11px] font-bold text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
+                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1">Gökhan SUÇSUZ</p>
+                      <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">Vakıf Müdürü - Edirne SYDV</span>
                     </div>
                     <div className="h-8 flex items-center justify-center border-t border-dashed border-slate-200 pt-2">
                       <span className="text-[10px] text-slate-400 italic font-semibold">İmza / Mühür</span>
@@ -4476,31 +4477,17 @@ export default function RoutePage({
                           )
                         }
                         disabled={isActionLoading}
-                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 transition-all active:scale-95"
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all active:scale-95"
                         style={{
-                          background: 'rgba(245, 158, 11, 0.2)',
-                          border: '1px solid rgba(251, 191, 36, 0.5)',
-                          color: '#fde68a'
+                          background: 'rgba(245, 158, 11, 0.22)',
+                          border: '1px solid rgba(251, 191, 36, 0.6)',
+                          color: '#fef3c7'
                         }}
-                        title="Rotayı geçici olarak durdur ve çık"
+                        title="Rotayı geçici olarak durdurur, kilidi serbest bırakır ve Rota Modundan çıkar"
                       >
-                        <Pause className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Geçici Durdur</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleExitRouteMode}
-                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.12)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          color: '#f8fafc'
-                        }}
-                        title="Rota Modundan Çık (Liste Görünümü)"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Çıkış</span>
+                        <Pause className="w-3.5 h-3.5 text-amber-300" />
+                        <span className="hidden sm:inline">Geçici Durdur ve Çık</span>
+                        <span className="sm:hidden">Durdur & Çık</span>
                       </button>
                     </div>
                   </div>

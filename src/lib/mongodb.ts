@@ -255,6 +255,12 @@ function getInMemoryStore() {
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
+  if (global._inMemoryMongoStore && Array.isArray(global._inMemoryMongoStore.users)) {
+    const adminUser = global._inMemoryMongoStore.users.find((u: any) => u.username === 'admin');
+    if (adminUser) {
+      adminUser.ad_soyad = encryptField('Gökhan SUÇSUZ');
+    }
+  }
   return global._inMemoryMongoStore;
 }
 
@@ -610,15 +616,16 @@ async function initializeIndexesAndSeed(db: Db) {
     });
   }
 
-  // 2. Initial Admin User if none exists (AES-256-GCM encrypted + scrypt password hash)
+  // 2. Initial Admin User if none exists or update existing admin name to Gökhan SUÇSUZ
   const userCount = await users.countDocuments();
+  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
+  const nowStr = new Date().toLocaleString('tr-TR');
+
   if (userCount === 0) {
-    const nowStr = new Date().toLocaleString('tr-TR');
-    const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
     await users.insertOne(encryptUser({
       id: '1',
       username: 'admin',
-      ad_soyad: 'Sistem Yöneticisi',
+      ad_soyad: 'Gökhan SUÇSUZ',
       rol: 'ADMIN',
       sifre: initialAdminPass,
       sifre_hash: hashPassword(initialAdminPass),
@@ -626,6 +633,12 @@ async function initializeIndexesAndSeed(db: Db) {
       aktif: 1,
       created_at: nowStr,
     }));
+  } else {
+    // Ensure admin user ad_soyad is updated to 'Gökhan SUÇSUZ'
+    await users.updateOne(
+      { username: 'admin' },
+      { $set: { ad_soyad: encryptField('Gökhan SUÇSUZ') } }
+    );
   }
 
   // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler, rotalar ve kişisel verileri AES-256-GCM ile şifrele
@@ -652,7 +665,7 @@ function seedInMemoryStore(store: Record<string, any[]>) {
     encryptUser({
       id: '1',
       username: 'admin',
-      ad_soyad: 'Sistem Yöneticisi',
+      ad_soyad: 'Gökhan SUÇSUZ',
       rol: 'ADMIN',
       sifre: initialAdminPass,
       sifre_hash: hashPassword(initialAdminPass),

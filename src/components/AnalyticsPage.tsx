@@ -698,10 +698,14 @@ export default function AnalyticsPage({
                 <p className="text-[11px] text-slate-500">İmza / Tarih</p>
               </div>
 
-              <div className="space-y-8">
+              <div className="space-y-4">
                 <p className="font-bold text-slate-900">Vakıf Müdürü / Onay</p>
-                <div className="h-10 border-b border-dashed border-slate-300"></div>
-                <p className="text-[11px] text-slate-500 font-semibold">Edirne SYDV Başkanlığı</p>
+                <div>
+                  <p className="text-xs font-black text-slate-900">Gökhan SUÇSUZ</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Vakıf Müdürü - Edirne SYDV</p>
+                </div>
+                <div className="h-8 border-b border-dashed border-slate-300"></div>
+                <p className="text-[11px] text-slate-500 font-semibold">İmza / Mühür</p>
               </div>
             </div>
           </div>
@@ -1699,7 +1703,8 @@ export default function AnalyticsPage({
                   <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
                     <div>
                       <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
-                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Edirne SYDV Başkanlığı</p>
+                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1">Gökhan SUÇSUZ</p>
+                      <p className="text-[10px] font-semibold text-slate-500 mt-0.5">Vakıf Müdürü - Edirne SYDV</p>
                     </div>
                     <div className="h-10 flex items-center justify-center">
                       <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>

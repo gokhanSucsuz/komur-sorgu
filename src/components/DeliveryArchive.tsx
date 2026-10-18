@@ -598,8 +598,11 @@ export default function DeliveryArchive({
                         Vakıf Müdürü / Onay
                       </span>
                       <p className="text-xs sm:text-sm font-black text-slate-900 mt-1.5 break-words">
-                        Edirne SYDV Başkanlığı
+                        Gökhan SUÇSUZ
                       </p>
+                      <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">
+                        Vakıf Müdürü - Edirne SYDV
+                      </span>
                     </div>
                     <div className="mt-4 pt-2.5 border-t border-dashed border-slate-300">
                       <span className="text-[10px] sm:text-[11px] text-slate-400 font-bold italic">İmza / Mühür</span>
