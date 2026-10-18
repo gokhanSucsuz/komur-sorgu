@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptField, encryptDeliveryHistory, encryptRouteStop, hashTc } from '@/lib/crypto';
-import { cleanTcNo } from '@/lib/normalizer';
+import { cleanTcNo, normalizeStaffName } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { checkRouteTeamAuthorization } from '@/app/api/routes/route';
@@ -156,11 +156,12 @@ export async function POST(request: NextRequest) {
       }
 
       const recipient = (teslim_alan || beneficiary.ad_soyad).trim();
-      const staff = (
+      const rawStaff = (
         (body.personel && body.personel !== 'Personel' && body.personel !== 'Dağıtım Personeli')
           ? body.personel
           : (session.ad_soyad || session.username || body.personel || 'Personel')
       ).trim();
+      const staff = normalizeStaffName(rawStaff) || rawStaff || 'Saha Personeli';
       const note = (notlar || '').trim();
 
       // Determine status: TAMAMLANDI vs EKSIK

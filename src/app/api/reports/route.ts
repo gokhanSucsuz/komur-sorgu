@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { getRecordStreetInfo, normalizeToTon } from '@/lib/normalizer';
+import { getRecordStreetInfo, normalizeToTon, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { decryptField, isEncrypted } from '@/lib/crypto';
 
@@ -418,7 +418,8 @@ export async function GET(request: NextRequest) {
     for (const b of filteredBeneficiaries) {
       const d = b.teslimat_durumu;
       if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI' || d === 'EKSIK') {
-        const pName = (b.teslim_eden_personel || 'Belirtilmemiş Personel').trim();
+        const rawPName = (b.teslim_eden_personel || '').trim();
+        const pName = normalizeStaffName(rawPName) || rawPName || 'Belirtilmemiş Personel';
         if (!pMap.has(pName)) {
           pMap.set(pName, {
             personel: pName,

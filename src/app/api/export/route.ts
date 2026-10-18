@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 
 /**
@@ -653,7 +653,7 @@ export async function GET(request: NextRequest) {
           'Kalan Torba': Math.max(0, (r.hedef_torba || 34) - (r.torba_sayisi || 0)),
           'Teslimat Tarihi': r.teslimat_tarihi || '-',
           'Teslim Alan': r.teslim_alan || '-',
-          'Teslim Eden Personel': r.teslim_eden_personel || '-',
+          'Teslim Eden Personel': normalizeStaffName(r.teslim_eden_personel) || r.teslim_eden_personel || '-',
         };
       });
 
@@ -1164,7 +1164,7 @@ export async function GET(request: NextRequest) {
           'Durum': b.teslimat_durumu === 'TAMAMLANDI' ? 'TAMAMLANDI' : (b.teslimat_durumu === 'EKSIK' ? 'EKSİK' : 'BEKLİYOR'),
           'Teslim Alan': b.teslim_alan || '-',
           'Teslim Tarihi': b.teslim_tarihi || '-',
-          'Teslim Eden Personel': b.teslim_eden_personel || '-',
+          'Teslim Eden Personel': normalizeStaffName(b.teslim_eden_personel) || b.teslim_eden_personel || '-',
           'İmza Durumu': b.imza_durumu === 'IMZALANDI' ? 'İMZALANDI' : 'İMZASIZ',
         };
       });
@@ -1356,7 +1356,7 @@ export async function GET(request: NextRequest) {
             'Hedef (Torba)': target,
             'Alınan (Torba)': given,
             'Kalan Eksik (Torba)': Math.max(0, target - given),
-            'Teslim Eden Personel': h.teslim_eden_personel || '-',
+            'Teslim Eden Personel': normalizeStaffName(h.teslim_eden_personel) || h.teslim_eden_personel || '-',
             'Teslim Alan': h.teslim_alan || '-',
             'Açıklama / Not': h.teslimat_notu || h.aciklama || '-',
           };
@@ -1388,7 +1388,8 @@ export async function GET(request: NextRequest) {
       const pStatsMap = new Map<string, { personel: string; tam: number; eksik: number; torba: number; sonTarih: string }>();
       for (const r of records) {
         if (r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' || r.teslimat_durumu === 'EKSIK') {
-          const p = (r.teslim_eden_personel || 'Belirtilmemiş Personel').trim();
+          const rawP = (r.teslim_eden_personel || '').trim();
+          const p = normalizeStaffName(rawP) || rawP || 'Belirtilmemiş Personel';
           if (!pStatsMap.has(p)) pStatsMap.set(p, { personel: p, tam: 0, eksik: 0, torba: 0, sonTarih: '' });
           const ent = pStatsMap.get(p)!;
           if (r.teslimat_durumu === 'EKSIK') ent.eksik++; else ent.tam++;

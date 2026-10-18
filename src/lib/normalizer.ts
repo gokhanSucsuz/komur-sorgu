@@ -1449,6 +1449,25 @@ export function formatCancelExplanation(explanation?: string | null): string {
 }
 
 /**
+ * Saha ve dağıtım personeli isimlerini normalize eder.
+ * Sistem yöneticisi (admin) sahada görev aldığında resmi olarak 'Gökhan SUÇSUZ' adıyla raporlanır.
+ */
+export function normalizeStaffName(raw?: any): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let clean = raw.trim();
+  clean = clean.replace(/^\[.*?\]\s*/, '').replace(/\s*\((?:çevrimdışı|çevrimdışı kuyrukta)\)/i, '').trim();
+  if (!clean) return '';
+  const lower = toExactTurkishLower(clean);
+  if (['-', 'null', 'undefined', 'sistem', 'belirtilmedi', 'yok', 'dağıtım ekibi'].includes(lower)) {
+    return '';
+  }
+  if (lower === 'admin' || lower === 'sistem yöneticisi' || lower.startsWith('admin ') || lower.startsWith('sistem yöneticisi ')) {
+    return 'Gökhan SUÇSUZ';
+  }
+  return clean;
+}
+
+/**
  * Dağıtımda görev alan personellerin isimlerini ayrıştırır, temizler ve benzersiz liste döndürür.
  * Virgül, eğik çizgi, noktalı virgül veya "ve" ile ayrılmış birden fazla personeli tespit eder.
  */
@@ -1467,19 +1486,12 @@ export function extractUniquePersonnelList(
     // Virgül, eğik çizgi, noktalı virgül, ampersand (&) veya "ve" kelimesi ile ayır
     const tokens = clean.split(/[,/;&]|\s+ve\s+/i);
     for (const token of tokens) {
-      let name = token.trim();
-      // Başındaki veya sonundaki [Rota: ...] gibi etiketleri temizle
-      name = name.replace(/^\[.*?\]\s*/, '').trim();
-      if (!name) continue;
+      const norm = normalizeStaffName(token);
+      if (!norm) continue;
 
-      const lower = toExactTurkishLower(name);
-      // Geçersiz / yer tutucu kelimeleri atla
-      if (['-', 'null', 'undefined', 'sistem', 'belirtilmedi', 'yok', 'admin', 'dağıtım ekibi'].includes(lower)) {
-        continue;
-      }
-
-      if (!staffMap.has(lower)) {
-        staffMap.set(lower, name);
+      const key = toExactTurkishLower(norm);
+      if (!staffMap.has(key)) {
+        staffMap.set(key, norm);
       }
     }
   };
@@ -1500,6 +1512,7 @@ export function extractUniquePersonnelList(
   const list = Array.from(staffMap.values());
   return list.length > 0 ? list : [fallback];
 }
+
 
 
 

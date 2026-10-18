@@ -1234,8 +1234,7 @@ export default function ShiftPage({
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-bold text-slate-500 uppercase">Vakıf Müdürü / Onay</span>
-                  <p className="text-xs font-black text-slate-800 mt-1">Gökhan SUÇSUZ</p>
-                  <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">Vakıf Müdürü - Edirne SYDV</span>
+                  <p className="text-xs font-black text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
                   <div className="mt-4 pt-4 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza / Mühür</div>
                 </div>
               </div>

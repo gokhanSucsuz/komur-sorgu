@@ -1679,8 +1679,7 @@ export default function TonnagePage({
                   <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
                     <div>
                       <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
-                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1">Gökhan SUÇSUZ</p>
-                      <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">Vakıf Müdürü - Edirne SYDV</span>
+                      <p className="text-[11px] font-bold text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
                     </div>
                     <div className="h-10 flex items-center justify-center">
                       <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>

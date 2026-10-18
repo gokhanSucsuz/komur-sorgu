@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptField, encryptDeliveryHistory, encryptRoute, encryptRouteStop } from '@/lib/crypto';
-import { compareByAddressAsc, getRecordStreetInfo } from '@/lib/normalizer';
+import { compareByAddressAsc, getRecordStreetInfo, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
 
@@ -762,11 +762,12 @@ export async function POST(request: NextRequest) {
 
       const headerClientId = request.headers.get('x-client-id') || '';
       const effectiveClientId = (body.client_id || headerClientId || '').trim();
-      const staffName = (
+      const rawStaff = (
         (body.personel && body.personel !== 'Personel' && body.personel !== 'Dağıtım Personeli')
           ? body.personel
           : (session.ad_soyad || session.username || body.personel || 'Personel')
       ).trim();
+      const staffName = normalizeStaffName(rawStaff) || rawStaff || 'Personel';
       const route = mapDoc(rawRoute);
 
       // Takım / Ekip arkadaşı yetki kontrolü
@@ -1319,7 +1320,8 @@ export async function POST(request: NextRequest) {
         }, { status: 403 });
       }
 
-      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const rawFinalStaff = (session.ad_soyad || session.username || personel || 'Personel').trim();
+      const staffName = normalizeStaffName(rawFinalStaff) || rawFinalStaff || 'Personel';
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
       if (lockCheck.isLocked && session.rol !== 'ADMIN') {
