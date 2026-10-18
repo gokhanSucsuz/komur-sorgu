@@ -247,7 +247,6 @@ export async function POST(request: NextRequest) {
           mahalle: b.mahalle || '',
           sokak: stInfo.sokak || '',
           kapi_no: stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' ? stInfo.kapiNo : '',
-          kat_no: stInfo.katNo && stInfo.katNo > 0 ? stInfo.katNo : '',
           daire_no: stInfo.daireNo && stInfo.daireNo > 0 ? stInfo.daireNo : '',
           acik_adres: b.acik_adres || '',
           hedef_torba: hedef,

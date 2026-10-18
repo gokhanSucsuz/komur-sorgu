@@ -576,7 +576,6 @@ export function extractStreetAndDoor(
 ): {
   sokak: string;
   kapiNo: string | number;
-  katNo: number;
   daireNo: number;
 } {
   let explicitStreet = (rawStreet || '').toString().trim();
@@ -637,16 +636,14 @@ export function extractStreetAndDoor(
     street = 'Köy İçi / Sokak Belirtilmemiş';
   }
 
-  // Extract door, kat, and apartment numbers
+  // Extract door and apartment numbers
   let door: string | number = 999999;
-  let kat = 0;
   let apt = 0;
 
   if (addr) {
     const doorParsed = extractDoorAndSuffix(addr);
     if (doorParsed) {
       door = doorParsed.doorStr;
-      if (doorParsed.kat) kat = doorParsed.kat;
       if (doorParsed.daire) apt = doorParsed.daire;
     }
   }
@@ -659,17 +656,8 @@ export function extractStreetAndDoor(
       const expParsed = extractDoorAndSuffix(strExp);
       if (expParsed) {
         door = expParsed.doorStr;
-        if (expParsed.kat && kat === 0) kat = expParsed.kat;
         if (expParsed.daire && apt === 0) apt = expParsed.daire;
       }
-    }
-  }
-
-  // Kat match if not already extracted (e.g. Kat: 2 or Kat 2)
-  if (kat === 0 && addr) {
-    const katMatch = addr.match(/\bKat\s*[:.]?\s*(\d+)/i);
-    if (katMatch) {
-      kat = parseInt(katMatch[1], 10);
     }
   }
 
@@ -684,22 +672,24 @@ export function extractStreetAndDoor(
     }
   }
 
-  return { sokak: street, kapiNo: door, katNo: kat, daireNo: apt };
+  return { sokak: street, kapiNo: door, daireNo: apt };
 }
 
 /**
- * Helper to extract door number, optional block letter (e.g. 7D, 14A, 31),
- * and 3-part / 2-part slash formats (e.g. 31/2/1 -> door: 31, kat: 2, daire: 1)
+ * Helper to extract door number, optional block letter (e.g. 7D, 14A, 34),
+ * and 3-part / 2-part slash formats:
+ * - 3-part slash (e.g. 34/3/7) -> door: 34, daire: 7 (middle number is ignored)
+ * - 2-part slash (e.g. 34/7) -> door: 34, daire: 7
  */
 export function extractDoorAndSuffix(addr: string): {
   doorStr: string;
   doorNum: number;
-  kat?: number;
   daire?: number;
 } | null {
   if (!addr) return null;
 
-  // Pattern 0: Three-part slash (No: 31/2/1, 31A/2/1, No: 31 / 2 / 1) -> Door/Kat/Daire
+  // Pattern 0: Three-part slash (No: 34/3/7, 34A/3/7, No: 34 / 3 / 7)
+  // First is Door, Middle number is ignored per requirement, Last number is Daire
   const threePartSlash =
     addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*[:.]?\s*(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?!\d)/i) ||
     addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?!\d)/i) ||
@@ -711,12 +701,11 @@ export function extractDoorAndSuffix(addr: string): {
     return {
       doorStr: rawDoor,
       doorNum: num,
-      kat: parseInt(threePartSlash[2], 10) || 0,
       daire: parseInt(threePartSlash[3], 10) || 0,
     };
   }
 
-  // Pattern 0.5: Two-part slash with explicit No/Kapı/Sokak prefix (e.g. No: 31/1) -> Door/Daire
+  // Pattern 0.5: Two-part slash with explicit No/Kapı/Sokak prefix (e.g. No: 34/7) -> Door/Daire
   const twoPartSlash =
     addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*[:.]?\s*(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)(?!\s*\/\s*\d|\d)/i) ||
     addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+\s*[-/]?\s*[A-Za-zÇŞĞÜÖİçşğüöı]?|\d+)\s*\/\s*(\d+)(?!\s*\/\s*\d|\d)/i);
@@ -727,7 +716,6 @@ export function extractDoorAndSuffix(addr: string): {
     return {
       doorStr: rawDoor,
       doorNum: num,
-      kat: 0,
       daire: parseInt(twoPartSlash[2], 10) || 0,
     };
   }
@@ -778,10 +766,9 @@ export function extractDoorAndSuffix(addr: string): {
 export function getRecordStreetInfo(record: Record<string, any> | null | undefined): {
   sokak: string;
   kapiNo: string | number;
-  katNo: number;
   daireNo: number;
 } {
-  if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, katNo: 0, daireNo: 0 };
+  if (!record) return { sokak: 'Köy İçi / Sokak Belirtilmemiş', kapiNo: 999999, daireNo: 0 };
 
   // Defensive check: If encrypted ciphertext is passed, ignore to prevent leaking ciphertext
   let rawSokak = record.sokak;
@@ -824,12 +811,6 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
     }
   }
 
-  let finalKatNo = extracted.katNo;
-  if (finalKatNo === 0 && record.kat_no) {
-    const parsedKat = parseInt(String(record.kat_no), 10);
-    if (!isNaN(parsedKat) && parsedKat > 0) finalKatNo = parsedKat;
-  }
-
   let finalDaireNo = extracted.daireNo;
   if (finalDaireNo === 0 && record.daire_no) {
     const parsedDaire = parseInt(String(record.daire_no), 10);
@@ -843,13 +824,12 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
   return {
     sokak: finalSokak || 'Köy İçi / Sokak Belirtilmemiş',
     kapiNo: finalKapiNo,
-    katNo: finalKatNo,
     daireNo: finalDaireNo,
   };
 }
 
 /**
- * Natural address comparison function (Street name -> Door number 1 to 99 -> Block -> Floor -> Apartment -> Person name)
+ * Natural address comparison function (Street name -> Door number 1 to 99 -> Block -> Apartment -> Person name)
  */
 export function compareByAddressAsc(a: any, b: any): number {
   const sa = getRecordStreetInfo(a);
@@ -872,7 +852,6 @@ export function compareByAddressAsc(a: any, b: any): number {
     return strA.localeCompare(strB, 'tr', { numeric: true });
   }
 
-  if (sa.katNo !== sb.katNo) return sa.katNo - sb.katNo;
   if (sa.daireNo !== sb.daireNo) return sa.daireNo - sb.daireNo;
 
   return (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr');
