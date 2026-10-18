@@ -539,6 +539,11 @@ export async function POST(request: NextRequest) {
       targetStop.teslim_eden_personel = durum !== 'BEKLIYOR' ? staffName : null;
       targetStop.teslimat_notu = note;
       targetStop.teslim_alan = recipient;
+      if (durum === 'TAMAMLANDI' || durum === 'EKSIK') {
+        targetStop.imza_durumu = 'IMZALANDI';
+        targetStop.imza_tarihi = localTimeStr;
+        targetStop.imza_alan_personel = staffName;
+      }
       targetStop.daha_sonra_tamamlanacak =
         durum === 'TAMAMLANDI'
           ? false
@@ -643,6 +648,9 @@ export async function POST(request: NextRequest) {
             teslim_alan: encryptField(recipient),
             teslim_eden_personel: staffName,
             teslimat_notu: encryptField(note),
+            imza_durumu: 'IMZALANDI',
+            imza_tarihi: localTimeStr,
+            imza_alan_personel: staffName,
             updated_at: localTimeStr
           }
         });
@@ -684,6 +692,9 @@ export async function POST(request: NextRequest) {
             teslim_alan: encryptField(recipient),
             teslim_eden_personel: staffName,
             teslimat_notu: encryptField(eksikNote),
+            imza_durumu: 'IMZALANDI',
+            imza_tarihi: localTimeStr,
+            imza_alan_personel: staffName,
             updated_at: localTimeStr
           }
         });

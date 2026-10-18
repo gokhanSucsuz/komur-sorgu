@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { PackageCheck, Minus, Plus, User, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus } from 'lucide-react';
+import { PackageCheck, Minus, Plus, User, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus, PenTool } from 'lucide-react';
 import { saveOfflineDelivery } from '@/lib/offlineSync';
 import { showAlert } from './GlobalAlertManager';
+import { getBeneficiaryListTypeInfo } from '@/lib/normalizer';
 
 interface DeliveryModalProps {
   beneficiary: any;
@@ -37,6 +38,8 @@ export default function DeliveryModal({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSigned, setIsSigned] = useState<boolean>(beneficiary.imza_durumu === 'IMZALANDI');
+  const listInfo = getBeneficiaryListTypeInfo(beneficiary);
 
   const projectedTotal = mevcutTorba > 0
     ? (deliveryMode === 'REMAINING' ? hedefTorba : mevcutTorba + torbaSayisi)
@@ -56,6 +59,11 @@ export default function DeliveryModal({
     e.preventDefault();
     if (torbaSayisi <= 0) {
       setErrorMsg('Teslim edilecek torba sayısı en az 1 olmalıdır');
+      return;
+    }
+
+    if (!isSigned) {
+      setErrorMsg('⚠️ Teslimatı tamamlamadan önce lütfen kapıda ıslak imzanın alındığını onaylayınız ("✍️ İmzalandı Olarak İşaretle" butonuna basınız).');
       return;
     }
 
@@ -226,6 +234,42 @@ export default function DeliveryModal({
             <span>{errorMsg}</span>
           </div>
         )}
+        {/* Islak İmza Durumu ve Onayı */}
+        <div className={`p-3 rounded-2xl border mb-3 flex items-center justify-between text-xs transition-all shadow-xs ${
+          isSigned
+            ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950'
+            : 'bg-amber-50/90 border-amber-300 text-amber-950'
+        }`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border shadow-2xs ${
+              isSigned ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-amber-100 border-amber-300 text-amber-700'
+            }`}>
+              <PenTool className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <span className="block font-black text-xs leading-tight">
+                {isSigned ? '✓ Kapıda Islak İmza Formu Alındı' : '⚠️ Kapıda Islak İmza Alınmalıdır'}
+              </span>
+              <span className="text-[11px] text-slate-600 font-medium block truncate mt-0.5">
+                {listInfo.folderLabel} • #{beneficiary.sira_no || beneficiary.mahalle_sira || beneficiary.id}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSigned(!isSigned);
+              if (errorMsg) setErrorMsg('');
+            }}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 ${
+              isSigned
+                ? 'bg-white hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+            }`}
+          >
+            {isSigned ? 'İmzayı Kaldır' : '✍️ İmzalandı'}
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Quick Option for Partial Beneficiaries: Complete with Remaining */}

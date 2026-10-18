@@ -7,7 +7,7 @@ import {
   ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban
+  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { 
@@ -166,17 +166,26 @@ export default function BeneficiaryList({
 
   const handleToggleSignature = async (person: any) => {
     const personId = String(person.id);
-    if (onToggleSignature) {
-      onToggleSignature(person);
-      return;
-    }
     const currentSigned = localSignatures[personId] !== undefined
       ? localSignatures[personId]
       : person.imza_durumu === 'IMZALANDI';
     const nextSigned = !currentSigned;
 
-    // Optimistic UI update
+    // Optimistic local UI update (0ms instant state change for unlock)
     setLocalSignatures((prev) => ({ ...prev, [personId]: nextSigned }));
+
+    if (nextSigned) {
+      showToast({
+        type: 'success',
+        title: 'Kapıda İmza Onaylandı',
+        message: `${person.ad_soyad} için ıslak imza alındı. Kömür teslimat butonu aktifleşti.`
+      });
+    }
+
+    if (onToggleSignature) {
+      onToggleSignature(person);
+      return;
+    }
 
     try {
       await fetch('/api/routes', {
@@ -1412,6 +1421,9 @@ export default function BeneficiaryList({
                       const stInfo = getRecordStreetInfo(person);
                       const hasHouseholdDuplicate = (householdCounts[person.norm_adres] || 0) > 1;
                       const listInfo = getBeneficiaryListTypeInfo(person);
+                      const isSigned = localSignatures[String(person.id)] !== undefined
+                        ? localSignatures[String(person.id)]
+                        : person.imza_durumu === 'IMZALANDI';
 
                       return (
                         <tr key={person.id} className={isPartial ? 'row-incomplete' : ''}>
@@ -1609,25 +1621,71 @@ export default function BeneficiaryList({
                                 )
                               ) : (
                                 <>
-                                  {isPartial ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenDelivery(person)}
-                                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
-                                    >
-                                      <PackagePlus className="w-3.5 h-3.5" />
-                                      <span>Kalanı Ver (+{kalan})</span>
-                                    </button>
-                                  ) : !isComplete ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenDelivery(person)}
-                                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95"
-                                    >
-                                      <PackageCheck className="w-3.5 h-3.5" />
-                                      <span>Teslim Et ({hedef})</span>
-                                    </button>
-                                  ) : null}
+                                  {!isComplete && (
+                                    <>
+                                      {/* 1. Adım: İmza Butonu (Önce aktif) */}
+                                      {isSigned ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleSignature(person)}
+                                          className="px-2 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 text-xs font-black flex items-center gap-1 shadow-2xs transition-all active:scale-95 shrink-0"
+                                          title="Kapıda ıslak imza alındı (İptal etmek için tıklayın)"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                          <span className="hidden xl:inline">İmzalı</span>
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleSignature(person)}
+                                          className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black flex items-center gap-1 shadow-sm transition-all active:scale-95 shrink-0"
+                                          title="Kömür teslimatını açabilmek için önce kapıda imza alınız"
+                                        >
+                                          <PenTool className="w-3.5 h-3.5 text-white" />
+                                          <span>✍️ İmza Al</span>
+                                        </button>
+                                      )}
+
+                                      {/* 2. Adım: Teslimat Butonu (Yalnızca imza alındıysa aktif) */}
+                                      {isSigned ? (
+                                        isPartial ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => onOpenDelivery(person)}
+                                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
+                                          >
+                                            <PackagePlus className="w-3.5 h-3.5" />
+                                            <span>Kalanı Ver (+{kalan})</span>
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => onOpenDelivery(person)}
+                                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1 shadow-sm transition-all active:scale-95"
+                                          >
+                                            <PackageCheck className="w-3.5 h-3.5" />
+                                            <span>Teslim Et ({hedef})</span>
+                                          </button>
+                                        )
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            showToast({
+                                              type: 'warning',
+                                              title: 'Önce İmza Alınmalıdır',
+                                              message: 'Lütfen kömür teslimatı yapmadan önce "✍️ İmza Al" butonuna basarak ıslak imzayı onaylayınız.'
+                                            });
+                                          }}
+                                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 text-xs font-bold flex items-center gap-1 cursor-not-allowed shadow-none transition-all"
+                                          title="Önce kapıda ıslak imza alınız (Teslimat butonu imza onayından sonra açılır)"
+                                        >
+                                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                          <span>Teslim Et ({hedef})</span>
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
                                   {(isComplete || isPartial) && onOpenCancel && (
                                     <button
                                       type="button"
@@ -2081,26 +2139,56 @@ export default function BeneficiaryList({
                         </div>
                       ) : isPartial ? (
                         <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center gap-1.5">
-                          <button
-                            onClick={() => onOpenDelivery(person)}
-                            className="btn-primary flex-1 lg:flex-none lg:w-auto lg:px-5 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5"
-                          >
-                            <PackagePlus className="w-4 h-4 text-white" />
-                            <span>Kalanı Tamamla (+{kalan} Torba)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSignature(person)}
-                            className={`px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 border shrink-0 ${
-                              isSigned
-                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-300 font-black'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                            title={isSigned ? 'Kapıda İmza Alındı (İptal etmek için tıklayın)' : 'Kapıda İmza Al'}
-                          >
-                            <PenTool className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>{isSigned ? 'İmzalı' : 'İmza Al'}</span>
-                          </button>
+                          {/* 1. Adım: İmza Butonu (Önce aktif olmalı) */}
+                          {isSigned ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSignature(person)}
+                              className="px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 shrink-0 shadow-2xs"
+                              title="Kapıda Islak İmza Alındı (İptal etmek için tıklayın)"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>✓ İmzalı</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSignature(person)}
+                              className="px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 shrink-0 shadow-sm"
+                              title="Kömür teslimatını tamamlamadan önce lütfen kapıda ıslak imza alınız"
+                            >
+                              <PenTool className="w-3.5 h-3.5 text-white" />
+                              <span>✍️ 1. Adım: İmza Al</span>
+                            </button>
+                          )}
+
+                          {/* 2. Adım: Teslimat Butonu (Yalnızca imza alındıysa aktif) */}
+                          {isSigned ? (
+                            <button
+                              onClick={() => onOpenDelivery(person)}
+                              className="btn-primary flex-1 lg:flex-none lg:w-auto lg:px-5 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                            >
+                              <PackagePlus className="w-4 h-4 text-white" />
+                              <span>Kalanı Tamamla (+{kalan} Torba)</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                showToast({
+                                  type: 'warning',
+                                  title: 'Önce İmza Alınmalıdır',
+                                  message: 'Eksik kömürü teslim etmeden önce lütfen "✍️ 1. Adım: İmza Al" butonuna dokunarak ıslak imzayı onaylayınız.'
+                                });
+                              }}
+                              className="flex-1 lg:flex-none lg:w-auto lg:px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 cursor-not-allowed flex items-center justify-center gap-1.5 transition-all shadow-none"
+                              title="Önce kapıda ıslak imza alınız (Teslimat butonu imza onayından sonra açılır)"
+                            >
+                              <Lock className="w-4 h-4 text-slate-400" />
+                              <span>Kalanı Tamamla (Önce İmza Alınız)</span>
+                            </button>
+                          )}
+
                           {onOpenCancel && (
                             <button
                               onClick={() => onOpenCancel(person)}
@@ -2113,27 +2201,56 @@ export default function BeneficiaryList({
                           )}
                         </div>
                       ) : !isComplete ? (
-                        <div className="flex-1 flex items-center gap-1.5">
-                          <button
-                            onClick={() => onOpenDelivery(person)}
-                            className="btn-primary flex-1 lg:flex-none lg:w-auto lg:px-5 py-2 text-xs font-bold"
-                          >
-                            <PackageCheck className="w-4 h-4 text-white" />
-                            Kömür Teslimatı Yap ({hedef} Torba)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSignature(person)}
-                            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 border shrink-0 ${
-                              isSigned
-                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-300 font-black'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                            title={isSigned ? 'Kapıda İmza Alındı (İptal etmek için tıklayın)' : 'Kapıda İmza Al'}
-                          >
-                            <PenTool className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>{isSigned ? 'İmzalı' : 'İmza Al'}</span>
-                          </button>
+                        <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center gap-1.5">
+                          {/* 1. Adım: İmza Butonu (Önce aktif olmalı) */}
+                          {isSigned ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSignature(person)}
+                              className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 shrink-0 shadow-2xs"
+                              title="Kapıda Islak İmza Alındı (İptal etmek için tıklayın)"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <span>✓ İmzalı</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSignature(person)}
+                              className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 shrink-0 shadow-sm"
+                              title="Teslimatı başlatmak için önce kapıda ıslak imza alınız"
+                            >
+                              <PenTool className="w-4 h-4 text-white" />
+                              <span>✍️ 1. Adım: İmza Al</span>
+                            </button>
+                          )}
+
+                          {/* 2. Adım: Teslimat Butonu (Yalnızca imza alındıysa aktif) */}
+                          {isSigned ? (
+                            <button
+                              onClick={() => onOpenDelivery(person)}
+                              className="btn-primary flex-1 lg:flex-none lg:w-auto lg:px-5 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                            >
+                              <PackageCheck className="w-4 h-4 text-white" />
+                              <span>Kömür Teslimatı Yap ({hedef} Torba)</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                showToast({
+                                  type: 'warning',
+                                  title: 'Önce İmza Alınmalıdır',
+                                  message: 'Kömür teslimatı yapmadan önce lütfen "✍️ 1. Adım: İmza Al" butonuna dokunarak ıslak imzayı onaylayınız.'
+                                });
+                              }}
+                              className="flex-1 lg:flex-none lg:w-auto lg:px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 cursor-not-allowed flex items-center justify-center gap-1.5 transition-all shadow-none"
+                              title="Kömür teslimatını açabilmek için önce ıslak imza almalısınız"
+                            >
+                              <Lock className="w-4 h-4 text-slate-400" />
+                              <span>Teslim Et (Önce İmza Alınız)</span>
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-semibold">

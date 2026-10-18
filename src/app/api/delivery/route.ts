@@ -181,6 +181,9 @@ export async function POST(request: NextRequest) {
             teslim_alan: encryptField(recipient),
             teslim_eden_personel: staff,
             teslimat_notu: encryptField(note),
+            imza_durumu: 'IMZALANDI',
+            imza_tarihi: localTimeStr,
+            imza_alan_personel: staff,
             updated_at: localTimeStr,
           },
         }
@@ -218,6 +221,7 @@ export async function POST(request: NextRequest) {
             s.teslim_eden_personel = staff;
             s.teslim_alan = recipient;
             s.teslimat_notu = note;
+            s.imza_durumu = 'IMZALANDI';
             s.daha_sonra_tamamlanacak = false;
             modified = true;
           }

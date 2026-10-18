@@ -948,6 +948,7 @@ export default function Home() {
             setHouseholdTarget(null);
             setKomurIptalTarget(person);
           }}
+          onToggleSignature={handleToggleSignature}
         />
       )}
 

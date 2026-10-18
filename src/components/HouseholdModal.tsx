@@ -1,7 +1,8 @@
 'use client';
 
-import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban } from 'lucide-react';
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
+import { useState } from 'react';
 
 interface HouseholdModalProps {
   person: any;
@@ -11,6 +12,7 @@ interface HouseholdModalProps {
   onOpenCancel?: (person: any) => void;
   onOpenEdit?: (person: any) => void;
   onOpenKomurIptal?: (person: any) => void;
+  onToggleSignature?: (person: any) => void;
 }
 
 export default function HouseholdModal({
@@ -21,9 +23,11 @@ export default function HouseholdModal({
   onOpenCancel,
   onOpenEdit,
   onOpenKomurIptal,
+  onToggleSignature,
 }: HouseholdModalProps) {
   const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
   const isPartial = person.teslimat_durumu === 'EKSIK';
+  const [isSigned, setIsSigned] = useState<boolean>(person.imza_durumu === 'IMZALANDI');
   const listInfo = getBeneficiaryListTypeInfo(person);
 
   return (
@@ -318,16 +322,62 @@ export default function HouseholdModal({
           )}
 
           {!isComplete && !person.komur_verilmeyecek && (
-            <button
-              onClick={() => {
-                onClose();
-                onOpenDelivery(person);
-              }}
-              className="btn-primary w-full mt-2 font-bold"
-            >
-              <PackageCheck className="w-4 h-4 text-white" />
-              {isPartial ? `Kalan ${person.kalan_torba} Torbayı Tamamla` : 'Kömür Teslimatı Yap'}
-            </button>
+            <div className="mt-2 space-y-2">
+              <div className={`p-2.5 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                isSigned
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                  : 'bg-amber-50 border-amber-300 text-amber-950'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <PenTool className={`w-4 h-4 ${isSigned ? 'text-emerald-700' : 'text-amber-700'}`} />
+                  <span>{isSigned ? '✓ Kapıda Islak İmza Alındı' : '⚠️ Islak İmza Henüz Alınmadı'}</span>
+                </div>
+                {onToggleSignature && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleSignature(person);
+                      setIsSigned(!isSigned);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-black transition-all active:scale-95 shadow-2xs ${
+                      isSigned
+                        ? 'bg-white hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                    }`}
+                  >
+                    {isSigned ? 'İmzalı' : '✍️ 1. Adım: İmza Al'}
+                  </button>
+                )}
+              </div>
+
+              {isSigned ? (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenDelivery(person);
+                  }}
+                  className="btn-primary w-full font-bold"
+                >
+                  <PackageCheck className="w-4 h-4 text-white" />
+                  {isPartial ? `Kalan ${person.kalan_torba} Torbayı Tamamla` : 'Kömür Teslimatı Yap'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleSignature) {
+                      onToggleSignature(person);
+                      setIsSigned(true);
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 border border-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-none"
+                  title="Önce kapıda ıslak imza alınız"
+                >
+                  <Lock className="w-4 h-4 text-slate-400" />
+                  <span>Kömür Teslimatı Yap (Önce İmza Alınız)</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -427,16 +477,42 @@ export default function HouseholdModal({
                         Teslim Edildi
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onOpenDelivery(member);
-                        }}
-                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-xs transition-all active:scale-95"
-                      >
-                        Teslim Et
-                      </button>
+                      member.imza_durumu === 'IMZALANDI' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenDelivery(member);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all active:scale-95"
+                        >
+                          Teslim Et
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          {onToggleSignature && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleSignature(member)}
+                              className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-xs transition-all active:scale-95"
+                              title="Önce kapıda imza alınız"
+                            >
+                              ✍️ İmza Al
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onToggleSignature) onToggleSignature(member);
+                            }}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300 rounded-lg text-xs font-bold shadow-none cursor-not-allowed"
+                            title="Önce kapıda ıslak imza alınız"
+                          >
+                            <Lock className="w-3 h-3 text-slate-400 inline mr-0.5" />
+                            Teslim Et
+                          </button>
+                        </div>
+                      )
                     )}
                   </div>
                 </div>
