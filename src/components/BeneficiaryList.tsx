@@ -299,11 +299,11 @@ export default function BeneficiaryList({
   }, [availableStreets, selectedSokak]);
 
   const totalSignedCount = useMemo(() => {
-    return activeDisplayList.filter((r) => {
+    return mahalleFilteredList.filter((r) => {
       const pId = String(r.id);
       return localSignatures[pId] !== undefined ? localSignatures[pId] : r.imza_durumu === 'IMZALANDI';
     }).length;
-  }, [activeDisplayList, localSignatures]);
+  }, [mahalleFilteredList, localSignatures]);
 
   // Filter records by selected street and signature status
   const streetFilteredList = useMemo(() => {
@@ -558,19 +558,86 @@ export default function BeneficiaryList({
 
       {/* ARAMA MODU: Sade, Hızlı ve Pratik Arama Bilgi Çubuğu */}
       {isSearching && (
-        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-2xl px-3.5 py-2.5 shadow-xs">
-          <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5 truncate">
-            <Search className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span>Arama Sonucu:</span>
-            <strong className="text-slate-900 font-extrabold">{activeDisplayList.length} Hane Bulundu</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => onSearchChange('')}
-            className="text-xs font-bold text-rose-600 hover:text-rose-800 underline active:scale-95 shrink-0 ml-2"
-          >
-            Aramayı Temizle
-          </button>
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 shadow-xs space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-amber-950">
+              <Search className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Arama Sonucu:</span>
+              <strong className="text-slate-900 font-extrabold">{totalFilteredRecords} Hane Bulundu</strong>
+
+              {/* Aktif Filtre Etiketleri */}
+              {selectedMahalleler.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-lg border border-amber-300">
+                  <MapPin className="w-3 h-3 text-amber-700" />
+                  <span>{selectedMahalleler.length === 1 ? selectedMahalleler[0] : `${selectedMahalleler.length} Mahalle`}</span>
+                  <button
+                    type="button"
+                    onClick={() => onMahallelerChange([])}
+                    className="hover:text-rose-700 ml-0.5 font-black text-xs"
+                    title="Mahalle filtresini kaldır"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
+              {selectedSokak !== 'HEPSI' && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-900 bg-sky-100/90 px-2 py-0.5 rounded-lg border border-sky-300">
+                  <Navigation className="w-3 h-3 text-sky-700" />
+                  <span>{selectedSokak}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSokak('HEPSI')}
+                    className="hover:text-rose-700 ml-0.5 font-black text-xs"
+                    title="Sokak filtresini kaldır"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
+              {(selectedMahalleler.length > 0 || selectedSokak !== 'HEPSI') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMahallelerChange([]);
+                    setSelectedSokak('HEPSI');
+                  }}
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 underline active:scale-95"
+                >
+                  Filtreleri Temizle
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onSearchChange('')}
+                className="text-xs font-bold text-rose-600 hover:text-rose-800 underline active:scale-95"
+              >
+                Aramayı Temizle
+              </button>
+            </div>
+          </div>
+
+          {/* Filtreli Mahallede/Sokakta 0 kayıt çıkıp diğer mahallelerde eşleşen kayıt varsa kullanıcıya anında çözüm sun */}
+          {totalFilteredRecords === 0 && searchFilteredRecords.length > 0 && (
+            <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-amber-900 font-medium">
+                Seçili filtrelerde kayıt bulunamadı ancak diğer mahallelerde <strong className="text-slate-900 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onMahallelerChange([]);
+                  setSelectedSokak('HEPSI');
+                }}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-extrabold text-xs shadow-xs active:scale-95 transition-all"
+              >
+                Tüm Mahallelerde Göster ({searchFilteredRecords.length})
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -854,7 +921,7 @@ export default function BeneficiaryList({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Tümü ({activeDisplayList.length})
+                  Tümü ({mahalleFilteredList.length})
                 </button>
                 <button
                   type="button"
@@ -877,7 +944,7 @@ export default function BeneficiaryList({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  İmzasız ({Math.max(0, activeDisplayList.length - totalSignedCount)})
+                  İmzasız ({Math.max(0, mahalleFilteredList.length - totalSignedCount)})
                 </button>
               </div>
 
@@ -996,7 +1063,7 @@ export default function BeneficiaryList({
                     : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
                 }`}
               >
-                Tüm Sokaklar ({activeDisplayList.length})
+                Tüm Sokaklar ({mahalleFilteredList.length})
               </button>
               {availableStreets.map((st) => (
                 <button
@@ -1052,7 +1119,7 @@ export default function BeneficiaryList({
           <div className="flex items-center justify-between text-xs text-slate-500 px-1">
             <span>
               {selectedQueueTab === 'PENDING_AND_PARTIAL' ? 'Kömür Dağıtılacak: ' : 'Teslim Edilen: '}
-              <strong className="text-slate-900 font-bold">{activeDisplayList.length} Hane</strong> • Hedef Kota: <strong className="text-amber-700">{defaultQuota} Torba</strong>
+              <strong className="text-slate-900 font-bold">{totalFilteredRecords} Hane</strong> • Hedef Kota: <strong className="text-amber-700">{defaultQuota} Torba</strong>
             </span>
           </div>
         </>
@@ -1067,7 +1134,7 @@ export default function BeneficiaryList({
       )}
 
       {/* Empty State */}
-      {(!isLoading || records.length > 0) && activeDisplayList.length === 0 && (
+      {(!isLoading || records.length > 0) && totalFilteredRecords === 0 && (
         isSearching ? (
           <div className="p-8 text-center rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
@@ -1076,16 +1143,47 @@ export default function BeneficiaryList({
             <p className="text-base font-extrabold text-slate-900">
               Aramanızla Eşleşen Kayıt Bulunamadı
             </p>
-            <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-              <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> için TC Kimlik No veya Hak Sahibi (Ad Soyad) kaydı bulunamadı.
-            </p>
-            <button
-              type="button"
-              onClick={() => onSearchChange('')}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 border border-slate-200 shadow-2xs"
-            >
-              <span>✕ Aramayı Temizle</span>
-            </button>
+            {selectedMahalleler.length > 0 && searchFilteredRecords.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                  Seçili bölge filtresinde (<strong className="text-slate-900 font-bold">{selectedMahalleler.join(', ')}</strong>) <strong className="text-amber-800 font-bold">&ldquo;{searchQuery}&rdquo;</strong> için hak sahibi bulunamadı.
+                  <br />
+                  Ancak sistemdeki diğer mahallelerde <strong className="text-emerald-700 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onMahallelerChange([]);
+                      setSelectedSokak('HEPSI');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+                  >
+                    <span>Tüm Mahallelerde Göster ({searchFilteredRecords.length} Hane)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSearchChange('')}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs inline-flex items-center gap-1 transition-all active:scale-95 border border-slate-200"
+                  >
+                    <span>Aramayı Temizle</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                  <strong className="text-amber-800">&ldquo;{searchQuery}&rdquo;</strong> için TC Kimlik No veya Hak Sahibi (Ad Soyad) kaydı bulunamadı.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onSearchChange('')}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 border border-slate-200 shadow-2xs"
+                >
+                  <span>✕ Aramayı Temizle</span>
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="p-10 text-center rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
@@ -1257,7 +1355,7 @@ export default function BeneficiaryList({
                               <div className="font-bold text-sky-950 flex items-start gap-1 break-words whitespace-normal leading-snug">
                                 <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
                                 <div className="min-w-0 flex-1 break-words">
-                                  <span>{stInfo.sokak} No: {stInfo.kapiNo !== 999999 ? stInfo.kapiNo : (person.hane_no || '-')}</span>
+                                  <span>{stInfo.sokak}{stInfo.kapiNo !== 999999 ? ` No: ${stInfo.kapiNo}` : ''}</span>
                                   {stInfo.daireNo > 0 && <span className="text-sky-700 ml-1">D: {stInfo.daireNo}</span>}
                                   {person.fiili_adres_guncellendi && (
                                     <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1 py-0.2 rounded border border-sky-300 ml-1 inline-block shrink-0" title="Fiili ikamet adresi güncellendi">
@@ -1469,10 +1567,10 @@ export default function BeneficiaryList({
                               <span className="inline-flex items-center gap-1 font-bold text-sky-900 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
                                 <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
                                 <span>{stInfo.sokak}</span>
-                                {stInfo.kapiNo && (
+                                {stInfo.kapiNo !== 999999 && (
                                   <strong className="text-sky-950 font-black">No: {stInfo.kapiNo}</strong>
                                 )}
-                                {stInfo.daireNo && (
+                                {stInfo.daireNo > 0 && (
                                   <span className="text-sky-700">D: {stInfo.daireNo}</span>
                                 )}
                               </span>
@@ -1480,16 +1578,16 @@ export default function BeneficiaryList({
                           )}
                         </div>
 
-                        {/* Distinct Phone Badges */}
+                        {/* Doğrudan Arama Bağlantılı Telefon Bilgisi */}
                         {phones.length === 1 && (
-                          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-slate-600">
-                            <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <div className="flex items-center gap-1.5 mt-1.5 text-xs">
                             <a
                               href={`tel:${phones[0]}`}
-                              className="font-mono font-bold text-slate-800 hover:text-emerald-700 hover:underline"
-                              title="Doğrudan Ara"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-950 font-mono text-xs font-bold transition-all active:scale-95 shadow-2xs"
+                              title={`${formatPhoneDisplay(phones[0])} - Aramak için tıklayın`}
                             >
-                              {formatPhoneDisplay(phones[0])}
+                              <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>{formatPhoneDisplay(phones[0])}</span>
                             </a>
                           </div>
                         )}
@@ -1498,8 +1596,8 @@ export default function BeneficiaryList({
                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <a
                               href={`tel:${phones[0]}`}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold transition-all active:scale-95 shadow-2xs"
-                              title="1. Numarayı Ara"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold transition-all active:scale-95 shadow-2xs"
+                              title={`1. Tel: ${formatPhoneDisplay(phones[0])} - Aramak için tıklayın`}
                             >
                               <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
                               <span className="text-[10px] font-sans font-extrabold text-emerald-700 mr-0.5">1:</span>
@@ -1507,8 +1605,8 @@ export default function BeneficiaryList({
                             </a>
                             <a
                               href={`tel:${phones[1]}`}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-950 font-mono text-[11px] font-bold transition-all active:scale-95 shadow-2xs"
-                              title="2. Numarayı Ara"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-950 font-mono text-[11px] font-bold transition-all active:scale-95 shadow-2xs"
+                              title={`2. Tel: ${formatPhoneDisplay(phones[1])} - Aramak için tıklayın`}
                             >
                               <Phone className="w-3 h-3 text-teal-600 shrink-0" />
                               <span className="text-[10px] font-sans font-extrabold text-teal-700 mr-0.5">2:</span>
@@ -1634,36 +1732,15 @@ export default function BeneficiaryList({
                           )}
                           {person.hane_no && (
                             <span className="inline-block mt-1 text-[11px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">
-                              Hane / Kapı No: {person.hane_no}
+                              Hane No: {person.hane_no}
                             </span>
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Action Row: Phone & Delivery Action */}
+                    {/* Action Row: Teslimat ve İmza İşlemleri */}
                     <div className="mt-3 flex items-center gap-2">
-                      {phones.length === 1 ? (
-                        <a
-                          href={`tel:${phones[0]}`}
-                          className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-emerald-700 hover:text-emerald-800 shrink-0 flex items-center justify-center transition-all active:scale-95 shadow-xs"
-                          title={`${formatPhoneDisplay(phones[0])} Numarasını Ara`}
-                        >
-                          <Phone className="w-4 h-4" />
-                        </a>
-                      ) : phones.length >= 2 ? (
-                        <button
-                          type="button"
-                          onClick={() => setPhoneSelectTarget(person)}
-                          className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 shrink-0 flex items-center justify-center gap-1 transition-all active:scale-95 shadow-xs relative"
-                          title="Telefon Numarası Seç ve Ara (2 Numara Kayıtlı)"
-                        >
-                          <Phone className="w-4 h-4 text-emerald-700" />
-                          <span className="text-[10px] font-black bg-emerald-600 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">
-                            2
-                          </span>
-                        </button>
-                      ) : null}
 
                       {isPartial ? (
                         <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center gap-1.5">
@@ -1991,7 +2068,7 @@ export default function BeneficiaryList({
                   <span className="text-xs font-bold text-slate-900">Tüm Sokakları Göster</span>
                 </div>
                 <span className="text-xs font-bold text-sky-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  {activeDisplayList.length} Hane
+                  {mahalleFilteredList.length} Hane
                 </span>
               </div>
 

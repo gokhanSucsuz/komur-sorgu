@@ -389,7 +389,7 @@ export async function POST(request: NextRequest) {
     }
 
     const settlement = detectSettlement(mahalle, body.koy, acik_adres);
-    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, cleanedHaneNo, settlement.name);
+    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, body.kapi_no, settlement.name);
     const normAdres = normalizeAddress(settlement.name, acik_adres);
 
     // Not: Gecekonduların veya müstakil yapıların yoğun olduğu bölgelerde
@@ -551,7 +551,7 @@ export async function PUT(request: NextRequest) {
     const streetInfo = extractStreetAndDoor(
       newAcikAdres,
       sokak !== undefined ? sokak : existing.sokak,
-      kapi_no !== undefined ? kapi_no : (existing.kapi_no || newCleanHane),
+      kapi_no !== undefined ? kapi_no : existing.kapi_no,
       settlement.name
     );
     const normAdres = normalizeAddress(settlement.name, newAcikAdres);

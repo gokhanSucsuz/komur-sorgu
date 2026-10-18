@@ -637,25 +637,34 @@ export function extractStreetAndDoor(
   }
 
   // Extract door number
+  // 1. Önce açık adres metninde (acik_adres) yer alan gerçek kapı/bina numarasını ara
   let door = 999999;
-  if (rawHane) {
-    const parsedHane = parseInt(rawHane.toString().replace(/[^0-9]/g, ''), 10);
-    if (!isNaN(parsedHane) && parsedHane > 0) {
-      door = parsedHane;
-    }
-  }
+  if (addr) {
+    const doorMatch =
+      addr.match(/(?:Dış\s*Kapı|Dis\s*Kapi|Kapı|Kapi|Bina|Hane\s*Kapı|Hane\s*Kapi|No)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
+      addr.match(/(?:Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Caddesi|Cad\.|Cad|Cd\.|Cd|Bulvarı|Bulvar|Küme\s+Evleri|Yolu)\s*[:.]?\s*(?:No[:.]?\s*)?(\d+)/i) ||
+      addr.match(/\b(\d+)\s*(?:\/|\s+Daire|\s+D:|\s*Kat)/i);
 
-  if (door === 999999 && addr) {
-    const doorMatch = addr.match(/(?:No|Kapı|Kapi|Hane|Bina)\s*[:.]?\s*(\d+)/i) || addr.match(/\b(\d+)\s*(?:\/|\s+Daire|\s+D:|\s*$|\s*Kat)/i);
     if (doorMatch) {
       door = parseInt(doorMatch[1], 10);
     }
   }
 
-  // Extract apartment number
+  // 2. Eğer açık adreste kapı no bulunamadıysa ve harici açık bir kapı no (rawHane / explicitDoor) verilmişse kullan
+  // (NOT: Hane dosya numarası kapı numarası yerine KULLANILMAZ!)
+  if (door === 999999 && rawHane !== undefined && rawHane !== null) {
+    const parsedDoor = parseInt(rawHane.toString().replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(parsedDoor) && parsedDoor > 0 && parsedDoor !== 999999) {
+      door = parsedDoor;
+    }
+  }
+
+  // Extract apartment number (Daire No / İç Kapı No)
   let apt = 0;
   if (addr) {
-    const aptMatch = addr.match(/(?:Daire|D|Kat|İç Kapı|Ic Kapi)\s*[:.]?\s*(\d+)/i) || addr.match(/\/\s*(\d+)/);
+    const aptMatch =
+      addr.match(/(?:İç\s*Kapı|Ic\s*Kapi|Daire|D\.|Kat)\s*(?:No|Numarası|Numarasi)?\s*[:.]?\s*(\d+)/i) ||
+      addr.match(/(?:No\s*[:.]?\s*\d+\s*[\/-]\s*|\/\s*)(\d+)/i);
     if (aptMatch) {
       apt = parseInt(aptMatch[1], 10);
     }
@@ -685,14 +694,36 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
     rawAdres = '';
   }
 
-  if (rawSokak && !rawSokak.startsWith('ENC:') && record.kapi_no !== undefined && record.kapi_no !== null) {
-    return {
-      sokak: rawSokak,
-      kapiNo: typeof record.kapi_no === 'number' ? record.kapi_no : (parseInt(record.kapi_no, 10) || 999999),
-      daireNo: record.daire_no || 0,
-    };
+  // Her zaman açık adresteki gerçek sokak ve kapı no bilgisini çözümle
+  const extracted = extractStreetAndDoor(rawAdres, rawSokak, record.kapi_no, record.mahalle);
+
+  // Sokak belirleme: Öncelik extracted.sokak, genel/boş ise rawSokak
+  let finalSokak = extracted.sokak;
+  if ((!finalSokak || finalSokak === 'Köy İçi / Sokak Belirtilmemiş' || finalSokak === 'Köy İçi / Ana Yol') && rawSokak) {
+    finalSokak = rawSokak;
   }
-  return extractStreetAndDoor(rawAdres, rawSokak, record.hane_no, record.mahalle);
+
+  // Kapı no belirleme:
+  // 1. Açık adresten başarıyla ayıklanan kapı no daima önceliklidir (örneğin "No: 14" varsa 14)
+  let finalKapiNo = extracted.kapiNo;
+
+  // 2. Eğer açık adreste kapı no bulunamadıysa ve veritabanında geçerli bir kapi_no varsa
+  // (ancak hane_no ile birebir aynı olmamalı - eski hatalı import kalıntısını engellemek için)
+  if (finalKapiNo === 999999 && record.kapi_no !== undefined && record.kapi_no !== null && record.kapi_no !== 999999) {
+    const dbKapi = typeof record.kapi_no === 'number' ? record.kapi_no : parseInt(record.kapi_no, 10);
+    const dbHane = record.hane_no ? parseInt(String(record.hane_no).replace(/[^0-9]/g, ''), 10) : null;
+    if (!isNaN(dbKapi) && dbKapi > 0 && dbKapi !== dbHane) {
+      finalKapiNo = dbKapi;
+    }
+  }
+
+  let finalDaireNo = extracted.daireNo > 0 ? extracted.daireNo : (record.daire_no || 0);
+
+  return {
+    sokak: finalSokak || 'Köy İçi / Sokak Belirtilmemiş',
+    kapiNo: finalKapiNo,
+    daireNo: finalDaireNo,
+  };
 }
 
 /**

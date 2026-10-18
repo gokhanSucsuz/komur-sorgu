@@ -1,5 +1,5 @@
 import { MongoClient, Db, ObjectId, ServerApiVersion } from 'mongodb';
-import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName } from './normalizer';
+import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName, getRecordStreetInfo } from './normalizer';
 import {
   encryptBeneficiary,
   decryptBeneficiary,
@@ -624,6 +624,9 @@ async function initializeIndexesAndSeed(db: Db) {
 
   // 4. Mahalle İsimleri İyileştirme Migrasyonu: "Yıl Mahallesi", "Yıl Mah." -> "100. Yıl Mah."
   await migrateMahalleNames(db);
+
+  // 5. Kapı No ve Sokak Senkronizasyonu: Açık adresteki gerçek kapı no ve sokak ile eşitle
+  await migrateKapiNoAndStreets(db);
 }
 
 function seedInMemoryStore(store: Record<string, any[]>) {
@@ -1237,6 +1240,61 @@ export async function migrateMahalleNames(db?: Db | null) {
           l.cakisan_hane_no = encryptField(l.cakisan_hane_no);
         }
       }
+    }
+  }
+}
+
+/**
+ * Migrates and synchronizes door numbers (kapi_no) and street names from acik_adres.
+ * Repairs records where kapi_no was previously contaminated with hane_no or where door numbers in acik_adres were not reflected.
+ */
+export async function migrateKapiNoAndStreets(db?: Db | null) {
+  if (db) {
+    try {
+      const settings = db.collection('system_settings');
+      const migFlag = await settings.findOne({ key: 'migrations_kapi_no_sync_v1_done' });
+      if (migFlag?.value === 'true') {
+        return;
+      }
+
+      const benCol = db.collection('beneficiaries');
+      const allBens = await benCol.find({}).toArray();
+      let updatedCount = 0;
+
+      for (const rawB of allBens) {
+        const b = mapDoc(rawB);
+        if (!b.acik_adres) continue;
+
+        const streetInfo = getRecordStreetInfo(b);
+        const shouldUpdateKapi = streetInfo.kapiNo !== 999999 && b.kapi_no !== streetInfo.kapiNo;
+        const shouldUpdateSokak = streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş' && b.sokak !== streetInfo.sokak;
+
+        if (shouldUpdateKapi || shouldUpdateSokak) {
+          const updateFields: any = {
+            updated_at: new Date().toLocaleString('tr-TR'),
+          };
+          if (streetInfo.kapiNo !== 999999) {
+            updateFields.kapi_no = streetInfo.kapiNo;
+          }
+          if (streetInfo.daireNo > 0) {
+            updateFields.daire_no = streetInfo.daireNo;
+          }
+          if (streetInfo.sokak && streetInfo.sokak !== 'Köy İçi / Sokak Belirtilmemiş') {
+            updateFields.sokak = isEncrypted(rawB.sokak) ? encryptField(streetInfo.sokak) : streetInfo.sokak;
+          }
+
+          await benCol.updateOne({ _id: rawB._id }, { $set: updateFields });
+          updatedCount++;
+        }
+      }
+
+      await settings.updateOne(
+        { key: 'migrations_kapi_no_sync_v1_done' },
+        { $set: { key: 'migrations_kapi_no_sync_v1_done', value: 'true', updated_count: updatedCount, completed_at: new Date().toISOString() } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.error('[Migration] Kapı No ve Sokak senkronizasyon hatası:', err);
     }
   }
 }

@@ -2832,7 +2832,7 @@ export default function RoutePage({
                               )}
                             </div>
                             <div className="text-[11px] text-slate-500 truncate">
-                              {person.mahalle} • {st.sokak || person.acik_adres} {st.kapiNo ? `No:${st.kapiNo}` : ''}
+                              {person.mahalle} • {st.sokak || person.acik_adres} {st.kapiNo && st.kapiNo !== 999999 ? `No: ${st.kapiNo}` : ''}
                             </div>
                           </div>
                         </div>
@@ -2953,8 +2953,8 @@ export default function RoutePage({
                             <div className="text-[11px] text-slate-600 truncate mt-0.5">
                               <strong className="text-slate-800">{person.mahalle}</strong>
                               {st.sokak && <span> • {st.sokak}</span>}
-                              {st.kapiNo && <span> No:{st.kapiNo}</span>}
-                              {st.daireNo && <span> D:{st.daireNo}</span>}
+                              {st.kapiNo && st.kapiNo !== 999999 ? <span> No:{st.kapiNo}</span> : null}
+                              {st.daireNo && st.daireNo > 0 ? <span> D:{st.daireNo}</span> : null}
                             </div>
                           </div>
                         </div>
@@ -3646,7 +3646,7 @@ export default function RoutePage({
                           <td className="p-2.5 font-bold text-slate-900 break-words whitespace-normal max-w-[140px] leading-snug">{stop.ad_soyad}</td>
                           <td className="p-2.5 text-slate-600 break-words whitespace-normal max-w-[180px] leading-snug">
                             <span className="font-semibold text-slate-900">{stop.mahalle}</span>
-                            {stop.sokak && <span className="block text-[11px] text-slate-500 font-medium">{stop.sokak} No: {stop.kapi_no || '-'}</span>}
+                            {stop.sokak && <span className="block text-[11px] text-slate-500 font-medium">{stop.sokak}{stop.kapi_no && stop.kapi_no !== 999999 && stop.kapi_no !== '999999' ? ` No: ${stop.kapi_no}` : ''}</span>}
                           </td>
                           <td className="p-2.5 text-center font-black text-slate-900">
                             {stop.teslim_edilen_torba ? `${stop.teslim_edilen_torba} Torba` : '-'}
@@ -3985,7 +3985,7 @@ export default function RoutePage({
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-slate-600 truncate mt-0.5">
-                                    {dStop.mahalle} {dStop.sokak ? `• ${dStop.sokak} No:${dStop.kapi_no || '-'}` : ''}
+                                    {dStop.mahalle} {dStop.sokak ? `• ${dStop.sokak}${dStop.kapi_no && dStop.kapi_no !== 999999 && dStop.kapi_no !== '999999' ? ` No:${dStop.kapi_no}` : ''}` : ''}
                                   </p>
                                   <p className="text-[10px] text-amber-800 font-bold mt-0.5">
                                     {dStop.durum === 'EKSIK'
@@ -4129,12 +4129,12 @@ export default function RoutePage({
                                   {currentStop.sokak}
                                 </span>
                                 <div className="flex items-center gap-1.5">
-                                  {currentStop.kapi_no && (
+                                  {currentStop.kapi_no && currentStop.kapi_no !== 999999 && currentStop.kapi_no !== '999999' && (
                                     <span className="px-2.5 py-1 rounded-xl bg-amber-500 text-white font-black text-sm sm:text-base shadow-2xs">
                                       KAPI NO: {currentStop.kapi_no}
                                     </span>
                                   )}
-                                  {currentStop.daire_no && (
+                                  {currentStop.daire_no && currentStop.daire_no > 0 && (
                                     <span className="px-2.5 py-1 rounded-xl bg-slate-800 text-white font-black text-xs sm:text-sm">
                                       DAİRE: {currentStop.daire_no}
                                     </span>
@@ -4642,7 +4642,7 @@ export default function RoutePage({
                           {nextStopInOrder.ad_soyad} —{' '}
                           <span className="text-sky-700">
                             {nextStopInOrder.sokak
-                              ? `${nextStopInOrder.sokak} No:${nextStopInOrder.kapi_no || '-'}`
+                              ? `${nextStopInOrder.sokak}${nextStopInOrder.kapi_no && nextStopInOrder.kapi_no !== 999999 && nextStopInOrder.kapi_no !== '999999' ? ` No:${nextStopInOrder.kapi_no}` : ''}`
                               : nextStopInOrder.mahalle}
                           </span>
                         </span>

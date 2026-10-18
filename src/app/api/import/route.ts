@@ -321,8 +321,8 @@ export async function POST(request: NextRequest) {
       const mahalle = settlement.name; // e.g. "Cumhuriyet Mah." or "Dereköy Köyü"
       const yerlesimTipi = settlement.type; // 'MAHALLE' or 'KOY'
 
-      if (!acikAdres && (rawStreet || rawKapiNo || haneNo)) {
-        acikAdres = `${rawStreet ? rawStreet + ' ' : ''}${rawKapiNo ? 'No: ' + rawKapiNo : (haneNo ? 'No: ' + haneNo : '')}`.trim();
+      if (!acikAdres && (rawStreet || rawKapiNo)) {
+        acikAdres = `${rawStreet ? rawStreet + ' ' : ''}${rawKapiNo ? 'No: ' + rawKapiNo : ''}`.trim();
       }
 
       if (!acikAdres && mahalle) {
@@ -330,7 +330,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Auto-extract Street and Door info for natural ordering and street-level filtering
-      const streetInfo = extractStreetAndDoor(acikAdres, rawStreet, rawKapiNo || haneNo, mahalle);
+      const streetInfo = extractStreetAndDoor(acikAdres, rawStreet, rawKapiNo, mahalle);
       const sokak = streetInfo.sokak;
       const kapiNo = streetInfo.kapiNo;
       let daireNo = streetInfo.daireNo;
