@@ -1373,7 +1373,7 @@ export async function migrateFixMerkezAndStreets(db?: Db | null) {
   if (db) {
     try {
       const settings = db.collection('system_settings');
-      const migFlag = await settings.findOne({ key: 'migrations_fix_merkez_and_streets_v1_done' });
+      const migFlag = await settings.findOne({ key: 'migrations_fix_merkez_and_streets_v2_village_name_done' });
       if (migFlag?.value === 'true') {
         return;
       }
@@ -1401,6 +1401,12 @@ export async function migrateFixMerkezAndStreets(db?: Db | null) {
 
         // 2. Sokak ve Kapı No ayıklama ve kadastro '_' temizliği
         const streetInfo = extractStreetAndDoor(plainAdres, plainSokak, rawB.kapi_no, newMahalle);
+
+        const isCurrentVillage = (newMahalle && /(?:Köyü|Koy|Koyu)$/i.test(newMahalle)) || newYerlesim === 'KOY';
+        if (isCurrentVillage) {
+          // Köylerde sokak adı olmadığı için sokak doğrudan köy adı olarak atanır
+          streetInfo.sokak = newMahalle;
+        }
 
         const mahalleChanged = newMahalle !== currentMahalle;
         const yerlesimChanged = newYerlesim !== currentYerlesim;
@@ -1455,8 +1461,8 @@ export async function migrateFixMerkezAndStreets(db?: Db | null) {
       );
 
       await settings.updateOne(
-        { key: 'migrations_fix_merkez_and_streets_v1_done' },
-        { $set: { key: 'migrations_fix_merkez_and_streets_v1_done', value: 'true', updated_count: updatedCount, completed_at: new Date().toISOString() } },
+        { key: 'migrations_fix_merkez_and_streets_v2_village_name_done' },
+        { $set: { key: 'migrations_fix_merkez_and_streets_v2_village_name_done', value: 'true', updated_count: updatedCount, completed_at: new Date().toISOString() } },
         { upsert: true }
       );
       console.log(`[Migration] fix_merkez_and_streets tamamlandı. ${updatedCount} kayıt güncellendi.`);
@@ -1474,10 +1480,9 @@ export async function migrateFixMerkezAndStreets(db?: Db | null) {
         b.mahalle = det.name;
         b.yerlesim_tipi = det.type;
       }
+      const isVillage = (b.mahalle && /(?:Köyü|Koy|Koyu)$/i.test(b.mahalle)) || b.yerlesim_tipi === 'KOY';
       const streetInfo = extractStreetAndDoor(b.acik_adres, b.sokak, b.kapi_no, b.mahalle);
-      if (streetInfo.sokak) {
-        b.sokak = streetInfo.sokak;
-      }
+      b.sokak = isVillage ? b.mahalle : (streetInfo.sokak || b.sokak);
       if (streetInfo.kapiNo !== 999999 && streetInfo.kapiNo !== '999999') {
         b.kapi_no = streetInfo.kapiNo;
       }

@@ -908,24 +908,30 @@ export function extractStreetAndDoor(
     }
   }
 
-  // Fallback if still no street identified
-  if (!street) {
-    if (addr) {
-      if (isVillage) {
-        if (/k[oö]y\s+[iı]çi/i.test(addr)) {
-          street = 'Köy İçi Mevkii';
-        } else if (/cami\s+yan/i.test(addr)) {
-          street = 'Cami Yanı Mevkii';
-        } else if (/k[üu]me\s+evleri/i.test(addr)) {
-          street = 'Küme Evleri';
-        } else {
-          street = 'Köy İçi / Ana Yol';
-        }
-      } else {
-        street = 'Mahalle İçi / Cadde-Sokak Belirtilmemiş';
-      }
-    } else {
-      street = isVillage ? 'Köy İçi / Sokak Belirtilmemiş' : 'Mahalle İçi / Cadde-Sokak Belirtilmemiş';
+  let villageName = '';
+  if (isVillage) {
+    if (mahalleName && /(?:Köyü|Koy|Koyu)$/i.test(mahalleName)) {
+      villageName = mahalleName;
+    } else if (addr) {
+      const det = detectSettlement(null, null, addr);
+      if (det.type === 'KOY') villageName = det.name;
+    }
+  }
+
+  // Fallback if still no street identified, or if village record
+  if (isVillage) {
+    // Köylerde sokak ismi olmadığı için "Köy İçi" yerine doğrudan köy adı yazılır
+    if (
+      !street ||
+      /k[oö]y\s+[iı]çi/i.test(street) ||
+      /(?:küme\s+evleri|kume\s+evleri|mevkii|mevki|yolu)/i.test(street) ||
+      !/(?:Cad\.|Sok\.)\b/i.test(street)
+    ) {
+      street = villageName || street || 'Köy';
+    }
+  } else {
+    if (!street || /k[oö]y\s+[iı]çi/i.test(street)) {
+      street = 'Mahalle İçi / Cadde-Sokak Belirtilmemiş';
     }
   }
 
@@ -1061,8 +1067,9 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
   kapiNo: string | number;
   daireNo: number;
 } {
-  const isVillage = record?.mahalle ? /(?:Köyü|Koy|Koyu)$/i.test(record.mahalle) : false;
-  const fallbackSokak = isVillage ? 'Köy İçi / Sokak Belirtilmemiş' : 'Mahalle İçi / Cadde-Sokak Belirtilmemiş';
+  const isVillage = record?.mahalle ? /(?:Köyü|Koy|Koyu)$/i.test(record.mahalle) : (record?.yerlesim_tipi === 'KOY');
+  const villageName = (record?.mahalle && /(?:Köyü|Koy|Koyu)$/i.test(record.mahalle)) ? record.mahalle : '';
+  const fallbackSokak = isVillage ? (villageName || 'Köy') : 'Mahalle İçi / Cadde-Sokak Belirtilmemiş';
 
   if (!record) return { sokak: fallbackSokak, kapiNo: 999999, daireNo: 0 };
 
@@ -1082,30 +1089,43 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
 
   // Sokak belirleme: Öncelik extracted.sokak, genel/boş ise rawSokak
   let finalSokak = extracted.sokak;
-  if (
-    (!finalSokak ||
-      finalSokak === 'Köy İçi / Sokak Belirtilmemiş' ||
-      finalSokak === 'Köy İçi / Ana Yol' ||
-      finalSokak === 'Mahalle İçi / Cadde-Sokak Belirtilmemiş') &&
-    rawSokak
-  ) {
-    let cleanedRaw = rawSokak.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!isVillage && /(?:k[oö]y\s+[iı]çi|k[oö]y)/i.test(cleanedRaw)) {
-      // Don't keep "Köy İçi" if it's a neighborhood!
-    } else if (cleanedRaw) {
-      finalSokak = cleanedRaw;
-    }
-  }
 
-  if (finalSokak) {
-    finalSokak = finalSokak.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!isVillage && /(?:k[oö]y\s+[iı]çi|k[oö]y\s+içi)/i.test(finalSokak)) {
+  if (isVillage) {
+    // Köylerde sokak ismi olmadığı için "Köy İçi" yerine doğrudan köy adı yazılır
+    if (
+      !finalSokak ||
+      /k[oö]y\s+[iı]çi/i.test(finalSokak) ||
+      /(?:küme\s+evleri|kume\s+evleri|mevkii|mevki|yolu)/i.test(finalSokak) ||
+      finalSokak === 'Sokak Belirtilmemiş' ||
+      !/(?:Cad\.|Sok\.)\b/i.test(finalSokak)
+    ) {
+      finalSokak = villageName || finalSokak || fallbackSokak;
+    }
+  } else {
+    if (
+      (!finalSokak ||
+        finalSokak === 'Köy İçi / Sokak Belirtilmemiş' ||
+        finalSokak === 'Köy İçi / Ana Yol' ||
+        finalSokak === 'Mahalle İçi / Cadde-Sokak Belirtilmemiş' ||
+        /k[oö]y\s+[iı]çi/i.test(finalSokak)) &&
+      rawSokak
+    ) {
+      let cleanedRaw = rawSokak.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!/k[oö]y\s+[iı]çi/i.test(cleanedRaw) && cleanedRaw) {
+        finalSokak = cleanedRaw;
+      }
+    }
+
+    if (finalSokak) {
+      finalSokak = finalSokak.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (/k[oö]y\s+[iı]çi/i.test(finalSokak)) {
+        finalSokak = fallbackSokak;
+      }
+    }
+
+    if (!finalSokak) {
       finalSokak = fallbackSokak;
     }
-  }
-
-  if (!finalSokak) {
-    finalSokak = fallbackSokak;
   }
 
   // Kapı no belirleme:

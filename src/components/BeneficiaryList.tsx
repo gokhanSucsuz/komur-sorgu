@@ -287,7 +287,7 @@ export default function BeneficiaryList({
     const map = new Map<string, number>();
     for (const r of mahalleFilteredList) {
       const st = getRecordStreetInfo(r);
-      const sName = st.sokak || 'Köy İçi / Ana Yol';
+      const sName = st.sokak || r.mahalle || 'Belirtilmemiş';
       map.set(sName, (map.get(sName) || 0) + 1);
     }
     return Array.from(map.entries())
