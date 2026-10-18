@@ -6,6 +6,7 @@ import {
   AlertTriangle, Clock, CheckCircle2, X, Edit3, SmartphoneCharging, Lock
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
+import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
 
 interface DeviceSlot {
   slot_no: number;
@@ -43,7 +44,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
   const fetchSlots = async () => {
     setIsLoading(true);
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/devices', {
         headers: { 'x-session-token': sessionToken }
       });
@@ -87,7 +88,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
 
     setActionLoading(1);
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/devices', {
         method: 'POST',
         headers: {
@@ -130,7 +131,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
   const handleGenerateCode = async (slot: DeviceSlot) => {
     setActionLoading(slot.slot_no);
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/devices', {
         method: 'POST',
         headers: {
@@ -191,7 +192,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
 
     setActionLoading(slot.slot_no);
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/devices', {
         method: 'POST',
         headers: {
@@ -234,7 +235,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
   const handleSaveName = async (slotNo: number) => {
     if (!editingName.trim()) return;
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/devices', {
         method: 'POST',
         headers: {

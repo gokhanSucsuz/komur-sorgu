@@ -21,6 +21,7 @@ import {
   ShieldOff,
 } from 'lucide-react';
 import { formatTrAuto } from '@/lib/dateUtils';
+import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export default function ProfileModal({
   onLogout,
 }: ProfileModalProps) {
   // Current logged in username from localStorage
-  const currentUsername = typeof window !== 'undefined' ? (localStorage.getItem('komur_username') || '') : '';
+  const currentUsername = typeof window !== 'undefined' ? (getSecureItem('komur_username') || '') : '';
 
   // Form states
   const [adSoyad, setAdSoyad] = useState(userName || '');
@@ -84,7 +85,7 @@ export default function ProfileModal({
   useEffect(() => {
     if (isOpen) {
       setAdSoyad(userName || '');
-      setUsername(typeof window !== 'undefined' ? (localStorage.getItem('komur_username') || '') : '');
+      setUsername(typeof window !== 'undefined' ? (getSecureItem('komur_username') || '') : '');
       setErrorMsg('');
       setSuccessMsg('');
       setSetupMode(false);
@@ -325,8 +326,8 @@ export default function ProfileModal({
 
       // Update local storage
       if (data.user) {
-        localStorage.setItem('komur_user_name', data.user.ad_soyad);
-        localStorage.setItem('komur_username', data.user.username);
+        setSecureItem('komur_user_name', data.user.ad_soyad);
+        setSecureItem('komur_username', data.user.username);
         onUserUpdated({
           name: data.user.ad_soyad,
           username: data.user.username,

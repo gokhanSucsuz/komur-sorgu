@@ -1,5 +1,7 @@
 'use client';
 
+import { getSecureItem } from './secureStorage';
+
 export interface OfflineDeliveryItem {
   client_uuid: string;
   timestamp: number;
@@ -37,7 +39,7 @@ function encodeStoragePayload(items: OfflineDeliveryItem[]): string {
     const json = JSON.stringify(items);
     const bytes = new TextEncoder().encode(json);
     const keyStr =
-      (typeof window !== 'undefined' && localStorage.getItem('komur_session_token')) ||
+      (typeof window !== 'undefined' && (getSecureItem('komur_session_token') || localStorage.getItem('komur_session_token'))) ||
       'edirne-sydv-mobile-kvkk-guard';
     const keyBytes = new TextEncoder().encode(keyStr);
     const out = new Uint8Array(bytes.length);
@@ -66,7 +68,7 @@ function decodeStoragePayload(raw: string): OfflineDeliveryItem[] {
     bytes[i] = binary.charCodeAt(i);
   }
   const keyStr =
-    (typeof window !== 'undefined' && localStorage.getItem('komur_session_token')) ||
+    (typeof window !== 'undefined' && (getSecureItem('komur_session_token') || localStorage.getItem('komur_session_token'))) ||
     'edirne-sydv-mobile-kvkk-guard';
   const keyBytes = new TextEncoder().encode(keyStr);
   const out = new Uint8Array(bytes.length);

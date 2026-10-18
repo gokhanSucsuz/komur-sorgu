@@ -26,6 +26,7 @@ import SeasonManagementModal from '@/components/SeasonManagementModal';
 import GuidePage from '@/components/GuidePage';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 import { signatureQueue } from '@/lib/signatureQueue';
+import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
@@ -150,13 +151,13 @@ export default function Home() {
     setUserTeam('');
     setUserPartners([]);
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('komur_logged_in');
-      localStorage.removeItem('komur_user_role');
-      localStorage.removeItem('komur_user_name');
-      localStorage.removeItem('komur_username');
-      localStorage.removeItem('komur_user_team');
-      localStorage.removeItem('komur_user_partners');
-      localStorage.removeItem('komur_session_token');
+      removeSecureItem('komur_logged_in');
+      removeSecureItem('komur_user_role');
+      removeSecureItem('komur_user_name');
+      removeSecureItem('komur_username');
+      removeSecureItem('komur_user_team');
+      removeSecureItem('komur_user_partners');
+      removeSecureItem('komur_session_token');
       localStorage.removeItem('komur_active_tab');
       try {
         sessionStorage.removeItem('komur_beneficiaries_cache');
@@ -219,15 +220,15 @@ export default function Home() {
         const effectiveName = data.user.ad_soyad || data.user.name;
         if (effectiveName) {
           setUserName(effectiveName);
-          localStorage.setItem('komur_user_name', effectiveName);
+          setSecureItem('komur_user_name', effectiveName);
         }
         if (data.user.ekip_adi !== undefined) {
           setUserTeam(data.user.ekip_adi || '');
-          localStorage.setItem('komur_user_team', data.user.ekip_adi || '');
+          setSecureItem('komur_user_team', data.user.ekip_adi || '');
         }
         if (data.user.ekip_arkadaslari) {
           setUserPartners(data.user.ekip_arkadaslari || []);
-          localStorage.setItem('komur_user_partners', JSON.stringify(data.user.ekip_arkadaslari || []));
+          setSecureItem('komur_user_partners', JSON.stringify(data.user.ekip_arkadaslari || []));
         }
       }
     } catch (err) {
@@ -238,15 +239,16 @@ export default function Home() {
   // Load user role & session from localStorage on initial mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedLogin = localStorage.getItem('komur_logged_in');
-      const savedRole = localStorage.getItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
-      const savedName = localStorage.getItem('komur_user_name');
-      const savedUsername = localStorage.getItem('komur_username');
-      const savedToken = localStorage.getItem('komur_session_token');
-      const savedTeam = localStorage.getItem('komur_user_team') || '';
+      migrateSensitiveStorageKeys();
+      const savedLogin = getSecureItem('komur_logged_in');
+      const savedRole = getSecureItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
+      const savedName = getSecureItem('komur_user_name');
+      const savedUsername = getSecureItem('komur_username');
+      const savedToken = getSecureItem('komur_session_token');
+      const savedTeam = getSecureItem('komur_user_team') || '';
       let savedPartners: string[] = [];
       try {
-        const parsed = JSON.parse(localStorage.getItem('komur_user_partners') || '[]');
+        const parsed = JSON.parse(getSecureItem('komur_user_partners') || '[]');
         if (Array.isArray(parsed)) savedPartners = parsed;
       } catch (e) {}
 
@@ -256,7 +258,7 @@ export default function Home() {
         const resolvedName = (savedRole === 'ADMIN' && (!savedName || savedName === 'Sistem Yöneticisi')) ? 'Gökhan SUÇSUZ' : savedName;
         setUserName(resolvedName);
         if (resolvedName !== savedName) {
-          localStorage.setItem('komur_user_name', resolvedName);
+          setSecureItem('komur_user_name', resolvedName);
         }
         if (savedUsername) setUserUsername(savedUsername);
         setUserTeam(savedTeam);
@@ -315,14 +317,14 @@ export default function Home() {
     setUserPartners(user.ekip_arkadaslari || []);
     setIsLoggedIn(true);
     setSessionTerminatedReason(null);
-    localStorage.setItem('komur_logged_in', 'true');
-    localStorage.setItem('komur_user_role', user.role);
-    localStorage.setItem('komur_user_name', user.name);
-    localStorage.setItem('komur_username', user.username);
-    localStorage.setItem('komur_user_team', user.ekip_adi || '');
-    localStorage.setItem('komur_user_partners', JSON.stringify(user.ekip_arkadaslari || []));
+    setSecureItem('komur_logged_in', 'true');
+    setSecureItem('komur_user_role', user.role);
+    setSecureItem('komur_user_name', user.name);
+    setSecureItem('komur_username', user.username);
+    setSecureItem('komur_user_team', user.ekip_adi || '');
+    setSecureItem('komur_user_partners', JSON.stringify(user.ekip_arkadaslari || []));
     if (user.session_token) {
-      localStorage.setItem('komur_session_token', user.session_token);
+      setSecureItem('komur_session_token', user.session_token);
     }
   };
 
@@ -356,13 +358,13 @@ export default function Home() {
   const handleRoleChange = (role: 'ADMIN' | 'PERSONEL', name: string, username?: string, sessionToken?: string) => {
     setUserRole(role);
     setUserName(name);
-    localStorage.setItem('komur_user_role', role);
-    localStorage.setItem('komur_user_name', name);
+    setSecureItem('komur_user_role', role);
+    setSecureItem('komur_user_name', name);
     if (username) {
-      localStorage.setItem('komur_username', username);
+      setSecureItem('komur_username', username);
     }
     if (sessionToken) {
-      localStorage.setItem('komur_session_token', sessionToken);
+      setSecureItem('komur_session_token', sessionToken);
     }
   };
 

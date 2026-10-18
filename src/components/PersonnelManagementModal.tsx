@@ -6,6 +6,7 @@ import {
   AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert 
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
+import { getSecureItem } from '@/lib/secureStorage';
 
 interface PersonnelManagementModalProps {
   isOpen: boolean;
@@ -42,7 +43,7 @@ export default function PersonnelManagementModal({
   const fetchPersonnel = async () => {
     setIsLoading(true);
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/personnel', {
         headers: { 'x-session-token': sessionToken }
       });
@@ -110,7 +111,7 @@ export default function PersonnelManagementModal({
     try {
       const url = '/api/personnel';
       const method = editingId ? 'PUT' : 'POST';
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const payload: any = {
         id: editingId || undefined,
         ad_soyad: adSoyad.trim(),
@@ -166,7 +167,7 @@ export default function PersonnelManagementModal({
     if (!confirmed) return;
 
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch(`/api/personnel?id=${id}`, { 
         method: 'DELETE',
         headers: { 'x-session-token': sessionToken }
@@ -203,7 +204,7 @@ export default function PersonnelManagementModal({
     if (!confirmed) return;
 
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: {
@@ -250,7 +251,7 @@ export default function PersonnelManagementModal({
     if (!confirmed) return;
 
     try {
-      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: {
