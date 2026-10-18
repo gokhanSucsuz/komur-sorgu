@@ -9,6 +9,7 @@ import {
   Layers, ArrowUpDown, ChevronDown, Archive, X, FileText, Download
 } from 'lucide-react';
 import { formatTonnage } from '@/lib/normalizer';
+import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
 interface AnalyticsPageProps {
   onRefreshAll?: () => void;
@@ -1372,18 +1373,18 @@ export default function AnalyticsPage({
                   </div>
                   <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
                     <span className="text-[9px] font-mono text-slate-400 block">KOD: SYDV-IST</span>
-                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{new Date().toLocaleDateString('tr-TR')}</span>
+                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDate(new Date())}</span>
                   </div>
                 </div>
 
                 <div className="pt-2 flex flex-wrap items-center justify-between text-[11px] text-slate-600 gap-2 font-medium">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span>Dönem / Kapsam: <strong className="text-slate-900">{activePreset === 'ALL' ? 'Tüm Dağıtım Süreci' : `${startDate || 'Başlangıç'} - ${endDate || 'Bugün'}`}</strong></span>
+                    <span>Dönem / Kapsam: <strong className="text-slate-900">{activePreset === 'ALL' ? 'Tüm Dağıtım Süreci' : `${formatTrDate(startDate) || 'Başlangıç'} - ${formatTrDate(endDate) || 'Bugün'}`}</strong></span>
                     <span>•</span>
                     <span>Mahalle Kapsamı: <strong className="text-slate-900">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalle ve Köyler' : selectedMahalle}</strong></span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span>Rapor Tarihi: <strong className="text-slate-900">{new Date().toLocaleDateString('tr-TR')} {new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                    <span>Rapor Tarihi: <strong className="text-slate-900">{formatTrDateTime(new Date())}</strong></span>
                   </div>
                 </div>
               </div>
@@ -1656,7 +1657,7 @@ export default function AnalyticsPage({
                               <td className="p-2 text-center font-bold text-sky-800">{p.toplamHane || 0}</td>
                               <td className="p-2 text-center font-black text-slate-900">{p.toplamTorba} Torba</td>
                               <td className="p-2 text-center font-mono font-bold text-amber-900">{fmt.combined}</td>
-                              <td className="p-2 text-center font-mono text-[11px] text-slate-600">{p.sonTeslimatTarihi || '-'}</td>
+                              <td className="p-2 text-center text-xs text-slate-700 font-semibold">{p.sonTeslimatTarihi ? formatTrAuto(p.sonTeslimatTarihi) : '-'}</td>
                             </tr>
                           );
                         })}

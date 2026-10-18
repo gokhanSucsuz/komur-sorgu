@@ -20,6 +20,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
+import { formatTrAuto } from '@/lib/dateUtils';
 
 interface SeasonManagementModalProps {
   isOpen: boolean;
@@ -708,7 +709,7 @@ export default function SeasonManagementModal({
                                     {arch.baslik}
                                   </h4>
                                   <p className="text-[11px] text-slate-500 font-medium">
-                                    Kapanış: {arch.kapanis_tarihi || arch.arsivlenme_zamani} | Arşivleyen: {arch.kapatan_kullanici || 'Yönetici'}
+                                    Kapanış: {formatTrAuto(arch.kapanis_tarihi || arch.arsivlenme_zamani)} | Arşivleyen: {arch.kapatan_kullanici || 'Yönetici'}
                                   </p>
                                 </div>
                               </div>

@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   ShieldOff,
 } from 'lucide-react';
+import { formatTrAuto } from '@/lib/dateUtils';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -657,7 +658,7 @@ export default function ProfileModal({
                 {totpEnabledAt && (
                   <div className="flex items-center justify-between text-[10px] text-slate-400">
                     <span>Etkinleştirme Tarihi:</span>
-                    <span>{totpEnabledAt}</span>
+                    <span className="font-semibold text-slate-300">{formatTrAuto(totpEnabledAt)}</span>
                   </div>
                 )}
 

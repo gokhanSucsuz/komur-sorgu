@@ -23,6 +23,7 @@ import {
   Phone,
   Truck
 } from 'lucide-react';
+import { formatTrAuto } from '@/lib/dateUtils';
 
 interface AuditLogsModalProps {
   onClose: () => void;
@@ -391,8 +392,8 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
                             {item.kullanici_rolu === 'ADMIN' ? 'Yönetici' : 'Saha Ekibi'}
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-mono block">
-                          {item.tarih || '-'}
+                        <span className="text-[10px] text-slate-500 font-semibold block">
+                          {item.tarih ? formatTrAuto(item.tarih) : '-'}
                         </span>
                       </div>
                     </div>

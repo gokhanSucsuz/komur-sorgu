@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Ban, CheckCircle2, AlertTriangle, X, Shield, FileSpreadsheet, FileText, MapPin, Phone } from 'lucide-react';
 import { getBeneficiaryListTypeInfo, formatPhoneDisplay, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
+import { formatTrAuto } from '@/lib/dateUtils';
 import { showToast } from './GlobalAlertManager';
 
 interface KomurIptalModalProps {
@@ -243,7 +244,7 @@ export default function KomurIptalModal({
                     <span>İşlemi Yapan Yetkili: <strong className="text-rose-950">{beneficiary.komur_iptal_eden}</strong></span>
                   )}
                   {beneficiary.komur_iptal_tarihi && (
-                    <span>İptal Tarihi: <strong className="font-mono text-rose-950">{beneficiary.komur_iptal_tarihi}</strong></span>
+                    <span>İptal Tarihi: <strong className="font-semibold text-rose-950">{formatTrAuto(beneficiary.komur_iptal_tarihi)}</strong></span>
                   )}
                 </div>
               </div>

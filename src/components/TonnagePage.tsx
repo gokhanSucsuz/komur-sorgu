@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon } from '@/lib/normalizer';
+import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 import InstitutionTonnageModal from './InstitutionTonnageModal';
 
 interface TonnagePageProps {
@@ -871,7 +872,7 @@ export default function TonnagePage({
                 <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
                   <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-slate-500" />
-                    <span>Ocak Çıkış: <strong className="text-slate-900">{t.ocak_cikis_tarihi || t.tarih}</strong></span>
+                    <span>Ocak Çıkış: <strong className="text-slate-900">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</strong></span>
                   </span>
                   <span
                     className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 ${
@@ -881,7 +882,7 @@ export default function TonnagePage({
                     }`}
                   >
                     <Calendar className="w-3 h-3" />
-                    <span>Sahaya Geliş: <strong>{t.tarih}</strong></span>
+                    <span>Sahaya Geliş: <strong>{formatTrDate(t.tarih)}</strong></span>
                   </span>
                 </div>
 
@@ -1448,13 +1449,13 @@ export default function TonnagePage({
                   </div>
                   <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
                     <span className="text-[9px] font-mono text-slate-400 block">KOD: SYDV-TNJ</span>
-                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{new Date().toLocaleDateString('tr-TR')}</span>
+                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDate(new Date())}</span>
                   </div>
                 </div>
 
                 <div className="pt-2 flex flex-wrap items-center justify-between text-[11px] text-slate-600 gap-2 font-medium">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span>Rapor Kapsamı: <strong className="text-slate-900">{reportStartDate && reportEndDate ? `${reportStartDate} - ${reportEndDate}` : 'Tüm Kömür Sevkiyatı Dönemi'}</strong></span>
+                    <span>Rapor Kapsamı: <strong className="text-slate-900">{reportStartDate && reportEndDate ? `${formatTrDate(reportStartDate)} - ${formatTrDate(reportEndDate)}` : 'Tüm Kömür Sevkiyatı Dönemi'}</strong></span>
                     {reportSearchQuery && (
                       <>
                         <span>•</span>
@@ -1463,7 +1464,7 @@ export default function TonnagePage({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span>Rapor Tarihi: <strong className="text-slate-900">{new Date().toLocaleDateString('tr-TR')} {new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                    <span>Rapor Tarihi: <strong className="text-slate-900">{formatTrDateTime(new Date())}</strong></span>
                   </div>
                 </div>
               </div>
@@ -1613,8 +1614,8 @@ export default function TonnagePage({
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
                               <td className="p-2 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
-                              <td className="p-2 font-mono text-slate-600">{t.ocak_cikis_tarihi || t.tarih}</td>
-                              <td className="p-2 font-mono text-slate-700 font-semibold">{t.tarih}</td>
+                              <td className="p-2 text-slate-700 text-xs font-semibold">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</td>
+                              <td className="p-2 text-slate-800 text-xs font-bold">{formatTrDate(t.tarih)}</td>
                               <td className="p-2 font-mono font-bold text-slate-900">{t.plaka}</td>
                               <td className="p-2 font-mono font-semibold text-sky-900">{t.dorse_plaka || '-'}</td>
                               <td className="p-2 font-mono text-slate-600 font-semibold">{t.irsaliye_no}</td>

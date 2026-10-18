@@ -23,6 +23,7 @@ import {
   FileText
 } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
+import { formatTrDate } from '@/lib/dateUtils';
 
 interface ShiftPageProps {
   userRole: 'ADMIN' | 'PERSONEL';
@@ -824,7 +825,7 @@ export default function ShiftPage({
                     >
                       {/* Tarih & Belirgin Gün Rozeti */}
                       <td className="p-3 whitespace-nowrap">
-                        <span className="font-extrabold text-slate-900 block">{shift.tarih}</span>
+                        <span className="font-extrabold text-slate-900 block">{formatTrDate(shift.tarih)}</span>
                         {isSaturday ? (
                           <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs">
                             <Calendar className="w-3 h-3 text-white" />
@@ -1160,7 +1161,7 @@ export default function ShiftPage({
                           >
                             <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                             <td className="py-2 px-2 whitespace-nowrap">
-                              <span className="font-extrabold text-slate-900 block">{shift.tarih}</span>
+                              <span className="font-extrabold text-slate-900 block">{formatTrDate(shift.tarih)}</span>
                               {isSaturday ? (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500 text-white">
                                   Cumartesi

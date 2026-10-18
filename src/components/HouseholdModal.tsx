@@ -2,6 +2,7 @@
 
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
+import { formatTrAuto, formatTrDate } from '@/lib/dateUtils';
 import { useState } from 'react';
 
 interface HouseholdModalProps {
@@ -102,7 +103,7 @@ export default function HouseholdModal({
               )}
               {person.komur_iptal_tarihi && (
                 <span className="text-[10px] text-rose-600 block">
-                  İptal Tarihi: {person.komur_iptal_tarihi} {person.komur_iptal_eden ? `(${person.komur_iptal_eden})` : ''}
+                  İptal Tarihi: {formatTrAuto(person.komur_iptal_tarihi)} {person.komur_iptal_eden ? `(${person.komur_iptal_eden})` : ''}
                 </span>
               )}
             </div>
@@ -206,7 +207,7 @@ export default function HouseholdModal({
                 <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
                 <span>Fiili İkametgah Adresi Güncellendi</span>
                 {person.son_adres_guncelleme_tarihi && (
-                  <span className="text-slate-400 font-normal">({person.son_adres_guncelleme_tarihi})</span>
+                  <span className="text-slate-500 font-semibold">({formatTrAuto(person.son_adres_guncelleme_tarihi)})</span>
                 )}
               </div>
             )}
@@ -239,8 +240,8 @@ export default function HouseholdModal({
                   {person.torba_sayisi || 34} Torba Tamamlandı
                 </p>
                 {person.teslimat_tarihi && (
-                  <span className="text-[11px] font-mono text-emerald-800 bg-white/70 px-2 py-0.5 rounded border border-emerald-200">
-                    {person.teslimat_tarihi}
+                  <span className="text-[11px] font-semibold text-emerald-800 bg-white/70 px-2 py-0.5 rounded border border-emerald-200">
+                    {formatTrAuto(person.teslimat_tarihi)}
                   </span>
                 )}
               </div>
@@ -280,7 +281,7 @@ export default function HouseholdModal({
               </div>
               {person.teslimat_tarihi && (
                 <div className="text-[10px] text-amber-800 pt-0.5">
-                  Son Teslimat Tarihi: <strong className="font-mono">{person.teslimat_tarihi}</strong>
+                  Son Teslimat Tarihi: <strong className="font-semibold">{formatTrAuto(person.teslimat_tarihi)}</strong>
                 </div>
               )}
             </div>

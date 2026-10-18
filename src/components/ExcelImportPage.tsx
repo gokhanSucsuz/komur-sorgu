@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
+import { formatTrAuto } from '@/lib/dateUtils';
 
 const isKoySettlement = (name: string, tip?: string) => {
   if (tip === 'KOY') return true;
@@ -906,8 +907,8 @@ export default function ExcelImportPage({
                           <span>Standart Liste</span>
                         </span>
                       )}
-                      <span className="text-[11px] font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                        {batch.created_at}
+                      <span className="text-[11px] font-semibold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        {formatTrAuto(batch.created_at)}
                       </span>
                     </div>
 

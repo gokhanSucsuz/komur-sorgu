@@ -13,6 +13,7 @@ import {
 import CancelModal from '@/components/CancelModal';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
+import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
 function getOrCreateClientId(): string {
   if (typeof window === 'undefined') return '';
@@ -1885,8 +1886,8 @@ export default function RoutePage({
                               Dağıtım Sürüyor
                             </span>
                           )}
-                          <span className="text-xs text-slate-500 font-mono">
-                            {activeRoute.tarih}
+                          <span className="text-xs text-slate-500 font-semibold">
+                            {formatTrDate(activeRoute.tarih)}
                           </span>
                         </div>
                         <h3 className="text-lg font-black text-slate-900 mt-1 truncate">
@@ -2635,7 +2636,7 @@ export default function RoutePage({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                        {route.tarih}
+                        {formatTrDate(route.tarih)}
                       </span>
                       <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                         ✓ Tamamlandı
@@ -3627,7 +3628,7 @@ export default function RoutePage({
                     {printRoute.rota_adi || 'Günlük Kömür Dağıtım Rotası Tutanağı'}
                   </h3>
                   <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
-                    <span>Tarih: <strong className="text-slate-800">{printRoute.tarih}</strong></span>
+                    <span>Tarih: <strong className="text-slate-800">{formatTrDate(printRoute.tarih)}</strong></span>
                     <span>•</span>
                     <span>Personel: <strong className="text-slate-800">{printRoute.dagitim_personeli || userName || 'Saha Personeli'}</strong></span>
                     {(printRoute.arac_plaka || printRoute.arac_plakasi) && (
@@ -3691,7 +3692,7 @@ export default function RoutePage({
                   </div>
                   <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
                     <span className="text-[9px] font-mono text-slate-400 block">KOD: SYDV-RT</span>
-                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{printRoute.tarih}</span>
+                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDate(printRoute.tarih)}</span>
                   </div>
                 </div>
 
@@ -3699,7 +3700,7 @@ export default function RoutePage({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span>Rota: <strong className="text-slate-900">{printRoute.rota_adi}</strong></span>
                     <span>•</span>
-                    <span>Tarih: <strong className="text-slate-900">{printRoute.tarih}</strong></span>
+                    <span>Tarih: <strong className="text-slate-900">{formatTrDate(printRoute.tarih)}</strong></span>
                     {(printRoute.arac_plaka || printRoute.arac_plakasi) && (
                       <>
                         <span>•</span>
@@ -4538,7 +4539,7 @@ export default function RoutePage({
                                     Teslim Tarihi & Personel
                                   </span>
                                   <span className="font-bold text-slate-800">
-                                    {currentStop.teslim_tarihi || 'Kayıtlı'} {currentStop.teslim_eden_personel ? `(${currentStop.teslim_eden_personel})` : ''}
+                                    {formatTrAuto(currentStop.teslim_tarihi) || 'Kayıtlı'} {currentStop.teslim_eden_personel ? `(${currentStop.teslim_eden_personel})` : ''}
                                   </span>
                                 </div>
                                 {currentStop.teslimat_notu && (

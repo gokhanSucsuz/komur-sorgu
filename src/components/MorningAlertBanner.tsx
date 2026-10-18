@@ -13,6 +13,7 @@ import {
   Phone
 } from 'lucide-react';
 import { formatPhoneDisplay } from '@/lib/normalizer';
+import { formatTrAuto } from '@/lib/dateUtils';
 
 interface MorningAlertBannerProps {
   eksikHaneler: any[];
@@ -240,7 +241,7 @@ export default function MorningAlertBanner({
                         <>
                           <span className="text-indigo-800 font-bold bg-white px-2 py-0.5 rounded border border-indigo-200 flex items-center gap-1">
                             <PenTool className="w-3 h-3 text-indigo-600" />
-                            <span>İmza Tarihi: {person.imza_tarihi || 'Kayıtlı'}</span>
+                            <span>İmza Tarihi: {formatTrAuto(person.imza_tarihi) || 'Kayıtlı'}</span>
                           </span>
                           <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                             Teslim Edilecek: <strong>{kalan} Torba</strong>

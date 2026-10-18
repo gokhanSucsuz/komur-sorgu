@@ -24,6 +24,7 @@ import {
   formatCancelReason,
   formatCancelExplanation
 } from '@/lib/normalizer';
+import { formatTrAuto, formatTrDate } from '@/lib/dateUtils';
 
 interface BeneficiaryListProps {
   records: any[];
@@ -1694,7 +1695,7 @@ export default function BeneficiaryList({
                                     <span className="block text-[10px] text-slate-500">Alan: {person.teslim_alan}</span>
                                   )}
                                   {person.teslimat_tarihi && (
-                                    <span className="block text-[9px] font-mono text-slate-400">{person.teslimat_tarihi}</span>
+                                    <span className="block text-[9px] font-semibold text-slate-500">{formatTrAuto(person.teslimat_tarihi)}</span>
                                   )}
                                 </div>
                               </div>
@@ -1710,7 +1711,7 @@ export default function BeneficiaryList({
                                     <span className="block text-[10px] text-slate-500">Alan: {person.teslim_alan}</span>
                                   )}
                                   {person.teslimat_tarihi && (
-                                    <span className="block text-[9px] font-mono text-slate-400">{person.teslimat_tarihi}</span>
+                                    <span className="block text-[9px] font-semibold text-slate-500">{formatTrAuto(person.teslimat_tarihi)}</span>
                                   )}
                                 </div>
                               </div>
@@ -2196,7 +2197,7 @@ export default function BeneficiaryList({
                         {person.fiili_adres_guncellendi && (
                           <div className="text-[11px] font-bold text-sky-800 flex items-center gap-1 bg-sky-50 p-2 rounded-lg border border-sky-200">
                             <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                            <span>Fiili İkametgah Adresi Güncellenmiştir {person.son_adres_guncelleme_tarihi && `(${person.son_adres_guncelleme_tarihi})`}</span>
+                            <span>Fiili İkametgah Adresi Güncellenmiştir {person.son_adres_guncelleme_tarihi && `(${formatTrAuto(person.son_adres_guncelleme_tarihi)})`}</span>
                           </div>
                         )}
                         {person.adres_guncelleme_notu && (
@@ -2375,7 +2376,7 @@ export default function BeneficiaryList({
                               {person.teslimat_tarihi && (
                                 <div className="flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
-                                  <span>{person.teslimat_tarihi}</span>
+                                  <span>{formatTrAuto(person.teslimat_tarihi)}</span>
                                 </div>
                               )}
                               {person.teslim_eden_personel && (
