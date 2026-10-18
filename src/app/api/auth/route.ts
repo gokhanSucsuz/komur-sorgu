@@ -756,6 +756,18 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
+
+      // KURAL 3: Slot 1 SADECE Admin'e aittir. Saha personeli Slot 1 üzerinden giriş yapamaz!
+      if (matchedDeviceSlot.slot_no === 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'ADMIN_DEVICE_RESTRICTED',
+            error: 'Bu telefon "1. Yönetici Telefonu" olarak sisteme kayıtlıdır. Saha personelleri yalnızca kendilerine tahsis edilen 3 saha telefonundan (Slot 2, 3 veya 4) giriş yapabilir.',
+          },
+          { status: 403 }
+        );
+      }
     }
 
     // 2FA (Google Authenticator) Challenge for Accounts with totp_enabled
@@ -886,6 +898,69 @@ export async function POST(request: NextRequest) {
       return elevRes;
     }
 
+    // Auto-pair Admin's phone to Slot 1 if Admin logs in from mobile
+    let adminDeviceTokenIssued: string | null = null;
+    if (user.rol === 'ADMIN' && isMobileClient) {
+      const { authorizedDevices: devCol } = await getDbCollections();
+      const existingProvidedToken = (
+        request.headers.get('x-device-token') ||
+        body.device_token ||
+        request.cookies.get('komur_device_token')?.value ||
+        ''
+      ).trim();
+
+      let isCurrentTokenValidForSlot1 = false;
+      if (existingProvidedToken) {
+        const tokenHash = crypto.createHash('sha256').update(existingProvidedToken).digest('hex');
+        const found = await devCol.findOne({ slot_no: 1, device_token_hash: tokenHash, durum: 'AKTIF' });
+        if (found) {
+          isCurrentTokenValidForSlot1 = true;
+          await devCol.updateOne(
+            { _id: found._id },
+            {
+              $set: {
+                last_used_at: nowIso,
+                last_personel: user.ad_soyad || user.username,
+                last_ip: encryptField(clientIp),
+              },
+            }
+          );
+        }
+      }
+
+      if (!isCurrentTokenValidForSlot1) {
+        adminDeviceTokenIssued = crypto.randomBytes(32).toString('hex');
+        const adminTokenHash = crypto.createHash('sha256').update(adminDeviceTokenIssued).digest('hex');
+
+        await devCol.updateOne(
+          { slot_no: 1 },
+          {
+            $set: {
+              slot_name: '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)',
+              durum: 'AKTIF',
+              device_token_hash: adminTokenHash,
+              device_model: userAgent.substring(0, 100),
+              paired_at: nowIso,
+              last_used_at: nowIso,
+              last_personel: user.ad_soyad || user.username,
+              last_ip: encryptField(clientIp),
+              activation_code: null,
+              activation_code_expires_at: null,
+            },
+          },
+          { upsert: true }
+        );
+
+        await recordActivityLog({
+          kullanici_adi: user.ad_soyad || user.username,
+          kullanici_rolu: 'ADMIN',
+          islem_tipi: 'CIHAZ_YONETICI_ESLEME',
+          baslik: 'Yönetici Telefonu Sisteme Eşlendi',
+          detay: `Sistem Yöneticisi (${user.ad_soyad}) kendi mobil cihazını Slot 1 (Yönetici Telefonu) olarak sisteme kaydetti.`,
+        });
+      }
+    }
+
     // Record audit log for standard login
     await recordActivityLog({
       kullanici_adi: user.ad_soyad || user.username,
@@ -895,7 +970,7 @@ export async function POST(request: NextRequest) {
       detay: `"${user.ad_soyad}" (${user.username}) ${rawUser.totp_enabled ? '2FA (Google Authenticator) doğrulamasıyla ' : ''}sisteme giriş yaptı. Bu cihaz tek yetkili aktif oturum olarak kaydedildi.`,
     });
 
-    const res = NextResponse.json({
+    const loginResponsePayload: any = {
       success: true,
       message: 'Giriş başarılı',
       session_token: newSessionToken,
@@ -910,7 +985,24 @@ export async function POST(request: NextRequest) {
         ekip_arkadasi: rawUser.ekip_arkadasi || '',
         totp_enabled: Boolean(rawUser.totp_enabled),
       },
-    });
+    };
+
+    if (adminDeviceTokenIssued) {
+      loginResponsePayload.device_token = adminDeviceTokenIssued;
+      loginResponsePayload.device_slot_name = '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)';
+    }
+
+    const res = NextResponse.json(loginResponsePayload);
+
+    if (adminDeviceTokenIssued) {
+      res.cookies.set('komur_device_token', adminDeviceTokenIssued, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 365 * 24 * 60 * 60,
+      });
+    }
 
     // Set HttpOnly Secure session cookie (24-hour TTL matching server enforcement)
     res.cookies.set('komur_session_token', newSessionToken, {

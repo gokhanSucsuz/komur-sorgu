@@ -47,28 +47,36 @@ export async function GET(request: NextRequest) {
 
     const rawSlots = await devCol.find({}).sort({ slot_no: 1 }).toArray();
 
-    // Ensure all 4 slots exist
-    if (rawSlots.length < 4) {
-      const nowStr = getIstanbulDate().fullStr;
-      for (let i = 1; i <= 4; i++) {
-        const found = rawSlots.find((s: any) => s.slot_no === i);
-        if (!found) {
-          const newSlot = {
-            slot_no: i,
-            slot_name: `${i}. Saha Dağıtım Telefonu`,
-            durum: 'BEKLIYOR',
-            device_token_hash: null,
-            device_model: null,
-            paired_at: null,
-            last_used_at: null,
-            created_at: nowStr,
-          };
-          await devCol.insertOne(newSlot);
-          rawSlots.push(newSlot);
-        }
+    // Ensure all 4 slots exist and upgrade legacy names to 1 Admin + 3 Personel
+    const defaultNames: Record<number, string> = {
+      1: '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)',
+      2: '2. Saha Personeli Telefonu',
+      3: '3. Saha Personeli Telefonu',
+      4: '4. Saha Personeli Telefonu',
+    };
+
+    const nowStr = getIstanbulDate().fullStr;
+    for (let i = 1; i <= 4; i++) {
+      const found = rawSlots.find((s: any) => s.slot_no === i);
+      if (!found) {
+        const newSlot = {
+          slot_no: i,
+          slot_name: defaultNames[i],
+          durum: 'BEKLIYOR',
+          device_token_hash: null,
+          device_model: null,
+          paired_at: null,
+          last_used_at: null,
+          created_at: nowStr,
+        };
+        await devCol.insertOne(newSlot);
+        rawSlots.push(newSlot);
+      } else if (found.slot_name.includes('Saha Dağıtım Telefonu') || found.slot_name.includes('Saha Ekip Telefonu')) {
+        await devCol.updateOne({ _id: found._id }, { $set: { slot_name: defaultNames[i] } });
+        found.slot_name = defaultNames[i];
       }
-      rawSlots.sort((a: any, b: any) => a.slot_no - b.slot_no);
     }
+    rawSlots.sort((a: any, b: any) => a.slot_no - b.slot_no);
 
     const now = Date.now();
     const sanitizedSlots = rawSlots.map((s: any) => {
@@ -82,6 +90,7 @@ export async function GET(request: NextRequest) {
         id: s.id || s._id,
         slot_no: s.slot_no,
         slot_name: s.slot_name,
+        is_admin_slot: s.slot_no === 1,
         durum: s.durum || 'BEKLIYOR',
         device_model: s.device_model || null,
         paired_at: s.paired_at || null,
@@ -316,6 +325,59 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json({ success: true, message: 'Slot adı güncellendi.' });
+    }
+
+    // 5. Pair Admin's Current Mobile Device to Slot 1 (1-Click Self-Pairing for Admin)
+    if (action === 'PAIR_ADMIN_CURRENT_DEVICE') {
+      const { iso: nowIso } = getIstanbulDate();
+      const adminDeviceToken = crypto.randomBytes(32).toString('hex');
+      const adminTokenHash = hashDeviceToken(adminDeviceToken);
+      const deviceModel = (body.device_model || userAgent.substring(0, 100)).trim();
+
+      await devCol.updateOne(
+        { slot_no: 1 },
+        {
+          $set: {
+            slot_name: '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)',
+            durum: 'AKTIF',
+            device_token_hash: adminTokenHash,
+            device_model: deviceModel,
+            paired_at: nowIso,
+            last_used_at: nowIso,
+            last_personel: session.username || 'Gökhan SUÇSUZ',
+            last_ip: encryptField(clientIp),
+            activation_code: null,
+            activation_code_expires_at: null,
+          },
+        },
+        { upsert: true }
+      );
+
+      await recordActivityLog({
+        kullanici_adi: session.username || 'ADMIN',
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'CIHAZ_YONETICI_ESLEME',
+        baslik: 'Yönetici Telefonu Eşlendi',
+        detay: `Sistem Yöneticisi kendi telefonunu Slot 1 (Yönetici Telefonu) olarak başarıyla eşledi.`,
+      });
+
+      const res = NextResponse.json({
+        success: true,
+        message: 'Telefonunuz "1. Yönetici Telefonu (Admin)" olarak başarıyla eşlendi.',
+        slot_no: 1,
+        slot_name: '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)',
+        device_token: adminDeviceToken,
+      });
+
+      res.cookies.set('komur_device_token', adminDeviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 365 * 24 * 60 * 60,
+      });
+
+      return res;
     }
 
     return NextResponse.json({ success: false, error: 'Bilinmeyen işlem.' }, { status: 400 });

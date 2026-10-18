@@ -202,6 +202,10 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
         throw new Error(data.error || 'Giriş yapılamadı');
       }
 
+      if (data.device_token && typeof window !== 'undefined') {
+        localStorage.setItem('komur_device_token', data.device_token);
+      }
+
       onLoginSuccess({
         role: data.user.rol,
         name: data.user.ad_soyad,
@@ -292,6 +296,20 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
           </div>
 
           {/* Hardware & Device Enforcement Banners */}
+          {activeTab === 'ADMIN' && isMobileDevice && (
+            <div className="px-6 pt-3 pb-0">
+              <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs">
+                <Smartphone className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <p className="font-extrabold text-amber-950">Yönetici Mobil Cihazı (Slot 1)</p>
+                  <p className="text-[11px] text-amber-800 font-medium mt-0.5">
+                    Giriş yaptığınızda bu telefon sistemde otomatik olarak <b>1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)</b> olarak eşlenecek ve yetkilendirilecektir.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'PERSONEL' && (
             <div className="px-6 pt-3 pb-0">
               {!isMobileDevice ? (
@@ -300,7 +318,7 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                   <div>
                     <p className="font-extrabold text-amber-950">Masaüstü / Bilgisayar Kısıtı Aktiftir</p>
                     <p className="text-[11px] text-amber-800 font-medium mt-0.5">
-                      Saha personelleri sisteme yalnızca kurumca yetkilendirilmiş 4 telefondan giriş yapabilir. Bilgisayar erişimi yalnızca Yönetici (Admin) hesabına aittir.
+                      Saha personelleri sisteme yalnızca kurumca yetkilendirilmiş 3 saha telefonundan (Slot 2, 3, 4) giriş yapabilir. Bilgisayar erişimi yalnızca Yönetici (Admin) hesabına aittir.
                     </p>
                   </div>
                 </div>
@@ -326,7 +344,7 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                     <div>
                       <p className="font-extrabold text-rose-950">Yetkisiz Saha Cihazı</p>
                       <p className="text-[11px] text-rose-800 font-medium mt-0.5">
-                        Bu telefon henüz 4 yetkili saha cihazı arasına kaydedilmemiştir. Personel girişi için Yönetici aktivasyon kodu gereklidir.
+                        Bu telefon henüz 3 yetkili saha cihazı arasına kaydedilmemiştir. Personel girişi için Yönetici aktivasyon kodu gereklidir.
                       </p>
                     </div>
                   </div>
@@ -599,7 +617,7 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
 
             <form onSubmit={handleActivateDevice} className="space-y-3">
               <p className="text-xs text-slate-600">
-                Sistem Yöneticinizin (Admin) panelinden bu telefon için ürettiği <b>6 haneli aktivasyon kodunu</b> giriniz:
+                Sistem Yöneticinizin (Admin - Gökhan SUÇSUZ) panelinden bu telefon için ürettiği <b>6 haneli aktivasyon kodunu</b> giriniz:
               </p>
 
               {activationError && (

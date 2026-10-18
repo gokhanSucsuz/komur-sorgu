@@ -66,6 +66,67 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
     }
   }, [isOpen]);
 
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsMobileDevice(/android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent));
+    }
+  }, []);
+
+  const handlePairAdminCurrentPhone = async () => {
+    const confirmed = await showConfirm({
+      title: 'Yönetici Telefonunu Eşle',
+      message: 'Kullandığınız bu telefonu "1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)" olarak sisteme eşlemek istediğinize emin misiniz?\n\nBu işlemden sonra bu telefon sistemde tek yetkili Yönetici Cihazı olarak kilitlenecektir.',
+      type: 'info',
+      confirmText: 'Evet, Bu Telefonu Eşle',
+      cancelText: 'Vazgeç',
+    });
+
+    if (!confirmed) return;
+
+    setActionLoading(1);
+    try {
+      const sessionToken = typeof window !== 'undefined' ? (localStorage.getItem('komur_session_token') || '') : '';
+      const res = await fetch('/api/devices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify({
+          action: 'PAIR_ADMIN_CURRENT_DEVICE',
+          device_model: typeof navigator !== 'undefined' ? navigator.userAgent.substring(0, 100) : 'Yönetici Telefonu',
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Cihaz eşlenemedi');
+      }
+
+      if (data.device_token && typeof window !== 'undefined') {
+        localStorage.setItem('komur_device_token', data.device_token);
+      }
+
+      showToast({
+        type: 'success',
+        title: 'Yönetici Telefonu Eşlendi',
+        message: 'Bu telefon başarıyla 1. Yönetici Telefonu olarak sisteme kilitlendi.',
+      });
+
+      fetchSlots();
+    } catch (err: any) {
+      showAlert({
+        title: 'Hata',
+        message: err.message || 'Cihaz eşlenirken hata oluştu',
+        type: 'error',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleGenerateCode = async (slot: DeviceSlot) => {
     setActionLoading(slot.slot_no);
     try {
@@ -222,18 +283,18 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-sm">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shadow-sm">
               <Smartphone className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-slate-900">Yetkili 4 Saha Cihazı Yönetimi</h3>
+                <h3 className="text-base font-black text-slate-900">Yetkili 4 Mobil Cihaz Yönetimi</h3>
                 <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Yöntem A Donanım Koruması
+                  1 Admin + 3 Personel
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                Sisteme yalnızca bu 4 yetkili telefondan personel girişi yapılabilir. Bilgisayar erişimi sadece Admin&apos;e aittir.
+                1 Yönetici Telefonu (Admin - Gökhan SUÇSUZ) + 3 Saha Personeli Telefonu olmak üzere toplam 4 mobil cihaz sisteme bağlanabilir. Bilgisayar erişimi yalnızca Admin&apos;e aittir.
               </p>
             </div>
           </div>
@@ -252,9 +313,10 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
             <span>Merkezi Güvenlik & Cihaz Eşleme Kuralları</span>
           </div>
           <ul className="text-slate-600 space-y-1 pl-5 list-disc text-[11px]">
-            <li><b>Personel Girişi:</b> Personeller şifrelerini bilseler dahi bu 4 telefondan biri olmadan veya bilgisayardan giriş yapamaz.</li>
+            <li><b>Yönetici Cihazı (Slot 1):</b> Slot 1 özel olarak Yöneticiye (Admin - Gökhan SUÇSUZ) tahsis edilmiştir. Saha personelleri bu slotu kullanamaz. Admin telefondan giriş yaptığında telefonu otomatik olarak bu slota kilitlenir.</li>
+            <li><b>Saha Personeli Telefonları (Slot 2, 3, 4):</b> Personeller şifrelerini bilseler dahi yalnızca Admin tarafından onaylanmış bu 3 telefondan sisteme girebilir.</li>
+            <li><b>Bilgisayar Kısıtı:</b> Masaüstü / dizüstü bilgisayarlardan sisteme sadece Yönetici (Admin) giriş yapabilir; personeller bilgisayardan erişemez.</li>
             <li><b>Admin Tek Yetkili:</b> Telefon kaybolursa, arızalanırsa veya personel değişirse Admin dilediği slotu tek tıkla iptal edip yeni telefona kod üretebilir.</li>
-            <li><b>Bilgisayar Kısıtı:</b> Masaüstü / dizüstü bilgisayarlardan sisteme sadece Yönetici (Admin) giriş yapabilir.</li>
           </ul>
         </div>
 
@@ -335,6 +397,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
             </div>
           ) : (
             slots.map((slot) => {
+              const isAdminSlot = slot.slot_no === 1;
               const isPaired = slot.durum === 'AKTIF';
               const isBusy = actionLoading === slot.slot_no;
 
@@ -342,9 +405,13 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
                 <div
                   key={slot.slot_no}
                   className={`p-3.5 rounded-2xl border transition-all ${
-                    isPaired
-                      ? 'bg-white border-emerald-200 shadow-xs ring-1 ring-emerald-100'
-                      : 'bg-slate-50/80 border-slate-200'
+                    isAdminSlot
+                      ? isPaired
+                        ? 'bg-gradient-to-r from-amber-50/50 via-white to-amber-50/20 border-amber-300 shadow-xs ring-1 ring-amber-200'
+                        : 'bg-amber-50/20 border-amber-200'
+                      : isPaired
+                        ? 'bg-white border-emerald-200 shadow-xs ring-1 ring-emerald-100'
+                        : 'bg-slate-50/80 border-slate-200'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -352,9 +419,13 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
                     <div className="flex items-start gap-3 min-w-0 flex-1">
                       <div
                         className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
-                          isPaired
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-slate-200 text-slate-600'
+                          isAdminSlot
+                            ? isPaired
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-amber-100 text-amber-800'
+                            : isPaired
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-slate-200 text-slate-600'
                         }`}
                       >
                         <Smartphone className="w-5 h-5" />
@@ -402,11 +473,23 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
                             </>
                           )}
 
+                          {isAdminSlot ? (
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                              👑 Yönetici Cihazı
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-300">
+                              📱 Saha Personeli
+                            </span>
+                          )}
+
                           <span
                             className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                               isPaired
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                                ? isAdminSlot
+                                  ? 'bg-amber-100 text-amber-900 border-amber-400'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : 'bg-slate-100 text-slate-700 border-slate-300'
                             }`}
                           >
                             {isPaired ? '✓ Eşlendi & Aktif' : 'Eşleme Bekliyor'}
@@ -431,21 +514,35 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
                               {slot.last_personel && (
                                 <>
                                   <span>•</span>
-                                  <span className="font-bold text-slate-700">Son Personel: {slot.last_personel}</span>
+                                  <span className="font-bold text-slate-700">Son Kullanıcı: {slot.last_personel}</span>
                                 </>
                               )}
                             </div>
                           </div>
                         ) : (
                           <p className="text-xs text-slate-500 mt-1">
-                            Bu slot boş durumdadır. Saha personelinin telefonunu eşlemek için aktivasyon kodu üretiniz.
+                            {isAdminSlot
+                              ? 'Bu slot boştur. Yönetici telefonundan sisteme giriş yaptığında bu telefon otomatik eşlenir veya aşağıdaki butonla doğrudan eşleyebilirsiniz.'
+                              : 'Bu slot boş durumdadır. Saha personelinin telefonunu eşlemek için aktivasyon kodu üretiniz.'}
                           </p>
                         )}
                       </div>
                     </div>
 
                     {/* Right: Action Buttons */}
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      {isAdminSlot && isMobileDevice && (
+                        <button
+                          onClick={handlePairAdminCurrentPhone}
+                          disabled={isBusy}
+                          className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all active:scale-95 flex items-center gap-1 shadow-sm"
+                          title="Kullandığınız bu telefonu Yönetici Cihazı olarak eşleyin"
+                        >
+                          <Smartphone className="w-3.5 h-3.5 text-white" />
+                          <span>Bu Telefonu Eşle</span>
+                        </button>
+                      )}
+
                       {isPaired ? (
                         <>
                           <button
