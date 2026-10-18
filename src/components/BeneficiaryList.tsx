@@ -7,7 +7,7 @@ import {
   ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText
+  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { 
@@ -30,14 +30,15 @@ interface BeneficiaryListProps {
   onSearchChange: (q: string) => void;
   selectedMahalleler: string[];
   onMahallelerChange: (m: string[]) => void;
-  selectedQueueTab: 'PENDING_AND_PARTIAL' | 'DELIVERED';
-  onQueueTabChange: (tab: 'PENDING_AND_PARTIAL' | 'DELIVERED') => void;
+  selectedQueueTab: 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED';
+  onQueueTabChange: (tab: 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED') => void;
   selectedDurumFilter: string;
   onDurumFilterChange: (d: string) => void;
   onOpenDelivery: (person: any) => void;
   onOpenHousehold: (person: any) => void;
   onOpenCancel?: (person: any) => void;
   onOpenEdit?: (person: any) => void;
+  onOpenKomurIptal?: (person: any) => void;
   onToggleSignature?: (person: any) => void;
   onNavigateToRoute?: () => void;
   defaultQuota?: number;
@@ -59,6 +60,7 @@ export default function BeneficiaryList({
   onOpenHousehold,
   onOpenCancel,
   onOpenEdit,
+  onOpenKomurIptal,
   onToggleSignature,
   onNavigateToRoute,
   defaultQuota = 34,
@@ -231,12 +233,14 @@ export default function BeneficiaryList({
   }, [records]);
 
   // Separate records into:
-  // 1. Teslim Edilecekler (Pending + Partial) - Teslim edilenler burada ASLA görünmez!
-  // 2. Teslim Edilenler (Completed)
+  // 1. Teslim Edilecekler (Pending + Partial) - Teslim edilenler ve Kömür İptal Edilenler burada ASLA görünmez!
+  // 2. Teslim Edilenler (Completed) - Kömür İptal Edilenler burada görünmez!
+  // 3. Kömür Verilmeyecekler (İptal Edilenler / Hak Sahipliği İptali - Eşi kömür almış, doğalgaza geçmiş vb.)
   const allPendingRecords = useMemo(() => {
     return records.filter((r) => {
       const isComplete = r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI';
-      return !isComplete;
+      const isExcluded = Boolean(r.komur_verilmeyecek);
+      return !isComplete && !isExcluded;
     });
   }, [records]);
 
@@ -250,7 +254,16 @@ export default function BeneficiaryList({
   }, [allPendingRecords, selectedDurumFilter]);
 
   const deliveredRecords = useMemo(() => {
-    return records.filter((r) => r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI');
+    return records.filter((r) => {
+      const isComplete = r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI';
+      const isExcluded = Boolean(r.komur_verilmeyecek);
+      return isComplete && !isExcluded;
+    });
+  }, [records]);
+
+  // Kömür Verilmeyecekler (İptal Edilen Hak Sahipleri)
+  const excludedRecords = useMemo(() => {
+    return records.filter((r) => Boolean(r.komur_verilmeyecek));
   }, [records]);
 
   const isSearching = Boolean(searchQuery && searchQuery.trim().length > 0);
@@ -267,7 +280,9 @@ export default function BeneficiaryList({
     ? searchFilteredRecords
     : selectedQueueTab === 'PENDING_AND_PARTIAL'
     ? filteredPendingRecords
-    : deliveredRecords;
+    : selectedQueueTab === 'DELIVERED'
+    ? deliveredRecords
+    : excludedRecords;
 
   // Filter by selected neighborhoods (if any)
   const mahalleFilteredList = useMemo(() => {
@@ -687,12 +702,12 @@ export default function BeneficiaryList({
       {/* NORMAL MOD (Arama yapılmadığında görünen kontroller) */}
       {!isSearching && (
         <>
-          {/* DYNAMIC QUEUE TOGGLE TABS (Teslim Edilecekler vs Teslim Edilenler) */}
-          <div className="p-1 rounded-2xl bg-slate-200/90 border border-slate-300/70 grid grid-cols-2 gap-1 shadow-inner">
+          {/* DYNAMIC QUEUE TOGGLE TABS (Teslim Edilecekler vs Teslim Edilenler vs Kömür Verilmeyecekler) */}
+          <div className="p-1 rounded-2xl bg-slate-200/90 border border-slate-300/70 grid grid-cols-3 gap-1 shadow-inner">
             <button
               type="button"
               onClick={() => onQueueTabChange('PENDING_AND_PARTIAL')}
-              className={`py-2.5 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+              className={`py-2.5 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
                 selectedQueueTab === 'PENDING_AND_PARTIAL'
                   ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90'
                   : 'text-slate-600 hover:text-slate-900'
@@ -705,7 +720,7 @@ export default function BeneficiaryList({
             <button
               type="button"
               onClick={() => onQueueTabChange('DELIVERED')}
-              className={`py-2.5 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+              className={`py-2.5 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
                 selectedQueueTab === 'DELIVERED'
                   ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/90'
                   : 'text-slate-600 hover:text-slate-900'
@@ -713,6 +728,20 @@ export default function BeneficiaryList({
             >
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span className="truncate">Teslim Edilen ({deliveredRecords.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onQueueTabChange('EXCLUDED')}
+              className={`py-2.5 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
+                selectedQueueTab === 'EXCLUDED'
+                  ? 'bg-white text-rose-800 shadow-sm border border-rose-300'
+                  : 'text-slate-600 hover:text-rose-900'
+              }`}
+              title="Eşi kömür almış, doğalgaza geçmiş vb. kömür verilmeyecek (iptal) hak sahipleri"
+            >
+              <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="truncate">Verilmeyecek ({excludedRecords.length})</span>
             </button>
           </div>
 
@@ -1217,7 +1246,11 @@ export default function BeneficiaryList({
           {/* Record Counter & Search Tip */}
           <div className="flex items-center justify-between text-xs text-slate-500 px-1">
             <span>
-              {selectedQueueTab === 'PENDING_AND_PARTIAL' ? 'Kömür Dağıtılacak: ' : 'Teslim Edilen: '}
+              {selectedQueueTab === 'PENDING_AND_PARTIAL'
+                ? 'Kömür Dağıtılacak: '
+                : selectedQueueTab === 'DELIVERED'
+                ? 'Teslim Edilen: '
+                : 'Kömür Verilmeyecek (İptal): '}
               <strong className="text-slate-900 font-bold">{totalFilteredRecords} Hane</strong> • Hedef Kota: <strong className="text-amber-700">{defaultQuota} Torba</strong>
             </span>
           </div>
@@ -1286,16 +1319,24 @@ export default function BeneficiaryList({
           </div>
         ) : (
           <div className="p-10 text-center rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+            {selectedQueueTab === 'EXCLUDED' ? (
+              <Ban className="w-10 h-10 text-rose-500 mx-auto" />
+            ) : (
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+            )}
             <p className="text-sm font-bold text-slate-800">
               {selectedQueueTab === 'PENDING_AND_PARTIAL'
                 ? 'Tebrikler! Seçilen mahallelerde teslim edilecek hane kalmadı.'
-                : 'Seçilen mahallelerde henüz tamamlanmış teslimat bulunmuyor.'}
+                : selectedQueueTab === 'DELIVERED'
+                ? 'Seçilen mahallelerde henüz tamamlanmış teslimat bulunmuyor.'
+                : 'Seçilen filtrelerde kömür yardımı iptal edilmiş (verilmeyecek) hane bulunmuyor.'}
             </p>
             <p className="text-xs text-slate-500 max-w-xs mx-auto">
               {selectedQueueTab === 'PENDING_AND_PARTIAL'
                 ? 'Tamamlanan teslimatları incelemek için yukarıdaki "Teslim Edilenler" sekmesine geçebilirsiniz.'
-                : 'Dağıtıma başlamak için "Teslim Edilecekler" sekmesine dönün.'}
+                : selectedQueueTab === 'DELIVERED'
+                ? 'Dağıtıma başlamak için "Teslim Edilecekler" sekmesine dönün.'
+                : 'Bir vatandaşın kömür yardımını iptal etmek için hane kartındaki "Kömür İptal" butonunu kullanabilirsiniz.'}
             </p>
           </div>
         )
@@ -1426,6 +1467,15 @@ export default function BeneficiaryList({
                                   <span className="break-words">{person.uyari_notu}</span>
                                 </div>
                               )}
+                              {person.komur_verilmeyecek && (
+                                <div
+                                  className="text-[10px] bg-rose-50 text-rose-900 px-1.5 py-0.5 rounded border border-rose-300 font-bold flex items-start gap-1 break-words whitespace-normal leading-tight shadow-2xs mt-0.5"
+                                  title={person.komur_iptal_aciklama || person.komur_iptal_nedeni}
+                                >
+                                  <Ban className="w-3 h-3 text-rose-600 shrink-0 mt-0.5" />
+                                  <span className="break-words font-black">🚫 Kömür İptal: {person.komur_iptal_nedeni}</span>
+                                </div>
+                              )}
                             </div>
                           </td>
 
@@ -1485,7 +1535,22 @@ export default function BeneficiaryList({
 
                           {/* Durum / Kömür */}
                           <td className="whitespace-nowrap">
-                            {isComplete ? (
+                            {person.komur_verilmeyecek ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-300 text-[11px] font-black">
+                                  <Ban className="w-3.5 h-3.5 text-rose-600" />
+                                  Kömür Verilmeyecek
+                                </span>
+                                <div className="text-[10px] text-rose-800 font-bold leading-tight">
+                                  <span>{person.komur_iptal_nedeni || 'İptal Edildi'}</span>
+                                  {person.komur_iptal_aciklama && (
+                                    <span className="block text-[9px] text-slate-500 truncate max-w-[170px]" title={person.komur_iptal_aciklama}>
+                                      {person.komur_iptal_aciklama}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : isComplete ? (
                               <div className="space-y-0.5">
                                 <span className="badge badge-success text-[11px]">
                                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1528,35 +1593,62 @@ export default function BeneficiaryList({
                           {/* Hızlı İşlem */}
                           <td className="text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1.5 justify-end">
-                              {isPartial ? (
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenDelivery(person)}
-                                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
-                                >
-                                  <PackagePlus className="w-3.5 h-3.5" />
-                                  <span>Kalanı Ver (+{kalan})</span>
-                                </button>
-                              ) : !isComplete ? (
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenDelivery(person)}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95"
-                                >
-                                  <PackageCheck className="w-3.5 h-3.5" />
-                                  <span>Teslim Et ({hedef})</span>
-                                </button>
-                              ) : null}
-                              {(isComplete || isPartial) && onOpenCancel && (
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenCancel(person)}
-                                  className="px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
-                                  title="Teslimatı Geri Al / İptal Et"
-                                >
-                                  <Undo2 className="w-3.5 h-3.5 text-rose-600" />
-                                  <span className="hidden xl:inline">Geri Al</span>
-                                </button>
+                              {person.komur_verilmeyecek ? (
+                                onOpenKomurIptal && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenKomurIptal(person)}
+                                    className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                                    title="Kömür İptal Gerekçesi / İptali Kaldır"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-rose-600" />
+                                    <span>İncele / Aktif Et</span>
+                                  </button>
+                                )
+                              ) : (
+                                <>
+                                  {isPartial ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenDelivery(person)}
+                                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
+                                    >
+                                      <PackagePlus className="w-3.5 h-3.5" />
+                                      <span>Kalanı Ver (+{kalan})</span>
+                                    </button>
+                                  ) : !isComplete ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenDelivery(person)}
+                                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95"
+                                    >
+                                      <PackageCheck className="w-3.5 h-3.5" />
+                                      <span>Teslim Et ({hedef})</span>
+                                    </button>
+                                  ) : null}
+                                  {(isComplete || isPartial) && onOpenCancel && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenCancel(person)}
+                                      className="px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                                      title="Teslimatı Geri Al / İptal Et"
+                                    >
+                                      <Undo2 className="w-3.5 h-3.5 text-rose-600" />
+                                      <span className="hidden xl:inline">Geri Al</span>
+                                    </button>
+                                  )}
+                                  {onOpenKomurIptal && !isComplete && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenKomurIptal(person)}
+                                      className="px-2 py-1.5 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                                      title="Kömür yardımını iptal et (Eşi kömür almış, doğalgaza geçmiş vb.)"
+                                    >
+                                      <Ban className="w-3.5 h-3.5 text-rose-600" />
+                                      <span className="hidden xl:inline">Kömür İptal</span>
+                                    </button>
+                                  )}
+                                </>
                               )}
                               {onOpenEdit && (
                                 <button
@@ -1764,7 +1856,17 @@ export default function BeneficiaryList({
                             İmzalı
                           </span>
                         )}
-                        {isComplete ? (
+                        {person.komur_verilmeyecek ? (
+                          <div className="text-right">
+                            <span className="badge badge-danger text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
+                              <Ban className="w-3.5 h-3.5 text-rose-600" />
+                              Verilmeyecek
+                            </span>
+                            <span className="text-[10px] text-rose-700 font-bold block mt-0.5 truncate max-w-[130px]" title={person.komur_iptal_nedeni}>
+                              {person.komur_iptal_nedeni || 'İptal'}
+                            </span>
+                          </div>
+                        ) : isComplete ? (
                           <div className="text-right">
                             <span className="badge badge-delivered">
                               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1809,6 +1911,44 @@ export default function BeneficiaryList({
                       </div>
                     </div>
 
+                    {/* Kömür Verilmeyecek / İptal Uyarısı */}
+                    {person.komur_verilmeyecek && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-950 space-y-1 shadow-2xs">
+                        <div className="flex items-start justify-between gap-1.5 font-bold">
+                          <div className="flex items-start gap-1.5">
+                            <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-black text-rose-800 block">🚫 KÖMÜR VERİLMEYECEK (İPTAL)</span>
+                              <span className="text-rose-900 font-extrabold text-[11px]">Neden: {person.komur_iptal_nedeni || 'Belirtilmedi'}</span>
+                            </div>
+                          </div>
+                          {onOpenKomurIptal && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenKomurIptal(person);
+                              }}
+                              className="text-[11px] font-extrabold text-rose-800 hover:text-rose-950 bg-white hover:bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-300 shrink-0 shadow-2xs transition-all active:scale-95"
+                            >
+                              İncele / Aktif Et
+                            </button>
+                          )}
+                        </div>
+                        {person.komur_iptal_aciklama && (
+                          <div className="text-[11px] text-rose-800 pt-1 border-t border-rose-200">
+                            <strong>Açıklama:</strong> {person.komur_iptal_aciklama}
+                          </div>
+                        )}
+                        {(person.komur_iptal_eden || person.komur_iptal_tarihi) && (
+                          <div className="text-[10px] text-rose-600 flex flex-wrap items-center gap-x-2 pt-0.5">
+                            {person.komur_iptal_eden && <span>İşlem Yapan: <strong>{person.komur_iptal_eden}</strong></span>}
+                            {person.komur_iptal_tarihi && <span>Tarih: <strong>{person.komur_iptal_tarihi}</strong></span>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Incomplete Warning Bar on Card */}
                     {isPartial && (
                       <div className="mt-2.5 p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-xs text-amber-950 space-y-1 shadow-2xs">
@@ -1846,6 +1986,21 @@ export default function BeneficiaryList({
                         </button>
 
                         <div className="flex items-center gap-1.5">
+                          {onOpenKomurIptal && !person.komur_verilmeyecek && !isComplete && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenKomurIptal(person);
+                              }}
+                              className="text-xs text-slate-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-0.5 rounded-lg border border-slate-200 hover:border-rose-300 font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
+                              title="Kömür yardımını iptal et (Eşi kömür almış, doğalgaza geçmiş vb.)"
+                            >
+                              <Ban className="w-3 h-3 text-rose-500" />
+                              <span>Kömür İptal</span>
+                            </button>
+                          )}
+
                           {onOpenEdit && (
                             <button
                               type="button"
@@ -1903,8 +2058,26 @@ export default function BeneficiaryList({
 
                     {/* Action Row: Teslimat ve İmza İşlemleri */}
                     <div className="mt-3 flex items-center gap-2">
-
-                      {isPartial ? (
+                      {person.komur_verilmeyecek ? (
+                        <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 font-semibold">
+                          <div className="flex items-center gap-2">
+                            <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+                            <div>
+                              <span className="font-black text-rose-800">Kömür Yardımı İptal Edildi</span>
+                              <span className="text-[11px] text-rose-700 block font-bold">{person.komur_iptal_nedeni || 'Kömür verilmeyecek'}</span>
+                            </div>
+                          </div>
+                          {onOpenKomurIptal && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenKomurIptal(person)}
+                              className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 font-bold text-xs shrink-0 shadow-2xs transition-all active:scale-95"
+                            >
+                              İncele / Aktif Et
+                            </button>
+                          )}
+                        </div>
+                      ) : isPartial ? (
                         <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center gap-1.5">
                           <button
                             onClick={() => onOpenDelivery(person)}

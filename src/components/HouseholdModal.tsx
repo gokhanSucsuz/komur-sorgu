@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText } from 'lucide-react';
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
 
 interface HouseholdModalProps {
@@ -10,6 +10,7 @@ interface HouseholdModalProps {
   onOpenDelivery: (person: any) => void;
   onOpenCancel?: (person: any) => void;
   onOpenEdit?: (person: any) => void;
+  onOpenKomurIptal?: (person: any) => void;
 }
 
 export default function HouseholdModal({
@@ -19,6 +20,7 @@ export default function HouseholdModal({
   onOpenDelivery,
   onOpenCancel,
   onOpenEdit,
+  onOpenKomurIptal,
 }: HouseholdModalProps) {
   const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
   const isPartial = person.teslimat_durumu === 'EKSIK';
@@ -55,7 +57,12 @@ export default function HouseholdModal({
               </span>
             </div>
             <div className="shrink-0">
-              {isComplete ? (
+              {person.komur_verilmeyecek ? (
+                <span className="badge badge-danger text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
+                  <Ban className="w-3.5 h-3.5 text-rose-600" />
+                  Kömür Verilmeyecek
+                </span>
+              ) : isComplete ? (
                 <span className="badge badge-delivered">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Tam ({person.torba_sayisi} Torba)
@@ -73,6 +80,29 @@ export default function HouseholdModal({
               )}
             </div>
           </div>
+
+          {/* Kömür İptal Bildirim Kutusu */}
+          {person.komur_verilmeyecek && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-950 space-y-1">
+              <div className="flex items-center gap-2 font-black text-rose-800">
+                <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Bu Hak Sahibine Kömür Yardımı İptal Edilmiştir</span>
+              </div>
+              <p className="text-[11px] text-rose-900 font-bold">
+                Neden: {person.komur_iptal_nedeni || 'Belirtilmedi'}
+              </p>
+              {person.komur_iptal_aciklama && (
+                <p className="text-[11px] text-rose-800">
+                  Açıklama: {person.komur_iptal_aciklama}
+                </p>
+              )}
+              {person.komur_iptal_tarihi && (
+                <span className="text-[10px] text-rose-600 block">
+                  İptal Tarihi: {person.komur_iptal_tarihi} {person.komur_iptal_eden ? `(${person.komur_iptal_eden})` : ''}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Islak İmza Formu ve Dosya Bilgisi Banner */}
           <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
@@ -252,6 +282,28 @@ export default function HouseholdModal({
             </div>
           )}
 
+          {/* Kömür İptal / Aktif Etme Butonu */}
+          {onOpenKomurIptal && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenKomurIptal(person);
+              }}
+              className={`w-full mt-2 py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs ${
+                person.komur_verilmeyecek
+                  ? 'bg-rose-100 hover:bg-rose-200 text-rose-900 border-rose-300 font-black'
+                  : 'bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200'
+              }`}
+            >
+              <Ban className="w-4 h-4 text-rose-600" />
+              <span>
+                {person.komur_verilmeyecek
+                  ? 'Kömür İptal Gerekçesini Görüntüle / İptali Kaldır'
+                  : 'Kömür Yardımını İptal Et (Eşi kömür aldı, doğalgaza geçti vb.)'}
+              </span>
+            </button>
+          )}
+
           {(isComplete || isPartial) && onOpenCancel && (
             <button
               onClick={() => {
@@ -265,7 +317,7 @@ export default function HouseholdModal({
             </button>
           )}
 
-          {!isComplete && (
+          {!isComplete && !person.komur_verilmeyecek && (
             <button
               onClick={() => {
                 onClose();
@@ -357,7 +409,20 @@ export default function HouseholdModal({
                       </button>
                     )}
 
-                    {member.teslimat_durumu === 'TAMAMLANDI' || member.teslimat_durumu === 'TESLIM_EDILDI' ? (
+                    {member.komur_verilmeyecek ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          if (onOpenKomurIptal) onOpenKomurIptal(member);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-bold border border-rose-200 shadow-2xs transition-all active:scale-95"
+                        title={member.komur_iptal_nedeni ? `İptal Nedeni: ${member.komur_iptal_nedeni}` : 'Kömür Yardımı İptal Edildi'}
+                      >
+                        <Ban className="w-3 h-3 text-rose-600" />
+                        <span>Kömür İptal</span>
+                      </button>
+                    ) : member.teslimat_durumu === 'TAMAMLANDI' || member.teslimat_durumu === 'TESLIM_EDILDI' ? (
                       <span className="badge badge-delivered text-[11px] py-0.5 px-2">
                         Teslim Edildi
                       </span>

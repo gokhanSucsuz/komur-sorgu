@@ -20,6 +20,7 @@ import ShiftPage from '@/components/ShiftPage';
 import RoutePage from '@/components/RoutePage';
 import AdminAuthModal from '@/components/AdminAuthModal';
 import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
+import KomurIptalModal from '@/components/KomurIptalModal';
 import SeasonManagementModal from '@/components/SeasonManagementModal';
 import GuidePage from '@/components/GuidePage';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
@@ -52,7 +53,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedMahalleler, setSelectedMahalleler] = useState<string[]>([]);
-  const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED'>('PENDING_AND_PARTIAL');
+  const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED'>('PENDING_AND_PARTIAL');
   const [selectedDurumFilter, setSelectedDurumFilter] = useState<string>('HEPSI');
 
   // Debounce search query to prevent input stutter and out-of-order race conditions
@@ -92,6 +93,7 @@ export default function Home() {
   const [householdTarget, setHouseholdTarget] = useState<any | null>(null);
   const [householdMembers, setHouseholdMembers] = useState<any[]>([]);
   const [editTarget, setEditTarget] = useState<any | null>(null);
+  const [komurIptalTarget, setKomurIptalTarget] = useState<any | null>(null);
 
   const [sessionTerminatedReason, setSessionTerminatedReason] = useState<string | null>(null);
 
@@ -789,6 +791,7 @@ export default function Home() {
               onOpenHousehold={handleOpenHousehold}
               onOpenCancel={(person) => setCancelTarget(person)}
               onOpenEdit={(person) => setEditTarget(person)}
+              onOpenKomurIptal={(person) => setKomurIptalTarget(person)}
               onToggleSignature={handleToggleSignature}
               onNavigateToRoute={() => setCurrentTab('route')}
               defaultQuota={defaultQuota}
@@ -941,6 +944,10 @@ export default function Home() {
             setHouseholdTarget(null);
             setEditTarget(person);
           }}
+          onOpenKomurIptal={(person) => {
+            setHouseholdTarget(null);
+            setKomurIptalTarget(person);
+          }}
         />
       )}
 
@@ -953,6 +960,22 @@ export default function Home() {
           onClose={() => setEditTarget(null)}
           onSuccess={(updatedBeneficiary) => {
             setEditTarget(null);
+            handleRefreshAll();
+          }}
+        />
+      )}
+
+      {/* 3.2 Kömür Dağıtımı İptal (Verilmeyecek) Modalı */}
+      {komurIptalTarget && (
+        <KomurIptalModal
+          beneficiary={komurIptalTarget}
+          currentStaff={userName}
+          onClose={() => setKomurIptalTarget(null)}
+          onSuccess={(updated) => {
+            setBeneficiaries((prev) =>
+              prev.map((b) => (b.id === updated.id ? { ...b, ...updated } : b))
+            );
+            setKomurIptalTarget(null);
             handleRefreshAll();
           }}
         />

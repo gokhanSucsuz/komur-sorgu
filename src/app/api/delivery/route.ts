@@ -111,6 +111,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (beneficiary.komur_verilmeyecek) {
+        return NextResponse.json(
+          {
+            success: false,
+            conflict: true,
+            error: `UYARI: Bu hak sahibine kömür yardımı iptal edilmiştir (Kömür Verilmeyecek)! Kömür teslimatı yapılamaz. İptal Nedeni: ${beneficiary.komur_iptal_nedeni || 'Belirtilmemiş'}${beneficiary.komur_iptal_aciklama ? ` (${beneficiary.komur_iptal_aciklama})` : ''}`,
+            beneficiary,
+          },
+          { status: 409 }
+        );
+      }
+
       if (currentStatus === 'IPTAL') {
         return NextResponse.json(
           {

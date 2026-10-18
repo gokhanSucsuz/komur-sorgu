@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     let toplamDagitilanTorba = 0;
     let toplamHedefTorba = 0;
     let iptalSayisi = 0;
+    let komurVerilmeyecekHane = 0;
     let toplamTirSayisi = 0;
     let gelenNetTonaj = 0;
     let gelenBrutTonaj = 0;
@@ -43,6 +44,11 @@ export async function GET(request: NextRequest) {
             $group: {
               _id: null,
               toplamVatandas: { $sum: 1 },
+              komurVerilmeyecekHane: {
+                $sum: {
+                  $cond: [{ $eq: ['$komur_verilmeyecek', true] }, 1, 0]
+                }
+              },
               tamHane: {
                 $sum: {
                   $cond: [{ $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI']] }, 1, 0]
@@ -102,6 +108,7 @@ export async function GET(request: NextRequest) {
       if (benAggResult.length > 0) {
         const b = benAggResult[0];
         toplamVatandas = b.toplamVatandas || 0;
+        komurVerilmeyecekHane = b.komurVerilmeyecekHane || 0;
         tamHane = b.tamHane || 0;
         eksikHane = b.eksikHane || 0;
         bekleyenHane = b.bekleyenHane || 0;
@@ -122,6 +129,9 @@ export async function GET(request: NextRequest) {
       // In-Memory Fallback
       const allBeneficiaries = await benCol.find({}).toArray();
       for (const b of allBeneficiaries) {
+        if (b.komur_verilmeyecek) {
+          komurVerilmeyecekHane += 1;
+        }
         const d = b.teslimat_durumu;
         if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
           tamHane += 1;
@@ -163,6 +173,7 @@ export async function GET(request: NextRequest) {
       stats: {
         varsayilanHedefTorba,
         toplamVatandas,
+        komurVerilmeyecekHane,
         tamHane,
         eksikHane,
         bekleyenHane,

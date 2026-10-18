@@ -77,7 +77,8 @@ export async function GET(request: NextRequest) {
     const pendingSignedDocs = await benCol
       .find({
         imza_durumu: 'IMZALANDI',
-        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI'] }
+        teslimat_durumu: { $nin: ['TAMAMLANDI', 'TESLIM_EDILDI'] },
+        komur_verilmeyecek: { $ne: true }
       })
       .toArray();
     const signedBeneficiaries = mapDocs(pendingSignedDocs).sort(compareByAddressAsc);
@@ -182,7 +183,8 @@ export async function POST(request: NextRequest) {
         (b: any) =>
           b.imza_durumu === 'IMZALANDI' &&
           b.teslimat_durumu !== 'TAMAMLANDI' &&
-          b.teslimat_durumu !== 'TESLIM_EDILDI'
+          b.teslimat_durumu !== 'TESLIM_EDILDI' &&
+          !b.komur_verilmeyecek
       );
 
       if (fetchedBeneficiaries.length === 0) {

@@ -182,6 +182,8 @@ const BENEFICIARY_ENCRYPTED_FIELDS = [
   'teslimat_notu',
   'uyari_notu',
   'adres_guncelleme_notu',
+  'komur_iptal_nedeni',
+  'komur_iptal_aciklama',
 ];
 
 /**

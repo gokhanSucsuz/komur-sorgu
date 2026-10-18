@@ -20,6 +20,7 @@ import {
   hashAddress,
   encryptField,
   encryptBeneficiary,
+  encryptRouteStop,
 } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
@@ -137,14 +138,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (durum && durum !== 'HEPSI') {
-      if (durum === 'DAGITILACAK') {
+      if (durum === 'KOMUR_VERILMEYECEK' || durum === 'EXCLUDED') {
+        filter.komur_verilmeyecek = true;
+      } else if (durum === 'DAGITILACAK') {
         filter.teslimat_durumu = { $in: ['BEKLIYOR', 'EKSIK', null] };
+        filter.komur_verilmeyecek = { $ne: true };
       } else if (durum === 'TAMAMLANDI') {
         filter.teslimat_durumu = { $in: ['TAMAMLANDI', 'TESLIM_EDILDI'] };
+        filter.komur_verilmeyecek = { $ne: true };
       } else if (durum === 'EKSIK') {
         filter.teslimat_durumu = 'EKSIK';
+        filter.komur_verilmeyecek = { $ne: true };
       } else if (durum === 'BEKLIYOR') {
         filter.teslimat_durumu = { $in: ['BEKLIYOR', null] };
+        filter.komur_verilmeyecek = { $ne: true };
       } else {
         filter.teslimat_durumu = durum;
       }
@@ -248,7 +255,7 @@ export async function GET(request: NextRequest) {
     let mappedImzali: any[] = [];
     if (isUnfilteredFullLoad) {
       mappedEksik = records
-        .filter((r: any) => r.teslimat_durumu === 'EKSIK')
+        .filter((r: any) => r.teslimat_durumu === 'EKSIK' && !r.komur_verilmeyecek)
         .map((m: any) => ({
           ...m,
           hedef_torba: m.hedef_torba || 34,
@@ -260,6 +267,7 @@ export async function GET(request: NextRequest) {
         .filter(
           (r: any) =>
             r.imza_durumu === 'IMZALANDI' &&
+            !r.komur_verilmeyecek &&
             !['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK'].includes(r.teslimat_durumu)
         )
         .map((m: any) => ({
@@ -271,6 +279,7 @@ export async function GET(request: NextRequest) {
     } else {
       const rawAlertDocs = await benCol
         .find({
+          komur_verilmeyecek: { $ne: true },
           $or: [
             { teslimat_durumu: 'EKSIK' },
             {
@@ -718,6 +727,195 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Hak sahibi kaydı başarıyla silindi' });
   } catch (error: any) {
     console.error('Error deleting beneficiary:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await verifySession(request);
+    if (!session.valid) {
+      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
+    const { beneficiaries: benCol, deliveryRoutes: routeCol } = await getDbCollections();
+    const body = await request.json();
+    const { action, id, neden, aciklama, personel } = body;
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Hak sahibi ID bilgisi zorunludur' }, { status: 400 });
+    }
+
+    const rawBeneficiary = await benCol.findOne(buildIdFilter(id));
+    if (!rawBeneficiary) {
+      return NextResponse.json({ success: false, error: 'Hak sahibi sistemde bulunamadı' }, { status: 404 });
+    }
+
+    const existing = mapDoc(rawBeneficiary);
+    const { nowLocaleTr } = getIstanbulDate();
+    const nowStr = nowLocaleTr;
+    const staff = (personel || session.ad_soyad || session.username || 'Yetkili').trim();
+
+    if (action === 'KOMUR_IPTAL') {
+      if (!neden || !String(neden).trim()) {
+        return NextResponse.json({ success: false, error: 'Lütfen kömür iptal gerekçesini seçiniz veya belirtiniz' }, { status: 400 });
+      }
+
+      const updateSet: any = {
+        komur_verilmeyecek: true,
+        komur_iptal_nedeni: encryptField(String(neden).trim()),
+        komur_iptal_aciklama: encryptField(aciklama ? String(aciklama).trim() : ''),
+        komur_iptal_tarihi: nowStr,
+        komur_iptal_eden: staff,
+        updated_at: nowStr,
+      };
+
+      await benCol.updateOne(buildIdFilter(id), { $set: updateSet });
+
+      // Aktif rota içerisinde bu vatandaş varsa durağı iptal olarak güncelle
+      const activeRoutes = await routeCol.find({
+        durum: { $in: ['AKTIF', 'DURAKLATILDI'] },
+      }).toArray();
+
+      for (const rawR of activeRoutes) {
+        const decR = mapDoc(rawR);
+        const stops = decR.duraklar || [];
+        let modified = false;
+        stops.forEach((s: any) => {
+          if (
+            String(s.beneficiary_id) === String(existing.id) ||
+            String(s.beneficiary_id) === String(existing._id) ||
+            (existing.tc_no && s.tc_no === existing.tc_no)
+          ) {
+            s.komur_verilmeyecek = true;
+            s.durum = 'IPTAL';
+            s.teslimat_notu = `Kömür İptal Edildi: ${String(neden).trim()}`;
+            modified = true;
+          }
+        });
+        if (modified) {
+          await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+            $set: {
+              duraklar: stops.map(encryptRouteStop),
+              updated_at: nowStr,
+            },
+          });
+        }
+      }
+
+      await touchSyncPulse(staff);
+
+      await recordActivityLog({
+        islem_tipi: 'KOMUR_HAK_SAHIPLIGI_IPTAL',
+        kullanici_adi: staff,
+        kullanici_rolu: session.rol || 'PERSONEL',
+        baslik: `Kömür Yardımı İptal Edildi (${existing.ad_soyad})`,
+        detay: `${existing.ad_soyad} (TC: ${existing.tc_no || '-'}) adlı hak sahibine kömür verilmeyecek olarak işaretlendi. Neden: ${neden}${aciklama ? ` | Açıklama: ${aciklama}` : ''}`,
+        hedef_kisi: existing.ad_soyad,
+        hedef_tc: existing.tc_no,
+        mahalle: existing.mahalle,
+        ek_bilgi: {
+          beneficiary_id: id,
+          neden,
+          aciklama: aciklama || null,
+          tarih: nowStr,
+          personel: staff,
+        },
+      });
+
+      const updatedRaw = await benCol.findOne(buildIdFilter(id));
+      const updatedDoc = mapDoc(updatedRaw);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Kömür yardımı iptal edildi ve Kömür Verilmeyecekler listesine taşındı',
+        beneficiary: updatedDoc,
+      });
+    } else if (action === 'KOMUR_IPTAL_GERI_AL') {
+      const updateSet: any = {
+        komur_verilmeyecek: false,
+        komur_iptal_nedeni: null,
+        komur_iptal_aciklama: null,
+        komur_iptal_tarihi: null,
+        komur_iptal_eden: null,
+        updated_at: nowStr,
+      };
+
+      await benCol.updateOne(buildIdFilter(id), {
+        $set: updateSet,
+        $unset: {
+          komur_verilmeyecek: '',
+          komur_iptal_nedeni: '',
+          komur_iptal_aciklama: '',
+          komur_iptal_tarihi: '',
+          komur_iptal_eden: '',
+        },
+      });
+
+      // Aktif rotalardaki durağı da normale çevir
+      const activeRoutes = await routeCol.find({
+        durum: { $in: ['AKTIF', 'DURAKLATILDI'] },
+      }).toArray();
+
+      for (const rawR of activeRoutes) {
+        const decR = mapDoc(rawR);
+        const stops = decR.duraklar || [];
+        let modified = false;
+        stops.forEach((s: any) => {
+          if (
+            String(s.beneficiary_id) === String(existing.id) ||
+            String(s.beneficiary_id) === String(existing._id) ||
+            (existing.tc_no && s.tc_no === existing.tc_no)
+          ) {
+            s.komur_verilmeyecek = false;
+            if (s.durum === 'IPTAL') {
+              s.durum = 'BEKLIYOR';
+              s.teslimat_notu = null;
+            }
+            modified = true;
+          }
+        });
+        if (modified) {
+          await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+            $set: {
+              duraklar: stops.map(encryptRouteStop),
+              updated_at: nowStr,
+            },
+          });
+        }
+      }
+
+      await touchSyncPulse(staff);
+
+      await recordActivityLog({
+        islem_tipi: 'KOMUR_HAK_SAHIPLIGI_AKTIF_EDILDI',
+        kullanici_adi: staff,
+        kullanici_rolu: session.rol || 'PERSONEL',
+        baslik: `Kömür Yardımı Yeniden Aktif Edildi (${existing.ad_soyad})`,
+        detay: `${existing.ad_soyad} (TC: ${existing.tc_no || '-'}) adlı vatandaşın kömür yardım iptali kaldırıldı ve hak sahipliği yeniden aktif edildi.`,
+        hedef_kisi: existing.ad_soyad,
+        hedef_tc: existing.tc_no,
+        mahalle: existing.mahalle,
+        ek_bilgi: {
+          beneficiary_id: id,
+          tarih: nowStr,
+          personel: staff,
+        },
+      });
+
+      const updatedRaw = await benCol.findOne(buildIdFilter(id));
+      const updatedDoc = mapDoc(updatedRaw);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Kömür iptali kaldırıldı, hak sahibi yeniden aktif dağıtım listesine eklendi',
+        beneficiary: updatedDoc,
+      });
+    }
+
+    return NextResponse.json({ success: false, error: 'Geçersiz işlem parametresi' }, { status: 400 });
+  } catch (error: any) {
+    console.error('Error updating beneficiary coal status:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
