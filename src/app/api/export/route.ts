@@ -1164,6 +1164,7 @@ export async function GET(request: NextRequest) {
           'Durum': b.teslimat_durumu === 'TAMAMLANDI' ? 'TAMAMLANDI' : (b.teslimat_durumu === 'EKSIK' ? 'EKSİK' : 'BEKLİYOR'),
           'Teslim Alan': b.teslim_alan || '-',
           'Teslim Tarihi': b.teslim_tarihi || '-',
+          'Teslim Eden Personel': b.teslim_eden_personel || '-',
           'İmza Durumu': b.imza_durumu === 'IMZALANDI' ? 'İMZALANDI' : 'İMZASIZ',
         };
       });
@@ -1181,6 +1182,7 @@ export async function GET(request: NextRequest) {
         { wch: 16 }, // Durum
         { wch: 22 }, // Teslim Alan
         { wch: 20 }, // Teslim Tarihi
+        { wch: 22 }, // Teslim Eden Personel
         { wch: 14 }, // İmza Durumu
       ];
 
@@ -1354,6 +1356,8 @@ export async function GET(request: NextRequest) {
             'Hedef (Torba)': target,
             'Alınan (Torba)': given,
             'Kalan Eksik (Torba)': Math.max(0, target - given),
+            'Teslim Eden Personel': h.teslim_eden_personel || '-',
+            'Teslim Alan': h.teslim_alan || '-',
             'Açıklama / Not': h.teslimat_notu || h.aciklama || '-',
           };
         });
@@ -1373,10 +1377,56 @@ export async function GET(request: NextRequest) {
             { wch: 14 },
             { wch: 14 },
             { wch: 18 },
+            { wch: 22 },
+            { wch: 20 },
             { wch: 35 },
           ]
         );
       }
+
+      // C) Personel Dağıtım Performansı Cetveli
+      const pStatsMap = new Map<string, { personel: string; tam: number; eksik: number; torba: number; sonTarih: string }>();
+      for (const r of records) {
+        if (r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' || r.teslimat_durumu === 'EKSIK') {
+          const p = (r.teslim_eden_personel || 'Belirtilmemiş Personel').trim();
+          if (!pStatsMap.has(p)) pStatsMap.set(p, { personel: p, tam: 0, eksik: 0, torba: 0, sonTarih: '' });
+          const ent = pStatsMap.get(p)!;
+          if (r.teslimat_durumu === 'EKSIK') ent.eksik++; else ent.tam++;
+          ent.torba += Number(r.torba_sayisi || r.hedef_torba || 34);
+          if (r.teslimat_tarihi && (!ent.sonTarih || r.teslimat_tarihi > ent.sonTarih)) ent.sonTarih = r.teslimat_tarihi;
+        }
+      }
+
+      const pStatsRows = Array.from(pStatsMap.values())
+        .sort((a, b) => b.torba - a.torba)
+        .map((p, idx) => ({
+          'Sıra': idx + 1,
+          'Personel Adı Soyadı': p.personel,
+          'Tam Teslimat (Hane)': p.tam,
+          'Eksik Teslimat (Hane)': p.eksik,
+          'Toplam Teslim Edilen Hane': p.tam + p.eksik,
+          'Toplam Dağıtılan Torba': p.torba,
+          'Toplam Dağıtılan Ton': `${(p.torba * 0.025).toFixed(2)} Ton`,
+          'Son Teslimat Tarihi': p.sonTarih || '-',
+        }));
+
+      addStyledWorksheet(
+        workbook,
+        'KÖMÜR YARDIMI PERSONEL DAĞITIM VE PERFORMANS CETVELİ',
+        `Toplam Dağıtım Yapan Personel: ${pStatsRows.length} Kişi`,
+        sanitizeSheetName('Personel Performans', seenSheetNames),
+        pStatsRows,
+        [
+          { wch: 6 },
+          { wch: 28 },
+          { wch: 20 },
+          { wch: 20 },
+          { wch: 24 },
+          { wch: 22 },
+          { wch: 20 },
+          { wch: 20 },
+        ]
+      );
 
       const buf = await workbook.xlsx.writeBuffer();
       const todayStr = new Date().toLocaleDateString('en-CA');

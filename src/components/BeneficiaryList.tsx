@@ -1378,15 +1378,37 @@ export default function BeneficiaryList({
                           {/* Durum / Kömür */}
                           <td className="whitespace-nowrap">
                             {isComplete ? (
-                              <span className="badge badge-success text-[11px]">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                ✓ {teslim} Torba Tamamlandı
-                              </span>
+                              <div className="space-y-0.5">
+                                <span className="badge badge-success text-[11px]">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  ✓ {teslim} Torba Tamamlandı
+                                </span>
+                                <div className="text-[10px] text-slate-600 font-medium leading-tight">
+                                  <span>Teslim Eden: <strong className="text-slate-900">{person.teslim_eden_personel || '-'}</strong></span>
+                                  {person.teslim_alan && person.teslim_alan !== person.ad_soyad && (
+                                    <span className="block text-[10px] text-slate-500">Alan: {person.teslim_alan}</span>
+                                  )}
+                                  {person.teslimat_tarihi && (
+                                    <span className="block text-[9px] font-mono text-slate-400">{person.teslimat_tarihi}</span>
+                                  )}
+                                </div>
+                              </div>
                             ) : isPartial ? (
-                              <span className="badge badge-warning text-[11px]">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                Eksik: {teslim}/{hedef} (+{kalan} Torba)
-                              </span>
+                              <div className="space-y-0.5">
+                                <span className="badge badge-warning text-[11px]">
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                  Eksik: {teslim}/{hedef} (+{kalan} Torba)
+                                </span>
+                                <div className="text-[10px] text-slate-600 font-medium leading-tight">
+                                  <span>Teslim Eden: <strong className="text-slate-900">{person.teslim_eden_personel || '-'}</strong></span>
+                                  {person.teslim_alan && person.teslim_alan !== person.ad_soyad && (
+                                    <span className="block text-[10px] text-slate-500">Alan: {person.teslim_alan}</span>
+                                  )}
+                                  {person.teslimat_tarihi && (
+                                    <span className="block text-[9px] font-mono text-slate-400">{person.teslimat_tarihi}</span>
+                                  )}
+                                </div>
+                              </div>
                             ) : (
                               <span className="badge badge-pending text-[11px]">
                                 <Clock className="w-3.5 h-3.5" />
@@ -1630,6 +1652,11 @@ export default function BeneficiaryList({
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Tam ({teslim} Torba)
                             </span>
+                            {person.teslim_eden_personel && (
+                              <span className="text-[10px] text-slate-700 font-extrabold block mt-0.5">
+                                Teslim Eden: <strong className="text-emerald-900">{person.teslim_eden_personel}</strong>
+                              </span>
+                            )}
                             {person.teslimat_tarihi && (
                               <div className="text-[10px] text-emerald-800 font-bold mt-1 flex items-center justify-end gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                 <Clock className="w-3 h-3 text-emerald-600" />
@@ -1643,6 +1670,11 @@ export default function BeneficiaryList({
                               <AlertTriangle className="w-3.5 h-3.5" />
                               Eksik: {teslim}/{hedef}
                             </span>
+                            {person.teslim_eden_personel && (
+                              <span className="text-[10px] text-slate-700 font-extrabold block mt-0.5">
+                                Teslim Eden: <strong className="text-amber-900">{person.teslim_eden_personel}</strong>
+                              </span>
+                            )}
                             {person.teslimat_tarihi && (
                               <div className="text-[10px] text-amber-800 font-bold mt-1 flex items-center justify-end gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                 <Clock className="w-3 h-3 text-amber-600" />
@@ -1661,14 +1693,26 @@ export default function BeneficiaryList({
 
                     {/* Incomplete Warning Bar on Card */}
                     {isPartial && (
-                      <div className="mt-2.5 p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs">
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                          <span>Eksik Dağıtım: <strong>{teslim}/{hedef} Torba Verildi</strong> • Kalan tamamlanıncaya kadar uyarı aktiftir</span>
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-xs text-amber-950 space-y-1 shadow-2xs">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold">
+                          <div className="flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                            <span>Eksik Dağıtım: <strong>{teslim}/{hedef} Torba Verildi</strong></span>
+                          </div>
+                          <span className="text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-300 shrink-0 font-mono">
+                            +{kalan} Torba Eksik
+                          </span>
                         </div>
-                        <span className="text-rose-700 font-extrabold bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-300 shrink-0 font-mono">
-                          +{kalan} Torba Eksik
-                        </span>
+                        {(person.teslim_eden_personel || person.teslim_alan) && (
+                          <div className="text-[11px] text-amber-900 flex flex-wrap items-center gap-x-2 pt-1 border-t border-amber-200">
+                            {person.teslim_eden_personel && (
+                              <span>Teslim Eden: <strong className="font-extrabold">{person.teslim_eden_personel}</strong></span>
+                            )}
+                            {person.teslim_alan && (
+                              <span>Teslim Alan: <strong className="font-extrabold">{person.teslim_alan}</strong></span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1802,11 +1846,23 @@ export default function BeneficiaryList({
                         <div className="flex-1 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-semibold">
                           <div className="truncate">
                             <span className="font-extrabold text-emerald-950">✓ {teslim} Torba Tamamlandı</span>
-                            {person.teslimat_tarihi && (
-                              <span className="text-[11px] text-emerald-800 block mt-0.5">
-                                Teslim Tarihi: <strong className="font-mono text-emerald-950">{person.teslimat_tarihi}</strong>
-                              </span>
-                            )}
+                            <div className="text-[11px] text-emerald-800 space-y-0.5 mt-0.5">
+                              {person.teslimat_tarihi && (
+                                <div>
+                                  Teslim Tarihi: <strong className="font-mono text-emerald-950">{person.teslimat_tarihi}</strong>
+                                </div>
+                              )}
+                              {(person.teslim_eden_personel || person.teslim_alan) && (
+                                <div className="flex flex-wrap items-center gap-x-2 text-[10px]">
+                                  {person.teslim_eden_personel && (
+                                    <span>Teslim Eden: <strong className="text-emerald-950 font-bold">{person.teslim_eden_personel}</strong></span>
+                                  )}
+                                  {person.teslim_alan && (
+                                    <span>Alan: <strong className="text-emerald-950 font-bold">{person.teslim_alan}</strong></span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                             {onOpenCancel && (

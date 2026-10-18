@@ -142,7 +142,11 @@ export async function POST(request: NextRequest) {
       }
 
       const recipient = (teslim_alan || beneficiary.ad_soyad).trim();
-      const staff = session.ad_soyad || session.username || 'Personel';
+      const staff = (
+        (body.personel && body.personel !== 'Personel' && body.personel !== 'Dağıtım Personeli')
+          ? body.personel
+          : (session.ad_soyad || session.username || body.personel || 'Personel')
+      ).trim();
       const note = (notlar || '').trim();
 
       // Determine status: TAMAMLANDI vs EKSIK

@@ -155,13 +155,56 @@ export default function HouseholdModal({
           </div>
 
           {isComplete && (
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-0.5">
-              <p className="font-bold">✓ {person.torba_sayisi || 34} Torba Tamamlandı</p>
-              <p className="text-[11px] text-emerald-700 font-medium">
-                Teslim Alan: {person.teslim_alan || person.ad_soyad} • Personel: {person.teslim_eden_personel || '-'}
-              </p>
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <p className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  {person.torba_sayisi || 34} Torba Tamamlandı
+                </p>
+                {person.teslimat_tarihi && (
+                  <span className="text-[11px] font-mono text-emerald-800 bg-white/70 px-2 py-0.5 rounded border border-emerald-200">
+                    {person.teslimat_tarihi}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-emerald-200/60">
+                <div>
+                  <span className="text-emerald-700 block text-[10px]">Teslim Eden Personel:</span>
+                  <strong className="text-emerald-950 font-bold">{person.teslim_eden_personel || '-'}</strong>
+                </div>
+                <div>
+                  <span className="text-emerald-700 block text-[10px]">Teslim Alan Kişi:</span>
+                  <strong className="text-emerald-950 font-bold">{person.teslim_alan || person.ad_soyad}</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isPartial && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  Kısmi Dağıtım: {person.teslim_edilen_torba || 0}/{person.torba_sayisi || 34} Torba
+                </p>
+                <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 font-mono">
+                  +{person.kalan_torba ?? ((person.torba_sayisi || 34) - (person.teslim_edilen_torba || 0))} Kalan
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-amber-200/60">
+                <div>
+                  <span className="text-amber-800 block text-[10px]">Teslim Eden Personel:</span>
+                  <strong className="text-amber-950 font-bold">{person.teslim_eden_personel || '-'}</strong>
+                </div>
+                <div>
+                  <span className="text-amber-800 block text-[10px]">Teslim Alan Kişi:</span>
+                  <strong className="text-amber-950 font-bold">{person.teslim_alan || person.ad_soyad}</strong>
+                </div>
+              </div>
               {person.teslimat_tarihi && (
-                <p className="text-[11px] text-slate-500">Tarih: {person.teslimat_tarihi}</p>
+                <div className="text-[10px] text-amber-800 pt-0.5">
+                  Son Teslimat Tarihi: <strong className="font-mono">{person.teslimat_tarihi}</strong>
+                </div>
               )}
             </div>
           )}

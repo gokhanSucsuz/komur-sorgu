@@ -24,7 +24,7 @@ export default function AnalyticsPage({
   onOpenSeasonModal
 }: AnalyticsPageProps) {
   // Navigation Subtab State
-  const [subTab, setSubTab] = useState<'OVERVIEW' | 'MAHALLE' | 'SOKAK' | 'BATCHES'>('OVERVIEW');
+  const [subTab, setSubTab] = useState<'OVERVIEW' | 'MAHALLE' | 'SOKAK' | 'BATCHES' | 'PERSONEL'>('OVERVIEW');
   const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Date filters
@@ -39,6 +39,7 @@ export default function AnalyticsPage({
   const [sokakSearch, setSokakSearch] = useState('');
   const [selectedSokakMahalle, setSelectedSokakMahalle] = useState('HEPSI');
   const [batchSearch, setBatchSearch] = useState('');
+  const [personelSearch, setPersonelSearch] = useState('');
 
   // Report data state
   const [reportData, setReportData] = useState<any>(null);
@@ -122,6 +123,15 @@ export default function AnalyticsPage({
   const sokakStats: any[] = reportData?.sokakStats || [];
   const batchStats: any[] = reportData?.batchStats || [];
   const dailyBreakdown = reportData?.dailyBreakdown || [];
+  const personelStats: any[] = reportData?.personelStats || [];
+
+  // Filtered Personel Stats
+  const filteredPersonelStats = useMemo(() => {
+    return personelStats.filter((p) => {
+      if (!personelSearch) return true;
+      return (p.personel || '').toLocaleLowerCase('tr').includes(personelSearch.toLocaleLowerCase('tr'));
+    });
+  }, [personelStats, personelSearch]);
 
   // Filtered Mahalle Stats
   const filteredMahalleStats = useMemo(() => {
@@ -402,6 +412,19 @@ export default function AnalyticsPage({
         >
           <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
           <span>Yüklenen Ek Listeler ({batchStats.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('PERSONEL')}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all ${
+            subTab === 'PERSONEL'
+              ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90 font-black'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Users className="w-4 h-4 text-purple-600" />
+          <span>Personel Performansı ({personelStats.length})</span>
         </button>
       </div>
 
@@ -1080,6 +1103,191 @@ export default function AnalyticsPage({
           )}
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* 5. SEKME: PERSONEL DAĞITIM VE PERFORMANS RAPORU          */}
+      {/* ======================================================== */}
+      {subTab === 'PERSONEL' && (
+        <div className="space-y-4">
+          {/* Header Card & Excel Export */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Users className="w-4 h-4 text-purple-600" />
+                Personel Dağıtım ve Saha Performans Cetveli
+              </h3>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Rotayla ve rotasız teslimat yapan personellerin toplam hane, torba ve net tonaj icmali
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <a
+                href="/api/export?type=analytics"
+                download="Edirne_SYDV_Komur_Analitik_Raporu.xlsx"
+                className="btn-secondary w-full sm:w-auto flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2"
+                title="Tüm analitik ve personel verilerini Excel dosyası olarak indir"
+              >
+                <Download className="w-4 h-4 text-emerald-600" />
+                <span>Personel Raporunu İndir (Excel)</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          {(() => {
+            const totalHane = filteredPersonelStats.reduce((acc, p) => acc + (p.toplamHane || 0), 0);
+            const totalTam = filteredPersonelStats.reduce((acc, p) => acc + (p.tamHane || 0), 0);
+            const totalEksik = filteredPersonelStats.reduce((acc, p) => acc + (p.eksikHane || 0), 0);
+            const totalTorba = filteredPersonelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0);
+            const totalTonaj = totalTorba * 0.025;
+            const formatted = formatTonnage(totalTonaj);
+
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">Görevli Personel</span>
+                  <div className="text-xl font-black text-slate-900 mt-1">{filteredPersonelStats.length} Kişi</div>
+                  <span className="text-[10px] text-slate-400 font-medium">Teslimat yapan personel</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">Hizmet Verilen Hane</span>
+                  <div className="text-xl font-black text-sky-700 mt-1">{totalHane} Hane</div>
+                  <span className="text-[10px] text-sky-800 font-bold">{totalTam} Tam • {totalEksik} Eksik</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">Toplam Dağıtılan</span>
+                  <div className="text-xl font-black text-emerald-700 mt-1">{totalTorba} Torba</div>
+                  <span className="text-[10px] text-emerald-800 font-bold">{formatted.combined}</span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">Net Tonaj</span>
+                  <div className="text-xl font-black text-amber-700 mt-1">{formatted.tonStr}</div>
+                  <span className="text-[10px] text-amber-800 font-bold">{formatted.kgStr}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Search Bar */}
+          <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs flex items-center gap-2">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
+            <input
+              type="text"
+              placeholder="Personel adına göre filtrele..."
+              value={personelSearch}
+              onChange={(e) => setPersonelSearch(e.target.value)}
+              className="w-full text-xs bg-transparent focus:outline-none font-medium text-slate-900 placeholder:text-slate-400"
+            />
+            {personelSearch && (
+              <button
+                type="button"
+                onClick={() => setPersonelSearch('')}
+                className="text-xs text-slate-400 hover:text-slate-600 font-bold px-2"
+              >
+                Temizle
+              </button>
+            )}
+          </div>
+
+          {/* Personnel Table */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="desktop-compact-table w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                    <th className="py-2.5 px-3 text-center w-12">#</th>
+                    <th className="py-2.5 px-3 text-left">Teslim Eden Personel</th>
+                    <th className="py-2.5 px-3 text-center text-emerald-800">Tam Teslim (Hane)</th>
+                    <th className="py-2.5 px-3 text-center text-amber-800">Eksik Kalan (Hane)</th>
+                    <th className="py-2.5 px-3 text-center text-sky-800">Toplam Hane</th>
+                    <th className="py-2.5 px-3 text-center">Dağıtılan Torba</th>
+                    <th className="py-2.5 px-3 text-center">Net Tonaj (Ton & Kg)</th>
+                    <th className="py-2.5 px-3 text-right">Son Teslimat</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {filteredPersonelStats.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400 italic font-medium">
+                        Kayıtlı teslimat yapan personel bulunamadı.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPersonelStats.map((p, idx) => {
+                      const tonajFmt = formatTonnage(p.toplamTorba * 0.025);
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-2 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                          <td className="py-2 px-3 font-bold text-slate-900 flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
+                              <Users className="w-3.5 h-3.5 text-purple-700" />
+                            </div>
+                            <span className="font-extrabold text-slate-900">{p.personel}</span>
+                          </td>
+                          <td className="py-2 px-3 text-center font-black text-emerald-700 bg-emerald-50/40">
+                            {p.tamHane || 0}
+                          </td>
+                          <td className="py-2 px-3 text-center font-bold text-amber-700 bg-amber-50/40">
+                            {p.eksikHane || 0}
+                          </td>
+                          <td className="py-2 px-3 text-center font-bold text-sky-800">
+                            {p.toplamHane || 0}
+                          </td>
+                          <td className="py-2 px-3 text-center font-extrabold text-slate-900">
+                            {p.toplamTorba} Torba
+                          </td>
+                          <td className="py-2 px-3 text-center font-bold text-amber-900">
+                            <span>{tonajFmt.tonStr}</span>
+                            <span className="text-[10px] text-slate-500 font-normal block">({tonajFmt.kgStr})</span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-[11px] text-slate-500">
+                            {p.sonTeslimatTarihi || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                {filteredPersonelStats.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-100/90 font-black text-slate-900 border-t border-slate-300 text-[11px]">
+                      <td className="py-2.5 px-3 text-center font-extrabold" colSpan={2}>
+                        Genel Toplam ({filteredPersonelStats.length} Personel)
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-emerald-800">
+                        {filteredPersonelStats.reduce((acc, p) => acc + (p.tamHane || 0), 0)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-amber-800">
+                        {filteredPersonelStats.reduce((acc, p) => acc + (p.eksikHane || 0), 0)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-sky-800">
+                        {filteredPersonelStats.reduce((acc, p) => acc + (p.toplamHane || 0), 0)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-slate-900">
+                        {filteredPersonelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0)} Torba
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-amber-900">
+                        {(() => {
+                          const torbaSum = filteredPersonelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0);
+                          const fmt = formatTonnage(torbaSum * 0.025);
+                          return (
+                            <>
+                              <span>{fmt.tonStr}</span>
+                              <span className="text-[10px] text-slate-500 font-normal block">({fmt.kgStr})</span>
+                            </>
+                          );
+                        })()}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-500">-</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ======================================================== */}
       {/* RESMİ KÖMÜR DAĞITIM VE İSTATİSTİKİ İCMAL RAPORU MODALI    */}
       {/* ======================================================== */}
@@ -1411,6 +1619,61 @@ export default function AnalyticsPage({
                           </tr>
                         ))}
                       </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Personel Dağıtım ve Saha Performans Cetveli (Resmi İcmal Tablosu) */}
+              {personelStats.length > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-purple-900">
+                    KÖMÜR DAĞITIM VE PERSONEL PERFORMANS CETVELİ ({personelStats.length} Personel)
+                  </h4>
+                  <div className="border border-purple-200 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-purple-50 text-purple-950 border-b border-purple-200 font-bold">
+                          <th className="p-2 text-center w-10">#</th>
+                          <th className="p-2">Teslim Eden Personel</th>
+                          <th className="p-2 text-center">Tam Teslim (Hane)</th>
+                          <th className="p-2 text-center">Kısmi / Eksik (Hane)</th>
+                          <th className="p-2 text-center">Toplam Hane</th>
+                          <th className="p-2 text-center">Dağıtılan Torba</th>
+                          <th className="p-2 text-center">Net Ağırlık (Ton & Kg)</th>
+                          <th className="p-2 text-center">Son Dağıtım Tarihi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-purple-100">
+                        {personelStats.map((p: any, idx: number) => {
+                          const fmt = formatTonnage(p.toplamTorba * 0.025);
+                          return (
+                            <tr key={idx} className="hover:bg-purple-50/40">
+                              <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                              <td className="p-2 font-bold text-slate-900">{p.personel}</td>
+                              <td className="p-2 text-center font-bold text-emerald-700">{p.tamHane || 0}</td>
+                              <td className="p-2 text-center font-bold text-amber-700">{p.eksikHane || 0}</td>
+                              <td className="p-2 text-center font-bold text-sky-800">{p.toplamHane || 0}</td>
+                              <td className="p-2 text-center font-black text-slate-900">{p.toplamTorba} Torba</td>
+                              <td className="p-2 text-center font-mono font-bold text-amber-900">{fmt.combined}</td>
+                              <td className="p-2 text-center font-mono text-[11px] text-slate-600">{p.sonTeslimatTarihi || '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-purple-100/70 font-black text-purple-950 border-t-2 border-purple-300">
+                          <td colSpan={2} className="p-2 text-right uppercase">GENEL TOPLAM:</td>
+                          <td className="p-2 text-center text-emerald-800">{personelStats.reduce((acc, p) => acc + (p.tamHane || 0), 0)}</td>
+                          <td className="p-2 text-center text-amber-800">{personelStats.reduce((acc, p) => acc + (p.eksikHane || 0), 0)}</td>
+                          <td className="p-2 text-center text-sky-800">{personelStats.reduce((acc, p) => acc + (p.toplamHane || 0), 0)}</td>
+                          <td className="p-2 text-center">{personelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0)} Torba</td>
+                          <td className="p-2 text-center font-mono text-amber-950">
+                            {formatTonnage(personelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0) * 0.025).combined}
+                          </td>
+                          <td className="p-2 text-center">-</td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>

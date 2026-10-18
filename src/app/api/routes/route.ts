@@ -481,7 +481,11 @@ export async function POST(request: NextRequest) {
 
       const headerClientId = request.headers.get('x-client-id') || '';
       const effectiveClientId = (body.client_id || headerClientId || '').trim();
-      const staffName = (session.ad_soyad || personel || 'Personel').trim();
+      const staffName = (
+        (body.personel && body.personel !== 'Personel' && body.personel !== 'Dağıtım Personeli')
+          ? body.personel
+          : (session.ad_soyad || session.username || body.personel || 'Personel')
+      ).trim();
       const route = mapDoc(rawRoute);
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
@@ -1026,9 +1030,15 @@ export async function POST(request: NextRequest) {
         if (s.durum === 'TAMAMLANDI') {
           completedCount++;
           totalDeliveredBags += s.teslim_edilen_torba || s.hedef_torba || 34;
+          if (!s.teslim_eden_personel) {
+            s.teslim_eden_personel = staffName || route.dagitim_personeli || 'Personel';
+          }
         } else if (s.durum === 'EKSIK') {
           eksikCount++;
           totalDeliveredBags += s.teslim_edilen_torba || 0;
+          if (!s.teslim_eden_personel) {
+            s.teslim_eden_personel = staffName || route.dagitim_personeli || 'Personel';
+          }
         } else if (s.durum === 'TESLIM_EDILEMEDI') {
           undeliveredCount++;
         }
@@ -1038,22 +1048,49 @@ export async function POST(request: NextRequest) {
         $set: {
           durum: 'TAMAMLANDI',
           completed_at: localTimeStr,
+          duraklar: stops.map(encryptRouteStop),
           tamamlanan_hane: completedCount,
           eksik_hane: eksikCount,
           teslim_edilemeyen_hane: undeliveredCount,
           toplam_dagitilan_torba: totalDeliveredBags,
           kapanis_notu: encryptField(notlar.trim()),
-          kapatan_personel: personel.trim(),
+          kapatan_personel: staffName,
           kilitli_personel: null,
           kilitli_personel_username: null,
           kilit_tarihi: null,
           kilit_timestamp: null,
+          aktif_rota_modu: false,
           updated_at: localTimeStr
         }
       });
 
+      // Synchronize delivering personnel to any beneficiaries in this route missing it
+      for (const s of stops) {
+        if (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') {
+          const finalStaff = s.teslim_eden_personel || staffName || route.dagitim_personeli;
+          if (finalStaff && s.beneficiary_id) {
+            await benCol.updateOne(
+              {
+                ...buildIdFilter(s.beneficiary_id),
+                $or: [
+                  { teslim_eden_personel: null },
+                  { teslim_eden_personel: '' },
+                  { teslim_eden_personel: { $exists: false } }
+                ]
+              },
+              {
+                $set: {
+                  teslim_eden_personel: finalStaff,
+                  updated_at: localTimeStr
+                }
+              }
+            );
+          }
+        }
+      }
+
       await recordActivityLog({
-        kullanici_adi: personel.trim(),
+        kullanici_adi: staffName,
         kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'ROTA_KAPATMA',
         baslik: 'Dağıtım Rotası Tamamlandı & Kapatıldı',

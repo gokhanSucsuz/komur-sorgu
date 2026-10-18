@@ -404,6 +404,54 @@ export async function GET(request: NextRequest) {
     const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? parseFloat(Math.max(0, toplamTahsisTonaj - sahadakiToplamGelenTon).toFixed(3)) : 0;
     const tahsisTamamlanmaYuzdesi = toplamTahsisTonaj > 0 ? parseFloat(((sahadakiToplamGelenTon / toplamTahsisTonaj) * 100).toFixed(1)) : 0;
 
+    // 9. Personel Dağıtım Performansı ve İcmali
+    const pMap = new Map<string, {
+      personel: string;
+      toplamHane: number;
+      tamHane: number;
+      eksikHane: number;
+      toplamTorba: number;
+      toplamTonaj: number;
+      sonTeslimatTarihi: string;
+    }>();
+
+    for (const b of filteredBeneficiaries) {
+      const d = b.teslimat_durumu;
+      if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI' || d === 'EKSIK') {
+        const pName = (b.teslim_eden_personel || 'Belirtilmemiş Personel').trim();
+        if (!pMap.has(pName)) {
+          pMap.set(pName, {
+            personel: pName,
+            toplamHane: 0,
+            tamHane: 0,
+            eksikHane: 0,
+            toplamTorba: 0,
+            toplamTonaj: 0,
+            sonTeslimatTarihi: '',
+          });
+        }
+        const item = pMap.get(pName)!;
+        item.toplamHane += 1;
+        if (d === 'EKSIK') {
+          item.eksikHane += 1;
+        } else {
+          item.tamHane += 1;
+        }
+        const bags = Number(b.torba_sayisi || (b.hedef_torba || varsayilanHedefTorba));
+        item.toplamTorba += bags;
+        if (b.teslimat_tarihi && (!item.sonTeslimatTarihi || b.teslimat_tarihi > item.sonTeslimatTarihi)) {
+          item.sonTeslimatTarihi = b.teslimat_tarihi;
+        }
+      }
+    }
+
+    const personelStats = Array.from(pMap.values())
+      .map((p) => ({
+        ...p,
+        toplamTonaj: parseFloat((p.toplamTorba * 0.025).toFixed(3)),
+      }))
+      .sort((a, b) => b.toplamTorba - a.toplamTorba);
+
     return NextResponse.json({
       success: true,
       reportData: {
@@ -440,6 +488,7 @@ export async function GET(request: NextRequest) {
         mahalleStats,
         sokakStats,
         batchStats,
+        personelStats,
         deliveries,
         trucks,
       },

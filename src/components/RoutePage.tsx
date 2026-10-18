@@ -2427,12 +2427,22 @@ export default function RoutePage({
                         <div className="mt-3 pt-2 border-t border-slate-100">
                           {isTamam && (
                             <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-100/70 border border-emerald-300 text-emerald-900 text-xs font-bold">
-                              <span className="flex items-center gap-1.5">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                                <span>
-                                  ✓ Tamamlandı: {stop.teslim_edilen_torba || stop.hedef_torba} Torba Teslim Edildi
+                              <div className="min-w-0">
+                                <span className="flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                                  <span>
+                                    ✓ Tamamlandı: {stop.teslim_edilen_torba || stop.hedef_torba} Torba Teslim Edildi
+                                  </span>
                                 </span>
-                              </span>
+                                {(stop.teslim_eden_personel || activeRoute.dagitim_personeli || stop.teslim_alan) && (
+                                  <div className="text-[11px] text-emerald-800 font-medium pl-5.5 mt-0.5 flex flex-wrap gap-x-2">
+                                    <span>Teslim Eden: <strong className="text-emerald-950 font-bold">{stop.teslim_eden_personel || activeRoute.dagitim_personeli || '-'}</strong></span>
+                                    {stop.teslim_alan && (
+                                      <span>Teslim Alan: <strong className="text-emerald-950 font-bold">{stop.teslim_alan}</strong></span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                               <div className="flex items-center gap-1.5 ml-2 shrink-0">
                                 <button
                                   type="button"
@@ -2474,6 +2484,14 @@ export default function RoutePage({
                                     ⚠️ Eksik Teslimat: {stop.teslim_edilen_torba} / {stop.hedef_torba} Torba (Kalan: {Math.max(0, (stop.hedef_torba || 34) - (stop.teslim_edilen_torba || 0))} T)
                                   </span>
                                 </span>
+                                {(stop.teslim_eden_personel || activeRoute.dagitim_personeli || stop.teslim_alan) && (
+                                  <div className="text-[11px] text-amber-900 font-medium pl-5.5 mt-0.5 flex flex-wrap gap-x-2">
+                                    <span>Teslim Eden: <strong className="text-amber-950 font-bold">{stop.teslim_eden_personel || activeRoute.dagitim_personeli || '-'}</strong></span>
+                                    {stop.teslim_alan && (
+                                      <span>Teslim Alan: <strong className="text-amber-950 font-bold">{stop.teslim_alan}</strong></span>
+                                    )}
+                                  </div>
+                                )}
                                 {stop.teslimat_notu && (
                                   <p className="text-[11px] font-normal text-amber-900 mt-0.5 truncate pl-5.5">
                                     Not: {stop.teslimat_notu}
@@ -2619,7 +2637,11 @@ export default function RoutePage({
                       {route.rota_adi}
                     </h4>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      {route.dagitim_personeli} • {route.toplam_hane} Hane ({route.toplam_dagitilan_torba || 0} Torba)
+                      {route.kapatan_personel ? (
+                        <>Teslim Eden: <strong className="text-slate-700 font-bold">{route.kapatan_personel}</strong> {route.dagitim_personeli ? `(${route.dagitim_personeli})` : ''}</>
+                      ) : (
+                        <>{route.dagitim_personeli}</>
+                      )} • {route.toplam_hane} Hane ({route.toplam_dagitilan_torba || 0} Torba)
                     </p>
                   </div>
 
@@ -2711,6 +2733,14 @@ export default function RoutePage({
                             <div className="text-[11px] text-slate-500 truncate">
                               {s.mahalle} {s.sokak ? `• ${s.sokak}` : ''}
                             </div>
+                            {(s.teslim_eden_personel || route.kapatan_personel || route.dagitim_personeli || s.teslim_alan) && (
+                              <div className="text-[10px] text-slate-600 truncate mt-0.5 flex flex-wrap gap-x-2">
+                                <span>Teslim Eden: <strong className="text-slate-900 font-bold">{s.teslim_eden_personel || route.kapatan_personel || route.dagitim_personeli || '-'}</strong></span>
+                                {s.teslim_alan && (
+                                  <span>Teslim Alan: <strong className="text-slate-900 font-bold">{s.teslim_alan}</strong></span>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <div className="shrink-0 text-right">
@@ -3752,8 +3782,15 @@ export default function RoutePage({
                               </span>
                             )}
                           </td>
-                          <td className="p-2.5 text-center text-[10px] text-slate-400 font-mono italic">
-                            {stop.teslim_alan ? stop.teslim_alan : '.....................'}
+                          <td className="p-2.5 text-center text-[10px] text-slate-700">
+                            <div className="font-semibold text-slate-900">
+                              {stop.teslim_alan ? stop.teslim_alan : '.....................'}
+                            </div>
+                            {(isTamam || isEksik) && (stop.teslim_eden_personel || printRoute.kapatan_personel || printRoute.dagitim_personeli) && (
+                              <div className="text-[9px] text-slate-500 mt-0.5">
+                                T. Eden: {stop.teslim_eden_personel || printRoute.kapatan_personel || printRoute.dagitim_personeli}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -3772,7 +3809,7 @@ export default function RoutePage({
                     <div>
                       <p className="font-extrabold text-slate-900 text-xs sm:text-sm">DAĞITIMI YAPAN PERSONEL</p>
                       <p className="text-[11px] font-bold text-slate-700 mt-0.5">
-                        {printRoute.dagitim_personeli || userName || 'Saha Personeli'}
+                        {printRoute.kapatan_personel || printRoute.dagitim_personeli || userName || 'Saha Personeli'}
                       </p>
                     </div>
                     <div className="h-10 flex items-center justify-center">
