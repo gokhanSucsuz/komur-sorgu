@@ -8,7 +8,7 @@ import {
   CheckSquare, Square, Search, RefreshCw, FileText, ChevronDown, ChevronUp,
   AlertCircle, ShieldCheck, PenTool, Check, ArrowRight, Download, Printer,
   ArrowUpDown, X, UserMinus, Play, Pause, SkipForward, ChevronLeft, ChevronRight,
-  Undo2, Lock, Unlock
+  Undo2, Lock, Unlock, ListOrdered
 } from 'lucide-react';
 import CancelModal from '@/components/CancelModal';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
@@ -81,6 +81,9 @@ export default function RoutePage({
   const [routeModeRecipient, setRouteModeRecipient] = useState<string>('');
   const [routeModeNote, setRouteModeNote] = useState<string>('');
   const [routeModePausedNotice, setRouteModePausedNotice] = useState<boolean>(false);
+  const [showStopPickerModal, setShowStopPickerModal] = useState<boolean>(false);
+  const [stopPickerSearch, setStopPickerSearch] = useState<string>('');
+  const [stopPickerFilter, setStopPickerFilter] = useState<'ALL' | 'WAITING' | 'DONE'>('ALL');
   const [routeStatusBanner, setRouteStatusBanner] = useState<{
     type: 'COMPLETED' | 'PAUSED' | 'INFO';
     title: string;
@@ -384,6 +387,44 @@ export default function RoutePage({
     setRouteModeDeferType(prevDelivered > 0 ? 'PARTIAL' : 'PARTIAL');
     setRouteModePausedNotice(false);
   }, []);
+
+  // Rota Modunda Sıradaki Haneyi Şimdilik Atla (Sonraki Haneye Geç)
+  const handleSkipCurrentStop = () => {
+    if (!activeRoute || !activeRoute.duraklar) return;
+    const stops = activeRoute.duraklar;
+    const currentStop = stops[routeModeIndex];
+
+    // 1. Önce mevcut duraktan sonraki tamamlanmamış haneyi ara
+    let nextIdx = stops.findIndex(
+      (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
+    );
+
+    // 2. Eğer sonrasındaki tüm haneler bitmişse, baştan itibaren tamamlanmamış haneyi ara (döngü)
+    if (nextIdx === -1) {
+      nextIdx = stops.findIndex(
+        (s: any, idx: number) => idx !== routeModeIndex && s.durum !== 'TAMAMLANDI'
+      );
+    }
+
+    if (nextIdx !== -1) {
+      const nextStop = stops[nextIdx];
+      setRouteModePausedNotice(false);
+      setRouteModeIndex(nextIdx);
+      syncRouteModeInputsForStop(nextStop);
+      showToast({
+        type: 'info',
+        title: 'Hane Şimdilik Atlandı',
+        message: `#${currentStop?.sira || routeModeIndex + 1} (${currentStop?.ad_soyad}) atlandı. #${nextStop?.sira || nextIdx + 1} (${nextStop?.ad_soyad}) hanesine geçildi. Atlanan hane rotanın devamında tekrar sıraya gelecektir.`,
+        durationMs: 4000
+      });
+    } else {
+      showToast({
+        type: 'warning',
+        title: 'Atlanabilecek Başka Hane Yok',
+        message: 'Rotada geçilebilecek başka tamamlanmamış hane bulunmuyor.',
+      });
+    }
+  };
 
   // Open Rota Modu (Uber/Lyft style sequential field delivery cockpit)
   const handleOpenRouteMode = async (targetRoute?: any, forcedStopIndex?: number) => {
@@ -837,13 +878,51 @@ export default function RoutePage({
         return;
       }
 
-      // Case 3: We just processed the LAST stop in the sequence (no stops left after currentStop),
+      // Case 2B: Sonraki haneler bittiyse, önceden atlanmış ve hala bekleyen (BEKLIYOR) hanelere otomatik dön!
+      const firstSkippedWaitingStop = updatedStops.findIndex(
+        (s: any, idx: number) => idx < routeModeIndex && (!s.durum || s.durum === 'BEKLIYOR')
+      );
+
+      if (firstSkippedWaitingStop !== -1) {
+        setRouteModePausedNotice(false);
+        setRouteModeIndex(firstSkippedWaitingStop);
+        syncRouteModeInputsForStop(updatedStops[firstSkippedWaitingStop]);
+        showToast({
+          type: 'info',
+          title: 'Sıradaki Atlanan Haneye Dönüldü',
+          message: `Sonraki kayıtlar tamamlandı. Önceden atlanan #${updatedStops[firstSkippedWaitingStop].sira || firstSkippedWaitingStop + 1} nolu haneye (${updatedStops[firstSkippedWaitingStop].ad_soyad}) geçildi.`,
+          durationMs: 4500
+        });
+        if (onRefreshAll) onRefreshAll();
+        return;
+      }
+
+      // Case 2C: Bekleyen yoksa, daha önce "Daha Sonra Tamamlanacak" olarak işaretlenen eksik hanelere dön
+      const firstDeferredStop = updatedStops.findIndex(
+        (s: any, idx: number) => idx < routeModeIndex && s.durum !== 'TAMAMLANDI'
+      );
+
+      if (firstDeferredStop !== -1) {
+        setRouteModePausedNotice(false);
+        setRouteModeIndex(firstDeferredStop);
+        syncRouteModeInputsForStop(updatedStops[firstDeferredStop]);
+        showToast({
+          type: 'info',
+          title: 'Eksik / Ertelenen Haneye Dönüldü',
+          message: `Daha önce eksik bırakılan #${updatedStops[firstDeferredStop].sira || firstDeferredStop + 1} nolu haneye (${updatedStops[firstDeferredStop].ad_soyad}) dönüldü.`,
+          durationMs: 4500
+        });
+        if (onRefreshAll) onRefreshAll();
+        return;
+      }
+
+      // Case 3: We just processed the LAST stop in the sequence (no stops left after currentStop and no skipped stops left),
       // and since allCompleted is false, there are incomplete/deferred stops in the route -> Show Pause screen!
       setRouteModePausedNotice(true);
       setRouteStatusBanner({
         type: 'PAUSED',
-        title: '⏸️ Son Kayda Ulaşıldı — Rota Geçici Olarak Durduruldu',
-        message: `"${activeRoute.rota_adi}" rotasında son kayda ulaşıldı. Eksik / daha sonra tamamlanacak kayıtlar bulunduğu için rota geçici olarak durduruldu.`
+        title: '⏸️ Rota Ziyaretleri Tamamlandı — Eksik Kayıtlar Bekliyor',
+        message: `"${activeRoute.rota_adi}" rotasındaki tüm haneler ziyaret edildi. Eksik / daha sonra tamamlanacak kayıtlar bulunduğu için rota geçici olarak durduruldu.`
       });
       await fetchRoutes();
       if (onRefreshAll) onRefreshAll();
@@ -3785,6 +3864,37 @@ export default function RoutePage({
           const prevDeliveredTorba = Number(currentStop?.teslim_edilen_torba) || 0;
           const remainingForStop = Math.max(0, hedefTorba - prevDeliveredTorba);
 
+          // Önceden atlanmış ve hala tamamlanmamış haneler (Mevcut duraktan önceki bekleyenler)
+          const skippedPendingStops = stops
+            .map((s, idx) => ({ stop: s, index: idx }))
+            .filter(({ stop, index }) => index < safeIndex && stop.durum !== 'TAMAMLANDI');
+
+          // Durak Seçici Filtrelenmiş Liste
+          const filteredPickerStops = stops
+            .map((s, idx) => ({ stop: s, index: idx }))
+            .filter(({ stop }) => {
+              if (stopPickerFilter === 'WAITING' && stop.durum === 'TAMAMLANDI') return false;
+              if (stopPickerFilter === 'DONE' && stop.durum !== 'TAMAMLANDI') return false;
+              if (stopPickerSearch.trim()) {
+                const q = stopPickerSearch.trim().toLocaleLowerCase('tr-TR');
+                const name = (stop.ad_soyad || '').toLocaleLowerCase('tr-TR');
+                const tc = (stop.tc_no || '').toLocaleLowerCase('tr-TR');
+                const sokak = (stop.sokak || '').toLocaleLowerCase('tr-TR');
+                const kapi = String(stop.kapi_no || '');
+                const sira = `#${stop.sira || stop.index + 1}`;
+                if (
+                  !name.includes(q) &&
+                  !tc.includes(q) &&
+                  !sokak.includes(q) &&
+                  !kapi.includes(q) &&
+                  !sira.includes(q)
+                ) {
+                  return false;
+                }
+              }
+              return true;
+            });
+
           return (
             <div className="route-mode-overlay no-print">
               {/* 1. ÜST KOKPİT BARI */}
@@ -3836,8 +3946,28 @@ export default function RoutePage({
                       </div>
                     </div>
 
-                    {/* Sağ Üst Aksiyonlar: Geçici Durdur & Listeye Dön */}
+                    {/* Sağ Üst Aksiyonlar: Sıra Seç, Geçici Durdur & Listeye Dön */}
                     <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStopPickerSearch('');
+                          setStopPickerFilter('ALL');
+                          setShowStopPickerModal(true);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all active:scale-95"
+                        style={{
+                          background: 'rgba(56, 189, 248, 0.2)',
+                          border: '1px solid rgba(56, 189, 248, 0.55)',
+                          color: '#7dd3fc'
+                        }}
+                        title="Rotadaki tüm haneleri listele ve dilediğin sıraya geç"
+                      >
+                        <ListOrdered className="w-3.5 h-3.5 text-sky-300" />
+                        <span className="hidden sm:inline">Sıra Değiştir / Hane Seç</span>
+                        <span className="sm:hidden">Sıra Seç</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() =>
@@ -4069,26 +4199,41 @@ export default function RoutePage({
                             >
                               #{currentStop.sira || safeIndex + 1}. DURAK
                             </div>
-                            <div>
-                              <span
-                                className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border inline-block ${
-                                  currentStop.durum === 'TAMAMLANDI'
-                                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span
+                                  className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border inline-block ${
+                                    currentStop.durum === 'TAMAMLANDI'
+                                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                      : currentStop.durum === 'EKSIK'
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                      : currentStop.durum === 'TESLIM_EDILEMEDI'
+                                      ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                      : 'bg-sky-100 text-sky-900 border-sky-300'
+                                  }`}
+                                >
+                                  {currentStop.durum === 'TAMAMLANDI'
+                                    ? '✓ TESLİMAT TAMAMLANDI'
                                     : currentStop.durum === 'EKSIK'
-                                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                    ? '⏳ EKSİK BIRAKILDI (DAHA SONRA TAMAMLANACAK)'
                                     : currentStop.durum === 'TESLIM_EDILEMEDI'
-                                    ? 'bg-rose-100 text-rose-900 border-rose-300'
-                                    : 'bg-sky-100 text-sky-900 border-sky-300'
-                                }`}
-                              >
-                                {currentStop.durum === 'TAMAMLANDI'
-                                  ? '✓ TESLİMAT TAMAMLANDI'
-                                  : currentStop.durum === 'EKSIK'
-                                  ? '⏳ EKSİK BIRAKILDI (DAHA SONRA TAMAMLANACAK)'
-                                  : currentStop.durum === 'TESLIM_EDILEMEDI'
-                                  ? '⏳ DAHA SONRA TAMAMLANACAK (0 TORBA)'
-                                  : `SIRADAKİ TESLİMAT (${safeIndex + 1} / ${totalStops})`}
-                              </span>
+                                    ? '⏳ DAHA SONRA TAMAMLANACAK (0 TORBA)'
+                                    : `SIRADAKİ TESLİMAT (${safeIndex + 1} / ${totalStops})`}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setStopPickerSearch('');
+                                    setStopPickerFilter('ALL');
+                                    setShowStopPickerModal(true);
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold flex items-center gap-1 border border-slate-300 transition-colors shadow-2xs"
+                                  title="Rotadaki başka bir haneye geç"
+                                >
+                                  <ListOrdered className="w-3 h-3 text-sky-600" />
+                                  <span>Sıra Değiştir</span>
+                                </button>
+                              </div>
                               <p className="text-xs text-slate-500 font-bold mt-0.5">
                                 {isLastStopInRoute ? '🏁 Rotadaki Son Durak' : `Kalan Bekleyen: ${waitingStops.length} Durak`}
                               </p>
@@ -4108,6 +4253,37 @@ export default function RoutePage({
                             </span>
                           </div>
                         </div>
+
+                        {/* Rotada Önceden Atlanan Haneler Uyarısı & Hızlı Dönüş */}
+                        {skippedPendingStops.length > 0 && (
+                          <div className="p-3 sm:p-3.5 bg-amber-50 border-b border-amber-200 text-xs flex items-center justify-between gap-2.5 flex-wrap">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
+                                {skippedPendingStops.length}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-black text-amber-950 block truncate">
+                                  Rotada daha önce atlanan {skippedPendingStops.length} hane var
+                                </span>
+                                <span className="text-[10px] text-amber-900 font-medium block truncate">
+                                  {skippedPendingStops.map((x) => `#${x.stop.sira || x.index + 1} ${x.stop.ad_soyad}`).join(' • ')}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const firstSkipped = skippedPendingStops[0];
+                                setRouteModeIndex(firstSkipped.index);
+                                syncRouteModeInputsForStop(firstSkipped.stop);
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-black flex items-center gap-1 transition-all active:scale-95 shadow-2xs shrink-0"
+                            >
+                              <span>#{skippedPendingStops[0].stop.sira || skippedPendingStops[0].index + 1}&apos;e Geri Dön</span>
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
 
                         {/* BÜYÜK ADRES VE KONUM KUTUSU (HARİTASIZ NET ADRES REHBERİ) */}
                         <div className="p-4 sm:p-5 bg-sky-50/70 border-b border-sky-200/80 space-y-2">
@@ -4339,6 +4515,20 @@ export default function RoutePage({
                                   <ArrowRight className="w-4 h-4" />
                                 </button>
                               ) : null}
+
+                              {/* ROTADAKİ BAŞKA BİR HANEYE GEÇ */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStopPickerSearch('');
+                                  setStopPickerFilter('ALL');
+                                  setShowStopPickerModal(true);
+                                }}
+                                className="w-full py-3 px-4 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 border border-indigo-200 active:scale-[0.99] transition-all"
+                              >
+                                <ListOrdered className="w-4 h-4" />
+                                <span>📋 Rotadaki Başka Bir Haneye Geç (Sıra Seç)</span>
+                              </button>
                             </div>
                           </div>
                         ) : (
@@ -4599,6 +4789,40 @@ export default function RoutePage({
                                 </button>
                               </div>
                             )}
+
+                            {/* SIRADAN BAĞIMSIZ DAĞITIM VE GEÇİŞ AKSİYONLARI */}
+                            <div className="pt-2 border-t border-slate-200 space-y-2">
+                              <div className="flex items-center justify-between text-[11px] font-black text-slate-500 uppercase tracking-wider px-1">
+                                <span>Serbest Sıralama / Güzergah Değişikliği</span>
+                                <span className="text-sky-700 font-extrabold lowercase font-sans text-[10px]">
+                                  (sırayı bozmadan devam eder)
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleSkipCurrentStop}
+                                  className="w-full py-3 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs flex items-center justify-center gap-2 border border-slate-300 active:scale-[0.98] transition-all"
+                                  title="Bu haneyi teslimat yapmadan bekleyen olarak bırakır ve sıradaki sonraki haneye geçer"
+                                >
+                                  <SkipForward className="w-4 h-4 text-slate-600" />
+                                  <span>Bu Haneyi Şimdilik Atla</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setStopPickerSearch('');
+                                    setStopPickerFilter('ALL');
+                                    setShowStopPickerModal(true);
+                                  }}
+                                  className="w-full py-3 px-3 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs flex items-center justify-center gap-2 border border-indigo-200 active:scale-[0.98] transition-all"
+                                  title="Rotadaki tüm haneler arasından istediğiniz sıradaki haneye anında geçin"
+                                >
+                                  <ListOrdered className="w-4 h-4 text-indigo-600" />
+                                  <span>Rotadaki Başka Sıraya Geç</span>
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -4668,11 +4892,29 @@ export default function RoutePage({
                         const nextIdx = safeIndex + 1;
                         setRouteModeIndex(nextIdx);
                         syncRouteModeInputsForStop(stops[nextIdx]);
-                      } else if (deferredStops.length > 0) {
-                        setRouteModePausedNotice(true);
+                      } else {
+                        // Son duraktayız: önceden atlanmış veya tamamlanmamış kayıt varsa oraya otomatik dön
+                        const earliestIncomplete = stops.findIndex(
+                          (s: any, idx: number) => idx < safeIndex && s.durum !== 'TAMAMLANDI'
+                        );
+                        if (earliestIncomplete !== -1) {
+                          setRouteModeIndex(earliestIncomplete);
+                          syncRouteModeInputsForStop(stops[earliestIncomplete]);
+                          showToast({
+                            type: 'info',
+                            title: 'Önceki Eksik / Bekleyen Haneye Dönüldü',
+                            message: `#${stops[earliestIncomplete].sira || earliestIncomplete + 1}. sıradaki haneye dönüldü: ${stops[earliestIncomplete].ad_soyad}`,
+                            durationMs: 3500
+                          });
+                        } else if (deferredStops.length > 0) {
+                          setRouteModePausedNotice(true);
+                        }
                       }
                     }}
-                    disabled={safeIndex >= totalStops - 1 && deferredStops.length === 0}
+                    disabled={
+                      safeIndex >= totalStops - 1 &&
+                      !stops.some((s: any, idx: number) => idx < safeIndex && s.durum !== 'TAMAMLANDI')
+                    }
                     className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-black flex items-center gap-1 border border-slate-300 shrink-0"
                   >
                     <span>Sonraki</span>
@@ -4680,6 +4922,227 @@ export default function RoutePage({
                   </button>
                 </div>
               </div>
+
+              {/* 4. ROTADAKİ TÜM HANELER / SERBEST SIRA SEÇİCİ MODALI */}
+              {showStopPickerModal && (
+                <div
+                  className="fixed inset-0 z-[100000] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+                  onClick={() => setShowStopPickerModal(false)}
+                >
+                  <div
+                    className="bg-white w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[88vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Modal Başlık */}
+                    <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/40 text-sky-400 flex items-center justify-center shrink-0">
+                          <ListOrdered className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm sm:text-base font-black truncate">
+                            Rotadaki Haneler &amp; Sıra Seçimi
+                          </h3>
+                          <p className="text-[11px] text-slate-300 truncate">
+                            {stops.length} hane arasından istediğinize doğrudan geçebilirsiniz
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowStopPickerModal(false)}
+                        className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-colors"
+                        title="Kapat"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Arama Kutusu ve Filtreler */}
+                    <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50 space-y-2.5 shrink-0">
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={stopPickerSearch}
+                          onChange={(e) => setStopPickerSearch(e.target.value)}
+                          placeholder="İsim, T.C., sokak, kapı no veya #sıra ara..."
+                          className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-white border border-slate-300 text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                          autoFocus
+                        />
+                        {stopPickerSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setStopPickerSearch('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Filtre Butonları */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto">
+                        <button
+                          type="button"
+                          onClick={() => setStopPickerFilter('ALL')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
+                            stopPickerFilter === 'ALL'
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                          }`}
+                        >
+                          Tümü ({stops.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStopPickerFilter('WAITING')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
+                            stopPickerFilter === 'WAITING'
+                              ? 'bg-amber-600 text-white shadow-xs'
+                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                          }`}
+                        >
+                          Bekleyen / Eksik ({stops.filter((s: any) => s.durum !== 'TAMAMLANDI').length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStopPickerFilter('DONE')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
+                            stopPickerFilter === 'DONE'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                          }`}
+                        >
+                          Tamamlanan ({stops.filter((s: any) => s.durum === 'TAMAMLANDI').length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Liste */}
+                    <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-1.5">
+                      {filteredPickerStops.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500">
+                          <p className="text-xs font-bold">Aramanızla eşleşen hane bulunamadı.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStopPickerSearch('');
+                              setStopPickerFilter('ALL');
+                            }}
+                            className="mt-2 text-xs font-black text-sky-600 underline"
+                          >
+                            Filtreleri Temizle
+                          </button>
+                        </div>
+                      ) : (
+                        filteredPickerStops.map(({ stop: pStop, index: pIdx }) => {
+                          const isCurrent = pIdx === safeIndex && !routeModePausedNotice;
+                          const isDone = pStop.durum === 'TAMAMLANDI';
+                          const isDeferred =
+                            pStop.durum === 'EKSIK' || pStop.durum === 'TESLIM_EDILEMEDI';
+
+                          return (
+                            <button
+                              key={pStop.beneficiary_id || pIdx}
+                              type="button"
+                              onClick={() => {
+                                setRouteModePausedNotice(false);
+                                setRouteModeIndex(pIdx);
+                                syncRouteModeInputsForStop(pStop);
+                                setShowStopPickerModal(false);
+                                showToast({
+                                  type: 'info',
+                                  title: 'Haneye Geçildi',
+                                  message: `#${pStop.sira || pIdx + 1}. sıradaki haneye geçildi: ${pStop.ad_soyad}`,
+                                  durationMs: 3500
+                                });
+                              }}
+                              className={`w-full p-3 rounded-2xl text-left border flex items-center justify-between gap-3 transition-all active:scale-[0.99] ${
+                                isCurrent
+                                  ? 'bg-sky-50 border-sky-400 ring-2 ring-sky-400/40'
+                                  : isDone
+                                  ? 'bg-emerald-50/40 border-emerald-200 hover:bg-emerald-50'
+                                  : isDeferred
+                                  ? 'bg-amber-50/40 border-amber-200 hover:bg-amber-50'
+                                  : 'bg-white border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {/* Sıra Rozeti */}
+                                <div
+                                  className={`w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
+                                    isDone
+                                      ? 'bg-emerald-600 text-white'
+                                      : isDeferred
+                                      ? 'bg-amber-500 text-white'
+                                      : isCurrent
+                                      ? 'bg-sky-600 text-white'
+                                      : 'bg-slate-800 text-white'
+                                  }`}
+                                >
+                                  #{pStop.sira || pIdx + 1}
+                                </div>
+
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-black text-xs sm:text-sm text-slate-900 truncate">
+                                      {pStop.ad_soyad}
+                                    </span>
+                                    {isCurrent && (
+                                      <span className="px-1.5 py-0.5 rounded bg-sky-600 text-white text-[9px] font-black uppercase">
+                                        ŞU ANKİ DURAK
+                                      </span>
+                                    )}
+                                    {isDone && (
+                                      <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                                        ✓ {pStop.teslim_edilen_torba || 34} Torba
+                                      </span>
+                                    )}
+                                    {isDeferred && (
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold">
+                                        ⏳ {pStop.durum === 'EKSIK' ? `${pStop.teslim_edilen_torba} Torba Verildi` : 'Ertelendi (0 T)'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 font-medium truncate mt-0.5">
+                                    {pStop.mahalle} {pStop.sokak ? `• ${pStop.sokak}` : ''}
+                                    {pStop.kapi_no && pStop.kapi_no !== 999999 && pStop.kapi_no !== '999999' ? ` No:${pStop.kapi_no}` : ''}
+                                    {pStop.daire_no && pStop.daire_no > 0 ? ` D:${pStop.daire_no}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1 text-sky-700 font-extrabold text-xs">
+                                {isCurrent ? (
+                                  <span className="text-[11px] text-sky-700 font-black">Açık</span>
+                                ) : (
+                                  <>
+                                    <span className="hidden sm:inline">Bu Sıraya Geç</span>
+                                    <ArrowRight className="w-4 h-4 text-sky-600" />
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Modal Alt Bilgi */}
+                    <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-500 shrink-0">
+                      <span>💡 Bir haneyi tamamladıktan sonra sistem kaldığı sıradan devam eder.</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowStopPickerModal(false)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-black"
+                      >
+                        Kapat
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })(),
