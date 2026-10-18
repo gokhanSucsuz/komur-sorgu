@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin, Printer, X, FileText, CheckCircle2, Settings, ChevronDown, ChevronUp } from 'lucide-react';
-import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
+import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
 interface DeliveryArchiveProps {
@@ -48,6 +48,20 @@ export default function DeliveryArchive({
 
   const todayStr = new Date().toLocaleDateString('en-CA');
   const todayRecords = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT' && r.gun_tarihi === todayStr);
+
+  // Günlük tutanakta görev alan tüm personellerin listesi
+  const deliveryStaffList = useMemo(() => {
+    if (!printDayGroup) return [];
+    const sameDayRecords = Array.isArray(allRecords)
+      ? allRecords.filter(
+          (r) =>
+            r &&
+            (r.gun_tarihi === printDayGroup.gun_tarihi ||
+              (typeof r.tarih === 'string' && r.tarih.startsWith(printDayGroup.gun_tarihi)))
+        )
+      : [];
+    return extractUniquePersonnelList([...(printDayGroup.items || []), ...sameDayRecords]);
+  }, [printDayGroup, allRecords]);
 
   // Filter cancelled items
   const cancelledItems = allRecords.filter((r) => r.islem_tipi === 'IPTAL');
@@ -445,6 +459,12 @@ export default function DeliveryArchive({
                     <span>Toplam: <strong className="text-emerald-700">{printDayGroup.items.length} Hane</strong></span>
                     <span>•</span>
                     <span><strong className="text-amber-800">{(printDayGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton</strong></span>
+                    {deliveryStaffList.length > 0 && (
+                      <>
+                        <span>•</span>
+                        <span>Personel: <strong className="text-slate-800">{deliveryStaffList.join(', ')}</strong></span>
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -498,7 +518,7 @@ export default function DeliveryArchive({
                   </div>
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
-                  Bu tutanak, <strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
+                  Bu tutanak, <strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri ({deliveryStaffList.join(', ')}) tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
                 </p>
               </div>
 
@@ -543,19 +563,48 @@ export default function DeliveryArchive({
                 </table>
               </div>
 
-              {/* Sign-off area (2-box Official Institutional Signature Block) */}
-              <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto text-center print-signatures">
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase">Dağıtımı Yapan Personel</span>
-                  <p className="text-xs font-black text-slate-800 mt-1">
-                    {printDayGroup.items[0]?.personel || 'Dağıtım Ekibi'}
-                  </p>
-                  <div className="mt-3 pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza</div>
+              {/* Sign-off area: Dağıtımda görev alan tüm personel ve Vakıf Müdürü / Onay alanı */}
+              <div className="pt-4 border-t border-slate-200 print-signatures-container">
+                <div className="text-center mb-2.5">
+                  <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-500">
+                    RESMİ TUTANAK VE İMZA ONAY ALANI
+                  </span>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase">Vakıf Müdürü / Onay</span>
-                  <p className="text-xs font-black text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
-                  <div className="mt-3 pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400">İmza / Mühür</div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 print-signatures">
+                  {deliveryStaffList.map((staffName, idx) => (
+                    <div
+                      key={`staff-${idx}-${staffName}`}
+                      className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-300 flex flex-col justify-between text-center min-h-[110px] shadow-2xs"
+                    >
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                          Dağıtımı Yapan Personel
+                        </span>
+                        <p className="text-xs sm:text-sm font-black text-slate-900 mt-1.5 break-words">
+                          {staffName}
+                        </p>
+                      </div>
+                      <div className="mt-4 pt-2.5 border-t border-dashed border-slate-300">
+                        <span className="text-[10px] sm:text-[11px] text-slate-400 font-bold italic">İmza</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Vakıf Müdürü / Onay */}
+                  <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-300 flex flex-col justify-between text-center min-h-[110px] shadow-2xs">
+                    <div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Vakıf Müdürü / Onay
+                      </span>
+                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1.5 break-words">
+                        Edirne SYDV Başkanlığı
+                      </p>
+                    </div>
+                    <div className="mt-4 pt-2.5 border-t border-dashed border-slate-300">
+                      <span className="text-[10px] sm:text-[11px] text-slate-400 font-bold italic">İmza / Mühür</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

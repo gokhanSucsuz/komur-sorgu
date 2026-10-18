@@ -1448,4 +1448,58 @@ export function formatCancelExplanation(explanation?: string | null): string {
   return trimmed;
 }
 
+/**
+ * Dağıtımda görev alan personellerin isimlerini ayrıştırır, temizler ve benzersiz liste döndürür.
+ * Virgül, eğik çizgi, noktalı virgül veya "ve" ile ayrılmış birden fazla personeli tespit eder.
+ */
+export function extractUniquePersonnelList(
+  sources: Array<string | null | undefined | any>,
+  fallback: string = 'Dağıtım Personeli'
+): string[] {
+  const staffMap = new Map<string, string>();
+
+  const addName = (raw?: any) => {
+    if (!raw) return;
+    if (typeof raw !== 'string') return;
+    const clean = raw.trim();
+    if (!clean) return;
+
+    // Virgül, eğik çizgi, noktalı virgül, ampersand (&) veya "ve" kelimesi ile ayır
+    const tokens = clean.split(/[,/;&]|\s+ve\s+/i);
+    for (const token of tokens) {
+      let name = token.trim();
+      // Başındaki veya sonundaki [Rota: ...] gibi etiketleri temizle
+      name = name.replace(/^\[.*?\]\s*/, '').trim();
+      if (!name) continue;
+
+      const lower = toExactTurkishLower(name);
+      // Geçersiz / yer tutucu kelimeleri atla
+      if (['-', 'null', 'undefined', 'sistem', 'belirtilmedi', 'yok', 'admin', 'dağıtım ekibi'].includes(lower)) {
+        continue;
+      }
+
+      if (!staffMap.has(lower)) {
+        staffMap.set(lower, name);
+      }
+    }
+  };
+
+  (sources || []).forEach((item) => {
+    if (!item) return;
+    if (typeof item === 'string') {
+      addName(item);
+    } else if (typeof item === 'object') {
+      addName(item.personel);
+      addName(item.teslim_eden_personel);
+      addName(item.dagitim_personeli);
+      addName(item.kapatan_personel);
+      addName(item.kullanici_adi);
+    }
+  });
+
+  const list = Array.from(staffMap.values());
+  return list.length > 0 ? list : [fallback];
+}
+
+
 

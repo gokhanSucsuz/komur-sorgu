@@ -1241,8 +1241,14 @@ body:has(.modal-overlay) .mobile-nav-bar {
   .print-signatures.grid,
   .print-signatures .grid {
     display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 14px !important;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .print-signatures > div,
+  .print-signatures .grid > div {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .print-signatures * {

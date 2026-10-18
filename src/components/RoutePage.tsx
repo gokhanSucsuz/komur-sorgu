@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import CancelModal from '@/components/CancelModal';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
-import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
+import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
 function getOrCreateClientId(): string {
@@ -45,6 +45,19 @@ export default function RoutePage({
   const [currentClientId] = useState<string>(() => getOrCreateClientId());
   const [activeTab, setActiveTab] = useState<'ACTIVE_ROUTE' | 'ARCHIVE'>('ACTIVE_ROUTE');
   const [printRoute, setPrintRoute] = useState<any | null>(null);
+
+  // Rota tutanağında görev alan tüm personellerin listesi
+  const routeStaffList = useMemo(() => {
+    if (!printRoute) return [];
+    const stopRecords = printRoute.duraklar || [];
+    return extractUniquePersonnelList([
+      printRoute.dagitim_personeli,
+      printRoute.kapatan_personel,
+      ...stopRecords,
+      userName,
+    ]);
+  }, [printRoute, userName]);
+
   const [activeRoutes, setActiveRoutes] = useState<any[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
 
@@ -3630,7 +3643,7 @@ export default function RoutePage({
                   <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
                     <span>Tarih: <strong className="text-slate-800">{formatTrDate(printRoute.tarih)}</strong></span>
                     <span>•</span>
-                    <span>Personel: <strong className="text-slate-800">{printRoute.dagitim_personeli || userName || 'Saha Personeli'}</strong></span>
+                    <span>Personel: <strong className="text-slate-800">{routeStaffList.join(', ')}</strong></span>
                     {(printRoute.arac_plaka || printRoute.arac_plakasi) && (
                       <>
                         <span>•</span>
@@ -3709,7 +3722,7 @@ export default function RoutePage({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span>Sorumlu Personel: <strong className="text-slate-900">{printRoute.dagitim_personeli || userName}</strong></span>
+                    <span>Dağıtım Personeli: <strong className="text-slate-900">{routeStaffList.join(', ')}</strong></span>
                   </div>
                 </div>
               </div>
@@ -3824,31 +3837,36 @@ export default function RoutePage({
                 </table>
               </div>
 
-              {/* Official 2-Column Signature Section */}
+              {/* Official Signature Section */}
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 space-y-4 print-signatures shadow-2xs">
                 <h4 className="text-[10px] sm:text-xs font-bold text-center uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
                   RESMİ TUTANAK VE İMZA ONAY ALANI
                 </h4>
-                <div className="grid grid-cols-2 gap-4 sm:gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
-                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
-                    <div>
-                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">DAĞITIMI YAPAN PERSONEL</p>
-                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">
-                        {printRoute.kapatan_personel || printRoute.dagitim_personeli || userName || 'Saha Personeli'}
-                      </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 max-w-4xl mx-auto text-center text-xs text-slate-700 pt-2">
+                  {routeStaffList.map((staffName, idx) => (
+                    <div
+                      key={`r-staff-${idx}-${staffName}`}
+                      className="space-y-4 sm:space-y-6 p-3 sm:p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 flex flex-col justify-between min-h-[110px]"
+                    >
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">DAĞITIMI YAPAN PERSONEL</p>
+                        <p className="text-[11px] font-bold text-slate-800 mt-1 break-words">
+                          {staffName}
+                        </p>
+                      </div>
+                      <div className="h-8 flex items-center justify-center border-t border-dashed border-slate-200 pt-2">
+                        <span className="text-[10px] text-slate-400 italic font-semibold">İmza</span>
+                      </div>
                     </div>
-                    <div className="h-10 flex items-center justify-center">
-                      <span className="text-[10px] text-slate-400 italic">İmza</span>
-                    </div>
-                  </div>
+                  ))}
 
-                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                  <div className="space-y-4 sm:space-y-6 p-3 sm:p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 flex flex-col justify-between min-h-[110px]">
                     <div>
                       <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
-                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Edirne SYDV Başkanlığı</p>
+                      <p className="text-[11px] font-bold text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
                     </div>
-                    <div className="h-10 flex items-center justify-center">
-                      <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
+                    <div className="h-8 flex items-center justify-center border-t border-dashed border-slate-200 pt-2">
+                      <span className="text-[10px] text-slate-400 italic font-semibold">İmza / Mühür</span>
                     </div>
                   </div>
                 </div>
