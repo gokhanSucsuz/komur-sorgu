@@ -79,34 +79,66 @@ export default function PwaRegister() {
   }
 
   return (
-    <div className="relative z-50 p-3 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-md">
-      <div className="max-w-md mx-auto flex items-center justify-between gap-3">
+    <div
+      className="relative z-50 p-2.5 sm:p-3 shadow-md border-b border-orange-700/20 pwa-banner"
+      style={{
+        background: 'linear-gradient(135deg, #d97706 0%, #ea580c 50%, #c2410c 100%)',
+        color: '#ffffff',
+        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.25)',
+      }}
+    >
+      <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 px-1 sm:px-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center shrink-0 border border-white/20">
-            <Smartphone className="w-5 h-5 text-amber-200" />
+          <div
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 shadow-inner"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.35)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <Smartphone className="w-5 h-5" style={{ color: '#fef3c7' }} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wider text-amber-200">Mobil Uygulama Olarak İndir</p>
-            <p className="text-sm font-medium leading-tight truncate">
+            <p
+              className="text-[11px] sm:text-xs font-black uppercase tracking-wider"
+              style={{ color: '#fef08a', textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)' }}
+            >
+              Mobil Uygulama Olarak İndir
+            </p>
+            <p
+              className="text-xs sm:text-sm font-bold leading-tight truncate"
+              style={{ color: '#ffffff', textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}
+            >
               {isIOS ? 'Safari Paylaş > Ana Ekrana Ekle' : deferredPrompt ? 'Telefonunuza hızlıca yükleyin' : 'Chrome Menü (⋮) > Ana ekrana ekle'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {!isIOS && deferredPrompt && (
             <button
               onClick={handleInstallClick}
-              className="px-3 py-1.5 bg-white text-orange-950 font-semibold rounded-lg text-xs shadow hover:bg-amber-50 active:scale-95 transition-all flex items-center gap-1"
+              className="px-3.5 py-1.5 rounded-lg text-xs font-black shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              style={{
+                backgroundColor: '#ffffff',
+                color: '#9a3412',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                border: '1px solid rgba(255, 255, 255, 0.8)',
+              }}
             >
-              <Download className="w-3.5 h-3.5" />
-              Yükle
+              <Download className="w-3.5 h-3.5" style={{ color: '#ea580c' }} />
+              <span>Yükle</span>
             </button>
           )}
           <button
             onClick={handleDismiss}
             aria-label="Kapat"
-            className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            className="p-1.5 rounded-lg transition-colors cursor-pointer"
+            style={{
+              color: '#ffffff',
+              backgroundColor: 'rgba(255, 255, 255, 0.18)',
+            }}
           >
             <X className="w-4 h-4" />
           </button>
