@@ -1,7 +1,7 @@
 'use client';
 
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban } from 'lucide-react';
-import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
+import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
 
 interface HouseholdModalProps {
   person: any;
@@ -89,11 +89,11 @@ export default function HouseholdModal({
                 <span>Bu Hak Sahibine Kömür Yardımı İptal Edilmiştir</span>
               </div>
               <p className="text-[11px] text-rose-900 font-bold">
-                Neden: {person.komur_iptal_nedeni || 'Belirtilmedi'}
+                Neden: {formatCancelReason(person.komur_iptal_nedeni)}
               </p>
-              {person.komur_iptal_aciklama && (
+              {formatCancelExplanation(person.komur_iptal_aciklama) && (
                 <p className="text-[11px] text-rose-800">
-                  Açıklama: {person.komur_iptal_aciklama}
+                  Açıklama: {formatCancelExplanation(person.komur_iptal_aciklama)}
                 </p>
               )}
               {person.komur_iptal_tarihi && (
@@ -417,7 +417,7 @@ export default function HouseholdModal({
                           if (onOpenKomurIptal) onOpenKomurIptal(member);
                         }}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-bold border border-rose-200 shadow-2xs transition-all active:scale-95"
-                        title={member.komur_iptal_nedeni ? `İptal Nedeni: ${member.komur_iptal_nedeni}` : 'Kömür Yardımı İptal Edildi'}
+                        title={member.komur_iptal_nedeni ? `İptal Nedeni: ${formatCancelReason(member.komur_iptal_nedeni)}` : 'Kömür Yardımı İptal Edildi'}
                       >
                         <Ban className="w-3 h-3 text-rose-600" />
                         <span>Kömür İptal</span>

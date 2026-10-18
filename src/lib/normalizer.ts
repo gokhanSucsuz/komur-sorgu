@@ -1425,4 +1425,27 @@ export function formatTonnage(val: string | number | null | undefined): {
   };
 }
 
+/**
+ * Kömür iptal gerekçesini insan tarafından okunabilir şekilde temizler.
+ * Şifreli bir dizi (ENC:GCM:v1:...) ekranda asla doğrudan gösterilmez.
+ */
+export function formatCancelReason(reason?: string | null): string {
+  if (!reason) return 'Kömür Verilmeyecek';
+  const trimmed = String(reason).trim();
+  if (trimmed.startsWith('ENC:')) {
+    return 'Kömür Verilmeyecek (Gerekçe Kayıtlı)';
+  }
+  return trimmed;
+}
+
+/**
+ * Kömür iptal detay açıklamasını temizler. Şifreli dizileri gizler.
+ */
+export function formatCancelExplanation(explanation?: string | null): string {
+  if (!explanation) return '';
+  const trimmed = String(explanation).trim();
+  if (trimmed.startsWith('ENC:')) return '';
+  return trimmed;
+}
+
 

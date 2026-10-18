@@ -176,6 +176,8 @@ export function mapDoc<T = any>(doc: any): T {
     'last_device',
     'totp_secret',
     'totp_pending_secret',
+    'komur_iptal_nedeni',
+    'komur_iptal_aciklama',
   ];
 
   for (const field of piiFields) {

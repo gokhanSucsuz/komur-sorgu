@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Ban, CheckCircle2, AlertTriangle, X, Shield, FileSpreadsheet, FileText, MapPin, Phone } from 'lucide-react';
-import { getBeneficiaryListTypeInfo, formatPhoneDisplay } from '@/lib/normalizer';
+import { getBeneficiaryListTypeInfo, formatPhoneDisplay, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
 import { showToast } from './GlobalAlertManager';
 
 interface KomurIptalModalProps {
@@ -31,12 +31,13 @@ export default function KomurIptalModal({
 }: KomurIptalModalProps) {
   const isAlreadyCancelled = Boolean(beneficiary?.komur_verilmeyecek);
   
+  const initialReason = formatCancelReason(beneficiary?.komur_iptal_nedeni);
   const [selectedQuickReason, setSelectedQuickReason] = useState<string>(
-    isAlreadyCancelled ? (beneficiary?.komur_iptal_nedeni || '') : QUICK_REASONS[0]
+    isAlreadyCancelled ? initialReason : QUICK_REASONS[0]
   );
   const [customReason, setCustomReason] = useState<string>('');
   const [aciklama, setAciklama] = useState<string>(
-    isAlreadyCancelled ? (beneficiary?.komur_iptal_aciklama || '') : ''
+    isAlreadyCancelled ? formatCancelExplanation(beneficiary?.komur_iptal_aciklama) : ''
   );
   const [personel, setPersonel] = useState<string>(currentStaff || 'Yetkili Personel');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -224,15 +225,15 @@ export default function KomurIptalModal({
                 <div>
                   <span className="text-rose-700 font-bold">İptal / Verilmeme Nedeni:</span>
                   <p className="text-rose-950 font-extrabold text-sm mt-0.5 bg-white p-2.5 rounded-xl border border-rose-200">
-                    {beneficiary.komur_iptal_nedeni || 'Belirtilmedi'}
+                    {formatCancelReason(beneficiary.komur_iptal_nedeni)}
                   </p>
                 </div>
 
-                {beneficiary.komur_iptal_aciklama && (
+                {formatCancelExplanation(beneficiary.komur_iptal_aciklama) && (
                   <div className="mt-2">
                     <span className="text-rose-700 font-bold">Detaylı Açıklama:</span>
                     <p className="text-rose-900 font-medium text-xs mt-0.5 bg-white/80 p-2.5 rounded-xl border border-rose-200 whitespace-pre-wrap">
-                      {beneficiary.komur_iptal_aciklama}
+                      {formatCancelExplanation(beneficiary.komur_iptal_aciklama)}
                     </p>
                   </div>
                 )}

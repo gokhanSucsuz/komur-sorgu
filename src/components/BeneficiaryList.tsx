@@ -20,7 +20,9 @@ import {
   cleanTcNo,
   turkishIncludes,
   isBirebirBeneficiaryMatch,
-  getBeneficiaryListTypeInfo
+  getBeneficiaryListTypeInfo,
+  formatCancelReason,
+  formatCancelExplanation
 } from '@/lib/normalizer';
 
 interface BeneficiaryListProps {
@@ -1470,10 +1472,10 @@ export default function BeneficiaryList({
                               {person.komur_verilmeyecek && (
                                 <div
                                   className="text-[10px] bg-rose-50 text-rose-900 px-1.5 py-0.5 rounded border border-rose-300 font-bold flex items-start gap-1 break-words whitespace-normal leading-tight shadow-2xs mt-0.5"
-                                  title={person.komur_iptal_aciklama || person.komur_iptal_nedeni}
+                                  title={formatCancelExplanation(person.komur_iptal_aciklama) || formatCancelReason(person.komur_iptal_nedeni)}
                                 >
                                   <Ban className="w-3 h-3 text-rose-600 shrink-0 mt-0.5" />
-                                  <span className="break-words font-black">🚫 Kömür İptal: {person.komur_iptal_nedeni}</span>
+                                  <span className="break-words font-black">🚫 Kömür İptal: {formatCancelReason(person.komur_iptal_nedeni)}</span>
                                 </div>
                               )}
                             </div>
@@ -1542,10 +1544,10 @@ export default function BeneficiaryList({
                                   Kömür Verilmeyecek
                                 </span>
                                 <div className="text-[10px] text-rose-800 font-bold leading-tight">
-                                  <span>{person.komur_iptal_nedeni || 'İptal Edildi'}</span>
-                                  {person.komur_iptal_aciklama && (
-                                    <span className="block text-[9px] text-slate-500 truncate max-w-[170px]" title={person.komur_iptal_aciklama}>
-                                      {person.komur_iptal_aciklama}
+                                  <span>{formatCancelReason(person.komur_iptal_nedeni)}</span>
+                                  {formatCancelExplanation(person.komur_iptal_aciklama) && (
+                                    <span className="block text-[9px] text-slate-500 truncate max-w-[170px]" title={formatCancelExplanation(person.komur_iptal_aciklama)}>
+                                      {formatCancelExplanation(person.komur_iptal_aciklama)}
                                     </span>
                                   )}
                                 </div>
@@ -1862,8 +1864,8 @@ export default function BeneficiaryList({
                               <Ban className="w-3.5 h-3.5 text-rose-600" />
                               Verilmeyecek
                             </span>
-                            <span className="text-[10px] text-rose-700 font-bold block mt-0.5 truncate max-w-[130px]" title={person.komur_iptal_nedeni}>
-                              {person.komur_iptal_nedeni || 'İptal'}
+                            <span className="text-[10px] text-rose-700 font-bold block mt-0.5 truncate max-w-[130px]" title={formatCancelReason(person.komur_iptal_nedeni)}>
+                              {formatCancelReason(person.komur_iptal_nedeni)}
                             </span>
                           </div>
                         ) : isComplete ? (
@@ -1919,7 +1921,7 @@ export default function BeneficiaryList({
                             <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                             <div>
                               <span className="font-black text-rose-800 block">🚫 KÖMÜR VERİLMEYECEK (İPTAL)</span>
-                              <span className="text-rose-900 font-extrabold text-[11px]">Neden: {person.komur_iptal_nedeni || 'Belirtilmedi'}</span>
+                              <span className="text-rose-900 font-extrabold text-[11px]">Neden: {formatCancelReason(person.komur_iptal_nedeni)}</span>
                             </div>
                           </div>
                           {onOpenKomurIptal && (
@@ -1935,9 +1937,9 @@ export default function BeneficiaryList({
                             </button>
                           )}
                         </div>
-                        {person.komur_iptal_aciklama && (
+                        {formatCancelExplanation(person.komur_iptal_aciklama) && (
                           <div className="text-[11px] text-rose-800 pt-1 border-t border-rose-200">
-                            <strong>Açıklama:</strong> {person.komur_iptal_aciklama}
+                            <strong>Açıklama:</strong> {formatCancelExplanation(person.komur_iptal_aciklama)}
                           </div>
                         )}
                         {(person.komur_iptal_eden || person.komur_iptal_tarihi) && (
@@ -2064,7 +2066,7 @@ export default function BeneficiaryList({
                             <Ban className="w-4 h-4 text-rose-600 shrink-0" />
                             <div>
                               <span className="font-black text-rose-800">Kömür Yardımı İptal Edildi</span>
-                              <span className="text-[11px] text-rose-700 block font-bold">{person.komur_iptal_nedeni || 'Kömür verilmeyecek'}</span>
+                              <span className="text-[11px] text-rose-700 block font-bold">{formatCancelReason(person.komur_iptal_nedeni)}</span>
                             </div>
                           </div>
                           {onOpenKomurIptal && (
