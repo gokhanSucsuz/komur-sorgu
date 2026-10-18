@@ -95,9 +95,7 @@ export default function ProfileModal({
       setDisableCode('');
       setDisablePassword('');
 
-      if (userRole === 'ADMIN') {
-        fetch2faStatus();
-      }
+      fetch2faStatus();
     }
   }, [isOpen, userRole, userName]);
 
@@ -181,7 +179,7 @@ export default function ProfileModal({
       return;
     }
     if (!totpVerifyPassword.trim()) {
-      setErrorMsg('İşlemi onaylamak için lütfen mevcut yönetici şifrenizi giriniz.');
+      setErrorMsg('İşlemi onaylamak için lütfen mevcut şifrenizi / PIN kodunuzu giriniz.');
       return;
     }
 
@@ -457,10 +455,9 @@ export default function ProfileModal({
           </div>
         )}
 
-        {/* GOOGLE AUTHENTICATOR (2FA) SECTION FOR ADMIN */}
-        {userRole === 'ADMIN' && (
-          <div
-            className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mb-4 space-y-3 shadow-sm border border-slate-700"
+        {/* GOOGLE AUTHENTICATOR (2FA) SECTION */}
+        <div
+          className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mb-4 space-y-3 shadow-sm border border-slate-700"
             style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#ffffff' }}
           >
             <div className="flex items-center justify-between">
@@ -473,7 +470,7 @@ export default function ProfileModal({
                     Google Authenticator (2FA)
                   </h4>
                   <p className="text-[10px] text-slate-300 font-medium">
-                    İki Faktörlü Yönetici Koruması
+                    {userRole === 'ADMIN' ? 'İki Faktörlü Yönetici Koruması' : 'İki Faktörlü Saha Personeli Koruması'}
                   </p>
                 </div>
               </div>
@@ -496,8 +493,9 @@ export default function ProfileModal({
             {!totpEnabled && !setupMode && (
               <div className="space-y-2.5 pt-1">
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Yönetici hesabınızı en üst düzeyde korumak için telefonunuzdaki{' '}
-                  <strong className="text-amber-300">Google Authenticator</strong> uygulamasını tanımlayın.
+                  {userRole === 'ADMIN'
+                    ? 'Yönetici hesabınızı en üst düzeyde korumak için telefonunuzdaki Google Authenticator uygulamasını tanımlayın.'
+                    : 'Saha personeli hesabınız için Google Authenticator koruması. Eşleşmiş yetkili telefonunuzda 6 saatte bir kod istenir, gün boyu 6 saat dolana dek tekrar kod istemeden PIN ile hızlıca girebilirsiniz.'}
                 </p>
                 <button
                   type="button"
@@ -603,7 +601,7 @@ export default function ProfileModal({
 
                   <div>
                     <label className="block text-[10px] font-black text-slate-300 uppercase tracking-wider mb-1">
-                      Mevcut Yönetici Şifreniz
+                      {userRole === 'ADMIN' ? 'Mevcut Yönetici Şifreniz' : 'Mevcut Şifreniz / PIN Kodunuz'}
                     </label>
                     <input
                       type="password"
@@ -684,7 +682,7 @@ export default function ProfileModal({
                       type="password"
                       value={disablePassword}
                       onChange={(e) => setDisablePassword(e.target.value)}
-                      placeholder="Mevcut Yönetici Şifreniz"
+                      placeholder={userRole === 'ADMIN' ? 'Mevcut Yönetici Şifreniz' : 'Mevcut Şifreniz / PIN'}
                       className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-semibold focus:outline-none focus:border-rose-400"
                     />
                     <input
@@ -716,7 +714,6 @@ export default function ProfileModal({
               </div>
             )}
           </div>
-        )}
 
         {/* Profile & Password Update Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">

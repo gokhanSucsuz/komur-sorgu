@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Edit3, Trash2, Key, Phone, Shield, User, X, Check, Eye, EyeOff, 
-  AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert 
+  AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert, QrCode, Copy, ShieldCheck, RefreshCw 
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { getSecureItem } from '@/lib/secureStorage';
@@ -39,6 +39,18 @@ export default function PersonnelManagementModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // 2FA Admin-Assisted Setup state
+  const [totpSetupPerson, setTotpSetupPerson] = useState<any | null>(null);
+  const [totpSetupData, setTotpSetupData] = useState<any | null>(null);
+  const [totpSetupLoading, setTotpSetupLoading] = useState(false);
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [adminPasswordFor2fa, setAdminPasswordFor2fa] = useState('');
+  const [totpSubmitting, setTotpSubmitting] = useState(false);
+  const [totpSetupError, setTotpSetupError] = useState('');
+  const [totpRecoveryCodes, setTotpRecoveryCodes] = useState<string[] | null>(null);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [copiedRecovery, setCopiedRecovery] = useState(false);
 
   const fetchPersonnel = async () => {
     setIsLoading(true);
@@ -280,6 +292,100 @@ export default function PersonnelManagementModal({
         message: err.message || 'Oturum kapatılırken hata oluştu',
         type: 'error',
       });
+    }
+  };
+
+  const copyTextSafe = (text: string) => {
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  };
+
+  const handleOpen2faSetup = async (person: any) => {
+    setTotpSetupPerson(person);
+    setTotpSetupData(null);
+    setTotpSetupLoading(true);
+    setTotpVerifyCode('');
+    setAdminPasswordFor2fa('');
+    setTotpSetupError('');
+    setTotpRecoveryCodes(null);
+    setCopiedSecret(false);
+    setCopiedRecovery(false);
+
+    try {
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify({
+          action: '2fa_setup_init',
+          target_username: person.username,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '2FA kurulum kodu oluşturulamadı');
+      }
+
+      setTotpSetupData(data);
+    } catch (err: any) {
+      setTotpSetupError(err.message || 'QR Kod oluşturulurken hata meydana geldi');
+    } finally {
+      setTotpSetupLoading(false);
+    }
+  };
+
+  const handleVerifyPersonnel2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!totpVerifyCode.trim() || totpVerifyCode.trim().length < 6) {
+      setTotpSetupError('Lütfen Google Authenticator uygulamasındaki 6 haneli kodu giriniz.');
+      return;
+    }
+    if (!adminPasswordFor2fa.trim()) {
+      setTotpSetupError('İşlemi onaylamak için lütfen Yönetici şifrenizi giriniz.');
+      return;
+    }
+
+    setTotpSubmitting(true);
+    setTotpSetupError('');
+    try {
+      const sessionToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || '') : '';
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken,
+        },
+        body: JSON.stringify({
+          action: '2fa_setup_verify',
+          target_username: totpSetupPerson.username,
+          totp_code: totpVerifyCode.trim(),
+          current_password: adminPasswordFor2fa.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '2FA doğrulaması başarısız');
+      }
+
+      setTotpRecoveryCodes(data.recovery_codes || []);
+      showToast({
+        type: 'success',
+        title: '2FA Başarıyla Aktif Edildi',
+        message: `"${totpSetupPerson.ad_soyad}" personeli için Google Authenticator başarıyla etkinleştirildi.`,
+      });
+      fetchPersonnel();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      setTotpSetupError(err.message || 'Doğrulama hatası');
+    } finally {
+      setTotpSubmitting(false);
     }
   };
 
@@ -622,13 +728,21 @@ export default function PersonnelManagementModal({
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
-                  {person.totp_enabled && (
+                  {person.totp_enabled ? (
                     <button
                       onClick={() => handleReset2FA(person)}
                       className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors"
                       title="Google Authenticator (2FA) Sıfırla"
                     >
                       <ShieldAlert className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleOpen2faSetup(person)}
+                      className="p-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors"
+                      title="Google Authenticator (2FA) Kurulum QR Kodu Oluştur"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
                     </button>
                   )}
                   <button
@@ -664,6 +778,200 @@ export default function PersonnelManagementModal({
           </button>
         </div>
       </div>
+
+      {/* 2FA SETUP MODAL OVERLAY FOR PERSONNEL */}
+      {totpSetupPerson && (
+        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-2xl border border-slate-200 space-y-3 relative max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                  <QrCode className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-900">
+                    2FA Kurulumu: {totpSetupPerson.ad_soyad}
+                  </h4>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    @{totpSetupPerson.username} • Google Authenticator
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setTotpSetupPerson(null);
+                  setTotpSetupData(null);
+                  setTotpRecoveryCodes(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {totpSetupLoading ? (
+              <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
+                <span>2FA QR Kodu ve Gizli Anahtar Hazırlanıyor...</span>
+              </div>
+            ) : totpRecoveryCodes ? (
+              /* Success & Recovery Codes View */
+              <div className="space-y-3">
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
+                  <ShieldCheck className="w-8 h-8 text-emerald-600 mx-auto" />
+                  <h5 className="text-xs font-black text-emerald-900">
+                    2FA Kurulumu Tamamlandı!
+                  </h5>
+                  <p className="text-[11px] text-emerald-800">
+                    Personel artık eşleşmiş yetkili telefonundan Google Authenticator ile güvenle giriş yapabilir (6 saatte bir kod istenir).
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-amber-900 uppercase">
+                      Yedek Kurtarma Kodları
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        copyTextSafe(totpRecoveryCodes.join('\n'));
+                        setCopiedRecovery(true);
+                        setTimeout(() => setCopiedRecovery(false), 2000);
+                      }}
+                      className="text-[10px] font-bold text-amber-800 hover:text-amber-900 flex items-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" />
+                      {copiedRecovery ? 'Kopyalandı!' : 'Tümünü Kopyala'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 font-mono text-xs font-black text-center text-slate-900">
+                    {totpRecoveryCodes.map((code, idx) => (
+                      <div key={idx} className="bg-white px-2 py-1 rounded border border-amber-300">
+                        {code}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setTotpSetupPerson(null);
+                    setTotpSetupData(null);
+                    setTotpRecoveryCodes(null);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 text-white text-xs font-black hover:bg-slate-800 transition-all active:scale-95"
+                >
+                  Tamamla ve Kapat
+                </button>
+              </div>
+            ) : totpSetupData ? (
+              /* QR Code & Verify Form */
+              <form onSubmit={handleVerifyPersonnel2fa} className="space-y-3">
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Personelin telefonundaki <strong>Google Authenticator</strong> uygulamasını açıp aşağıdaki QR kodu okutun:
+                </p>
+
+                {/* QR SVG */}
+                <div className="flex justify-center p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  <img
+                    src={totpSetupData.qr_svg_data_url}
+                    alt="Google Authenticator QR"
+                    className="w-40 h-40 object-contain bg-white p-1 rounded-lg"
+                  />
+                </div>
+
+                {/* Manual Key */}
+                <div className="p-2 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-between text-xs font-mono">
+                  <span className="truncate text-slate-700 select-all font-bold">
+                    {totpSetupData.secret}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      copyTextSafe(totpSetupData.secret);
+                      setCopiedSecret(true);
+                      setTimeout(() => setCopiedSecret(false), 2000);
+                    }}
+                    className="text-[10px] font-bold text-sky-700 hover:text-sky-800 shrink-0 ml-2 flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3" />
+                    {copiedSecret ? 'Kopyalandı' : 'Kopyala'}
+                  </button>
+                </div>
+
+                {totpSetupError && (
+                  <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{totpSetupError}</span>
+                  </div>
+                )}
+
+                {/* 6 Digit TOTP code from user phone */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-700 uppercase mb-1">
+                    Personel Telefonundaki 6 Haneli 2FA Kodu:
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={totpVerifyCode}
+                    onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="123456"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-center font-mono text-base font-black tracking-[0.3em] focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                {/* Admin Password */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-700 uppercase mb-1">
+                    İşlemi Onaylamak İçin Yönetici Şifreniz:
+                  </label>
+                  <input
+                    type="password"
+                    value={adminPasswordFor2fa}
+                    onChange={(e) => setAdminPasswordFor2fa(e.target.value)}
+                    placeholder="Yönetici şifrenizi giriniz"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTotpSetupPerson(null);
+                      setTotpSetupData(null);
+                    }}
+                    className="btn-secondary flex-1 py-2 text-xs"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={totpSubmitting}
+                    className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black transition-all flex items-center justify-center gap-1"
+                  >
+                    {totpSubmitting ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>Doğrulanıyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>2FA'yı Aktif Et</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

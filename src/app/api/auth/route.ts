@@ -342,23 +342,33 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================================================
-    // 3. GOOGLE AUTHENTICATOR (TOTP) 2FA SETUP & MANAGEMENT FOR ADMINISTRATORS
+    // =========================================================================
+    // 3. GOOGLE AUTHENTICATOR (TOTP) 2FA SETUP & MANAGEMENT
     // =========================================================================
 
     // 3A. Initialize 2FA Setup (Generate Secret + Offline SVG QR Code)
     if (action === '2fa_setup_init') {
-      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      const session = await verifySession(request);
       if (!session.valid) {
-        return session.response || NextResponse.json({ success: false, error: 'Yönetici oturumu gerekli.' }, { status: 403 });
+        return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli.' }, { status: 401 });
       }
 
-      const rawUser = await findActiveUserByIdentifier(usersCol, session.username || '');
+      // If Admin provided target_username, initialize for that personnel; otherwise initialize for own account
+      let targetUsername = (session.username || '').toLowerCase();
+      if (session.rol === 'ADMIN' && body.target_username) {
+        targetUsername = String(body.target_username).trim().toLowerCase();
+      }
+
+      const rawUser = await findActiveUserByIdentifier(usersCol, targetUsername);
       if (!rawUser) {
-        return NextResponse.json({ success: false, error: 'Yönetici hesabı bulunamadı.' }, { status: 404 });
+        return NextResponse.json({ success: false, error: 'Kullanıcı hesabı bulunamadı.' }, { status: 404 });
       }
 
       const secret = generateTotpSecret(20); // 160-bit Base32 secret (32 chars)
-      const accountLabel = `${rawUser.username} (Yönetici)`;
+      const userRoleLabel = rawUser.rol === 'ADMIN' ? 'Yönetici' : 'Saha Personeli';
+      const decUser = mapDoc(rawUser);
+      const decAd = decUser.ad_soyad || decUser.username;
+      const accountLabel = `${decAd} (${userRoleLabel})`;
       const otpauthUri = buildOtpAuthUri(accountLabel, secret, 'Edirne SYDV Kömür Sistemi');
       const qrSvgDataUrl = generateQrCodeSvgDataUrl(otpauthUri);
 
@@ -377,21 +387,27 @@ export async function POST(request: NextRequest) {
         secret,
         otpauth_uri: otpauthUri,
         qr_svg_data_url: qrSvgDataUrl,
+        target_username: rawUser.username,
+        target_name: decAd,
       });
     }
 
     // 3B. Verify 6-Digit Google Authenticator Code & Activate 2FA
     if (action === '2fa_setup_verify') {
-      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      const session = await verifySession(request);
       if (!session.valid) {
-        return session.response || NextResponse.json({ success: false, error: 'Yönetici oturumu gerekli.' }, { status: 403 });
+        return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli.' }, { status: 401 });
       }
 
       const trimmedCurPass = (current_password || '').trim();
       const trimmedCode = (totp_code || '').trim();
+      const isAdminAssisted = session.rol === 'ADMIN' && body.target_username;
+      const targetUsername = isAdminAssisted
+        ? String(body.target_username).trim().toLowerCase()
+        : (session.username || '').toLowerCase();
 
       if (!trimmedCurPass) {
-        return NextResponse.json({ success: false, error: 'Lütfen mevcut yönetici şifrenizi giriniz.' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Lütfen doğrulama için geçerli şifrenizi giriniz.' }, { status: 400 });
       }
       if (!trimmedCode) {
         return NextResponse.json({ success: false, error: 'Lütfen Google Authenticator uygulamasındaki 6 haneli kodu giriniz.' }, { status: 400 });
@@ -406,15 +422,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const rawUser = await findActiveUserByIdentifier(usersCol, session.username || '');
+      const rawUser = await findActiveUserByIdentifier(usersCol, targetUsername);
       if (!rawUser) {
-        return NextResponse.json({ success: false, error: 'Yönetici hesabı bulunamadı.' }, { status: 404 });
+        return NextResponse.json({ success: false, error: 'Kullanıcı hesabı bulunamadı.' }, { status: 404 });
       }
 
-      const isPassValid = await verifyUserPassword(usersCol, rawUser, trimmedCurPass);
+      // Password check: if Admin is assisting a personnel, verify Admin's password; else verify user's own password
+      const actingUser = isAdminAssisted
+        ? await findActiveUserByIdentifier(usersCol, session.username || '')
+        : rawUser;
+
+      if (!actingUser) {
+        return NextResponse.json({ success: false, error: 'Doğrulama yapan kullanıcı hesabı bulunamadı.' }, { status: 404 });
+      }
+
+      const isPassValid = await verifyUserPassword(usersCol, actingUser, trimmedCurPass);
       if (!isPassValid) {
         await recordDistributedFailedAttempt(rlKey);
-        return NextResponse.json({ success: false, error: 'Mevcut yönetici şifrenizi hatalı girdiniz!' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Girdiğiniz şifre hatalı!' }, { status: 400 });
       }
 
       const decUser = mapDoc(rawUser);
@@ -432,7 +457,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: 'Girdiğiniz 6 haneli doğrulama kodu eşleşmedi! Telefonunuzun saat ayarının otomatik olduğundan emin olup güncel kodu giriniz.',
+            error: 'Girdiğiniz 6 haneli doğrulama kodu eşleşmedi! Telefon saatinin otomatik olduğundan emin olup güncel kodu giriniz.',
           },
           { status: 400 }
         );
@@ -452,6 +477,7 @@ export async function POST(request: NextRequest) {
             totp_secret: encryptField(pendingSecret),
             totp_pending_secret: null,
             totp_recovery_codes: encryptedRecoveryCodes,
+            totp_device_graces: [],
             totp_enabled_at: nowFullStr,
             updated_at: nowFullStr,
           },
@@ -459,11 +485,11 @@ export async function POST(request: NextRequest) {
       );
 
       await recordActivityLog({
-        kullanici_adi: decUser.ad_soyad || decUser.username,
-        kullanici_rolu: 'ADMIN',
+        kullanici_adi: session.username || rawUser.username,
+        kullanici_rolu: session.rol || rawUser.rol,
         islem_tipi: '2FA_AKTIF',
         baslik: 'İki Faktörlü Doğrulama (Google Authenticator) Etkinleştirildi',
-        detay: `"${decUser.ad_soyad}" (@${decUser.username}) yönetici hesabı için Google Authenticator (TOTP) 2FA korumasını aktif etti.`,
+        detay: `"${rawUser.username}" hesabı için Google Authenticator (TOTP) 2FA koruması başarıyla aktif edildi.`,
       });
 
       return NextResponse.json({
@@ -477,9 +503,9 @@ export async function POST(request: NextRequest) {
 
     // 3C. Disable 2FA (Requires Current Password + Current 6-Digit Code or Recovery Code)
     if (action === '2fa_disable') {
-      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      const session = await verifySession(request);
       if (!session.valid) {
-        return session.response || NextResponse.json({ success: false, error: 'Yönetici oturumu gerekli.' }, { status: 403 });
+        return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli.' }, { status: 401 });
       }
 
       const trimmedCurPass = (current_password || '').trim();
@@ -503,13 +529,13 @@ export async function POST(request: NextRequest) {
 
       const rawUser = await findActiveUserByIdentifier(usersCol, session.username || '');
       if (!rawUser) {
-        return NextResponse.json({ success: false, error: 'Yönetici hesabı bulunamadı.' }, { status: 404 });
+        return NextResponse.json({ success: false, error: 'Kullanıcı hesabı bulunamadı.' }, { status: 404 });
       }
 
       const isPassValid = await verifyUserPassword(usersCol, rawUser, trimmedCurPass);
       if (!isPassValid) {
         await recordDistributedFailedAttempt(rlKey);
-        return NextResponse.json({ success: false, error: 'Mevcut yönetici şifrenizi hatalı girdiniz!' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Mevcut şifrenizi hatalı girdiniz!' }, { status: 400 });
       }
 
       const decUser = mapDoc(rawUser);
@@ -539,6 +565,7 @@ export async function POST(request: NextRequest) {
             totp_secret: null,
             totp_pending_secret: null,
             totp_recovery_codes: [],
+            totp_device_graces: [],
             totp_enabled_at: null,
             updated_at: nowFullStr,
           },
@@ -547,10 +574,10 @@ export async function POST(request: NextRequest) {
 
       await recordActivityLog({
         kullanici_adi: decUser.ad_soyad || decUser.username,
-        kullanici_rolu: 'ADMIN',
+        kullanici_rolu: decUser.rol || 'PERSONEL',
         islem_tipi: '2FA_DEVRE_DISI',
         baslik: 'İki Faktörlü Doğrulama (2FA) Devre Dışı Bırakıldı',
-        detay: `"${decUser.ad_soyad}" (@${decUser.username}) yönetici hesabı için 2FA korumasını devre dışı bıraktı.`,
+        detay: `"${decUser.ad_soyad || decUser.username}" (@${decUser.username}) hesabı için 2FA korumasını devre dışı bıraktı.`,
       });
 
       return NextResponse.json({
@@ -586,6 +613,7 @@ export async function POST(request: NextRequest) {
             totp_secret: null,
             totp_pending_secret: null,
             totp_recovery_codes: [],
+            totp_device_graces: [],
             totp_enabled_at: null,
             updated_at: nowFullStr,
           },
@@ -773,51 +801,71 @@ export async function POST(request: NextRequest) {
     // 2FA (Google Authenticator) Challenge for Accounts with totp_enabled
     let usedRecoveryCode = false;
     let remainingRecoveryCodes: string[] = Array.isArray(decUser.totp_recovery_codes) ? decUser.totp_recovery_codes : [];
+    let skip2faDueToGrace = false;
+
+    // 6 Saatlik 2FA Muafiyet Süresi (Eşleşmiş Yetkili Cihazlar İçin)
+    // Personel eşleşmiş telefonu ile 6 saat içinde 1 kez 2FA girer, 6 saat dolmadan tekrar 2FA kodu istenmez
+    const TWO_FACTOR_GRACE_MS = 6 * 60 * 60 * 1000; // 6 saat
+    const nowMs = Date.now();
+    const existingGraces: any[] = Array.isArray(rawUser.totp_device_graces) ? rawUser.totp_device_graces : [];
 
     if (rawUser.totp_enabled && decUser.totp_secret) {
-      const providedCode = (totp_code || '').trim();
-      if (!providedCode) {
-        return NextResponse.json({
-          success: false,
-          requires_2fa: true,
-          message: 'Lütfen telefonunuzdaki Google Authenticator uygulamasında görünen 6 haneli doğrulama kodunu giriniz.',
-        });
-      }
-
-      const normalizedCode = providedCode.toUpperCase().replace(/\s+/g, '');
-      const isTotpValid = verifyTotpCode(decUser.totp_secret, normalizedCode);
-
-      let matchedRecoveryIdx = -1;
-      if (!isTotpValid) {
-        matchedRecoveryIdx = remainingRecoveryCodes.findIndex((rc) =>
-          timingSafeTokenEqual(rc.toUpperCase(), normalizedCode)
+      if (matchedDeviceSlot && matchedDeviceSlot.slot_no) {
+        const activeGrace = existingGraces.find((g: any) =>
+          Number(g.slot_no) === Number(matchedDeviceSlot.slot_no) &&
+          g.expires_at &&
+          new Date(g.expires_at).getTime() > nowMs
         );
+        if (activeGrace) {
+          skip2faDueToGrace = true;
+        }
       }
 
-      if (!isTotpValid && matchedRecoveryIdx === -1) {
-        const failResult = await recordDistributedFailedAttempt(rateLimitKey);
-        if (failResult.count >= 5) {
-          await recordActivityLog({
-            kullanici_adi: user.ad_soyad || user.username,
-            kullanici_rolu: user.rol,
-            islem_tipi: 'GUVENLIK_ENGEL',
-            baslik: 'Çoklu Hatalı 2FA Kodu Denemesi Engellendi',
-            detay: `"${user.username}" hesabı için (${clientIp}) arka arkaya hatalı 2FA doğrulama kodu girildiği için hesap 5 dakika süreyle korumaya alındı.`,
-          });
-        }
-        return NextResponse.json(
-          {
+      if (!skip2faDueToGrace) {
+        const providedCode = (totp_code || '').trim();
+        if (!providedCode) {
+          return NextResponse.json({
             success: false,
             requires_2fa: true,
-            error: 'Girdiğiniz 6 haneli Google Authenticator kodu veya kurtarma kodu hatalı ya da süresi dolmuş!',
-          },
-          { status: 401 }
-        );
-      }
+            message: 'Lütfen telefonunuzdaki Google Authenticator uygulamasında görünen 6 haneli doğrulama kodunu giriniz.',
+          });
+        }
 
-      if (matchedRecoveryIdx !== -1) {
-        usedRecoveryCode = true;
-        remainingRecoveryCodes = remainingRecoveryCodes.filter((_, idx) => idx !== matchedRecoveryIdx);
+        const normalizedCode = providedCode.toUpperCase().replace(/\s+/g, '');
+        const isTotpValid = verifyTotpCode(decUser.totp_secret, normalizedCode);
+
+        let matchedRecoveryIdx = -1;
+        if (!isTotpValid) {
+          matchedRecoveryIdx = remainingRecoveryCodes.findIndex((rc) =>
+            timingSafeTokenEqual(rc.toUpperCase(), normalizedCode)
+          );
+        }
+
+        if (!isTotpValid && matchedRecoveryIdx === -1) {
+          const failResult = await recordDistributedFailedAttempt(rateLimitKey);
+          if (failResult.count >= 5) {
+            await recordActivityLog({
+              kullanici_adi: user.ad_soyad || user.username,
+              kullanici_rolu: user.rol,
+              islem_tipi: 'GUVENLIK_ENGEL',
+              baslik: 'Çoklu Hatalı 2FA Kodu Denemesi Engellendi',
+              detay: `"${user.username}" hesabı için (${clientIp}) arka arkaya hatalı 2FA doğrulama kodu girildiği için hesap 5 dakika süreyle korumaya alındı.`,
+            });
+          }
+          return NextResponse.json(
+            {
+              success: false,
+              requires_2fa: true,
+              error: 'Girdiğiniz 6 haneli Google Authenticator kodu veya kurtarma kodu hatalı ya da süresi dolmuş!',
+            },
+            { status: 401 }
+          );
+        }
+
+        if (matchedRecoveryIdx !== -1) {
+          usedRecoveryCode = true;
+          remainingRecoveryCodes = remainingRecoveryCodes.filter((_, idx) => idx !== matchedRecoveryIdx);
+        }
       }
     }
 
@@ -839,6 +887,20 @@ export async function POST(request: NextRequest) {
 
     if (usedRecoveryCode) {
       loginUpdateDoc.totp_recovery_codes = remainingRecoveryCodes.map((c) => encryptField(c));
+    }
+
+    // Eşleşmiş yetkili cihazda yeni 2FA doğrulaması yapıldıysa 6 saatlik muafiyeti kaydet
+    if (matchedDeviceSlot && rawUser.totp_enabled && !skip2faDueToGrace) {
+      const updatedGraces = existingGraces.filter(
+        (g: any) => Number(g.slot_no) !== Number(matchedDeviceSlot.slot_no)
+      );
+      updatedGraces.push({
+        slot_no: matchedDeviceSlot.slot_no,
+        slot_name: matchedDeviceSlot.slot_name || `Slot ${matchedDeviceSlot.slot_no}`,
+        verified_at: new Date(nowMs).toISOString(),
+        expires_at: new Date(nowMs + TWO_FACTOR_GRACE_MS).toISOString(),
+      });
+      loginUpdateDoc.totp_device_graces = updatedGraces;
     }
 
     if (rawUser.active_session_token && rawUser.active_session_token !== newSessionToken) {
@@ -961,19 +1023,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const graceNote = skip2faDueToGrace
+      ? ' (6 saatlik cihaz 2FA muafiyeti aktif - kodsuz hızlı giriş)'
+      : (rawUser.totp_enabled ? ' (2FA Google Authenticator doğrulandı)' : '');
+
     // Record audit log for standard login
     await recordActivityLog({
       kullanici_adi: user.ad_soyad || user.username,
       kullanici_rolu: user.rol,
       islem_tipi: 'GIRIS',
       baslik: 'Kullanıcı Girişi (Tek Cihaz Oturumu Başlatıldı)',
-      detay: `"${user.ad_soyad}" (${user.username}) ${rawUser.totp_enabled ? '2FA (Google Authenticator) doğrulamasıyla ' : ''}sisteme giriş yaptı. Bu cihaz tek yetkili aktif oturum olarak kaydedildi.`,
+      detay: `"${user.ad_soyad}" (${user.username}) sisteme giriş yaptı.${graceNote} Bu cihaz tek yetkili aktif oturum olarak kaydedildi.`,
     });
 
     const loginResponsePayload: any = {
       success: true,
       message: 'Giriş başarılı',
       session_token: newSessionToken,
+      two_factor_grace_active: skip2faDueToGrace,
       user: {
         id: user.id,
         username: user.username,

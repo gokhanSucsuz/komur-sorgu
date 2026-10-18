@@ -204,6 +204,7 @@ export function sanitizeUser(user: any): any {
   delete safe.totp_secret;
   delete safe.totp_pending_secret;
   delete safe.totp_recovery_codes;
+  delete safe.totp_device_graces;
   return safe;
 }
 
