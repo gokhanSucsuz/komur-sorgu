@@ -87,18 +87,22 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
         throw new Error(data.error || 'Aktivasyon kodu üretilemedi');
       }
 
+      const returnedCode = String(data.activation_code || data.code || '').trim();
+      const returnedQr = data.qr_code_svg || data.qr_svg || '';
+      const returnedName = data.slot_name || slot.slot_name || `${slot.slot_no}. Saha Dağıtım Telefonu`;
+
       setActiveCodeData({
-        slot_no: data.slot_no,
-        slot_name: data.slot_name,
-        code: data.activation_code,
-        expires_at: data.expires_at,
-        qr_code_svg: data.qr_code_svg,
+        slot_no: data.slot_no || slot.slot_no,
+        slot_name: returnedName,
+        code: returnedCode,
+        expires_at: data.expires_at || '',
+        qr_code_svg: returnedQr,
       });
 
       showToast({
         type: 'success',
         title: 'Aktivasyon Kodu Hazır',
-        message: `${slot.slot_name} için 6 haneli eşleme kodu üretildi. (Geçerlilik: 15 dakika)`,
+        message: `${returnedName} için 6 haneli eşleme kodu üretildi. (Geçerlilik: 15 dakika)`,
       });
 
       fetchSlots();
@@ -275,29 +279,32 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
             <div className="flex flex-col sm:flex-row items-center gap-4">
               {/* QR Code */}
               {activeCodeData.qr_code_svg && (
-                <div className="p-2 bg-white rounded-2xl border border-indigo-200 shadow-sm shrink-0">
+                <div className="p-2.5 bg-white rounded-2xl border-2 border-indigo-200 shadow-sm shrink-0 flex flex-col items-center">
                   <img
                     src={activeCodeData.qr_code_svg}
                     alt="Aktivasyon QR Kodu"
-                    className="w-32 h-32 rounded-xl"
+                    className="w-36 h-36 rounded-xl block"
+                    style={{ minWidth: '144px', minHeight: '144px' }}
                   />
-                  <p className="text-[10px] text-center font-bold text-slate-500 mt-1">Kamerayla Okutun</p>
+                  <p className="text-[10px] text-center font-bold text-slate-600 mt-1.5">Telefon Kamerasıyla Okutun</p>
                 </div>
               )}
 
               {/* 6-Digit Code & Instructions */}
               <div className="flex-1 space-y-2 text-center sm:text-left">
                 <div>
-                  <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider block mb-1">
+                  <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider block mb-1">
                     Telefon Ekranına Girilecek 6 Haneli Kod:
                   </span>
                   <div className="flex items-center justify-center sm:justify-start gap-2">
-                    <span className="font-mono text-3xl font-black tracking-[0.25em] text-indigo-950 bg-white px-4 py-1.5 rounded-xl border border-indigo-200 shadow-inner">
-                      {activeCodeData.code}
+                    <span className="font-mono text-3xl font-black tracking-[0.2em] text-indigo-950 bg-white px-4 py-2 rounded-xl border-2 border-indigo-300 shadow-sm">
+                      {activeCodeData.code && activeCodeData.code.length === 6
+                        ? `${activeCodeData.code.slice(0, 3)} ${activeCodeData.code.slice(3)}`
+                        : activeCodeData.code || '------'}
                     </span>
                     <button
                       onClick={() => copyToClipboard(activeCodeData.code)}
-                      className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all active:scale-95"
+                      className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all active:scale-95"
                       title="Kodu Kopyala"
                     >
                       {copiedCode ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4 text-white" />}

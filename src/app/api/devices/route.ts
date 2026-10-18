@@ -211,13 +211,27 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Geçersiz slot numarası (1-4 arası olmalı).' }, { status: 400 });
       }
 
+      const existingSlot = await devCol.findOne({ slot_no: slotNo });
+      const slotName = existingSlot?.slot_name || `${slotNo}. Saha Dağıtım Telefonu`;
+
       // Generate 6-digit random code e.g. "739215"
       const code = String(Math.floor(100000 + Math.random() * 900000));
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 min TTL
 
-      // Build QR SVG
-      const qrPayload = JSON.stringify({ type: 'KOMUR_PAIR', code, slot: slotNo });
-      const qrSvg = generateQrCodeSvgDataUrl(qrPayload);
+      // Build QR SVG: If origin is available, link directly with pair_code so phone camera can open and activate
+      let qrSvg = '';
+      try {
+        const origin = request.headers.get('origin') || request.nextUrl.origin || '';
+        const qrPayload = origin ? `${origin}/?pair_code=${code}&slot=${slotNo}` : code;
+        qrSvg = generateQrCodeSvgDataUrl(qrPayload);
+      } catch (qrErr) {
+        console.warn('QR code generation fallback to simple code:', qrErr);
+        try {
+          qrSvg = generateQrCodeSvgDataUrl(code);
+        } catch (e) {
+          qrSvg = '';
+        }
+      }
 
       await devCol.updateOne(
         { slot_no: slotNo },
@@ -235,15 +249,18 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'CIHAZ_KOD_URETIMI',
         baslik: 'Cihaz Eşleme Kodu Üretildi',
-        detay: `Slot ${slotNo} için 15 dakika geçerli tek kullanımlık aktivasyon kodu (${code}) üretildi.`,
+        detay: `Slot ${slotNo} ("${slotName}") için 15 dakika geçerli tek kullanımlık aktivasyon kodu (${code}) üretildi.`,
       });
 
       return NextResponse.json({
         success: true,
         code,
+        activation_code: code,
         slot_no: slotNo,
+        slot_name: slotName,
         expires_at: expiresAt,
         qr_svg: qrSvg,
+        qr_code_svg: qrSvg,
       });
     }
 

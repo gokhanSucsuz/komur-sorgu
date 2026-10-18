@@ -78,6 +78,16 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
       };
 
       checkDevice();
+
+      // Auto-detect pair_code from URL query (when scanning QR code with phone camera)
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlCode = urlParams.get('pair_code') || urlParams.get('code');
+        if (urlCode && /^\d{6}$/.test(urlCode.trim())) {
+          setActivationCodeInput(urlCode.trim());
+          setShowActivationModal(true);
+        }
+      } catch (e) {}
     }
   }, []);
 
