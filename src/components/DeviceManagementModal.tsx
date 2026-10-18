@@ -279,50 +279,49 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet max-w-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-sheet max-w-xl !p-4 sm:!p-6" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3.5">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shadow-sm">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
               <Smartphone className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-slate-900">Yetkili 4 Mobil Cihaz Yönetimi</h3>
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">Yetkili 4 Mobil Cihaz Yönetimi</h3>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                   1 Admin + 3 Personel
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-medium">
-                1 Yönetici Telefonu (Admin - Gökhan SUÇSUZ) + 3 Saha Personeli Telefonu olmak üzere toplam 4 mobil cihaz sisteme bağlanabilir. Bilgisayar erişimi yalnızca Admin&apos;e aittir.
+              <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
+                1 Yönetici Telefonu + 3 Saha Personeli Telefonu sisteme bağlanabilir. Bilgisayar erişimi yalnızca Admin&apos;e aittir.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg text-sm transition-colors"
+            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg text-sm transition-colors shrink-0"
           >
             ✕
           </button>
         </div>
 
         {/* Security Rule Information Box */}
-        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 mb-4 text-xs space-y-1.5">
+        <div className="p-2.5 sm:p-3 rounded-2xl bg-slate-50 border border-slate-200 mb-3 text-xs space-y-1">
           <div className="flex items-center gap-2 font-black text-slate-800">
             <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
             <span>Merkezi Güvenlik & Cihaz Eşleme Kuralları</span>
           </div>
-          <ul className="text-slate-600 space-y-1 pl-5 list-disc text-[11px]">
-            <li><b>Yönetici Cihazı (Slot 1):</b> Slot 1 özel olarak Yöneticiye (Admin - Gökhan SUÇSUZ) tahsis edilmiştir. Saha personelleri bu slotu kullanamaz. Admin telefondan giriş yaptığında telefonu otomatik olarak bu slota kilitlenir.</li>
-            <li><b>Saha Personeli Telefonları (Slot 2, 3, 4):</b> Personeller şifrelerini bilseler dahi yalnızca Admin tarafından onaylanmış bu 3 telefondan sisteme girebilir.</li>
-            <li><b>Bilgisayar Kısıtı:</b> Masaüstü / dizüstü bilgisayarlardan sisteme sadece Yönetici (Admin) giriş yapabilir; personeller bilgisayardan erişemez.</li>
-            <li><b>Admin Tek Yetkili:</b> Telefon kaybolursa, arızalanırsa veya personel değişirse Admin dilediği slotu tek tıkla iptal edip yeni telefona kod üretebilir.</li>
+          <ul className="text-slate-600 space-y-1 pl-4 list-disc text-[11px] leading-relaxed">
+            <li><b>Yönetici Cihazı (Slot 1):</b> Admin giriş yaptığında bu telefon otomatik eşlenir. Saha personeli bu slotu kullanamaz.</li>
+            <li><b>Saha Telefonları (Slot 2, 3, 4):</b> Personeller yalnızca Admin onaylı bu 3 telefondan giriş yapabilir.</li>
+            <li><b>Bilgisayar Kısıtı:</b> Bilgisayarlardan sisteme sadece Yönetici (Admin) giriş yapabilir.</li>
           </ul>
         </div>
 
         {/* Active Activation Code / QR Display Card (if generated) */}
         {activeCodeData && (
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border-2 border-indigo-300 shadow-md mb-4 animate-in fade-in">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-indigo-50/80 border-2 border-indigo-200 shadow-sm mb-4 animate-in fade-in">
             <div className="flex items-center justify-between pb-2 border-b border-indigo-100 mb-3">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
@@ -353,20 +352,20 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
               )}
 
               {/* 6-Digit Code & Instructions */}
-              <div className="flex-1 space-y-2 text-center sm:text-left">
+              <div className="flex-1 space-y-2 text-center sm:text-left w-full">
                 <div>
                   <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider block mb-1">
                     Telefon Ekranına Girilecek 6 Haneli Kod:
                   </span>
                   <div className="flex items-center justify-center sm:justify-start gap-2">
-                    <span className="font-mono text-3xl font-black tracking-[0.2em] text-indigo-950 bg-white px-4 py-2 rounded-xl border-2 border-indigo-300 shadow-sm">
+                    <span className="font-mono text-2xl sm:text-3xl font-black tracking-[0.2em] text-indigo-950 bg-white px-4 py-2 rounded-xl border-2 border-indigo-300 shadow-sm">
                       {activeCodeData.code && activeCodeData.code.length === 6
                         ? `${activeCodeData.code.slice(0, 3)} ${activeCodeData.code.slice(3)}`
                         : activeCodeData.code || '------'}
                     </span>
                     <button
                       onClick={() => copyToClipboard(activeCodeData.code)}
-                      className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all active:scale-95"
+                      className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all active:scale-95 shrink-0"
                       title="Kodu Kopyala"
                     >
                       {copiedCode ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4 text-white" />}
@@ -380,7 +379,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
                   <p>2. Bu 6 haneli kodu giriniz veya kamerayla QR kodu taratınız.</p>
                   <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1 pt-0.5">
                     <Clock className="w-3 h-3" />
-                    <span>Kod 15 dakika geçerlidir. Cihaz eşlendikten sonra token kalıcı olur.</span>
+                    <span>Kod 15 dakika geçerlidir. Eşlendikten sonra cihaz yetkisi kalıcı olur.</span>
                   </p>
                 </div>
               </div>
@@ -389,7 +388,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
         )}
 
         {/* 4 Device Slots List */}
-        <div className="space-y-3 max-h-[380px] overflow-y-auto pr-0.5">
+        <div className="space-y-3 max-h-[60vh] sm:max-h-[420px] overflow-y-auto pr-0.5">
           {isLoading ? (
             <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
               <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
@@ -404,177 +403,194 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
               return (
                 <div
                   key={slot.slot_no}
-                  className={`p-3.5 rounded-2xl border transition-all ${
+                  className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${
                     isAdminSlot
                       ? isPaired
-                        ? 'bg-gradient-to-r from-amber-50/50 via-white to-amber-50/20 border-amber-300 shadow-xs ring-1 ring-amber-200'
-                        : 'bg-amber-50/20 border-amber-200'
+                        ? 'bg-amber-50/40 border-amber-300 shadow-xs ring-1 ring-amber-200/60'
+                        : 'bg-white border-amber-200 shadow-xs'
                       : isPaired
-                        ? 'bg-white border-emerald-200 shadow-xs ring-1 ring-emerald-100'
-                        : 'bg-slate-50/80 border-slate-200'
+                        ? 'bg-emerald-50/30 border-emerald-300 shadow-xs ring-1 ring-emerald-200/60'
+                        : 'bg-white border-slate-200 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    {/* Left: Slot Status & Info */}
-                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
-                          isAdminSlot
-                            ? isPaired
-                              ? 'bg-amber-500 text-white'
-                              : 'bg-amber-100 text-amber-800'
-                            : isPaired
-                              ? 'bg-emerald-500 text-white'
-                              : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <Smartphone className="w-5 h-5" />
+                  {/* TOP ROW: Icon + Title & Badges */}
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                        isAdminSlot
+                          ? isPaired
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : isPaired
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      {/* Title & Edit */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {editingSlotNo === slot.slot_no ? (
+                          <div className="flex items-center gap-1.5 w-full my-1">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              className="flex-1 px-2.5 py-1 rounded-lg border border-indigo-400 text-xs font-bold text-slate-900 focus:outline-none bg-white"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleSaveName(slot.slot_no)}
+                              className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-xs shrink-0"
+                              title="Kaydet"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setEditingSlotNo(null)}
+                              className="p-1.5 rounded-lg bg-slate-200 text-slate-700 text-xs shrink-0"
+                              title="Vazgeç"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 w-full">
+                            <h4 className="text-xs sm:text-sm font-black text-slate-900 leading-snug break-words flex-1">
+                              {slot.slot_name}
+                            </h4>
+                            <button
+                              onClick={() => {
+                                setEditingSlotNo(slot.slot_no);
+                                setEditingName(slot.slot_name);
+                              }}
+                              className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100 transition-colors shrink-0"
+                              title="İsmi Düzenle"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {editingSlotNo === slot.slot_no ? (
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="text"
-                                value={editingName}
-                                onChange={(e) => setEditingName(e.target.value)}
-                                className="px-2 py-0.5 rounded-lg border border-indigo-400 text-xs font-bold text-slate-900 focus:outline-none"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleSaveName(slot.slot_no)}
-                                className="p-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 text-xs"
-                              >
-                                <Check className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={() => setEditingSlotNo(null)}
-                                className="p-1 rounded bg-slate-200 text-slate-600 text-xs"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <span className="text-sm font-black text-slate-900 truncate">
-                                {slot.slot_name}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  setEditingSlotNo(slot.slot_no);
-                                  setEditingName(slot.slot_name);
-                                }}
-                                className="text-slate-400 hover:text-slate-700"
-                                title="İsmi Düzenle"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                              </button>
-                            </>
-                          )}
+                      {/* Badges Row */}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        {isAdminSlot ? (
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-300">
+                            👑 Yönetici Slotu
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-100 text-sky-950 border border-sky-300">
+                            📱 Saha Personeli
+                          </span>
+                        )}
 
-                          {isAdminSlot ? (
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                              👑 Yönetici Cihazı
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-300">
-                              📱 Saha Personeli
-                            </span>
-                          )}
+                        <span
+                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                            isPaired
+                              ? isAdminSlot
+                                ? 'bg-amber-100/90 text-amber-950 border-amber-400 font-bold'
+                                : 'bg-emerald-50 text-emerald-900 border-emerald-300 font-bold'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {isPaired ? '✓ Eşlendi & Aktif' : 'Eşleme Bekliyor'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-                          <span
-                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                              isPaired
-                                ? isAdminSlot
-                                  ? 'bg-amber-100 text-amber-900 border-amber-400'
-                                  : 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                : 'bg-slate-100 text-slate-700 border-slate-300'
-                            }`}
-                          >
-                            {isPaired ? '✓ Eşlendi & Aktif' : 'Eşleme Bekliyor'}
+                  {/* MIDDLE ROW: Device details or pending info (Full Width) */}
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 text-xs">
+                    {isPaired ? (
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/80 space-y-1.5 text-[11px] text-slate-700">
+                        <div className="flex items-center gap-1.5 text-slate-800">
+                          <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span className="font-semibold text-slate-500">Cihaz:</span>
+                          <span className="font-mono font-bold text-slate-900 truncate flex-1">
+                            {slot.device_model || 'Mobil Cihaz'}
                           </span>
                         </div>
 
-                        {/* Device details if paired */}
-                        {isPaired ? (
-                          <div className="text-xs text-slate-600 mt-1 space-y-0.5">
-                            <p className="font-semibold text-slate-800 truncate flex items-center gap-1">
-                              <span>📱 Cihaz:</span>
-                              <span className="font-mono text-emerald-900">{slot.device_model || 'Mobil Cihaz'}</span>
-                            </p>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
-                              <span>Eşleşme: {slot.paired_at ? new Date(slot.paired_at).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</span>
-                              {slot.last_used_at && (
-                                <>
-                                  <span>•</span>
-                                  <span>Son Giriş: {new Date(slot.last_used_at).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                </>
-                              )}
-                              {slot.last_personel && (
-                                <>
-                                  <span>•</span>
-                                  <span className="font-bold text-slate-700">Son Kullanıcı: {slot.last_personel}</span>
-                                </>
-                              )}
-                            </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1 text-slate-600 border-t border-slate-100">
+                          <div>
+                            <span className="text-slate-400">Eşleşme: </span>
+                            <span className="font-medium text-slate-700">
+                              {slot.paired_at ? new Date(slot.paired_at).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                            </span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-slate-500 mt-1">
-                            {isAdminSlot
-                              ? 'Bu slot boştur. Yönetici telefonundan sisteme giriş yaptığında bu telefon otomatik eşlenir veya aşağıdaki butonla doğrudan eşleyebilirsiniz.'
-                              : 'Bu slot boş durumdadır. Saha personelinin telefonunu eşlemek için aktivasyon kodu üretiniz.'}
-                          </p>
-                        )}
+                          {slot.last_used_at && (
+                            <div>
+                              <span className="text-slate-400">Son Giriş: </span>
+                              <span className="font-medium text-slate-700">
+                                {new Date(slot.last_used_at).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          )}
+                          {slot.last_personel && (
+                            <div className="col-span-1 sm:col-span-2">
+                              <span className="text-slate-400">Son Kullanıcı: </span>
+                              <span className="font-bold text-slate-800">{slot.last_personel}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 leading-relaxed">
+                        {isAdminSlot
+                          ? 'Bu slot boştur. Yönetici (Gökhan SUÇSUZ) telefonundan sisteme giriş yaptığında bu cihaz otomatik eşlenir veya aşağıdaki butonla doğrudan eşleyebilirsiniz.'
+                          : 'Bu slot boş durumdadır. Saha personelinin telefonunu sisteme bağlamak için aktivasyon kodu veya QR üretiniz.'}
+                      </p>
+                    )}
+                  </div>
 
-                    {/* Right: Action Buttons */}
-                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                      {isAdminSlot && isMobileDevice && (
-                        <button
-                          onClick={handlePairAdminCurrentPhone}
-                          disabled={isBusy}
-                          className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all active:scale-95 flex items-center gap-1 shadow-sm"
-                          title="Kullandığınız bu telefonu Yönetici Cihazı olarak eşleyin"
-                        >
-                          <Smartphone className="w-3.5 h-3.5 text-white" />
-                          <span>Bu Telefonu Eşle</span>
-                        </button>
-                      )}
+                  {/* BOTTOM ROW: Action Buttons (Ergonomic full-width or auto flex) */}
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                    {isAdminSlot && isMobileDevice && !isPaired && (
+                      <button
+                        onClick={handlePairAdminCurrentPhone}
+                        disabled={isBusy}
+                        className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm"
+                        title="Kullandığınız bu telefonu Yönetici Cihazı olarak eşleyin"
+                      >
+                        <Smartphone className="w-4 h-4 text-white" />
+                        <span>Bu Telefonu Yönetici Cihazı Olarak Eşle</span>
+                      </button>
+                    )}
 
-                      {isPaired ? (
-                        <>
-                          <button
-                            onClick={() => handleGenerateCode(slot)}
-                            disabled={isBusy}
-                            className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all active:scale-95 flex items-center gap-1 border border-slate-200"
-                            title="Yeni Telefonla Değiştir / Yeniden Kod Üret"
-                          >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
-                            <span className="hidden sm:inline">Yeniden Eşle</span>
-                          </button>
-                          <button
-                            onClick={() => handleRevokeDevice(slot)}
-                            disabled={isBusy}
-                            className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all active:scale-95 flex items-center gap-1 border border-rose-200"
-                            title="Cihazın Yetkisini Kaldır"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Yetkiyi İptal Et</span>
-                          </button>
-                        </>
-                      ) : (
+                    {isPaired ? (
+                      <>
                         <button
                           onClick={() => handleGenerateCode(slot)}
                           disabled={isBusy}
-                          className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm"
+                          className="flex-1 min-w-[120px] py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-slate-200"
+                          title="Yeni Telefonla Değiştir / Yeniden Kod Üret"
                         >
-                          <QrCode className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
-                          <span>Kod & QR Üret</span>
+                          <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
+                          <span>Yeniden Eşle</span>
                         </button>
-                      )}
-                    </div>
+                        <button
+                          onClick={() => handleRevokeDevice(slot)}
+                          disabled={isBusy}
+                          className="flex-1 min-w-[120px] py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-rose-200"
+                          title="Cihazın Yetkisini Kaldır"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Yetkiyi İptal Et</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handleGenerateCode(slot)}
+                        disabled={isBusy}
+                        className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <QrCode className={`w-4 h-4 ${isBusy ? 'animate-spin' : ''}`} />
+                        <span>Aktivasyon Kodu & QR Üret</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
