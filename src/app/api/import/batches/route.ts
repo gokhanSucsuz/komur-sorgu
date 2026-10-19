@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
         const rawBatchLogs = await logsCol.find({ batch_id: batchId }).toArray();
         const batchLogs = mapDocs(rawBatchLogs);
         const elenenSayisi = batchLogs.filter(
-          (l: any) => l.islem_sonucu === 'EKLENMEDİ' || l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE'
+          (l: any) => l.islem_sonucu === 'EKLENMEDİ' || (l.islem_sonucu !== 'EKLENDİ_UYARILI' && (l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE'))
         ).length;
         const uyariliSayisi = batchLogs.filter(
           (l: any) => l.islem_sonucu === 'EKLENDİ_UYARILI'
@@ -101,13 +101,13 @@ export async function GET(request: NextRequest) {
         return {
           ...b,
           mevcut_kisi: mevcutKisi,
-          eklenen_kisi: b.eklenen_kisi || mevcutKisi,
-          elenen_kisi: elenenSayisi || b.elenen_kisi || b.hatali_kisi || 0,
-          uyarili_kisi: uyariliSayisi || b.uyarili_kisi || 0,
+          eklenen_kisi: b.eklenen_kisi ?? mevcutKisi,
+          elenen_kisi: elenenSayisi,
+          uyarili_kisi: uyariliSayisi,
           teslim_edilen: teslimEdilen,
           bekleyen: bekleyen,
           dagitilan_torba: dagitilanTorba,
-          hata_kayit_sayisi: elenenSayisi || b.hatali_kisi || 0,
+          hata_kayit_sayisi: elenenSayisi,
           mahalle_ozet: mahalleOzet || [],
         };
       })

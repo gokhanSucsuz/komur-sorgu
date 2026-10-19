@@ -190,20 +190,38 @@ export default function ExcelImportPage({
     }
   }, [userRole]);
 
+  const isRecordElenen = (l: any) => {
+    if (l.islem_sonucu === 'EKLENMEDİ') return true;
+    if (l.islem_sonucu === 'EKLENDİ_UYARILI' || l.islem_sonucu === 'EKLENDİ') return false;
+    return l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE';
+  };
+
   const computedLogStats = useMemo(() => {
+    let toplamElenen = 0;
     let mukerrerTc = 0;
     let mukerrerHane = 0;
-    let eksikHatali = 0;
+    let eksikHataliElenen = 0;
+    let uyariliEklenen = 0;
+
     for (const l of logs) {
-      if (l.durum === 'MUKERRER_TC') mukerrerTc++;
-      else if (l.durum === 'MUKERRER_HANE') mukerrerHane++;
-      else if (l.durum === 'HATALI') eksikHatali++;
+      if (isRecordElenen(l)) {
+        toplamElenen++;
+        if (l.durum === 'MUKERRER_TC') mukerrerTc++;
+        else if (l.durum === 'MUKERRER_HANE') mukerrerHane++;
+        else eksikHataliElenen++;
+      } else {
+        uyariliEklenen++;
+      }
     }
+
     return {
-      toplamHata: logs.length,
+      toplamLog: logs.length,
+      toplamHata: toplamElenen, // elenen kayıt sayısı
+      toplamElenen,
       mukerrerTc,
       mukerrerHane,
-      eksikHatali,
+      eksikHataliElenen,
+      uyariliEklenen,
     };
   }, [logs]);
 
@@ -246,25 +264,36 @@ export default function ExcelImportPage({
       entry.logs.push(log);
     });
 
-    // Only return batches that have error logs, with computed stats
+    // Return batches with computed stats
     return Array.from(batchMap.values())
       .filter((b) => b.logs.length > 0)
       .map((b) => {
+        let elenenSayisi = 0;
         let mukerrerTc = 0;
         let mukerrerHane = 0;
-        let eksikHatali = 0;
+        let eksikHataliElenen = 0;
+        let uyariliEklenen = 0;
+
         for (const l of b.logs) {
-          if (l.durum === 'MUKERRER_TC') mukerrerTc++;
-          else if (l.durum === 'MUKERRER_HANE') mukerrerHane++;
-          else if (l.durum === 'HATALI') eksikHatali++;
+          if (isRecordElenen(l)) {
+            elenenSayisi++;
+            if (l.durum === 'MUKERRER_TC') mukerrerTc++;
+            else if (l.durum === 'MUKERRER_HANE') mukerrerHane++;
+            else eksikHataliElenen++;
+          } else {
+            uyariliEklenen++;
+          }
         }
+
         return {
           ...b,
           stats: {
             total: b.logs.length,
+            elenenSayisi,
             mukerrerTc,
             mukerrerHane,
-            eksikHatali
+            eksikHataliElenen,
+            uyariliEklenen,
           }
         };
       });
@@ -981,9 +1010,18 @@ export default function ExcelImportPage({
                       <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
                         {batch.mevcut_kisi} Hak Sahibi Sistemde
                       </span>
-                      {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
+                      {Number(batch.elenen_kisi || 0) > 0 ? (
                         <span className="font-extrabold text-rose-800 bg-rose-100/80 px-2 py-0.5 rounded-md border border-rose-200">
-                          {batch.elenen_kisi || batch.hata_kayit_sayisi} Elenen / Mükerrer
+                          {batch.elenen_kisi} Elenen Kayıt
+                        </span>
+                      ) : (
+                        <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          0 Elenen (Tümü Eklendi)
+                        </span>
+                      )}
+                      {Number(batch.uyarili_kisi || 0) > 0 && (
+                        <span className="font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                          {batch.uyarili_kisi} Uyarılı Eklenen
                         </span>
                       )}
                       <span className="font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
@@ -1011,20 +1049,20 @@ export default function ExcelImportPage({
                       <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
                       <span>Mahallelere Göre İndir</span>
                     </a>
-                    {(batch.elenen_kisi > 0 || batch.hata_kayit_sayisi > 0) && (
+                    {Number(batch.elenen_kisi || 0) > 0 && (
                       <>
                         <button
                           type="button"
                           onClick={() => openEliminatedModal({
                             batchId: batch.batch_id || batch.id,
                             dosyaAdi: batch.dosya_adi,
-                            title: `"${batch.dosya_adi}" Dosyasından Elenen Kayıtlar (${batch.elenen_kisi || batch.hata_kayit_sayisi} Kayıt)`
+                            title: `"${batch.dosya_adi}" Dosyasından Elenen Kayıtlar (${batch.elenen_kisi} Kayıt)`
                           })}
                           className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
                           title="Bu dosyadan elenen kayıtları detaylı incele"
                         >
                           <Eye className="w-3.5 h-3.5 text-amber-700" />
-                          <span>Elenenler ({batch.elenen_kisi || batch.hata_kayit_sayisi})</span>
+                          <span>Elenenler ({batch.elenen_kisi})</span>
                         </button>
 
                         <a
@@ -1034,7 +1072,6 @@ export default function ExcelImportPage({
                           title="Bu dosyanın elenen kayıtlarını Excel indir"
                         >
                           <Download className="w-3.5 h-3.5 text-emerald-700" />
-                          <span className="hidden sm:inline">Excel</span>
                         </a>
                       </>
                     )}
@@ -1158,12 +1195,17 @@ export default function ExcelImportPage({
                   Eklenmeyen & Hatalı / Mükerrer Kayıtlar
                 </h3>
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-black shrink-0 ${
-                  computedLogStats.toplamHata > 0
+                  computedLogStats.toplamElenen > 0
                     ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                 }`}>
-                  {computedLogStats.toplamHata || 0} Kayıt
+                  {computedLogStats.toplamElenen} Elenen Kayıt
                 </span>
+                {computedLogStats.uyariliEklenen > 0 && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold border border-amber-200 shrink-0">
+                    {computedLogStats.uyariliEklenen} Uyarılı Eklenen
+                  </span>
+                )}
                 {logsByBatch.length > 0 && (
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200 shrink-0">
                     {logsByBatch.length} Excel Listesi
@@ -1171,7 +1213,7 @@ export default function ExcelImportPage({
                 )}
               </div>
               <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
-                Sisteme eklenmeyen mükerrer TC veya aynı hanede bulunan kayıtlar (Tıklayarak {isLogsSectionOpen ? 'kapatın' : 'genişletin'})
+                Sisteme eklenmeyen mükerrer kayıtlar ve uyarılı eklenenler (Tıklayarak {isLogsSectionOpen ? 'kapatın' : 'genişletin'})
               </p>
             </div>
           </div>
@@ -1215,21 +1257,25 @@ export default function ExcelImportPage({
           <div className="p-4 sm:p-5 pt-2 border-t border-slate-200/80 bg-slate-50/40 space-y-4">
             {/* Toplam Özet İstatistik Kartları */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold block text-slate-500">Toplam Elenen</span>
-                <span className="text-lg sm:text-xl font-black text-slate-900">{computedLogStats.toplamHata || 0}</span>
+              <div className="p-3 rounded-xl bg-white border border-rose-200 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold block text-rose-600">Toplam Elenen</span>
+                <span className="text-lg sm:text-xl font-black text-rose-800">{computedLogStats.toplamElenen || 0}</span>
+                <span className="text-[9px] text-slate-400 block font-medium">Sisteme Eklenmeyen</span>
               </div>
               <div className="p-3 rounded-xl bg-white border border-amber-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold block text-amber-600">Mükerrer TC</span>
+                <span className="text-[10px] uppercase font-bold block text-amber-600">Mükerrer TC (Elenen)</span>
                 <span className="text-lg sm:text-xl font-black text-amber-800">{computedLogStats.mukerrerTc || 0}</span>
+                <span className="text-[9px] text-slate-400 block font-medium">Aynı TC'li Kayıt</span>
               </div>
               <div className="p-3 rounded-xl bg-white border border-purple-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold block text-purple-600">Mükerrer Hane</span>
+                <span className="text-[10px] uppercase font-bold block text-purple-600">Mükerrer Hane (Elenen)</span>
                 <span className="text-lg sm:text-xl font-black text-purple-800">{computedLogStats.mukerrerHane || 0}</span>
+                <span className="text-[9px] text-slate-400 block font-medium">Aynı Haneli Kayıt</span>
               </div>
-              <div className="p-3 rounded-xl bg-white border border-rose-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold block text-rose-600">Eksik / Geçersiz</span>
-                <span className="text-lg sm:text-xl font-black text-rose-700">{computedLogStats.eksikHatali || 0}</span>
+              <div className="p-3 rounded-xl bg-white border border-emerald-200 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold block text-emerald-700">Uyarılı Eklenen</span>
+                <span className="text-lg sm:text-xl font-black text-emerald-800">{computedLogStats.uyariliEklenen || 0}</span>
+                <span className="text-[9px] text-slate-400 block font-medium">Eksik Bilgiyle Eklenen</span>
               </div>
             </div>
 
@@ -1277,7 +1323,16 @@ export default function ExcelImportPage({
                   const currentSearch = (batchSearchTerm[batch.batchId] || '').trim();
 
                   const batchFilteredLogs = batch.logs.filter((item: any) => {
-                    if (currentStatus !== 'HEPSI' && item.durum !== currentStatus) {
+                    if (currentStatus === 'ELENEN' && !isRecordElenen(item)) {
+                      return false;
+                    }
+                    if (currentStatus === 'UYARILI_EKLENEN' && isRecordElenen(item)) {
+                      return false;
+                    }
+                    if (currentStatus === 'MUKERRER_TC' && item.durum !== 'MUKERRER_TC') {
+                      return false;
+                    }
+                    if (currentStatus === 'MUKERRER_HANE' && item.durum !== 'MUKERRER_HANE') {
                       return false;
                     }
                     if (currentSearch) {
@@ -1321,9 +1376,15 @@ export default function ExcelImportPage({
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                              <span className="text-[11px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                                {batch.stats.total} Elenen Kayıt
-                              </span>
+                              {batch.stats.elenenSayisi > 0 ? (
+                                <span className="text-[11px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                                  {batch.stats.elenenSayisi} Elenen Kayıt
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                  0 Elenen (Tüm Kayıtlar Eklendi)
+                                </span>
+                              )}
                               {batch.stats.mukerrerTc > 0 && (
                                 <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                                   {batch.stats.mukerrerTc} Mükerrer TC
@@ -1334,9 +1395,9 @@ export default function ExcelImportPage({
                                   {batch.stats.mukerrerHane} Mükerrer Hane
                                 </span>
                               )}
-                              {batch.stats.eksikHatali > 0 && (
-                                <span className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                                  {batch.stats.eksikHatali} Eksik/Geçersiz
+                              {batch.stats.uyariliEklenen > 0 && (
+                                <span className="text-[11px] font-bold text-sky-800 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-md">
+                                  {batch.stats.uyariliEklenen} Uyarılı Eklenen
                                 </span>
                               )}
                             </div>
@@ -1367,7 +1428,7 @@ export default function ExcelImportPage({
                       {isExpanded && (
                         <div className="p-3.5 sm:p-4 space-y-3 bg-slate-50/50">
                           {/* Durum Seçenekleri Butonları */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                             <button
                               type="button"
                               onClick={() => setBatchStatusFilter((prev) => ({ ...prev, [batch.batchId]: 'HEPSI' }))}
@@ -1378,9 +1439,29 @@ export default function ExcelImportPage({
                               }`}
                             >
                               <span className={`text-[10px] uppercase font-bold block ${currentStatus === 'HEPSI' ? 'text-slate-300' : 'text-slate-500'}`}>
-                                Tüm Durumlar
+                                Tüm Kayıtlar
                               </span>
                               <span className="text-base font-black">{batch.stats.total}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setBatchStatusFilter((prev) => ({
+                                ...prev,
+                                [batch.batchId]: currentStatus === 'ELENEN' ? 'HEPSI' : 'ELENEN'
+                              }))}
+                              className={`p-2 rounded-lg border text-left transition-all ${
+                                currentStatus === 'ELENEN'
+                                  ? 'bg-rose-700 border-rose-800 text-white shadow-xs'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-rose-50'
+                              }`}
+                            >
+                              <span className={`text-[10px] uppercase font-bold block ${currentStatus === 'ELENEN' ? 'text-rose-100' : 'text-slate-500'}`}>
+                                Elenenler
+                              </span>
+                              <span className={`text-base font-black ${currentStatus === 'ELENEN' ? 'text-white' : 'text-rose-700'}`}>
+                                {batch.stats.elenenSayisi}
+                              </span>
                             </button>
 
                             <button
@@ -1427,19 +1508,19 @@ export default function ExcelImportPage({
                               type="button"
                               onClick={() => setBatchStatusFilter((prev) => ({
                                 ...prev,
-                                [batch.batchId]: currentStatus === 'HATALI' ? 'HEPSI' : 'HATALI'
+                                [batch.batchId]: currentStatus === 'UYARILI_EKLENEN' ? 'HEPSI' : 'UYARILI_EKLENEN'
                               }))}
                               className={`p-2 rounded-lg border text-left transition-all ${
-                                currentStatus === 'HATALI'
-                                  ? 'bg-rose-700 border-rose-800 text-white shadow-xs'
-                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-rose-50'
+                                currentStatus === 'UYARILI_EKLENEN'
+                                  ? 'bg-sky-700 border-sky-800 text-white shadow-xs'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-sky-50'
                               }`}
                             >
-                              <span className={`text-[10px] uppercase font-bold block ${currentStatus === 'HATALI' ? 'text-rose-200' : 'text-slate-500'}`}>
-                                Eksik / Geçersiz
+                              <span className={`text-[10px] uppercase font-bold block ${currentStatus === 'UYARILI_EKLENEN' ? 'text-sky-100' : 'text-slate-500'}`}>
+                                Uyarılı Eklenen
                               </span>
-                              <span className={`text-base font-black ${currentStatus === 'HATALI' ? 'text-white' : 'text-rose-700'}`}>
-                                {batch.stats.eksikHatali}
+                              <span className={`text-base font-black ${currentStatus === 'UYARILI_EKLENEN' ? 'text-white' : 'text-sky-700'}`}>
+                                {batch.stats.uyariliEklenen}
                               </span>
                             </button>
                           </div>
@@ -1468,7 +1549,7 @@ export default function ExcelImportPage({
                           {/* Kayıt Listesi */}
                           {batchFilteredLogs.length === 0 ? (
                             <div className="p-6 text-center bg-white rounded-lg border border-slate-200 text-slate-500 text-xs font-medium shadow-2xs">
-                              Bu filtreye veya aramaya uygun elenen kayıt bulunamadı.
+                              Bu filtreye veya aramaya uygun kayıt bulunamadı.
                             </div>
                           ) : (
                             <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
@@ -1518,12 +1599,16 @@ export default function ExcelImportPage({
                                           ? 'Mükerrer TC'
                                           : item.durum === 'MUKERRER_HANE'
                                           ? 'Mükerrer Hane'
-                                          : 'Hatalı Bilgi'}
+                                          : 'Eksik / Uyarılı'}
                                       </span>
 
-                                      {(item.durum === 'MUKERRER_TC' || item.durum === 'MUKERRER_HANE') && (
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-black">
-                                          Eklenmedi
+                                      {isRecordElenen(item) ? (
+                                        <span className="text-[9px] px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-black">
+                                          Sisteme Eklenmedi (Elendi)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 font-black">
+                                          Sisteme Eklendi (Uyarılı)
                                         </span>
                                       )}
                                     </div>

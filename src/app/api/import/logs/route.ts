@@ -62,17 +62,20 @@ export async function GET(request: NextRequest) {
     const allLogs = await logsCol
       .find({}, { projection: { batch_id: 1, tarih: 1, durum: 1, islem_sonucu: 1 } })
       .toArray();
-    const batchMap = new Map<string, { batch_id: string; tarih: string; hata_sayisi: number; elenen_sayisi: number }>();
+    const batchMap = new Map<string, { batch_id: string; tarih: string; hata_sayisi: number; elenen_sayisi: number; uyarili_sayisi: number }>();
 
     for (const log of allLogs) {
       const bId = log.batch_id || 'Bilinmeyen Batch';
       if (!batchMap.has(bId)) {
-        batchMap.set(bId, { batch_id: bId, tarih: log.tarih || '', hata_sayisi: 0, elenen_sayisi: 0 });
+        batchMap.set(bId, { batch_id: bId, tarih: log.tarih || '', hata_sayisi: 0, elenen_sayisi: 0, uyarili_sayisi: 0 });
       }
       const b = batchMap.get(bId)!;
       b.hata_sayisi += 1;
-      if (log.islem_sonucu === 'EKLENMEDİ' || log.durum === 'MUKERRER_TC' || log.durum === 'MUKERRER_HANE') {
+      const isElenen = log.islem_sonucu === 'EKLENMEDİ' || (log.islem_sonucu !== 'EKLENDİ_UYARILI' && (log.durum === 'MUKERRER_TC' || log.durum === 'MUKERRER_HANE'));
+      if (isElenen) {
         b.elenen_sayisi += 1;
+      } else {
+        b.uyarili_sayisi += 1;
       }
     }
 
@@ -83,23 +86,22 @@ export async function GET(request: NextRequest) {
     let mukerrerHane = 0;
     let eksikHatali = 0;
     let elenenToplam = 0;
+    let uyariliToplam = 0;
 
     const targetListForStats = batchId && batchId !== 'ALL' 
       ? allLogs.filter((l: any) => l.batch_id === batchId) 
       : allLogs;
 
     for (const log of targetListForStats) {
-      if (log.durum === 'MUKERRER_TC') {
-        mukerrerTc++;
+      const isElenen = log.islem_sonucu === 'EKLENMEDİ' || (log.islem_sonucu !== 'EKLENDİ_UYARILI' && (log.durum === 'MUKERRER_TC' || log.durum === 'MUKERRER_HANE'));
+      if (isElenen) {
         elenenToplam++;
-      } else if (log.durum === 'MUKERRER_HANE') {
-        mukerrerHane++;
-        elenenToplam++;
-      } else if (log.durum === 'HATALI') {
+        if (log.durum === 'MUKERRER_TC') mukerrerTc++;
+        else if (log.durum === 'MUKERRER_HANE') mukerrerHane++;
+        else eksikHatali++;
+      } else {
+        uyariliToplam++;
         eksikHatali++;
-        if (log.islem_sonucu === 'EKLENMEDİ') {
-          elenenToplam++;
-        }
       }
     }
 
@@ -108,8 +110,10 @@ export async function GET(request: NextRequest) {
       logs,
       batches,
       stats: {
+        toplamLog: targetListForStats.length,
         toplamHata: targetListForStats.length,
         elenenToplam,
+        uyariliToplam,
         mukerrerTc,
         mukerrerHane,
         eksikHatali,
