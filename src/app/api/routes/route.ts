@@ -392,23 +392,90 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir imzalı hane seçilmelidir' }, { status: 400 });
       }
 
-      // Multi-Route Support: Check if all selected beneficiaries are already assigned to an ongoing active route
+      // Multi-Route & Transfer Support:
+      // If any selected beneficiaries are currently pending (BEKLIYOR) in another active route,
+      // seamlessly transfer them to the new route so teams can split or reallocate work.
       const otherActiveRoutes = await routeCol.find({ durum: { $in: ['AKTIF', 'DURAKLATILDI'] } }).toArray();
-      const activeAssignedMap = new Map<string, string>();
-      otherActiveRoutes.forEach((r: any) => {
-        (r.duraklar || []).forEach((d: any) => {
-          if (d.durum === 'BEKLIYOR') {
-            activeAssignedMap.set(String(d.beneficiary_id), r.rota_adi || 'Aktif Rota');
-          }
-        });
-      });
+      const selectedIdSet = new Set(beneficiary_ids.map((id: any) => String(id)));
 
-      const conflicting = beneficiary_ids.filter((id: string) => activeAssignedMap.has(String(id)));
-      if (conflicting.length > 0 && conflicting.length === beneficiary_ids.length) {
-        return NextResponse.json({
-          success: false,
-          error: `Seçtiğiniz hanelerin tamamı halen devam eden "${activeAssignedMap.get(String(conflicting[0]))}" rotasında yer almaktadır. Lütfen henüz rotaya atanmamış haneleri seçiniz.`
-        }, { status: 400 });
+      for (const otherRoute of otherActiveRoutes) {
+        const stops = otherRoute.duraklar || [];
+        const stopsToKeep: any[] = [];
+        const stopsToTransfer: any[] = [];
+
+        for (const s of stops) {
+          const sId = String(s.beneficiary_id);
+          // If this stop is in the new route's selection and hasn't been delivered yet (BEKLIYOR or TESLIM_EDILEMEDI)
+          if (selectedIdSet.has(sId) && (!s.durum || s.durum === 'BEKLIYOR' || s.durum === 'TESLIM_EDILEMEDI')) {
+            stopsToTransfer.push(s);
+          } else {
+            stopsToKeep.push(s);
+          }
+        }
+
+        if (stopsToTransfer.length > 0) {
+          // Re-index remaining stops in previous route
+          const reindexedRemaining = stopsToKeep.map((s: any, idx: number) => ({
+            ...s,
+            sira: idx + 1
+          }));
+
+          // Recalculate stats for the previous route
+          let compCount = 0;
+          let eksCount = 0;
+          let undelivCount = 0;
+          let totalDelivBags = 0;
+          let targetTotalBags = 0;
+
+          reindexedRemaining.forEach((s: any) => {
+            const h = Number(s.hedef_torba) || 34;
+            targetTotalBags += h;
+            if (s.durum === 'TAMAMLANDI') {
+              compCount++;
+              totalDelivBags += s.teslim_edilen_torba || h;
+            } else if (s.durum === 'EKSIK') {
+              eksCount++;
+              totalDelivBags += s.teslim_edilen_torba || 0;
+            } else if (s.durum === 'TESLIM_EDILEMEDI') {
+              undelivCount++;
+            }
+          });
+
+          const updateFields: any = {
+            duraklar: reindexedRemaining,
+            toplam_hane: reindexedRemaining.length,
+            tamamlanan_hane: compCount,
+            eksik_hane: eksCount,
+            teslim_edilemeyen_hane: undelivCount,
+            toplam_dagitilan_torba: totalDelivBags,
+            hedef_toplam_torba: targetTotalBags,
+            updated_at: localTimeStr
+          };
+
+          // If all stops were transferred out and route is empty, mark as TAMAMLANDI to prevent ghost empty active routes
+          if (reindexedRemaining.length === 0) {
+            updateFields.durum = 'TAMAMLANDI';
+            updateFields.completed_at = localTimeStr;
+            updateFields.kapanis_notu = `Tüm duraklar (${stopsToTransfer.length} hane) yeni oluşturulan "${(rota_adi || 'Yeni Rota').trim()}" rotasına aktarıldığı için kapatıldı.`;
+          }
+
+          await routeCol.updateOne(buildIdFilter(otherRoute.id || otherRoute._id), {
+            $set: updateFields
+          });
+
+          await recordActivityLog({
+            kullanici_adi: olusturan_personel.trim(),
+            kullanici_rolu: 'PERSONEL',
+            islem_tipi: 'ROTA_GUNCELLEME',
+            baslik: 'Duraklar Yeni Rotaya Aktarıldı',
+            detay: `"${otherRoute.rota_adi}" rotasındaki ${stopsToTransfer.length} durak yeni rotaya aktarıldı. Kalan durak sayısı: ${reindexedRemaining.length}.`,
+            ek_bilgi: {
+              sourceRouteId: otherRoute.id || otherRoute._id,
+              transferredCount: stopsToTransfer.length,
+              transferredBeneficiaryIds: stopsToTransfer.map((s: any) => s.beneficiary_id)
+            }
+          });
+        }
       }
 
       // Fetch all selected beneficiaries
@@ -1555,6 +1622,18 @@ export async function POST(request: NextRequest) {
         detay: `"${removed.ad_soyad}" hanesi "${route.rota_adi}" rotasından çıkarıldı. Kalan durak sayısı: ${reindexedStops.length}.`,
         ek_bilgi: { route_id, removedBeneficiaryId: removed.beneficiary_id, remainingCount: reindexedStops.length }
       });
+
+      if (removed && removed.beneficiary_id) {
+        await benCol.updateOne(
+          {
+            ...buildIdFilter(removed.beneficiary_id),
+            teslimat_durumu: 'TESLIM_EDILEMEDI'
+          },
+          {
+            $set: { teslimat_durumu: 'BEKLIYOR', updated_at: localTimeStr }
+          }
+        );
+      }
 
       await touchSyncPulse(personel.trim());
 

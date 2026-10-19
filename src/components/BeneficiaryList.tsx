@@ -80,9 +80,14 @@ export default function BeneficiaryList({
   const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
 
-  // Sayfalama Durumu (Kullanıcı isteği doğrultusunda sayfa başına varsayılan 250 kayıt)
+  // Sayfalama Durumu (Mobil cihazlarda akıcı performans için 50, masaüstünde 250 kayıt)
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(250);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 50;
+    }
+    return 250;
+  });
 
   // Bulk Signature & Signature Status Filter
   const [isBulkSignMode, setIsBulkSignMode] = useState(false);
@@ -488,7 +493,7 @@ export default function BeneficiaryList({
 
           <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-200">
             <span className="text-[11px] text-slate-400 font-bold">Sayfa Başı:</span>
-            {[100, 250, 500].map((size) => (
+            {[50, 100, 250, 500].map((size) => (
               <button
                 key={size}
                 type="button"

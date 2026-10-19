@@ -414,6 +414,26 @@ export default function Home() {
           mahalleler: mList,
           eksikHaneler: eksikList,
         };
+
+        // Cache in sessionStorage for zero-latency subsequent views (non-blocking)
+        if (typeof window !== 'undefined') {
+          const saveCache = () => {
+            try {
+              sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
+                data: records,
+                mahalleler: mList,
+                eksikHaneler: eksikList
+              }));
+            } catch (e) {
+              // Ignore quota errors if storage full
+            }
+          };
+          if ('requestIdleCallback' in window) {
+            (window as any).requestIdleCallback(saveCache);
+          } else {
+            setTimeout(saveCache, 120);
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching beneficiaries:', err);
@@ -886,6 +906,8 @@ export default function Home() {
             userUsername={userUsername}
             userTeam={userTeam}
             userPartners={userPartners}
+            eksikHaneler={eksikHaneler}
+            onCompleteHousehold={(person) => setDeliveryTarget(person)}
             onRefreshAll={handleRefreshAll}
             onNavigateToSearch={() => setCurrentTab('search')}
           />

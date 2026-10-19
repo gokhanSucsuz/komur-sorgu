@@ -86,7 +86,13 @@ html {
   width: 100%;
   overflow-x: hidden;
   overflow-y: scroll;
-  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 body {
@@ -294,8 +300,11 @@ button {
   right: 0;
   z-index: 50;
   background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
   border-top: 1px solid var(--border-subtle);
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 6px)) 6px;
   display: flex;
