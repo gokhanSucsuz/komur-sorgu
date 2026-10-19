@@ -355,7 +355,8 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                       setActivationError('');
                       setActivationSuccess('');
                     }}
-                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                    className="w-full py-2 px-3 rounded-xl bg-rose-600 bg-linear-to-r from-rose-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                    style={{ background: 'linear-gradient(135deg, #e11d48 0%, #4f46e5 100%)', color: '#ffffff' }}
                   >
                     <Smartphone className="w-3.5 h-3.5 text-white" />
                     <span>Cihazı Eşle / Aktivasyon Kodu Gir</span>
@@ -557,9 +558,15 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                 disabled={isSubmitting}
                 className={`login-submit-btn text-sm font-black shadow-lg transition-all ${
                   activeTab === 'ADMIN'
-                    ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/25 hover:from-amber-600 hover:to-orange-700'
-                    : 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-sky-600/25 hover:from-sky-700 hover:to-indigo-700'
+                    ? 'bg-amber-500 bg-linear-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/25 hover:from-amber-600 hover:to-orange-700'
+                    : 'bg-sky-600 bg-linear-to-r from-sky-600 to-indigo-600 text-white shadow-sky-600/25 hover:from-sky-700 hover:to-indigo-700'
                 }`}
+                style={{
+                  background: activeTab === 'ADMIN'
+                    ? 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)'
+                    : 'linear-gradient(135deg, #0284c7 0%, #4f46e5 100%)',
+                  color: '#ffffff'
+                }}
               >
                 {isSubmitting ? (
                   'Giriş Doğrulanıyor...'

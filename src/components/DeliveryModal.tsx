@@ -433,9 +433,15 @@ export default function DeliveryModal({
               disabled={isSubmitting}
               className={`btn-primary flex-1 font-bold ${
                 willBeComplete
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-emerald-600/20'
-                  : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/20'
+                  ? 'bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-emerald-600/20'
+                  : 'bg-amber-500 bg-linear-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/20'
               }`}
+              style={{
+                background: willBeComplete
+                  ? 'linear-gradient(135deg, #059669 0%, #0f766e 100%)'
+                  : 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                color: '#ffffff'
+              }}
             >
               {isSubmitting ? (
                 'Kaydediliyor...'

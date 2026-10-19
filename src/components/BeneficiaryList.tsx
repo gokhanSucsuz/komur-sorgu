@@ -1776,7 +1776,8 @@ export default function BeneficiaryList({
                                           <button
                                             type="button"
                                             onClick={() => onOpenDelivery(person)}
-                                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
+                                            className="px-3 py-1.5 rounded-xl bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 hover:opacity-90"
+                                            style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
                                           >
                                             <PackagePlus className="w-3.5 h-3.5" />
                                             <span>Kalanı Ver (+{kalan})</span>
@@ -2288,7 +2289,8 @@ export default function BeneficiaryList({
                             {isSigned ? (
                               <button
                                 onClick={() => onOpenDelivery(person)}
-                                className="h-12 flex-1 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                                className="h-12 flex-1 rounded-xl text-xs font-black bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                                style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
                               >
                                 <PackagePlus className="w-4 h-4 text-white" />
                                 <span>Kalanı Tamamla (+{kalan} Torba)</span>
@@ -2350,7 +2352,8 @@ export default function BeneficiaryList({
                           {isSigned ? (
                             <button
                               onClick={() => onOpenDelivery(person)}
-                              className="h-12 flex-1 rounded-xl text-xs sm:text-sm font-black bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                              className="h-12 flex-1 rounded-xl text-xs sm:text-sm font-black bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                              style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
                             >
                               <PackageCheck className="w-4 h-4 text-white" />
                               <span>Kömür Teslimatı Yap ({hedef} Torba)</span>

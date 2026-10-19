@@ -271,11 +271,17 @@ export default function MorningAlertBanner({
                   <button
                     type="button"
                     onClick={() => onCompleteHousehold(person)}
-                    className={`w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all mt-1 sm:mt-0 text-white ${
+                    className={`w-full sm:w-auto px-4 py-2.5 rounded-xl font-black text-xs shrink-0 flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all mt-1 sm:mt-0 text-white border ${
                       isEksikTip
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800'
-                        : 'bg-gradient-to-r from-indigo-600 to-sky-700 hover:from-indigo-700 hover:to-sky-800'
+                        ? 'bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 border-emerald-700 shadow-emerald-600/20'
+                        : 'bg-indigo-600 bg-linear-to-r from-indigo-600 to-sky-700 hover:from-indigo-700 hover:to-sky-800 border-indigo-700 shadow-indigo-600/20'
                     }`}
+                    style={{
+                      background: isEksikTip
+                        ? 'linear-gradient(135deg, #059669 0%, #0f766e 100%)'
+                        : 'linear-gradient(135deg, #4f46e5 0%, #0369a1 100%)',
+                      color: '#ffffff'
+                    }}
                   >
                     {isEksikTip ? (
                       <>
