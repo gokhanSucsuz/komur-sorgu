@@ -198,6 +198,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine the next global ek list number for this file upload
+    let globalMaxEkNo = 0;
+    for (const b of existingList) {
+      let ekNo = typeof b.ek_liste_no === 'number' ? b.ek_liste_no : 0;
+      if (!ekNo && b.sira_no && typeof b.sira_no === 'string') {
+        const match = b.sira_no.match(/^Ek\s*(\d+)/i);
+        if (match) ekNo = parseInt(match[1], 10);
+      }
+      if (ekNo < 1000 && ekNo > globalMaxEkNo) {
+        globalMaxEkNo = ekNo;
+      }
+    }
+    const currentUploadEkNo = globalMaxEkNo + 1;
+
     // Sigortalılar listesi için mahalle bazında önceden kayıtlı kişi sayısını tespit et
     const existingMahalleSigortaliCountMap = new Map<string, number>();
     // Tüm kayıtlar için mahalle bazında önceden kayıtlı kişi sayısını tespit et (kesintisiz mahalle sırası için)
@@ -781,10 +795,9 @@ export async function POST(request: NextRequest) {
         ekListeAdi = 'Sigortalılar Listesi';
         recordListeTuru = 'SIGORTALI';
       } else if (listeTuru === 'EK_LISTE') {
-        const nextEkNo = (!existingData || !existingData.hasRecords || existingData.maxEkNo === 0) ? 1 : existingData.maxEkNo + 1;
-        siraNo = `Ek${nextEkNo} - ${counter}`;
-        ekListeNo = nextEkNo;
-        ekListeAdi = `Ek ${nextEkNo}`;
+        siraNo = `Ek${currentUploadEkNo} - ${counter}`;
+        ekListeNo = currentUploadEkNo;
+        ekListeAdi = `Ek ${currentUploadEkNo}`;
         recordListeTuru = 'EK_LISTE';
       } else {
         // STANDART (Otomatik: ilk yükleme Ana Liste, sonraki Ek Liste)
@@ -794,10 +807,9 @@ export async function POST(request: NextRequest) {
           ekListeAdi = 'Ana Liste';
           recordListeTuru = 'ANA_LISTE';
         } else {
-          const nextEkNo = existingData.maxEkNo + 1;
-          siraNo = `Ek${nextEkNo} - ${counter}`;
-          ekListeNo = nextEkNo;
-          ekListeAdi = `Ek ${nextEkNo}`;
+          siraNo = `Ek${currentUploadEkNo} - ${counter}`;
+          ekListeNo = currentUploadEkNo;
+          ekListeAdi = `Ek ${currentUploadEkNo}`;
           recordListeTuru = 'EK_LISTE';
         }
       }
@@ -809,7 +821,7 @@ export async function POST(request: NextRequest) {
         sira_no: siraNo,
         mahalle_sira: mahalleSira,
         excel_sira_no: excelSiraNo,
-        ek_excel_sira: counter,
+        ek_excel_sira: excelSiraNo,
         ek_liste_no: ekListeNo,
         ek_liste_adi: ekListeAdi,
         tc_no: tcNo,

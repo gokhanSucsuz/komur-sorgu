@@ -86,13 +86,24 @@ export function normalizeTurkishNameForExactMatch(name: string | null | undefine
  *   - 'ç' / 'Ç', 'ğ' / 'Ğ', 'ö' / 'Ö', 'ü' / 'Ü' only match their own Turkish letter.
  */
 export function isBirebirBeneficiaryMatch(
-  record: { tc_no?: any; ad_soyad?: any; hak_sahibi?: any } | null | undefined,
+  record: { tc_no?: any; ad_soyad?: any; hak_sahibi?: any; sira_no?: any; mahalle_sira?: any; excel_sira_no?: any; ek_excel_sira?: any } | null | undefined,
   query: string | null | undefined
 ): boolean {
   if (!query || !query.trim() || !record) return false;
-  const rawQ = query.trim();
+  const rawQ = query.trim().replace(/^#/, '').trim();
 
-  // 1. TC Kimlik No Eşleşmesi (Yalnızca tc_no alanında arama yapar)
+  // 1. Sıra No / Mahalle Sırası / Ek Excel Sırası Eşleşmesi (örn: "Ek1 - 5", "Ek1-5", "Ek 1 - 2", "5", vb.)
+  if (record.sira_no) {
+    const cleanRecordSira = String(record.sira_no).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanQSira = rawQ.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanQSira && cleanRecordSira) {
+      if (cleanRecordSira === cleanQSira || cleanRecordSira.includes(cleanQSira)) {
+        return true;
+      }
+    }
+  }
+
+  // 2. TC Kimlik No Eşleşmesi (Yalnızca tc_no alanında arama yapar)
   const qDigits = rawQ.replace(/\D/g, '');
   const isPureDigits = /^\d+$/.test(rawQ.replace(/\s+/g, ''));
   if (isPureDigits && qDigits.length > 0 && record.tc_no) {
@@ -105,6 +116,18 @@ export function isBirebirBeneficiaryMatch(
         return true;
       }
     }
+    // Saf rakam sorgusunda Mahalle Sırası veya Excel Sırası tam eşleşiyorsa
+    const qNum = parseInt(qDigits, 10);
+    if (!isNaN(qNum) && qDigits.length <= 4) {
+      if (
+        record.mahalle_sira === qNum ||
+        record.excel_sira_no === qNum ||
+        record.ek_excel_sira === qNum ||
+        String(record.sira_no) === rawQ
+      ) {
+        return true;
+      }
+    }
   }
 
   // Eğer kullanıcı sadece rakam girdiyse isim alanında aramaya gerek yok
@@ -112,7 +135,7 @@ export function isBirebirBeneficiaryMatch(
     return false;
   }
 
-  // 2. Hak Sahibi / Adı Soyadı Eşleşmesi (%100 Türkçe Karakter Uyumlu)
+  // 3. Hak Sahibi / Adı Soyadı Eşleşmesi (%100 Türkçe Karakter Uyumlu)
   const rawName = record.ad_soyad || record.hak_sahibi || '';
   if (rawName) {
     const normTarget = normalizeTurkishNameForExactMatch(String(rawName));
