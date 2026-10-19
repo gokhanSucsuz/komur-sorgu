@@ -2052,9 +2052,10 @@ export default function RoutePage({
                 <button
                   type="button"
                   onClick={handleOpenCreateModal}
-                  className="w-full max-w-md mx-auto py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-sm cursor-pointer active:scale-98"
+                  className="w-full max-w-md mx-auto py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 cursor-pointer active:scale-98"
+                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
                 >
-                  <Plus className="w-5 h-5" />
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
                   <span>
                     {availableSignedBeneficiaries.length > 0
                       ? `Yeni Dağıtım Rotası Başlat (${availableSignedBeneficiaries.length} İmzalı Hane)`
@@ -2072,12 +2073,11 @@ export default function RoutePage({
           )}
 
           {/* ÇOKLU EKİP ROTA SEÇİCİ & YENİ ROTA EKLEME ÇUBUĞU */}
-          {/* ÇOKLU EKİP ROTA SEÇİCİ & YENİ ROTA EKLEME ÇUBUĞU */}
           {activeRoutes.length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-3 space-y-2.5 no-print">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center justify-between gap-2.5 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
                     <Truck className="w-4 h-4 text-emerald-600" />
                     Sahadaki Dağıtım Ekipleri ({activeRoutes.length} Aktif Rota)
                   </span>
@@ -2087,9 +2087,10 @@ export default function RoutePage({
                   type="button"
                   onClick={handleOpenCreateModal}
                   title="Yeni dağıtım rotası / ekibi başlat"
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs active:scale-95 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 active:scale-95 cursor-pointer"
+                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                   <span>
                     {availableSignedBeneficiaries.length > 0
                       ? `+ Yeni Ekip / Rota Başlat (${availableSignedBeneficiaries.length} İmzalı Hazır)`
