@@ -246,6 +246,13 @@ export default function RoutePage({
   // Finalize Modal State
   const [finalizeNote, setFinalizeNote] = useState<string>('');
 
+  // Add to Existing Route Modal State
+  const [showAddToExistingModal, setShowAddToExistingModal] = useState<boolean>(false);
+  const [addToRouteTargetId, setAddToRouteTargetId] = useState<string>('');
+  const [addToRouteSelectedIds, setAddToRouteSelectedIds] = useState<string[]>([]);
+  const [addToRouteSearch, setAddToRouteSearch] = useState<string>('');
+  const [showUnassignedList, setShowUnassignedList] = useState<boolean>(false);
+
   // ESC key listener to close report modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -470,6 +477,89 @@ export default function RoutePage({
       setSelectedBeneficiaryIds((prev) => prev.filter((id) => !listIds.includes(id)));
     } else {
       setSelectedBeneficiaryIds((prev) => Array.from(new Set([...prev, ...listIds])));
+    }
+  };
+
+  // Open Add to Existing Route Modal
+  const handleOpenAddToExistingModal = (targetRouteId?: string) => {
+    if (!activeRoutes || activeRoutes.length === 0) {
+      showAlert({
+        title: 'Aktif Dağıtım Ekibi Bulunmuyor',
+        message: 'Şu anda sahada aktif bir dağıtım rotası bulunmuyor. Lütfen önce "+ Yeni Dağıtım Rotası / Ekip Başlat" butonu ile yeni bir rota oluşturunuz.',
+        type: 'warning'
+      });
+      return;
+    }
+    const initialTarget = targetRouteId || (activeRoute ? String(activeRoute.id || activeRoute._id) : String(activeRoutes[0].id || activeRoutes[0]._id));
+    setAddToRouteTargetId(initialTarget);
+    setAddToRouteSearch('');
+    // Pre-select all available signed beneficiaries
+    setAddToRouteSelectedIds(availableSignedBeneficiaries.map((b: any) => String(b.id || b._id)));
+    setShowAddToExistingModal(true);
+  };
+
+  // Submit adding stops to existing route
+  const handleAddStopsToExistingRoute = async () => {
+    if (!addToRouteTargetId) {
+      showAlert({
+        title: 'Hedef Rota Seçilmedi',
+        message: 'Lütfen hanelerin ekleneceği hedef dağıtım rotasını seçiniz.',
+        type: 'warning'
+      });
+      return;
+    }
+    if (addToRouteSelectedIds.length === 0) {
+      showAlert({
+        title: 'Hane Seçilmedi',
+        message: 'Lütfen rotaya eklenecek en az bir hane seçiniz.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/routes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
+        body: JSON.stringify({
+          action: 'ADD_STOPS_TO_ROUTE',
+          route_id: addToRouteTargetId,
+          beneficiary_ids: addToRouteSelectedIds,
+          personel: userName || 'Personel',
+          client_id: currentClientId
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          type: 'success',
+          title: 'Haneler Rotaya Eklendi',
+          message: data.message || `${addToRouteSelectedIds.length} hane başarıyla rotaya eklendi.`
+        });
+        setShowAddToExistingModal(false);
+        setAddToRouteSelectedIds([]);
+        await fetchRoutes();
+        if (onRefreshAll) onRefreshAll();
+      } else {
+        showAlert({
+          title: 'İşlem Başarısız',
+          message: data.error || 'Haneler rotaya eklenemedi.',
+          type: 'error'
+        });
+      }
+    } catch (e: any) {
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: 'İşlem sırasında hata oluştu: ' + e.message,
+        type: 'error'
+      });
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -2072,6 +2162,112 @@ export default function RoutePage({
             </div>
           )}
 
+          {/* ROTAYA ATANMAMIŞ İMZALI HANELER BİLDİRİM VE HIZLI İŞLEM PANELİ */}
+          {availableSignedBeneficiaries.length > 0 && (
+            <div className="bg-emerald-50/90 border-2 border-emerald-400 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3 no-print">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <PenTool className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs sm:text-sm font-black text-emerald-950">
+                        📋 Dağıtım Bekleyen İmzalı Haneler ({availableSignedBeneficiaries.length} Hane Hazır)
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300">
+                        Herhangi Bir Rotada Değil
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-900 font-medium mt-0.5 leading-relaxed">
+                      Kapıda ıslak imzası alınan ancak henüz sahadaki hiçbir dağıtım ekibine atanmamış {availableSignedBeneficiaries.length} hane bulunmaktadır.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateModal}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-white bg-amber-500 hover:bg-amber-600 border border-amber-600/40 shadow-xs active:scale-95 cursor-pointer"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>+ Yeni Rota Oluştur</span>
+                  </button>
+
+                  {activeRoutes.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddToExistingModal()}
+                      className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 shadow-xs active:scale-95 cursor-pointer"
+                      style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>📥 Var Olan Rotaya Ekle</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowUnassignedList((prev) => !prev)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <span>{showUnassignedList ? 'Listeyi Gizle' : `Haneleri Gör (${availableSignedBeneficiaries.length})`}</span>
+                    {showUnassignedList ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* AÇILIR LİSTE: Rotada Olmayan İmzalı Haneler Önizleme Kartları */}
+              {showUnassignedList && (
+                <div className="pt-2.5 border-t border-emerald-200 space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                    {availableSignedBeneficiaries.map((b: any) => {
+                      const stInfo = getRecordStreetInfo(b);
+                      return (
+                        <div
+                          key={b.id || b._id}
+                          className="p-2.5 rounded-xl bg-white border border-emerald-200 shadow-2xs flex flex-col justify-between gap-2"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="text-xs font-black text-slate-900 truncate">{b.ad_soyad}</span>
+                              <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300 shrink-0">
+                                {b.hedef_torba || 34} Torba
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
+                              {b.mahalle ? `${b.mahalle} Mah.` : ''} {stInfo.sokak ? `${stInfo.sokak} No:${stInfo.kapiNo || ''}` : b.adres || ''}
+                            </p>
+                            {b.telefon && (
+                              <p className="text-[10px] font-mono text-emerald-700 font-semibold mt-0.5">
+                                📞 {formatPhoneDisplay(b.telefon)}
+                              </p>
+                            )}
+                          </div>
+
+                          {activeRoutes.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddToRouteSelectedIds([String(b.id || b._id)]);
+                                handleOpenAddToExistingModal();
+                              }}
+                              className="w-full py-1.5 rounded-lg text-[11px] font-extrabold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                            >
+                              <span>📥 Bir Rotaya Ekle</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ÇOKLU EKİP ROTA SEÇİCİ & YENİ ROTA EKLEME ÇUBUĞU */}
           {activeRoutes.length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-3 space-y-2.5 no-print">
@@ -2083,20 +2279,35 @@ export default function RoutePage({
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleOpenCreateModal}
-                  title="Yeni dağıtım rotası / ekibi başlat"
-                  className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 active:scale-95 cursor-pointer"
-                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
-                >
-                  <Plus className="w-4 h-4 stroke-[2.5]" />
-                  <span>
-                    {availableSignedBeneficiaries.length > 0
-                      ? `+ Yeni Ekip / Rota Başlat (${availableSignedBeneficiaries.length} İmzalı Hazır)`
-                      : '+ Yeni Ekip / Rota Başlat'}
-                  </span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {availableSignedBeneficiaries.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddToExistingModal()}
+                      className="w-full sm:w-auto px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 shadow-sm active:scale-95 cursor-pointer"
+                      style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                      title="Boştaki imzalı haneleri mevcut bir rotaya ekle"
+                    >
+                      <Plus className="w-4 h-4 stroke-[2.5]" />
+                      <span>📥 Var Olan Rotaya Ekle ({availableSignedBeneficiaries.length})</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateModal}
+                    title="Yeni dağıtım rotası / ekibi başlat"
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 active:scale-95 cursor-pointer"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>
+                      {availableSignedBeneficiaries.length > 0
+                        ? `+ Yeni Ekip / Rota Başlat (${availableSignedBeneficiaries.length} İmzalı Hazır)`
+                        : '+ Yeni Ekip / Rota Başlat'}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2139,6 +2350,8 @@ export default function RoutePage({
                       handleRemoveStop(index, stop);
                     }}
                     onStartRouteMode={() => handleOpenRouteMode(route)}
+                    onOpenAddToRoute={() => handleOpenAddToExistingModal(routeIdStr)}
+                    availableSignedCount={availableSignedBeneficiaries.length}
                   />
                 );
               })}
@@ -2318,6 +2531,186 @@ export default function RoutePage({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: VAR OLAN ROTAYA İMZALI HANE EKLEME MODALI         */}
+      {/* ======================================================== */}
+      {showAddToExistingModal && (
+        <div className="modal-overlay" onClick={() => setShowAddToExistingModal(false)}>
+          <div className="modal-sheet max-w-xl" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Var Olan Rotaya İmzalı Hane Ekle</h3>
+                  <p className="text-xs text-slate-500">Boştaki imzalı haneleri sahadaki aktif bir ekibe dahil edin</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddToExistingModal(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Target Route Selector */}
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                  1. Hedef Dağıtım Ekibi / Rota Seçiniz:
+                </label>
+                <select
+                  value={addToRouteTargetId}
+                  onChange={(e) => setAddToRouteTargetId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                >
+                  {activeRoutes.map((r) => (
+                    <option key={r.id || r._id} value={r.id || r._id}>
+                      {r.rota_adi} — {r.dagitim_personeli || 'Personel'} ({r.duraklar?.length || 0} Hane Mevcut)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Beneficiaries Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                    2. Eklenecek İmzalı Haneleri Seçiniz ({addToRouteSelectedIds.length} / {availableSignedBeneficiaries.length}):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allIds = availableSignedBeneficiaries.map((b: any) => String(b.id || b._id));
+                      if (addToRouteSelectedIds.length === allIds.length) {
+                        setAddToRouteSelectedIds([]);
+                      } else {
+                        setAddToRouteSelectedIds(allIds);
+                      }
+                    }}
+                    className="text-xs font-extrabold text-emerald-800 hover:underline cursor-pointer"
+                  >
+                    {addToRouteSelectedIds.length === availableSignedBeneficiaries.length ? 'Seçimi Temizle' : 'Tümünü Seç'}
+                  </button>
+                </div>
+
+                {/* Filter / Search input */}
+                <div className="relative mb-2">
+                  <input
+                    type="text"
+                    value={addToRouteSearch}
+                    onChange={(e) => setAddToRouteSearch(e.target.value)}
+                    placeholder="Hane adı, soyadı veya mahalle ara..."
+                    className="w-full px-3 py-1.5 pl-8 rounded-lg border border-slate-300 text-xs text-slate-800 focus:outline-none focus:border-emerald-500"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  {addToRouteSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAddToRouteSearch('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Scrollable List */}
+                <div className="max-h-60 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50/50">
+                  {availableSignedBeneficiaries
+                    .filter((b: any) => {
+                      if (!addToRouteSearch.trim()) return true;
+                      const q = addToRouteSearch.toLowerCase();
+                      return (
+                        (b.ad_soyad || '').toLowerCase().includes(q) ||
+                        (b.mahalle || '').toLowerCase().includes(q) ||
+                        (b.tc_no || '').includes(q)
+                      );
+                    })
+                    .map((b: any) => {
+                      const bId = String(b.id || b._id);
+                      const isSelected = addToRouteSelectedIds.includes(bId);
+                      const stInfo = getRecordStreetInfo(b);
+                      return (
+                        <div
+                          key={bId}
+                          onClick={() => {
+                            setAddToRouteSelectedIds((prev) =>
+                              prev.includes(bId) ? prev.filter((id) => id !== bId) : [...prev, bId]
+                            );
+                          }}
+                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-emerald-50/90 border-emerald-400 ring-1 ring-emerald-400'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // handled by div onClick
+                              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black text-slate-900 truncate">{b.ad_soyad}</span>
+                                <span className="text-[10px] font-mono text-slate-500 font-semibold">{b.tc_no}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-medium truncate">
+                                {b.mahalle ? `${b.mahalle} Mah.` : ''} {stInfo.sokak ? `${stInfo.sokak} No:${stInfo.kapiNo || ''}` : b.adres || ''}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span className="text-[11px] font-mono font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md border border-amber-300 shrink-0">
+                            {b.hedef_torba || 34} Torba
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                  {availableSignedBeneficiaries.length === 0 && (
+                    <div className="p-4 text-center text-xs text-slate-500">
+                      Rotaya eklenebilecek boşta imzalı hane bulunmuyor.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddToExistingModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddStopsToExistingRoute}
+                  disabled={isActionLoading || addToRouteSelectedIds.length === 0}
+                  className="px-5 py-2 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
+                  style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>
+                    {addToRouteSelectedIds.length > 0
+                      ? `Seçilen ${addToRouteSelectedIds.length} Haneyi Rotaya Ekle`
+                      : 'Hane Seçiniz'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

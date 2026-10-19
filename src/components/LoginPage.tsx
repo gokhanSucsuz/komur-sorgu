@@ -556,13 +556,10 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`login-submit-btn text-sm font-black shadow-lg transition-all ${
-                  activeTab === 'ADMIN'
-                    ? 'bg-amber-500 bg-linear-to-r from-amber-500 to-orange-600 text-white shadow-amber-500/25 hover:from-amber-600 hover:to-orange-700'
-                    : 'bg-sky-600 bg-linear-to-r from-sky-600 to-indigo-600 text-white shadow-sky-600/25 hover:from-sky-700 hover:to-indigo-700'
-                }`}
+                className={`login-submit-btn ${activeTab === 'ADMIN' ? 'admin-mode bg-amber-500' : 'bg-sky-600'} text-sm font-black shadow-lg transition-all text-white`}
                 style={{
-                  background: activeTab === 'ADMIN'
+                  backgroundColor: activeTab === 'ADMIN' ? '#f59e0b' : '#0284c7',
+                  backgroundImage: activeTab === 'ADMIN'
                     ? 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)'
                     : 'linear-gradient(135deg, #0284c7 0%, #4f46e5 100%)',
                   color: '#ffffff'

@@ -641,6 +641,199 @@ export async function POST(request: NextRequest) {
     }
 
     // ==========================================
+    // ACTION: ADD_STOPS_TO_ROUTE (VAR OLAN ROTAYA YENİ HANE / DURAK EKLEME)
+    // ==========================================
+    if (action === 'ADD_STOPS_TO_ROUTE') {
+      const {
+        route_id,
+        beneficiary_ids = [],
+        personel = 'Personel',
+        client_id
+      } = body;
+
+      if (!route_id) {
+        return NextResponse.json({ success: false, error: 'Hedef Rota ID zorunludur' }, { status: 400 });
+      }
+
+      if (!beneficiary_ids || beneficiary_ids.length === 0) {
+        return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir hane seçilmelidir' }, { status: 400 });
+      }
+
+      const targetRouteDoc = await routeCol.findOne(buildIdFilter(route_id));
+      if (!targetRouteDoc) {
+        return NextResponse.json({ success: false, error: 'Hedef rota bulunamadı' }, { status: 404 });
+      }
+
+      // Ekip yetki kontrolü
+      const { users: usersCol } = await getDbCollections();
+      const authCheck = await checkRouteTeamAuthorization(targetRouteDoc, session, usersCol);
+      if (!authCheck.authorized) {
+        return NextResponse.json({ success: false, error: authCheck.error }, { status: 403 });
+      }
+
+      // Kilit kontrolü
+      const headerClientId = request.headers.get('x-client-id') || '';
+      const effectiveClientId = (client_id || headerClientId || '').trim();
+      const lockCheck = checkRouteLock(targetRouteDoc, personel, effectiveClientId);
+      if (lockCheck.isLocked) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Bu rota şu anda "${lockCheck.lockedBy}" personeli tarafından kullanımda ve kilitlidir.`
+          },
+          { status: 423 }
+        );
+      }
+
+      // Haneleri çek
+      const objectIds: ObjectId[] = [];
+      const stringIds: string[] = [];
+      const numberIds: number[] = [];
+
+      beneficiary_ids.forEach((id: string) => {
+        const s = String(id).trim();
+        if (ObjectId.isValid(s) && s.length === 24) objectIds.push(new ObjectId(s));
+        stringIds.push(s);
+        const num = Number(s);
+        if (!isNaN(num) && num > 0) numberIds.push(num);
+      });
+
+      const orClauses: any[] = [{ id: { $in: stringIds } }];
+      if (objectIds.length > 0) orClauses.push({ _id: { $in: objectIds } });
+      if (numberIds.length > 0) orClauses.push({ id: { $in: numberIds } });
+
+      const rawBeneficiaries = await benCol.find({ $or: orClauses }).toArray();
+      const fetchedBeneficiaries = mapDocs(rawBeneficiaries).filter(
+        (b: any) =>
+          b.imza_durumu === 'IMZALANDI' &&
+          b.teslimat_durumu !== 'TAMAMLANDI' &&
+          b.teslimat_durumu !== 'TESLIM_EDILDI' &&
+          !b.komur_verilmeyecek
+      );
+
+      if (fetchedBeneficiaries.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Seçilen hanelerin imzası alınmamış veya teslimatları zaten yapılmış.' },
+          { status: 400 }
+        );
+      }
+
+      const existingStops = Array.isArray(targetRouteDoc.duraklar) ? targetRouteDoc.duraklar : [];
+      const existingBenIdSet = new Set(existingStops.map((s: any) => String(s.beneficiary_id)));
+
+      // Sadece henüz bu rotada olmayanları ekle
+      const toAdd = fetchedBeneficiaries.filter((b: any) => !existingBenIdSet.has(String(b.id || b._id)));
+
+      if (toAdd.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Seçilen haneler zaten bu rotada mevcut.' },
+          { status: 400 }
+        );
+      }
+
+      // Adrese göre sırala
+      toAdd.sort(compareByAddressAsc);
+
+      let eklenenHedefTorba = 0;
+      const newStops = toAdd.map((b: any, index: number) => {
+        const stInfo = getRecordStreetInfo(b);
+        const hedef = Number(b.hedef_torba) || 34;
+        eklenenHedefTorba += hedef;
+
+        return encryptRouteStop({
+          sira: existingStops.length + index + 1,
+          beneficiary_id: b.id || b._id,
+          ad_soyad: b.ad_soyad || '',
+          tc_no: b.tc_no || '',
+          mahalle: b.mahalle || '',
+          cadde_sokak: stInfo.sokak || b.cadde_sokak || '',
+          kapi_no: String(stInfo.kapiNo || b.kapi_no || ''),
+          daire_no: String(stInfo.daireNo || b.daire_no || ''),
+          adres: b.adres || '',
+          telefon: b.telefon || '',
+          hedef_torba: hedef,
+          teslim_edilen_torba: 0,
+          durum: 'BEKLIYOR',
+          teslim_edildi_mi: false,
+          teslim_tarihi: null,
+          teslim_saati: null,
+          teslim_personeli: null,
+          imza_alindi_mi: true,
+          imza_tarihi: b.imza_tarihi || new Date().toISOString(),
+          notlar: ''
+        });
+      });
+
+      const updatedStops = [...existingStops, ...newStops];
+      const newTotalHane = updatedStops.length;
+      const newBekleyenHane = updatedStops.filter((s: any) => !s.durum || s.durum === 'BEKLIYOR').length;
+      const currentHedefTorba = Number(targetRouteDoc.toplam_hedef_torba) || 0;
+      const newTotalHedefTorba = currentHedefTorba + eklenenHedefTorba;
+
+      // Mahalle listesini genişlet
+      const newNeighborhoods = toAdd.map((b: any) => b.mahalle).filter(Boolean);
+      const existingNeighborhoods = Array.isArray(targetRouteDoc.mahalleler) ? targetRouteDoc.mahalleler : [];
+      const updatedNeighborhoods = Array.from(new Set([...existingNeighborhoods, ...newNeighborhoods]));
+
+      // Rotayı güncelle
+      await routeCol.updateOne(buildIdFilter(route_id), {
+        $set: {
+          duraklar: updatedStops,
+          toplam_hane: newTotalHane,
+          bekleyen_hane: newBekleyenHane,
+          toplam_hedef_torba: newTotalHedefTorba,
+          mahalleler: updatedNeighborhoods,
+          updated_at: new Date().toISOString()
+        }
+      });
+
+      // Hak sahiplerinin durumunu güncelle
+      const toAddIdClauses: any[] = [];
+      toAdd.forEach((b: any) => {
+        if (b.id) toAddIdClauses.push({ id: b.id });
+        if (b._id) toAddIdClauses.push({ _id: b._id });
+        if (ObjectId.isValid(String(b.id || b._id)) && String(b.id || b._id).length === 24) {
+          toAddIdClauses.push({ _id: new ObjectId(String(b.id || b._id)) });
+        }
+      });
+
+      if (toAddIdClauses.length > 0) {
+        await benCol.updateMany(
+          { $or: toAddIdClauses },
+          {
+            $set: {
+              durum_aciklama: `Rotaya Eklendi: ${targetRouteDoc.rota_adi}`,
+              updated_at: new Date().toISOString(),
+              guncelleyen_personel: personel
+            }
+          }
+        );
+      }
+
+      await touchSyncPulse(personel.trim());
+
+      await recordActivityLog({
+        kullanici_adi: session.username || personel,
+        kullanici_rolu: session.rol || 'PERSONEL',
+        islem_tipi: 'ROTA_GUNCELLEME',
+        baslik: 'Rotaya Hane Eklendi',
+        detay: `"${targetRouteDoc.rota_adi}" rotasına ${toAdd.length} yeni hane eklendi (+${eklenenHedefTorba} Torba).`,
+        torba_sayisi: eklenenHedefTorba,
+        ek_bilgi: { route_id, added_count: toAdd.length, eklenen_torba: eklenenHedefTorba }
+      });
+
+      const refreshedDoc = await routeCol.findOne(buildIdFilter(route_id));
+      const updatedRoute = mapDoc(refreshedDoc);
+
+      return NextResponse.json({
+        success: true,
+        message: `${toAdd.length} hane "${targetRouteDoc.rota_adi}" rotasına başarıyla eklendi.`,
+        route: updatedRoute,
+        addedCount: toAdd.length
+      });
+    }
+
+    // ==========================================
     // ACTION 1.5: ROUTE LOCKING (ACQUIRE / RELEASE / HEARTBEAT)
     // Sadece bir personel rotayı aynı anda aktif kullanabilir
     // ==========================================

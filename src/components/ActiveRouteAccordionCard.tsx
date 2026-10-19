@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   Truck, Users, MapPin, Phone, Printer, Trash2, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, AlertCircle, Download, Navigation, ArrowUp,
-  ArrowDown, XCircle, ArrowRight, UserMinus
+  ArrowDown, XCircle, ArrowRight, UserMinus, Plus
 } from 'lucide-react';
 import { formatPhoneDisplay } from '@/lib/normalizer';
 
@@ -20,6 +20,8 @@ interface ActiveRouteAccordionCardProps {
   onOpenStopModal: (index: number, stop: any, mode: 'TAMAMLANDI' | 'EKSIK' | 'TESLIM_EDILEMEDI') => void;
   onRemoveStop: (index: number, stop: any) => void;
   onStartRouteMode?: () => void;
+  onOpenAddToRoute?: () => void;
+  availableSignedCount?: number;
 }
 
 export default function ActiveRouteAccordionCard({
@@ -34,6 +36,8 @@ export default function ActiveRouteAccordionCard({
   onOpenStopModal,
   onRemoveStop,
   onStartRouteMode,
+  onOpenAddToRoute,
+  availableSignedCount,
 }: ActiveRouteAccordionCardProps) {
   const [stopFilter, setStopFilter] = useState<'ALL' | 'PENDING' | 'EKSIK' | 'TAMAMLANDI' | 'TESLIM_EDILEMEDI'>('ALL');
 
@@ -173,6 +177,21 @@ export default function ActiveRouteAccordionCard({
 
           {/* Hızlı Aksiyon Butonları */}
           <div className="flex items-center gap-1.5">
+            {Boolean(availableSignedCount && availableSignedCount > 0 && onOpenAddToRoute) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenAddToRoute!();
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+                title="Bu rotaya yeni imzalı hane ekle"
+              >
+                <Plus className="w-3.5 h-3.5 text-emerald-700 stroke-[2.5]" />
+                <span className="hidden md:inline">+ Hane Ekle ({availableSignedCount})</span>
+              </button>
+            )}
+
             {onStartRouteMode && (
               <button
                 type="button"
@@ -520,14 +539,22 @@ export default function ActiveRouteAccordionCard({
 
               {/* 2. DURAK LİSTESİ BAŞLIĞI VE FİLTRELEME SEKMELERİ */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between px-1">
+                <div className="flex items-center justify-between px-1 flex-wrap gap-2">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Navigation className="w-3.5 h-3.5 text-sky-600" />
                     <span>Sıralı Durak Listesi ({routeStops.length} Hane)</span>
                   </h4>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    {stopFilter === 'ALL' ? 'Kapı No sıralı • Yukarı/Aşağı taşınabilir' : `Filtrelendi (${displayedStops.length} durak)`}
-                  </span>
+                  {Boolean(availableSignedCount && availableSignedCount > 0 && onOpenAddToRoute) && (
+                    <button
+                      type="button"
+                      onClick={onOpenAddToRoute}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                      style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>+ Bu Rotaya İmzalı Hane Ekle ({availableSignedCount} Boşta)</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Durak Filtre Sekmeleri */}
