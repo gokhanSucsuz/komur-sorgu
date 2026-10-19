@@ -12,7 +12,8 @@ import {
   cleanHaneNo,
   cleanHaneKey,
   formatDeliveryStatusSummary,
-  isBirebirBeneficiaryMatch
+  isBirebirBeneficiaryMatch,
+  normalizeMahalleName
 } from '@/lib/normalizer';
 import {
   hashTc,
@@ -123,10 +124,19 @@ export async function GET(request: NextRequest) {
       
       const expandedMahalleList: string[] = [];
       for (const m of mahalleList) {
+        expandedMahalleList.push(m);
+        const norm = normalizeMahalleName(m);
+        if (norm) expandedMahalleList.push(norm);
+
+        const cleanBase = m.replace(/\s+(?:Mahallesi|Mah\.?|Mh\.?|Köyü|Koy|Koyu)$/i, '').trim();
+        if (cleanBase) {
+          expandedMahalleList.push(cleanBase);
+          expandedMahalleList.push(`${cleanBase} Mah.`);
+          expandedMahalleList.push(`${cleanBase} Mahallesi`);
+          expandedMahalleList.push(`${cleanBase} Köyü`);
+        }
         if (/100\.\s*Yıl/i.test(m) || /Yıl\s+Mah/i.test(m) || m.toLowerCase() === 'yıl') {
           expandedMahalleList.push('100. Yıl Mah.', '100. Yıl Mahallesi', 'Yıl Mah.', 'Yıl Mahallesi', '100.Yıl Mah.', '100 Yıl Mah.', 'Yıl');
-        } else {
-          expandedMahalleList.push(m);
         }
       }
       const uniqueMahalleList = Array.from(new Set(expandedMahalleList));
@@ -171,6 +181,7 @@ export async function GET(request: NextRequest) {
       const rawRecords = await query.toArray();
 
       records = mapDocs(rawRecords).map((r: any) => {
+        r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle;
         r.hedef_torba = r.hedef_torba || 34;
         r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
         return r;
@@ -188,6 +199,7 @@ export async function GET(request: NextRequest) {
         total = await benCol.countDocuments(filter);
         const rawRecords = await benCol.find(filter).toArray();
         records = mapDocs(rawRecords).map((r: any) => {
+          r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle;
           r.hedef_torba = r.hedef_torba || 34;
           r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
           return r;
@@ -204,6 +216,7 @@ export async function GET(request: NextRequest) {
         total = filtered.length;
         const sliced = (limit > 0) ? filtered.slice(skip, skip + limit) : (skip > 0 ? filtered.slice(skip) : filtered);
         records = sliced.map((r: any) => {
+          r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle;
           r.hedef_torba = r.hedef_torba || 34;
           r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
           return r;
@@ -229,7 +242,8 @@ export async function GET(request: NextRequest) {
     }>();
 
     for (const b of sourceForMahalleStats) {
-      const m = b.mahalle || 'Belirtilmemiş';
+      const rawM = b.mahalle ? b.mahalle.trim() : '';
+      const m = normalizeMahalleName(rawM) || rawM || 'Belirtilmemiş';
       const tip = b.yerlesim_tipi || (/(?:Köyü|Koy|Koyu)$/i.test(m) ? 'KOY' : 'MAHALLE');
       if (!mahalleMap.has(m)) {
         mahalleMap.set(m, { mahalle: m, kisi_sayisi: 0, tamamlanan: 0, eksik: 0, bekleyen: 0, tip });

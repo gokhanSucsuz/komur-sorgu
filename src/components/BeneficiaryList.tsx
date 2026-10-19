@@ -7,7 +7,7 @@ import {
   ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock
+  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { 
@@ -22,7 +22,9 @@ import {
   isBirebirBeneficiaryMatch,
   getBeneficiaryListTypeInfo,
   formatCancelReason,
-  formatCancelExplanation
+  formatCancelExplanation,
+  normalizeMahalleName,
+  normalizeStreetForCompare
 } from '@/lib/normalizer';
 import { formatTrAuto, formatTrDate } from '@/lib/dateUtils';
 
@@ -324,13 +326,21 @@ export default function BeneficiaryList({
   // Görüntülenecek aktif liste: Arama yapılıyorsa seçili sekmenin arama sonuçları, değilse sekmenin tüm listesi
   const activeDisplayList = isSearching ? searchFilteredRecords : currentTabBaseList;
 
-  // Filter by selected neighborhoods (if any)
+  // Filter by selected neighborhoods (resilient to formatting variations)
   const mahalleFilteredList = useMemo(() => {
     if (!selectedMahalleler || selectedMahalleler.length === 0) {
       return activeDisplayList;
     }
-    const set = new Set(selectedMahalleler);
-    return activeDisplayList.filter((r) => set.has(r.mahalle));
+    const exactSet = new Set(selectedMahalleler);
+    const normalizedSet = new Set(
+      selectedMahalleler.map((m) => normalizeMahalleName(m) || m.trim().toLowerCase())
+    );
+    return activeDisplayList.filter((r) => {
+      if (exactSet.has(r.mahalle)) return true;
+      const rawM = r.mahalle ? String(r.mahalle).trim() : '';
+      const normM = normalizeMahalleName(rawM) || rawM.toLowerCase();
+      return normalizedSet.has(normM);
+    });
   }, [activeDisplayList, selectedMahalleler]);
 
   const totalPendingCount = allPendingRecords.length;
@@ -368,9 +378,11 @@ export default function BeneficiaryList({
   const streetFilteredList = useMemo(() => {
     let list = mahalleFilteredList;
     if (selectedSokak !== 'HEPSI') {
+      const normTarget = normalizeStreetForCompare(selectedSokak);
       list = list.filter((r) => {
         const st = getRecordStreetInfo(r);
-        return st.sokak === selectedSokak;
+        if (st.sokak === selectedSokak) return true;
+        return normalizeStreetForCompare(st.sokak) === normTarget;
       });
     }
     if (signatureFilter === 'SIGNED') {
@@ -526,6 +538,28 @@ export default function BeneficiaryList({
             >
               Tümü
             </button>
+          </div>
+
+          {/* Hızlı Excel Dışa Aktarma Butonları */}
+          <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-2 border-l border-slate-200">
+            <a
+              href="/api/export?type=batch_by_mahalle&batchId=ALL"
+              download="Edirne_SYDV_Tum_Mahalleler_Sekmeli_Dagitim_Listesi.xlsx"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold transition-all shadow-2xs active:scale-95"
+              title="Tüm hak sahiplerini mahallelere göre ayrı sekmelerde Excel olarak indirin"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Mahallelere Göre İndir</span>
+            </a>
+            <a
+              href="/api/export?type=beneficiaries"
+              download="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-bold transition-all shadow-2xs active:scale-95"
+              title="Tüm hak sahiplerini tek liste halinde Excel olarak indirin"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Tek Liste İndir</span>
+            </a>
           </div>
         </div>
 
@@ -1525,7 +1559,7 @@ export default function BeneficiaryList({
                 <table className="desktop-compact-table">
                   <thead>
                     <tr>
-                      <th className="w-14 text-center">Sıra</th>
+                      <th className="w-[84px] text-center">Sıra</th>
                       <th className="col-hak-sahibi">Hak Sahibi</th>
                       <th className="w-[110px] whitespace-nowrap">T.C. Kimlik</th>
                       <th className="w-[125px] whitespace-nowrap">Telefon</th>
@@ -1552,11 +1586,21 @@ export default function BeneficiaryList({
                       return (
                         <tr key={person.id} className={isPartial ? 'row-incomplete' : ''}>
                           {/* Sıra No & Liste Türü */}
-                          <td className="text-center font-mono font-black w-14">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs whitespace-nowrap">
+                          <td className="text-center font-mono font-black w-[84px]">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black shadow-2xs whitespace-nowrap" title="İmza Sıra No">
                                 #{person.sira_no || person.mahalle_sira || person.id}
                               </span>
+                              {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
+                                <span className="inline-block px-1 py-0.2 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-bold whitespace-nowrap" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
+                                  Mh: #{person.mahalle_sira}
+                                </span>
+                              )}
+                              {(person.excel_sira_no || person.ek_excel_sira) && (
+                                <span className="inline-block px-1 py-0.2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold whitespace-nowrap" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
+                                  Ex: #{person.excel_sira_no || person.ek_excel_sira}
+                                </span>
+                              )}
                               <span
                                 className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded border whitespace-nowrap ${listInfo.badgeClass}`}
                                 title={`${listInfo.folderLabel} (Sıra: #${person.sira_no || person.mahalle_sira || person.id})`}
@@ -1925,6 +1969,16 @@ export default function BeneficiaryList({
                         <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
                           #{person.sira_no || person.mahalle_sira || person.id}
                         </span>
+                        {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
+                          <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
+                            Mh: #{person.mahalle_sira}
+                          </span>
+                        )}
+                        {(person.excel_sira_no || person.ek_excel_sira) && (
+                          <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
+                            Ex: #{person.excel_sira_no || person.ek_excel_sira}
+                          </span>
+                        )}
                         <span
                           className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
                           title={listInfo.folderLabel}

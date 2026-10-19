@@ -609,6 +609,10 @@ export const EDIRNE_MAHALLE_LOOKUP: Record<string, string> = {
   'yıldırım beyazıt': 'Yıldırım Beyazıt Mah.',
   'yildirim haci sarraf': 'Yıldırım Hacı Sarraf Mah.',
   'yıldırım hacı sarraf': 'Yıldırım Hacı Sarraf Mah.',
+  'haci sarraf': 'Yıldırım Hacı Sarraf Mah.',
+  'hacı sarraf': 'Yıldırım Hacı Sarraf Mah.',
+  'ali bey': 'Medrese Ali Bey Mah.',
+  'alibey': 'Medrese Ali Bey Mah.',
 };
 
 /**
@@ -625,25 +629,40 @@ export function normalizeMahalleName(name: string | null | undefined): string {
     return '';
   }
 
-  // If village suffix included
+  // Dates or purely numeric/punctuation tokens are NEVER neighborhoods
+  if (
+    /^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$/.test(clean) ||
+    /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(clean) ||
+    !/[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(clean)
+  ) {
+    return '';
+  }
+
+  // Strip generic district prefixes like "Edirne / Merkez /" or "Merkez -"
+  clean = clean.replace(/^(?:T\.?C\.?\s*)?(?:ED[İI]RNE\s*)?(?:MERKEZ\s*)?[\/,-]?\s*/i, '').trim();
+
+  // If village suffix included, check if it's actually a known mahalle mistakenly labeled as village
   if (/(?:Köyü|Koy|Koyu)$/i.test(clean)) {
     const cleanK = clean.replace(/\s+(?:Köyü|Koy|Koyu)$/i, '').trim();
     const lowerK = cleanK.toLocaleLowerCase('tr-TR');
+    if (EDIRNE_MAHALLE_LOOKUP[lowerK]) {
+      return EDIRNE_MAHALLE_LOOKUP[lowerK];
+    }
     if (EDIRNE_VILLAGE_LOOKUP[lowerK]) {
       return EDIRNE_VILLAGE_LOOKUP[lowerK];
     }
     return toTitleCaseTurkish(cleanK) + ' Köyü';
   }
 
-  // Check known Edirne village lookup
-  const lowerVillage = clean.toLocaleLowerCase('tr-TR').replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)$/i, '').trim();
-  if (EDIRNE_VILLAGE_LOOKUP[lowerVillage]) {
-    return EDIRNE_VILLAGE_LOOKUP[lowerVillage];
+  // Check known Edirne mahalle lookup first (highest priority)
+  const lowerBase = clean.toLocaleLowerCase('tr-TR').replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)$/i, '').trim();
+  if (EDIRNE_MAHALLE_LOOKUP[lowerBase]) {
+    return EDIRNE_MAHALLE_LOOKUP[lowerBase];
   }
 
-  // Check known Edirne mahalle lookup
-  if (EDIRNE_MAHALLE_LOOKUP[lowerVillage]) {
-    return EDIRNE_MAHALLE_LOOKUP[lowerVillage];
+  // Check known Edirne village lookup
+  if (EDIRNE_VILLAGE_LOOKUP[lowerBase]) {
+    return EDIRNE_VILLAGE_LOOKUP[lowerBase];
   }
 
   // Remove existing suffix (supporting both Turkish İ/I and English i/I)
@@ -678,7 +697,22 @@ export function normalizeMahalleName(name: string | null | undefined): string {
 }
 
 /**
- * Detects whether a location is a Mahalle or a Köy, and formats its standard name.
+ * Normalizes street names for resilient filtering (handles "Sokak", "Sok.", "Sk.", "Cad.", "Caddesi", etc.)
+ */
+export function normalizeStreetForCompare(streetName: string | null | undefined): string {
+  if (!streetName) return '';
+  return streetName
+    .toString()
+    .toLocaleLowerCase('tr-TR')
+    .replace(/\b(?:caddesi|cad\.?|cd\.?)\b/g, 'cad')
+    .replace(/\b(?:sokağı|sokagi|sokak|sok\.?|sk\.?)\b/g, 'sok')
+    .replace(/\b(?:bulvarı|bulvari|bulvar|blv\.?)\b/g, 'blv')
+    .replace(/[^a-z0-9çğıöşü]/g, '')
+    .trim();
+}
+
+/**
+ * Detects whether a location is a Mahalle or a Köy, and formats its standard canonical name.
  * Handles inputs from separate columns or embedded within the address.
  * Strictly avoids creating artificial "Merkez Mah."!
  */
@@ -691,39 +725,77 @@ export function detectSettlement(
   let k = (rawKoy || '').toString().trim();
   let addr = (acikAdres || '').toString().trim();
 
+  // Strip generic district prefixes
+  m = m.replace(/^(?:T\.?C\.?\s*)?(?:ED[İI]RNE\s*)?(?:MERKEZ\s*)?[\/,-]?\s*/i, '').trim();
+  k = k.replace(/^(?:T\.?C\.?\s*)?(?:ED[İI]RNE\s*)?(?:MERKEZ\s*)?[\/,-]?\s*/i, '').trim();
+
+  // Dates or purely numeric/punctuation tokens are NEVER neighborhoods (e.g. "09.01.2026", "2026-01-09", "12345")
+  if (
+    /^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$/.test(m) ||
+    /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(m) ||
+    !/[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(m)
+  ) {
+    m = '';
+  }
+  if (
+    /^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$/.test(k) ||
+    /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(k) ||
+    !/[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(k)
+  ) {
+    k = '';
+  }
+
   // "Merkez" is the district, not a neighborhood
   if (/^(?:Edirne\s+)?Merkez(?:\s+Mahallesi|\s+Mah\.?|\s+Mh\.?)?$/i.test(m)) {
     m = '';
   }
+  if (/^(?:Edirne\s+)?Merkez$/i.test(k)) {
+    k = '';
+  }
 
-  // 1. Explicit Village column
-  if (k) {
-    let cleanK = k.replace(/\s+(?:Köyü|Koy|Koyu)$/i, '').trim();
-    if (cleanK && !/^(?:Edirne\s+)?Merkez$/i.test(cleanK)) {
-      const lowerK = cleanK.toLocaleLowerCase('tr-TR');
-      if (EDIRNE_VILLAGE_LOOKUP[lowerK]) return { name: EDIRNE_VILLAGE_LOOKUP[lowerK], type: 'KOY' };
-      return { name: toTitleCaseTurkish(cleanK) + ' Köyü', type: 'KOY' };
+  // 1. Explicit Mahalle column
+  if (m) {
+    const cleanM = m.replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?|Köyü|Koy|Koyu)$/i, '').trim();
+    const lowerM = cleanM.toLocaleLowerCase('tr-TR');
+
+    // 1a. Check known central mahalle lookup
+    if (EDIRNE_MAHALLE_LOOKUP[lowerM]) return { name: EDIRNE_MAHALLE_LOOKUP[lowerM], type: 'MAHALLE' };
+
+    // 1b. Check if user put a village in the mahalle column
+    if (EDIRNE_VILLAGE_LOOKUP[lowerM] || /(?:Köyü|Koy|Koyu)$/i.test(m)) {
+      const vName = EDIRNE_VILLAGE_LOOKUP[lowerM] || toTitleCaseTurkish(cleanM) + ' Köyü';
+      return { name: vName, type: 'KOY' };
     }
   }
 
-  // 2. Explicit Mahalle column
-  if (m) {
-    if (/(?:Köyü|Koy|Koyu)$/i.test(m)) {
-      let cleanK = m.replace(/\s+(?:Köyü|Koy|Koyu)$/i, '').trim();
-      const lowerK = cleanK.toLocaleLowerCase('tr-TR');
-      if (EDIRNE_VILLAGE_LOOKUP[lowerK]) return { name: EDIRNE_VILLAGE_LOOKUP[lowerK], type: 'KOY' };
+  // 2. Village / Settlement Column (Handles "Köy" or combined "Mahalle / Köy" columns)
+  if (k) {
+    const cleanK = k.replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?|Köyü|Koy|Koyu)$/i, '').trim();
+    const lowerK = cleanK.toLocaleLowerCase('tr-TR');
+
+    // CRITICAL FIX: If column had a central neighborhood name, DO NOT treat it as a village!
+    if (EDIRNE_MAHALLE_LOOKUP[lowerK]) {
+      return { name: EDIRNE_MAHALLE_LOOKUP[lowerK], type: 'MAHALLE' };
+    }
+
+    // Check if known village
+    if (EDIRNE_VILLAGE_LOOKUP[lowerK]) {
+      return { name: EDIRNE_VILLAGE_LOOKUP[lowerK], type: 'KOY' };
+    }
+
+    // Only if explicitly ends with "Köyü" or matches neither, treat as village
+    if (/(?:Köyü|Koy|Koyu)$/i.test(k)) {
       return { name: toTitleCaseTurkish(cleanK) + ' Köyü', type: 'KOY' };
     }
-    const lowerM = m.toLocaleLowerCase('tr-TR').replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)$/i, '').trim();
-    if (EDIRNE_VILLAGE_LOOKUP[lowerM]) return { name: EDIRNE_VILLAGE_LOOKUP[lowerM], type: 'KOY' };
-    if (EDIRNE_MAHALLE_LOOKUP[lowerM]) return { name: EDIRNE_MAHALLE_LOOKUP[lowerM], type: 'MAHALLE' };
-    const normM = normalizeMahalleName(m);
-    if (normM) return { name: normM, type: 'MAHALLE' };
+
+    // Fallback: If not recognized as a village and no village suffix, format as Mahalle
+    return { name: toTitleCaseTurkish(cleanK) + ' Mah.', type: 'MAHALLE' };
   }
 
   // 3. Inspect open address
   if (addr) {
-    const cleanAddr = addr.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+    let cleanAddr = addr.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+    cleanAddr = cleanAddr.replace(/^(?:T\.?C\.?\s*)?(?:ED[İI]RNE\s*)?(?:MERKEZ\s*)?[\/,-]?\s*/i, '').trim();
 
     // 3a. Specifically check 100. Yıl or Yıl Mahallesi in open address
     if (
@@ -733,24 +805,27 @@ export function detectSettlement(
       return { name: '100. Yıl Mah.', type: 'MAHALLE' };
     }
 
-    // 3b. Check if first word of address is a known Edirne village
-    const words = cleanAddr.split(/\s+/);
-    const firstWordClean = (words[0] || '').toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü]/g, '');
-    if (EDIRNE_VILLAGE_LOOKUP[firstWordClean]) {
-      return { name: EDIRNE_VILLAGE_LOOKUP[firstWordClean], type: 'KOY' };
+    // 3b. Numbered neighborhood check in open address e.g. "1. Murat Mah."
+    const numMahMatch = cleanAddr.match(/(?:^|[,\s;\/])(\d{1,3}\.?\s+[A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)\b/i);
+    if (numMahMatch && numMahMatch[1].trim().length > 1) {
+      const cand = numMahMatch[1].trim().toLocaleLowerCase('tr-TR');
+      if (EDIRNE_MAHALLE_LOOKUP[cand]) return { name: EDIRNE_MAHALLE_LOOKUP[cand], type: 'MAHALLE' };
+      const nm = normalizeMahalleName(numMahMatch[1].trim());
+      if (nm) return { name: nm, type: 'MAHALLE' };
     }
 
-    // 3c. Check if first words match a known Edirne neighborhood
-    const firstTwoWords = `${firstWordClean} ${(words[1] || '').toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü]/g, '')}`.trim();
-    if (EDIRNE_MAHALLE_LOOKUP[firstTwoWords]) {
-      return { name: EDIRNE_MAHALLE_LOOKUP[firstTwoWords], type: 'MAHALLE' };
-    }
-    if (EDIRNE_MAHALLE_LOOKUP[firstWordClean]) {
-      return { name: EDIRNE_MAHALLE_LOOKUP[firstWordClean], type: 'MAHALLE' };
+    // 3c. General neighborhood check in open address (matching up to 3 words before Mah./Mh.)
+    const mahMatch = cleanAddr.match(/(?:^|[,\s;\/])([A-Za-z0-9ÇŞĞÜÖİçşğüöı]{2,20}(?:\s+[A-Za-z0-9ÇŞĞÜÖİçşğüöı]{2,20}){0,2})\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)\b/i);
+    if (mahMatch && mahMatch[1].trim().length > 1) {
+      const candidate = mahMatch[1].trim().replace(/^(?:Edirne\s+)?(?:Merkez\s+)?/i, '').replace(/^[,\s.-]+/, '');
+      const candLower = candidate.toLocaleLowerCase('tr-TR');
+      if (EDIRNE_MAHALLE_LOOKUP[candLower]) return { name: EDIRNE_MAHALLE_LOOKUP[candLower], type: 'MAHALLE' };
+      const nm = normalizeMahalleName(candidate);
+      if (nm) return { name: nm, type: 'MAHALLE' };
     }
 
     // 3d. Check explicit "X Köyü" in open address
-    const koyMatch = cleanAddr.match(/([A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:Köyü|Koyu|Köy\b)/i);
+    const koyMatch = cleanAddr.match(/([A-Za-zÇŞĞÜÖİçşğüöı\s]{2,25}?)\s+(?:Köyü|Koyu|Köy\b)/i);
     if (koyMatch && koyMatch[1].trim().length > 1) {
       const cand = koyMatch[1].trim().toLocaleLowerCase('tr-TR');
       if (EDIRNE_VILLAGE_LOOKUP[cand]) return { name: EDIRNE_VILLAGE_LOOKUP[cand], type: 'KOY' };
@@ -764,33 +839,39 @@ export function detectSettlement(
       if (EDIRNE_VILLAGE_LOOKUP[cand]) return { name: EDIRNE_VILLAGE_LOOKUP[cand], type: 'KOY' };
     }
 
-    // 3f. Numbered neighborhood check in open address e.g. "1. Murat Mah."
-    const numMahMatch = cleanAddr.match(/(?:^|[,\s;])(\d{1,3}\.?\s+[A-Za-zÇŞĞÜÖİçşğüöı\s]+?)\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)\b/i);
-    if (numMahMatch && numMahMatch[1].trim().length > 1) {
-      const cand = numMahMatch[1].trim().toLocaleLowerCase('tr-TR');
-      if (EDIRNE_MAHALLE_LOOKUP[cand]) return { name: EDIRNE_MAHALLE_LOOKUP[cand], type: 'MAHALLE' };
-      const nm = normalizeMahalleName(numMahMatch[1].trim());
-      if (nm) return { name: nm, type: 'MAHALLE' };
-    }
-
-    // 3g. General neighborhood check in open address e.g. "Barutluk Mah."
-    const mahMatch = cleanAddr.match(/(?:^|[,\s;])([A-Za-z0-9ÇŞĞÜÖİçşğüöı\s.]+?)\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)\b/i);
-    if (mahMatch && mahMatch[1].trim().length > 1) {
-      const candidate = mahMatch[1].trim().replace(/^[,\s.-]+/, '');
-      const candLower = candidate.toLocaleLowerCase('tr-TR');
-      if (EDIRNE_MAHALLE_LOOKUP[candLower]) return { name: EDIRNE_MAHALLE_LOOKUP[candLower], type: 'MAHALLE' };
-      const nm = normalizeMahalleName(candidate);
-      if (nm) return { name: nm, type: 'MAHALLE' };
-    }
-
-    // 3h. Search whole address for known Edirne village or neighborhood names
+    // 3f. Search whole address for known Edirne central neighborhoods (Longest names first to prevent partial hijacking)
     const lowerAddr = cleanAddr.toLocaleLowerCase('tr-TR');
-    for (const [vKey, vVal] of Object.entries(EDIRNE_VILLAGE_LOOKUP)) {
-      if (lowerAddr.includes(vKey)) return { name: vVal, type: 'KOY' };
+    const sortedMahalles = Object.entries(EDIRNE_MAHALLE_LOOKUP).sort((a, b) => b[0].length - a[0].length);
+    for (const [mKey, mVal] of sortedMahalles) {
+      // Word boundary regex
+      const wordReg = new RegExp(`(?:^|[^a-z0-9çğıöşü])${mKey.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}(?:$|[^a-z0-9çğıöşü])`, 'i');
+      if (wordReg.test(lowerAddr)) {
+        // Disambiguation for "meydan": don't trigger if it's "meydan sokak" or "meydan caddesi"
+        if (mKey === 'meydan' && /(?:meydan[ıi]?\s+(?:cad|sok|sk|mevki)|meydan\s+(?:cad|sok|sk|mevki))/i.test(lowerAddr)) {
+          continue;
+        }
+        return { name: mVal, type: 'MAHALLE' };
+      }
     }
-    for (const [mKey, mVal] of Object.entries(EDIRNE_MAHALLE_LOOKUP)) {
-      if (lowerAddr.includes(mKey)) return { name: mVal, type: 'MAHALLE' };
+
+    // 3g. Search whole address for known Edirne villages
+    const sortedVillages = Object.entries(EDIRNE_VILLAGE_LOOKUP).sort((a, b) => b[0].length - a[0].length);
+    for (const [vKey, vVal] of sortedVillages) {
+      const wordReg = new RegExp(`(?:^|[^a-z0-9çğıöşü])${vKey.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}(?:$|[^a-z0-9çğıöşü])`, 'i');
+      if (wordReg.test(lowerAddr)) {
+        return { name: vVal, type: 'KOY' };
+      }
     }
+  }
+
+  // 4. Fallback to m or k if address inspection did not yield a result
+  if (m) {
+    const normM = normalizeMahalleName(m);
+    if (normM) return { name: normM, type: 'MAHALLE' };
+  }
+  if (k) {
+    const cleanK = k.replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?|Köyü|Koy|Koyu)$/i, '').trim();
+    if (cleanK) return { name: toTitleCaseTurkish(cleanK) + ' Köyü', type: 'KOY' };
   }
 
   return { name: 'Genel (Belirtilmemiş)', type: 'MAHALLE' };

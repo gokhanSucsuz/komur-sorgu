@@ -200,10 +200,15 @@ export async function POST(request: NextRequest) {
 
     // Sigortalılar listesi için mahalle bazında önceden kayıtlı kişi sayısını tespit et
     const existingMahalleSigortaliCountMap = new Map<string, number>();
+    // Tüm kayıtlar için mahalle bazında önceden kayıtlı kişi sayısını tespit et (kesintisiz mahalle sırası için)
+    const existingMahalleTotalCountMap = new Map<string, number>();
+
     for (const b of existingList) {
       const rawM = b.mahalle ? b.mahalle.trim() : '';
       if (!rawM) continue;
-      const m = normalizeMahalleName(rawM);
+      const m = normalizeMahalleName(rawM) || rawM;
+      existingMahalleTotalCountMap.set(m, (existingMahalleTotalCountMap.get(m) || 0) + 1);
+
       const isSig =
         b.liste_turu === 'SIGORTALI' ||
         b.ek_liste_adi === 'Sigortalılar Listesi' ||
@@ -314,13 +319,16 @@ export async function POST(request: NextRequest) {
       const displayPhoneLog = phones.length > 1 ? phones.join(' / ') : telefon;
 
       // Settlement detection: Mahalle or Köy (fallback to sheet name on multi-sheet workbooks)
-      let rawMahalle = getField(['mahalle', 'mahalle adi', 'mah', 'mh']);
-      const rawKoy = getField(['koy', 'koyu', 'koy adi', 'koyu adi', 'koy/mahalle', 'mahalle/koy', 'yerlesim', 'belde']);
+      let rawMahalle = getField(['mahalle', 'mahalle adi', 'mahalle/koy', 'koy/mahalle', 'ikametgah mahallesi', 'yerlesim yeri', 'yerlesim', 'semt', 'bolge', 'mah', 'mh']);
+      const rawKoy = getField(['koy', 'koyu', 'koy adi', 'koyu adi', 'belde']);
       if (
         !rawMahalle &&
         !rawKoy &&
         sheetName &&
-        !/^(sayfa\s*\d*|sheet\s*\d*|hak\s*sahipleri|genel\s*liste|liste|tablo\s*\d*)$/i.test(cleanTurkishText(sheetName))
+        !/^(sayfa\s*\d*|sheet\s*\d*|hak\s*sahipleri|genel\s*liste|liste|tablo\s*\d*|ek\s*\d*|ek\s*liste.*)$/i.test(cleanTurkishText(sheetName)) &&
+        !/^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$/.test(sheetName.trim()) &&
+        !/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(sheetName.trim()) &&
+        /[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(sheetName)
       ) {
         rawMahalle = sheetName;
       }
@@ -709,7 +717,7 @@ export async function POST(request: NextRequest) {
       // doğrudan geçerli hak sahibi olarak sisteme eklenir.
 
       // Passed all checks!
-      const targetMahalle = mahalle || 'Genel (Belirtilmemiş)';
+      const targetMahalle = normalizeMahalleName(mahalle) || mahalle || 'Genel (Belirtilmemiş)';
       const batchItem: BatchRecordInfo = {
         rowNum,
         ad_soyad: adSoyad,
@@ -750,9 +758,13 @@ export async function POST(request: NextRequest) {
         existingAddressMap.get(normAdres)!.push(recordInfo);
       }
 
-      // Mahalle bazında sıra numarası belirleme (Her mahalle kendi içinde 1'den başlar; önceden kayıt varsa Ek1 - 1, Ek1 - 2...)
+      // Mahalle bazında sıra numarası belirleme (Her mahalle kendi içinde sıralı; önceden kayıt varsa kesintisiz devam eder)
       const counter = (mahalleCounters.get(targetMahalle) || 0) + 1;
       mahalleCounters.set(targetMahalle, counter);
+
+      const existingTotalInMahalle = existingMahalleTotalCountMap.get(targetMahalle) || 0;
+      const mahalleSira = existingTotalInMahalle + counter;
+      const excelSiraNo = totalRows; // Yüklenen dosyadaki orijinal excel satır/kayıt sırası
 
       const existingData = existingMahalleEkMap.get(targetMahalle);
       let siraNo: string;
@@ -777,7 +789,7 @@ export async function POST(request: NextRequest) {
       } else {
         // STANDART (Otomatik: ilk yükleme Ana Liste, sonraki Ek Liste)
         if (!existingData || !existingData.hasRecords) {
-          siraNo = String(counter);
+          siraNo = String(mahalleSira);
           ekListeNo = 0;
           ekListeAdi = 'Ana Liste';
           recordListeTuru = 'ANA_LISTE';
@@ -795,7 +807,9 @@ export async function POST(request: NextRequest) {
         dosya_adi: file.name,
         liste_turu: recordListeTuru,
         sira_no: siraNo,
-        mahalle_sira: counter,
+        mahalle_sira: mahalleSira,
+        excel_sira_no: excelSiraNo,
+        ek_excel_sira: counter,
         ek_liste_no: ekListeNo,
         ek_liste_adi: ekListeAdi,
         tc_no: tcNo,

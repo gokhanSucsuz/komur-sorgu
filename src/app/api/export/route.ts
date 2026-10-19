@@ -871,18 +871,39 @@ export async function GET(request: NextRequest) {
         // Sort within neighborhood naturally by order number
         group.sort(compareBySiraNo);
 
+        let groupTargetTorba = 0;
+        let groupDeliveredTorba = 0;
+
         const sheetRows = group.map((r: any, idx: number) => {
           const phones = extractPhoneNumbers(r.telefon, r.telefon2);
           const phoneStr = phones.length > 0 ? phones.join(' / ') : (r.telefon || '-');
+          const target = Number(r.hedef_torba || 34);
+          const delivered = Number(r.torba_sayisi || 0);
+          groupTargetTorba += target;
+          groupDeliveredTorba += delivered;
+
+          const durumText = r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI'
+            ? 'Teslim Edildi'
+            : (r.teslimat_durumu === 'EKSIK' ? `Eksik (${delivered}/${target})` : 'Bekliyor');
+
+          const listeTuruText = r.liste_turu === 'SIGORTALI'
+            ? 'Sigortalılar Listesi'
+            : (r.liste_turu === 'EK_LISTE' ? (r.ek_liste_adi || 'Ek Liste') : 'Ana Liste');
 
           return {
             'Sıra': idx + 1,
-            'İmza Sırası': r.sira_no || r.mahalle_sira || idx + 1,
+            'İmza Sıra No': r.sira_no || '-',
+            'Mahalle Sırası': r.mahalle_sira || idx + 1,
+            'Ek Excel Sırası': r.excel_sira_no || r.ek_excel_sira || '-',
+            'Liste Türü': listeTuruText,
             'Hane No': r.hane_no || '-',
             'TC Kimlik No': r.tc_no,
             'Adı Soyadı': r.ad_soyad,
             'Telefon': phoneStr,
             'Açık Adres': r.acik_adres || '-',
+            'Hedef (Torba)': target,
+            'Teslim (Torba)': delivered,
+            'Durum': durumText,
           };
         });
 
@@ -890,30 +911,42 @@ export async function GET(request: NextRequest) {
         if (sheetRows.length > 0) {
           sheetRows.push({
             'Sıra': '' as any,
-            'İmza Sırası': '',
+            'İmza Sıra No': '',
+            'Mahalle Sırası': '',
+            'Ek Excel Sırası': '',
+            'Liste Türü': '',
             'Hane No': '',
             'TC Kimlik No': `TOPLAM: ${group.length} Hane`,
             'Adı Soyadı': '',
             'Telefon': '',
             'Açık Adres': '',
+            'Hedef (Torba)': groupTargetTorba,
+            'Teslim (Torba)': groupDeliveredTorba,
+            'Durum': '',
           });
         }
 
         const mahColWidths = [
           { wch: 8 },  // Sıra
-          { wch: 14 }, // İmza Sırası
-          { wch: 14 }, // Hane No
+          { wch: 14 }, // İmza Sıra No
+          { wch: 14 }, // Mahalle Sırası
+          { wch: 14 }, // Ek Excel Sırası
+          { wch: 18 }, // Liste Türü
+          { wch: 12 }, // Hane No
           { wch: 18 }, // TC Kimlik No
           { wch: 28 }, // Adı Soyadı
           { wch: 20 }, // Telefon
-          { wch: 50 }, // Açık Adres
+          { wch: 45 }, // Açık Adres
+          { wch: 14 }, // Hedef
+          { wch: 14 }, // Teslim
+          { wch: 18 }, // Durum
         ];
 
         const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
         addStyledWorksheet(
           workbook,
           `KÖMÜR YARDIMI DAĞITIM VE İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`,
-          `Dosya: ${dosyaAdi} | Mahalle/Köy: ${mahName} | Toplam: ${group.length} Hane`,
+          `Dosya: ${dosyaAdi} | Mahalle/Köy: ${mahName} | Toplam: ${group.length} Hane | Hedef: ${groupTargetTorba} Torba | Teslim Edilen: ${groupDeliveredTorba} Torba`,
           safeSheetName,
           sheetRows,
           mahColWidths
