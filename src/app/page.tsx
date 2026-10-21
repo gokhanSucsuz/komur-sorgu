@@ -126,15 +126,18 @@ export default function Home() {
     if (reason) {
       setSessionTerminatedReason(reason);
     }
-    const savedUsername = typeof window !== 'undefined' ? localStorage.getItem('komur_username') : '';
-    const savedToken = typeof window !== 'undefined' ? localStorage.getItem('komur_session_token') : '';
+    const savedUsername = typeof window !== 'undefined' ? (getSecureItem('komur_username') || localStorage.getItem('komur_username') || '') : '';
+    const savedToken = typeof window !== 'undefined' ? (getSecureItem('komur_session_token') || localStorage.getItem('komur_session_token') || '') : '';
 
     // If manual logout, clear active session on server
     if (!reason && savedUsername && savedToken) {
       try {
         fetch('/api/auth', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-session-token': savedToken,
+          },
           body: JSON.stringify({
             action: 'logout',
             username: savedUsername,
@@ -152,6 +155,7 @@ export default function Home() {
     setUserPartners([]);
     if (typeof window !== 'undefined') {
       removeSecureItem('komur_logged_in');
+      removeSecureItem('komur_login_time');
       removeSecureItem('komur_user_role');
       removeSecureItem('komur_user_name');
       removeSecureItem('komur_username');
@@ -175,12 +179,12 @@ export default function Home() {
     setOverallStats(null);
   }, []);
 
-  // Single Device & 24h TTL Session Heartbeat & Verification
+  // Single Device & 6h TTL Session Heartbeat & Verification
   const checkActiveSession = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    const savedLogin = localStorage.getItem('komur_logged_in');
-    const savedUsername = localStorage.getItem('komur_username');
-    const savedToken = localStorage.getItem('komur_session_token');
+    const savedLogin = getSecureItem('komur_logged_in') || localStorage.getItem('komur_logged_in');
+    const savedUsername = getSecureItem('komur_username') || localStorage.getItem('komur_username');
+    const savedToken = getSecureItem('komur_session_token') || localStorage.getItem('komur_session_token');
 
     if (savedLogin !== 'true') return;
 
@@ -192,7 +196,10 @@ export default function Home() {
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': savedToken,
+        },
         body: JSON.stringify({
           action: 'verify',
           username: savedUsername,
@@ -210,7 +217,7 @@ export default function Home() {
         ) {
           handleLogout(
             data.error ||
-              'Bu kullanıcı adı ile başka bir cihazdan oturum açıldı veya 24 saatlik oturum süreniz doldu!'
+              'Bu kullanıcı adı ile başka bir cihazdan oturum açıldı veya 6 saatlik oturum süreniz doldu!'
           );
         }
       } else if (data.user) {
@@ -241,6 +248,7 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       migrateSensitiveStorageKeys();
       const savedLogin = getSecureItem('komur_logged_in');
+      const savedLoginTime = getSecureItem('komur_login_time');
       const savedRole = getSecureItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
       const savedName = getSecureItem('komur_user_name');
       const savedUsername = getSecureItem('komur_username');
@@ -251,6 +259,17 @@ export default function Home() {
         const parsed = JSON.parse(getSecureItem('komur_user_partners') || '[]');
         if (Array.isArray(parsed)) savedPartners = parsed;
       } catch (e) {}
+
+      // Fast client-side session timeout check (6 hours = 6 * 60 * 60 * 1000 ms)
+      const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+      if (savedLoginTime && !isNaN(Number(savedLoginTime))) {
+        const elapsed = Date.now() - Number(savedLoginTime);
+        if (elapsed > SIX_HOURS_MS) {
+          handleLogout('Kurumsal güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.');
+          setIsAuthChecking(false);
+          return;
+        }
+      }
 
       if (savedLogin === 'true' && savedRole && savedName && savedToken) {
         setIsLoggedIn(true);
@@ -270,7 +289,7 @@ export default function Home() {
       }
       setIsAuthChecking(false);
     }
-  }, [checkActiveSession]);
+  }, [checkActiveSession, handleLogout]);
 
   // Heartbeat timer & mobile foreground resume listener for single device session checking
   useEffect(() => {
@@ -318,6 +337,7 @@ export default function Home() {
     setIsLoggedIn(true);
     setSessionTerminatedReason(null);
     setSecureItem('komur_logged_in', 'true');
+    setSecureItem('komur_login_time', Date.now().toString());
     setSecureItem('komur_user_role', user.role);
     setSecureItem('komur_user_name', user.name);
     setSecureItem('komur_username', user.username);
@@ -400,6 +420,11 @@ export default function Home() {
         limit: '0'
       });
       const res = await fetch(`/api/beneficiaries?${params.toString()}`);
+      if (res.status === 401) {
+        const errData = await res.json().catch(() => ({}));
+        handleLogout(errData.error || 'Kurumsal güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.');
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         const records = data.data || [];

@@ -71,7 +71,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
       title: '1. Sisteme Giriş, 2FA Doğrulama ve Tek Cihaz Oturumu',
       badge: 'GÜVENLİK',
       badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-      description: 'Sistem kullanıcı rolleri, Google Authenticator 2FA, 24 saatlik oturum süresi ve tek cihaz güvenliği.',
+      description: 'Sistem kullanıcı rolleri, Google Authenticator 2FA, 6 saatlik oturum süresi ve tek cihaz güvenliği.',
       content: (
         <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
           <p>
@@ -104,9 +104,9 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <h5 className="font-extrabold text-xs text-rose-950">Önemli Güvenlik Kuralı: Tek Cihaz Oturumu ve 24 Saatlik Süre</h5>
+                <h5 className="font-extrabold text-xs text-rose-950">Önemli Güvenlik Kuralı: Tek Cihaz Oturumu ve 6 Saatlik Süre</h5>
                 <p className="text-[11px] text-rose-800 mt-1">
-                  Aynı kullanıcı adı ve şifre ile <strong>yalnızca 1 cihaz</strong> aynı anda sisteme giriş yapabilir. Yeni bir cihazdan giriş yapıldığında önceki cihazdaki oturum otomatik sonlandırılır. Ayrıca tüm oturumlar sunucu tarafında <strong>24 saat sonunda</strong> otomatik olarak zaman aşımına uğrar.
+                  Aynı kullanıcı adı ve şifre ile <strong>yalnızca 1 cihaz</strong> aynı anda sisteme giriş yapabilir. Yeni bir cihazdan giriş yapıldığında önceki cihazdaki oturum otomatik sonlandırılır. Ayrıca tüm oturumlar sunucu tarafında <strong>6 saat sonunda</strong> otomatik olarak zaman aşımına uğrar.
                 </p>
               </div>
             </div>
@@ -641,7 +641,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                 <div className="pt-1 flex flex-wrap gap-1.5">
                   <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-bold">AES-256-GCM</span>
                   <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold">2FA (TOTP)</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">24s Mutlak Oturum</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">6s Mutlak Oturum</span>
                 </div>
               </div>
               <div className="shrink-0 text-center px-3 py-2 rounded-xl bg-blue-950 text-white border border-blue-800">
@@ -725,7 +725,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                       <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black">ONAYLI</span>
                     </td>
                     <td className="py-2.5 px-3.5">
-                      MongoDB tabanlı sunucular arası <strong>Dağıtık Brute-Force Koruması</strong> (<code>security_rate_limits</code>), <strong>24 Saatlik Mutlak Oturum Süresi (TTL)</strong>, tek aktif cihaz kilidi ve <strong>CSP / HSTS</strong> güvenlik başlıkları aktiftir.
+                      MongoDB tabanlı sunucular arası <strong>Dağıtık Brute-Force Koruması</strong> (<code>security_rate_limits</code>), <strong>6 Saatlik Mutlak Oturum Süresi (TTL)</strong>, tek aktif cihaz kilidi ve <strong>CSP / HSTS</strong> güvenlik başlıkları aktiftir.
                     </td>
                   </tr>
                   <tr className="border-b border-slate-100 bg-slate-50/60">
@@ -835,7 +835,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                       <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black">ONAYLI</span>
                     </td>
                     <td className="py-2.5 px-3.5">
-                      <code>visibilitychange</code> ve <code>focus</code> dinleyicileri sayesinde personel telefonu cebinden çıkarıp ekranı açtığı salisede 24 saatlik oturum süresi, çevrimdışı kuyruk ve <strong>Rota Modu Kilidi</strong> anında güncellenir.
+                      <code>visibilitychange</code> ve <code>focus</code> dinleyicileri sayesinde personel telefonu cebinden çıkarıp ekranı açtığı salisede 6 saatlik oturum süresi, çevrimdışı kuyruk ve <strong>Rota Modu Kilidi</strong> anında güncellenir.
                     </td>
                   </tr>
                   <tr>

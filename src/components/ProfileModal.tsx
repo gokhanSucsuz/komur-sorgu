@@ -403,7 +403,7 @@ export default function ProfileModal({
 
           <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
             <Smartphone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Bu cihazda tek aktif oturum (24 saat süreli) yetkilendirilmiştir.</span>
+            <span>Bu cihazda tek aktif oturum (6 saat süreli) yetkilendirilmiştir.</span>
           </div>
         </div>
 

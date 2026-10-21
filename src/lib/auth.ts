@@ -3,10 +3,10 @@ import { getDbCollections, mapDoc } from './mongodb';
 import { timingSafeTokenEqual } from './crypto';
 
 /**
- * Kurumsal Mutlak Oturum Süresi: 24 Saat (Milisaniye ve Saniye)
+ * Kurumsal Mutlak Oturum Süresi: 6 Saat (Milisaniye ve Saniye)
  */
-export const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-export const SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
+export const SESSION_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+export const SESSION_MAX_AGE_SECONDS = 6 * 60 * 60;
 
 export function isSessionExpired(lastLoginAt: string | null | undefined): boolean {
   if (!lastLoginAt) return false;
@@ -56,7 +56,7 @@ export function clearSessionMicroCache(token?: string) {
 }
 
 /**
- * Verifies active single-device session, 24h absolute session TTL, and role against MongoDB
+ * Verifies active single-device session, 6h absolute session TTL, and role against MongoDB
  */
 export async function verifySession(
   request: NextRequest,
@@ -128,7 +128,7 @@ export async function verifySession(
       };
     }
 
-    // Enforce 24-hour institutional absolute session TTL
+    // Enforce 6-hour institutional absolute session TTL
     if (isSessionExpired(rawUser.last_login_at)) {
       sessionMicroCache.delete(token);
       await usersCol.updateOne(
@@ -141,7 +141,7 @@ export async function verifySession(
           {
             success: false,
             code: 'SESSION_TERMINATED',
-            error: 'Kurumsal güvenlik politikası gereği 24 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+            error: 'Kurumsal güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
           },
           { status: 401 }
         ),

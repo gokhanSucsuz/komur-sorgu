@@ -298,6 +298,7 @@ export function migrateSensitiveStorageKeys(): void {
     'komur_user_partners',
     'komur_session_token',
     'komur_logged_in',
+    'komur_login_time',
   ];
 
   for (const key of sensitiveKeys) {

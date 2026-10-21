@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action');
 
-    // 1. Session Verification for Single Device Checking & 24h TTL (GET)
+    // 1. Session Verification for Single Device Checking & 6h TTL (GET)
     if (action === 'verify') {
       const username = (searchParams.get('username') || '').trim();
       const sessionToken = (searchParams.get('session_token') || '').trim();
@@ -120,14 +120,14 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Enforce 24-hour absolute server-side session expiration
+      // Enforce 6-hour absolute server-side session expiration
       if (isSessionExpired(rawUser.last_login_at)) {
         return NextResponse.json(
           {
             success: false,
             valid: false,
             code: 'SESSION_EXPIRED',
-            error: 'Güvenlik politikası gereği 24 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+            error: 'Güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
           },
           { status: 401 }
         );
@@ -264,14 +264,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Enforce 24-hour absolute session TTL
+      // Enforce 6-hour absolute session TTL
       if (isSessionExpired(rawUser.last_login_at)) {
         return NextResponse.json(
           {
             success: false,
             valid: false,
             code: 'SESSION_EXPIRED',
-            error: 'Güvenlik politikası gereği 24 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+            error: 'Güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
           },
           { status: 401 }
         );
@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Ensure HttpOnly Secure cookie stays synchronized with valid active session token (24h maxAge)
+      // Ensure HttpOnly Secure cookie stays synchronized with valid active session token (6h maxAge)
       res.cookies.set('komur_session_token', targetToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -1071,7 +1071,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Set HttpOnly Secure session cookie (24-hour TTL matching server enforcement)
+    // Set HttpOnly Secure session cookie (6-hour TTL matching server enforcement)
     res.cookies.set('komur_session_token', newSessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
