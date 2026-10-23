@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   title: "Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı - Kömür Dağıtım ve Sorgulama Sistemi",
   description: "T.C. Edirne Valiliği - Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı Kömür Dağıtım, Sorgulama ve Saha Takip Sistemi",
   manifest: "/manifest.json",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

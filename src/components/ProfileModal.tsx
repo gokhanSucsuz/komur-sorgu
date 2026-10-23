@@ -290,8 +290,12 @@ export default function ProfileModal({
     }
 
     if (newPassword.trim()) {
-      if (newPassword.trim().length < 4) {
-        setErrorMsg('Yeni şifreniz en az 4 karakter / rakam olmalıdır.');
+      if (newPassword.trim().length < 8) {
+        setErrorMsg('Yeni şifreniz en az 8 karakter uzunluğunda olmalı ve harf ile rakam içermelidir.');
+        return;
+      }
+      if (!/[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+        setErrorMsg('Yeni şifre en az bir harf ve bir rakam içermelidir.');
         return;
       }
       if (newPassword.trim() !== confirmPassword.trim()) {
@@ -759,8 +763,8 @@ export default function ProfileModal({
             {/* Yeni Şifre */}
             <div>
               <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                Yeni Şifre / PIN{' '}
-                <span className="text-slate-400 font-normal">(Değiştirmek istemiyorsanız boş bırakın)</span>
+                Yeni Şifre{' '}
+                <span className="text-slate-400 font-normal">(En az 8 karakter, harf ve rakam - opsiyonel)</span>
               </label>
               <div className="relative">
                 <input

@@ -3,6 +3,7 @@ import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog } f
 import { encryptShift, encryptField } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString, isSafeId } from '@/lib/security';
 
 function calculateMinutes(start: string, end: string): number {
   if (!start || !end) return 0;
@@ -357,8 +358,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching shifts:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('shifts:GET', error);
   }
 }
 
@@ -621,8 +621,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Geçersiz işlem (action)' }, { status: 400 });
   } catch (error: any) {
-    console.error('Error saving shift:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('shifts:POST', error);
   }
 }
 
@@ -718,8 +717,7 @@ export async function PUT(request: NextRequest) {
       shift: mapDoc(updated),
     });
   } catch (error: any) {
-    console.error('Error updating shift:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('shifts:PUT', error);
   }
 }
 
@@ -733,10 +731,10 @@ export async function DELETE(request: NextRequest) {
 
     const { workShifts: shiftsCol } = await getDbCollections();
     const body = await request.json();
-    const { id } = body;
+    const id = asString(body.id, 64);
 
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Mesai ID zorunludur' }, { status: 400 });
+    if (!id || !isSafeId(id)) {
+      return NextResponse.json({ success: false, error: 'Mesai ID zorunludur veya geçersiz' }, { status: 400 });
     }
 
     const rawExisting = await shiftsCol.findOne(buildIdFilter(id));
@@ -763,7 +761,6 @@ export async function DELETE(request: NextRequest) {
       message: 'Çalışma saati kaydı silindi.',
     });
   } catch (error: any) {
-    console.error('Error deleting shift:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('shifts:DELETE', error);
   }
 }

@@ -15,40 +15,96 @@ import { cleanTcNo, cleanHaneKey, normalizeAddress } from './normalizer';
  * erişmesi matematiksel olarak imkansızdır.
  */
 
-const DEFAULT_FALLBACK_KEY = 'acb6847010f6d2060e9fc8d875300e51d549e8732c4be718123746c231789ad9';
-const DEFAULT_FALLBACK_BLIND_KEY = 'aa1f4c899c6f92db4dba712e678e3a908ff06aaadb57a7a578d2d958c0440782';
+/**
+ * ANAHTAR YÖNETİMİ (Fail-Closed)
+ *
+ * Şifreleme anahtarları ASLA kaynak kodda bulunmaz; yalnızca ortam değişkenlerinden okunur:
+ *  - ENCRYPTION_MASTER_KEY : 64 karakter hex (256-bit) AES-GCM anahtarı
+ *  - BLIND_INDEX_KEY       : 64 karakter hex (256-bit) HMAC-SHA256 kör dizin anahtarı
+ *  - ENCRYPTION_MASTER_KEY_PREVIOUS (opsiyonel): anahtar rotasyonu sırasında eski anahtar (yalnızca çözme için)
+ *
+ * Anahtar tanımlı değilse uygulama sessizce varsayılan bir anahtara DÖNMEZ; işlem hata ile durdurulur.
+ * Tek istisna: geliştirme ortamında (NODE_ENV!=='production') VE gerçek veritabanı bağlantısı yokken
+ * (bellek içi geçici mod) süreç ömürlü rastgele anahtar üretilir.
+ *
+ * Anahtar üretmek için:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ */
 
-let hasWarnedMissingEnvKey = false;
+/**
+ * Daha önce kaynak kodda yayımlanmış (dolayısıyla ele geçirilmiş kabul edilen) anahtarların parmak izleri.
+ * Anahtarların kendisi tutulmaz; yalnızca SHA-256 parmak izi saklanır.
+ */
+const COMPROMISED_KEY_FINGERPRINTS = new Set<string>([
+  'eec7d445b75b1389a623a4309f693d8b749541b684e5af228f1e4dd46f5e0e7c',
+  'a360aac9bdffa1cf89ad96b8f0d07c364d36ce918dcb68ad7afde93874c421eb',
+]);
 
-function warnIfProductionFallbackKeyUsed() {
-  if (
-    !hasWarnedMissingEnvKey &&
-    process.env.NODE_ENV === 'production' &&
-    !process.env.ENCRYPTION_MASTER_KEY
-  ) {
-    hasWarnedMissingEnvKey = true;
-    console.warn(
-      '[Security Warning] ENCRYPTION_MASTER_KEY ortam değişkeni tanımlanmamış! Üretim ortamında maksimum güvenlik için ENCRYPTION_MASTER_KEY tanımlanmalıdır.'
+const ephemeralKeys = new Map<string, Buffer>();
+const warnedCompromised = new Set<string>();
+
+function keyFingerprint(rawKey: string): string {
+  return crypto.createHash('sha256').update('komur-key-fingerprint:' + rawKey).digest('hex');
+}
+
+function parseKeyMaterial(name: string, rawValue: string): Buffer {
+  const value = rawValue.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    return Buffer.from(value, 'hex');
+  }
+  if (value.length >= 32) {
+    // Geriye dönük uyumluluk: uzun parola benzeri değer SHA-256 ile 256-bit anahtara türetilir.
+    return crypto.createHash('sha256').update(value).digest();
+  }
+  throw new Error(
+    `[Güvenlik] ${name} geçersiz: 64 karakterlik hex (256-bit) bir anahtar olmalıdır. ` +
+      `Üretmek için: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+  );
+}
+
+function resolveRequiredKey(name: 'ENCRYPTION_MASTER_KEY' | 'BLIND_INDEX_KEY'): Buffer {
+  const raw = process.env[name];
+
+  if (!raw || !raw.trim()) {
+    const isEphemeralDevMode = process.env.NODE_ENV !== 'production' && !(process.env.MONGODB_URI || '').trim();
+    if (isEphemeralDevMode) {
+      let eph = ephemeralKeys.get(name);
+      if (!eph) {
+        eph = crypto.randomBytes(32);
+        ephemeralKeys.set(name, eph);
+        console.warn(`[Güvenlik] ${name} tanımlı değil; geçici bellek içi geliştirme modu için rastgele anahtar üretildi.`);
+      }
+      return eph;
+    }
+    throw new Error(
+      `[Güvenlik] ${name} ortam değişkeni tanımlı değil. Kişisel verilerin korunması için sistem varsayılan anahtarla ÇALIŞTIRILMAZ.`
     );
   }
+
+  const fp = keyFingerprint(raw.trim());
+  if (COMPROMISED_KEY_FINGERPRINTS.has(fp) && !warnedCompromised.has(name)) {
+    warnedCompromised.add(name);
+    console.error(
+      `[GÜVENLİK - KRİTİK] ${name} değeri kaynak kodda daha önce yayımlanmış bir anahtardır ve ELE GEÇİRİLMİŞ kabul edilmelidir! ` +
+        'Yeni anahtar üretip "npm run security:rotate-keys" ile verileri yeniden şifreleyiniz (bkz. SECURITY.md).'
+    );
+  }
+
+  return parseKeyMaterial(name, raw);
 }
 
 function getMasterKeyBuffer(): Buffer {
-  warnIfProductionFallbackKeyUsed();
-  const hexKey = (process.env.ENCRYPTION_MASTER_KEY || DEFAULT_FALLBACK_KEY).trim();
-  if (hexKey.length === 64) {
-    return Buffer.from(hexKey, 'hex');
-  }
-  return crypto.createHash('sha256').update(hexKey).digest();
+  return resolveRequiredKey('ENCRYPTION_MASTER_KEY');
+}
+
+/** Rotasyon sırasında yalnızca ÇÖZME için kullanılan eski ana anahtar (varsa). */
+function getPreviousMasterKeyBuffer(): Buffer | null {
+  const raw = process.env.ENCRYPTION_MASTER_KEY_PREVIOUS;
+  if (!raw || !raw.trim()) return null;
+  return parseKeyMaterial('ENCRYPTION_MASTER_KEY_PREVIOUS', raw);
 }
 
 function getBlindIndexKeyBuffer(): Buffer {
-  warnIfProductionFallbackKeyUsed();
-  const hexKey = (process.env.BLIND_INDEX_KEY || DEFAULT_FALLBACK_BLIND_KEY).trim();
-  if (hexKey.length === 64) {
-    return Buffer.from(hexKey, 'hex');
-  }
-  return crypto.createHash('sha256').update(hexKey).digest();
+  return resolveRequiredKey('BLIND_INDEX_KEY');
 }
 
 const PREFIX = 'ENC:GCM:v1:';
@@ -100,24 +156,37 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
   try {
     const parts = str.slice(PREFIX.length).split(':');
     if (parts.length !== 3) {
-      console.warn('[Crypto] Invalid ciphertext format, returning original');
-      return str;
+      console.warn('[Crypto] Invalid ciphertext format');
+      return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
     }
 
     const [ivHex, tagHex, encryptedHex] = parts;
-    const key = getMasterKeyBuffer();
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(tagHex, 'hex');
+    if (iv.length !== 12 || authTag.length !== 16) {
+      console.warn('[Crypto] Invalid IV/tag length');
+      return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
+    }
 
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(authTag);
+    const candidateKeys: Buffer[] = [getMasterKeyBuffer()];
+    const previousKey = getPreviousMasterKeyBuffer();
+    if (previousKey) candidateKeys.push(previousKey);
 
-    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-
-    return decrypted;
+    let lastErr: unknown = null;
+    for (const key of candidateKeys) {
+      try {
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(authTag);
+        let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr;
   } catch (err) {
-    console.error('[Crypto] Decryption error (possible tampering or invalid key):', err);
+    console.error('[Crypto] Decryption error (possible tampering or invalid key):', err instanceof Error ? err.message : 'unknown');
     return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
   }
 }
@@ -639,13 +708,30 @@ export function decryptRoute(doc: any): any {
 // ============================================================
 
 /**
- * Hashes a user password / PIN using scrypt with a unique cryptographically random salt.
- * Format: SCRYPT:<salt_hex>:<hash_hex>
+ * Parola / PIN özeti: scrypt (N=2^15, r=8, p=1) + 16 bayt rastgele tuz.
+ * Biçim: SCRYPT2:<N>:<r>:<p>:<salt_hex>:<hash_hex>
+ * (Eski biçim SCRYPT:<salt>:<hash> doğrulanır; başarılı girişte needsPasswordRehash() ile yükseltilir.)
  */
+const SCRYPT_N = 32768;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEYLEN = 64;
+const SCRYPT_MAXMEM = 128 * 1024 * 1024;
+
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
-  const derivedKey = crypto.scryptSync(password.trim(), salt, 64);
-  return `SCRYPT:${salt}:${derivedKey.toString('hex')}`;
+  const derivedKey = crypto.scryptSync(password.trim(), salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+    maxmem: SCRYPT_MAXMEM,
+  });
+  return `SCRYPT2:${SCRYPT_N}:${SCRYPT_R}:${SCRYPT_P}:${salt}:${derivedKey.toString('hex')}`;
+}
+
+/** Saklı özet eski (zayıf maliyetli) biçimdeyse true döner; başarılı girişte yeniden özetlenmelidir. */
+export function needsPasswordRehash(storedHash: string | null | undefined): boolean {
+  return !storedHash || !storedHash.startsWith('SCRYPT2:');
 }
 
 /**
@@ -655,21 +741,46 @@ export function verifyPassword(password: string, storedHash: string | null | und
   if (!storedHash || !password) return false;
   try {
     const cleanPass = password.trim();
+    if (storedHash.startsWith('SCRYPT2:')) {
+      const parts = storedHash.split(':');
+      if (parts.length !== 6) return false;
+      const [, nStr, rStr, pStr, salt, expectedHashHex] = parts;
+      const N = Number.parseInt(nStr, 10);
+      const r = Number.parseInt(rStr, 10);
+      const p = Number.parseInt(pStr, 10);
+      if (!Number.isFinite(N) || N < 16384 || N > 1 << 20 || r < 1 || r > 16 || p < 1 || p > 4) return false;
+      const expectedBuf = Buffer.from(expectedHashHex, 'hex');
+      if (expectedBuf.length < 32) return false;
+      const derivedKey = crypto.scryptSync(cleanPass, salt, expectedBuf.length, { N, r, p, maxmem: SCRYPT_MAXMEM });
+      return crypto.timingSafeEqual(derivedKey, expectedBuf);
+    }
     if (storedHash.startsWith('SCRYPT:')) {
       const parts = storedHash.split(':');
       if (parts.length !== 3) return false;
       const [, salt, expectedHashHex] = parts;
       const derivedKey = crypto.scryptSync(cleanPass, salt, 64);
-      const keyBuf = Buffer.from(derivedKey.toString('hex'), 'hex');
       const expectedBuf = Buffer.from(expectedHashHex, 'hex');
-      if (keyBuf.length !== expectedBuf.length) return false;
-      return crypto.timingSafeEqual(keyBuf, expectedBuf);
+      if (derivedKey.length !== expectedBuf.length) return false;
+      return crypto.timingSafeEqual(derivedKey, expectedBuf);
     }
     return false;
   } catch (err) {
-    console.error('[Crypto] verifyPassword error:', err);
+    console.error('[Crypto] verifyPassword error:', err instanceof Error ? err.message : 'unknown');
     return false;
   }
+}
+
+let dummyPasswordHash: string | null = null;
+
+/**
+ * Kullanıcı bulunamadığında da aynı maliyetli scrypt işlemini yaparak yanıt süresi farkından
+ * kullanıcı adı varlığının tespit edilmesini (user enumeration - timing attack) engeller.
+ */
+export function burnPasswordCheck(password: string): void {
+  if (!dummyPasswordHash) {
+    dummyPasswordHash = hashPassword(crypto.randomBytes(16).toString('hex'));
+  }
+  verifyPassword(password || 'x', dummyPasswordHash);
 }
 
 /**

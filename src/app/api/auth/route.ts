@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { encryptField, decryptField, hashPassword, verifyPassword, timingSafeTokenEqual } from '@/lib/crypto';
+import { encryptField, decryptField, hashPassword, verifyPassword, timingSafeTokenEqual, burnPasswordCheck, needsPasswordRehash } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
+import { getClientIp, serverError, validatePasswordPolicy } from '@/lib/security';
 import {
   sanitizeUser,
   verifySession,
@@ -71,11 +72,16 @@ async function verifyUserPassword(usersCol: any, rawUser: any, plainPassword: st
       isValid = true;
       try {
         const newHash = hashPassword(plainPassword);
-        await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash } });
+        await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash }, $unset: { sifre: "" } });
       } catch (e) {
         console.error('Notice: Could not upgrade password hash:', e);
       }
     }
+  } else if (rawUser.sifre_hash && needsPasswordRehash(rawUser.sifre_hash)) {
+    try {
+      const newHash = hashPassword(plainPassword);
+      await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash }, $unset: { sifre: "" } });
+    } catch (e) {}
   }
   return isValid;
 }
@@ -180,6 +186,31 @@ export async function GET(request: NextRequest) {
       .sort((a: any, b: any) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'));
 
     if (!session.valid) {
+      // Check if caller is an authorized field device (prevent unauthorized scraping of personnel)
+      const providedDeviceToken = (
+        request.headers.get('x-device-token') ||
+        request.cookies.get('komur_device_token')?.value ||
+        ''
+      ).trim();
+
+      let isAuthorizedDevice = false;
+      if (providedDeviceToken) {
+        const { authorizedDevices: devCol } = await getDbCollections();
+        const tokenHash = crypto.createHash('sha256').update(providedDeviceToken).digest('hex');
+        const found = await devCol.findOne({ device_token_hash: tokenHash, durum: 'AKTIF' });
+        if (found) isAuthorizedDevice = true;
+      }
+
+      if (!isAuthorizedDevice) {
+        return NextResponse.json({
+          success: true,
+          users: [],
+          personnel: [],
+          admins: [],
+          device_unauthorized: true,
+        });
+      }
+
       const publicPersonnel = allMapped
         .filter((u: any) => u.rol === 'PERSONEL')
         .map((u: any) => ({
@@ -229,20 +260,29 @@ export async function POST(request: NextRequest) {
     } = body;
 
     const trimmedUser = (username || '').trim();
-    const clientIpRaw = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
-    const clientIp = clientIpRaw.split(',')[0].trim();
+    const clientIp = getClientIp(request);
 
     // 1. Session Verification check (POST)
     if (action === 'verify') {
-      const targetToken = (session_token || '').trim();
-      if (!trimmedUser || !targetToken) {
+      let targetToken = (session_token || '').trim();
+      if (!targetToken) {
+        targetToken = request.cookies.get('komur_session_token')?.value?.trim() || request.headers.get('x-session-token')?.trim() || '';
+      }
+      if (!targetToken) {
         return NextResponse.json(
-          { success: false, valid: false, code: 'INVALID_PARAMS', error: 'Kullanıcı adı ve oturum kodu eksik.' },
+          { success: false, valid: false, code: 'INVALID_PARAMS', error: 'Oturum kodu eksik.' },
           { status: 400 }
         );
       }
 
-      const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
+      const tokenHash = crypto.createHash('sha256').update(targetToken).digest('hex');
+      let rawUser = trimmedUser ? await findActiveUserByIdentifier(usersCol, trimmedUser) : null;
+      if (!rawUser) {
+        rawUser = await usersCol.findOne({
+          active_session_token: { $in: [targetToken, tokenHash] },
+          aktif: 1,
+        });
+      }
 
       if (!rawUser) {
         return NextResponse.json(
@@ -252,7 +292,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Strictly require an active session token and verify in constant time
-      if (!rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, targetToken)) {
+      const isTokenMatch = rawUser.active_session_token && (
+        timingSafeTokenEqual(rawUser.active_session_token, targetToken) ||
+        timingSafeTokenEqual(rawUser.active_session_token, tokenHash)
+      );
+
+      if (!isTokenMatch) {
         return NextResponse.json(
           {
             success: false,
@@ -308,27 +353,35 @@ export async function POST(request: NextRequest) {
 
     // 2. Explicit Logout: Clean up active session
     if (action === 'logout') {
-      const targetToken = (session_token || '').trim();
+      let targetToken = (session_token || '').trim();
+      if (!targetToken) {
+        targetToken = request.cookies.get('komur_session_token')?.value?.trim() || request.headers.get('x-session-token')?.trim() || '';
+      }
       if (targetToken) {
         clearSessionMicroCache(targetToken);
       }
 
-      if (trimmedUser && targetToken) {
-        const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
-        if (rawUser && rawUser.active_session_token && timingSafeTokenEqual(rawUser.active_session_token, targetToken)) {
-          await usersCol.updateOne(
-            { _id: rawUser._id },
-            {
-              $set: { active_session_token: null, last_logout_at: getIstanbulDate().iso },
-            }
-          );
-        }
+      let rawUser = trimmedUser ? await findActiveUserByIdentifier(usersCol, trimmedUser) : null;
+      if (!rawUser && targetToken) {
+        const tokenHash = crypto.createHash('sha256').update(targetToken).digest('hex');
+        rawUser = await usersCol.findOne({
+          active_session_token: { $in: [targetToken, tokenHash] },
+        });
+      }
+
+      if (rawUser) {
+        await usersCol.updateOne(
+          { _id: rawUser._id },
+          {
+            $set: { active_session_token: null, last_logout_at: getIstanbulDate().iso },
+          }
+        );
 
         await recordActivityLog({
-          kullanici_adi: trimmedUser,
+          kullanici_adi: rawUser.username || trimmedUser || 'Kullanıcı',
           islem_tipi: 'CIKIS',
           baslik: 'Kullanıcı Oturumu Kapatıldı',
-          detay: `"${trimmedUser}" kullanıcısı güvenli oturumunu sonlandırdı.`,
+          detay: `"${rawUser.username || trimmedUser}" kullanıcısı güvenli oturumunu sonlandırdı.`,
         });
       }
 
@@ -691,7 +744,10 @@ export async function POST(request: NextRequest) {
     }
 
     const rawUser = await findActiveUserByIdentifier(usersCol, trimmedUser);
-    const isPasswordCorrect = await verifyUserPassword(usersCol, rawUser, trimmedPass);
+    if (!rawUser) {
+      burnPasswordCheck(trimmedPass);
+    }
+    const isPasswordCorrect = rawUser ? await verifyUserPassword(usersCol, rawUser, trimmedPass) : false;
 
     if (!rawUser || !isPasswordCorrect) {
       const failResult = await recordDistributedFailedAttempt(rateLimitKey);
@@ -1121,8 +1177,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Distributed Brute-force protection on profile/password change endpoint
-    const clientIpRaw = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'Yerel IP';
-    const clientIp = clientIpRaw.split(',')[0].trim();
+    const clientIp = getClientIp(request);
     const rateLimitKey = `put_auth::${clientIp}::${trimmedUser.toLocaleLowerCase('tr-TR')}`;
     const rlStatus = await checkDistributedRateLimit(rateLimitKey);
 
@@ -1209,11 +1264,11 @@ export async function PUT(request: NextRequest) {
     let passwordChanged = false;
     if (new_password && new_password.trim()) {
       const trimmedNewPass = new_password.trim();
-      if (trimmedNewPass.length < 4) {
-        return NextResponse.json({ success: false, error: 'Yeni şifre / PIN en az 4 karakter veya rakamdan oluşmalıdır.' }, { status: 400 });
+      const policyErr = validatePasswordPolicy(trimmedNewPass, trimmedUser);
+      if (policyErr) {
+        return NextResponse.json({ success: false, error: policyErr }, { status: 400 });
       }
       updateFields.sifre_hash = hashPassword(trimmedNewPass);
-      updateFields.sifre = encryptField(trimmedNewPass);
       passwordChanged = true;
     }
 
@@ -1222,7 +1277,11 @@ export async function PUT(request: NextRequest) {
       updateFields.telefon = encryptField((telefon || '').trim());
     }
 
-    await usersCol.updateOne({ _id: rawUser._id }, { $set: updateFields });
+    const updateOp: any = { $set: updateFields };
+    if (passwordChanged) {
+      updateOp.$unset = { sifre: '' };
+    }
+    await usersCol.updateOne({ _id: rawUser._id }, updateOp);
 
     const finalUsername = updateFields.username || rawUser.username;
     const finalName = new_ad_soyad ? new_ad_soyad.trim() : decUser.ad_soyad;
@@ -1250,7 +1309,7 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error updating user profile:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('auth:PUT', error);
   }
 }
 

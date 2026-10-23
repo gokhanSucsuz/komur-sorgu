@@ -243,6 +243,30 @@ export default function Home() {
     }
   }, [handleLogout]);
 
+  // 30-minute inactivity auto-logout (KVKK / security requirement for official state systems)
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLogout('30 dakika boyunca işlem yapılmadığı için oturumunuz güvenlik nedeniyle otomatik olarak kapatıldı.');
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [isLoggedIn, handleLogout]);
+
   // Load user role & session from localStorage on initial mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -439,26 +463,6 @@ export default function Home() {
           mahalleler: mList,
           eksikHaneler: eksikList,
         };
-
-        // Cache in sessionStorage for zero-latency subsequent views (non-blocking)
-        if (typeof window !== 'undefined') {
-          const saveCache = () => {
-            try {
-              sessionStorage.setItem('komur_beneficiaries_cache', JSON.stringify({
-                data: records,
-                mahalleler: mList,
-                eksikHaneler: eksikList
-              }));
-            } catch (e) {
-              // Ignore quota errors if storage full
-            }
-          };
-          if ('requestIdleCallback' in window) {
-            (window as any).requestIdleCallback(saveCache);
-          } else {
-            setTimeout(saveCache, 120);
-          }
-        }
       }
     } catch (err) {
       console.error('Error fetching beneficiaries:', err);

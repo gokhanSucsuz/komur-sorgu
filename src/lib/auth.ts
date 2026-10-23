@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { getDbCollections, mapDoc } from './mongodb';
 import { timingSafeTokenEqual } from './crypto';
 
@@ -108,12 +109,18 @@ export async function verifySession(
 
   try {
     const { users: usersCol } = await getDbCollections();
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const rawUser = await usersCol.findOne({
-      active_session_token: token,
+      active_session_token: { $in: [token, tokenHash] },
       aktif: 1,
     });
 
-    if (!rawUser || !rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, token)) {
+    const isTokenMatch = rawUser?.active_session_token && (
+      timingSafeTokenEqual(rawUser.active_session_token, token) ||
+      timingSafeTokenEqual(rawUser.active_session_token, tokenHash)
+    );
+
+    if (!rawUser || !isTokenMatch) {
       sessionMicroCache.delete(token);
       return {
         valid: false,

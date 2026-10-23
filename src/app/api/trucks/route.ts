@@ -4,6 +4,7 @@ import { encryptTruck, normalizeIrsaliyeNo, hashIrsaliye } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { turkishIncludes, normalizeToTon, formatTonnage } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString, isSafeId } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
 
     const { truckDeliveries: trucksCol, beneficiaries: benCol, systemSettings: settingsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const q = (searchParams.get('q') || '').trim();
+    const q = asString(searchParams.get('q'), 100);
 
     const rawTrucks = await trucksCol
       .find({})
@@ -87,8 +88,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching truck deliveries:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('trucks:GET', error);
   }
 }
 
@@ -231,8 +231,7 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
-    console.error('Error adding truck delivery:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('trucks:POST', error);
   }
 }
 
@@ -376,8 +375,7 @@ export async function PUT(request: NextRequest) {
         { status: 409 }
       );
     }
-    console.error('Error updating truck delivery:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('trucks:PUT', error);
   }
 }
 
@@ -393,10 +391,10 @@ export async function DELETE(request: NextRequest) {
 
     const { truckDeliveries: trucksCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const id = searchParams.get('id');
+    const id = asString(searchParams.get('id'), 64);
 
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Tır ID belirtilmedi' }, { status: 400 });
+    if (!id || !isSafeId(id)) {
+      return NextResponse.json({ success: false, error: 'Tır ID belirtilmedi veya geçersiz' }, { status: 400 });
     }
 
     const existingRaw = await trucksCol.findOne(buildIdFilter(id));
@@ -420,7 +418,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Tır kaydı silindi' });
   } catch (error: any) {
-    console.error('Error deleting truck record:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('trucks:DELETE', error);
   }
 }

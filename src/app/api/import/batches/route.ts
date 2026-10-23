@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString } from '@/lib/security';
 
 // GET /api/import/batches - List all uploaded Excel batches with live delivery stats
 export async function GET(request: NextRequest) {
@@ -124,8 +125,7 @@ export async function GET(request: NextRequest) {
       unbatchedCount,
     });
   } catch (error: any) {
-    console.error('Error fetching import batches:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('import/batches:GET', error);
   }
 }
 
@@ -142,14 +142,14 @@ export async function DELETE(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const { importBatches: batchesCol, beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
-    let batchId = searchParams.get('batchId');
+    let batchId = asString(searchParams.get('batchId'), 128);
     let forceDelivered = searchParams.get('force') === 'true';
 
     // Also support JSON body
     if (!batchId) {
       try {
         const body = await request.json();
-        batchId = body.batchId;
+        batchId = asString(body.batchId, 128);
         if (body.force !== undefined) forceDelivered = Boolean(body.force);
       } catch {
         // no body
@@ -193,7 +193,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await recordActivityLog({
-      kullanici_adi: 'Sistem Yöneticisi',
+      kullanici_adi: session.ad_soyad || session.username || 'Sistem Yöneticisi',
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'EXCEL_SILME',
       baslik: 'Excel Dosyası Geri Alındı / Silindi',
@@ -212,7 +212,6 @@ export async function DELETE(request: NextRequest) {
         : `Excel dosyasına ait ${deletedBeneficiariesCount} hak sahibi kaydı ve yükleme kayıtları sistemden tamamen temizlendi.`,
     });
   } catch (error: any) {
-    console.error('Error deleting import batch:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('import/batches:DELETE', error);
   }
 }

@@ -3,6 +3,7 @@ import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/l
 import { encryptUser, encryptField, hashPassword } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession, sanitizeUser } from '@/lib/auth';
+import { serverError, validatePasswordPolicy, asString } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error fetching personnel:', error);
-    return NextResponse.json({ success: false, error: 'Personel listesi alınırken hata oluştu.' }, { status: 500 });
+    return serverError('personnel:GET', error);
   }
 }
 
@@ -51,17 +52,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Kullanıcı adı, Ad Soyad ve Şifre/PIN zorunludur',
+          error: 'Kullanıcı adı, Ad Soyad ve Şifre zorunludur',
         },
         { status: 400 }
       );
     }
 
-    if (trimmedPass.length < 4) {
+    if (!/^[a-z0-9._-]{3,32}$/i.test(trimmedUser)) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Şifre / PIN en az 4 karakterden oluşmalıdır.',
+          error: 'Kullanıcı adı 3-32 karakter uzunluğunda olmalı ve yalnızca harf, rakam, nokta, alt çizgi veya tire içerebilir.',
+        },
+        { status: 400 }
+      );
+    }
+
+    const policyErr = validatePasswordPolicy(trimmedPass, trimmedUser);
+    if (policyErr) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: policyErr,
         },
         { status: 400 }
       );
@@ -83,7 +95,6 @@ export async function POST(request: NextRequest) {
       username: trimmedUser,
       ad_soyad: trimmedName,
       rol: trimmedRole,
-      sifre: trimmedPass,
       sifre_hash: hashPassword(trimmedPass),
       telefon: (telefon || '').trim(),
       ekip_adi: trimmedEkip,
@@ -114,7 +125,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error adding personnel:', error);
-    return NextResponse.json({ success: false, error: 'Personel eklenirken hata oluştu.' }, { status: 500 });
+    return serverError('personnel:POST', error);
   }
 }
 
@@ -137,9 +148,18 @@ export async function PUT(request: NextRequest) {
     const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : 'PERSONEL';
     const isActive = aktif === 0 ? 0 : 1;
 
-    // Prevent demoting OR deactivating the last active Admin account
+    // Prevent demoting OR deactivating the last active Admin account or self
     const targetUser = await usersCol.findOne(buildIdFilter(id));
     if (targetUser && targetUser.rol === 'ADMIN' && (trimmedRole === 'PERSONEL' || isActive === 0)) {
+      if (String(targetUser._id) === String(auth.user._id) || targetUser.username === auth.user.username) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Güvenlik kuralı: Kendi yönetici hesabınızı pasife alamaz veya rolünüzü düşüremezsiniz!',
+          },
+          { status: 400 }
+        );
+      }
       const otherAdminCount = await usersCol.countDocuments({
         rol: 'ADMIN',
         aktif: 1,
@@ -158,6 +178,12 @@ export async function PUT(request: NextRequest) {
 
     // Check unique username excluding current
     if (trimmedUser) {
+      if (!/^[a-z0-9._-]{3,32}$/i.test(trimmedUser)) {
+        return NextResponse.json(
+          { success: false, error: 'Kullanıcı adı 3-32 karakter uzunluğunda olmalı ve geçerli karakterler içermelidir.' },
+          { status: 400 }
+        );
+      }
       const existing = await usersCol.findOne({
         username: trimmedUser,
         $nor: [buildIdFilter(id)],
@@ -179,14 +205,16 @@ export async function PUT(request: NextRequest) {
       updated_at: getIstanbulDate().fullStr,
     };
 
+    let passwordUpdated = false;
     if (trimmedUser) updateFields.username = trimmedUser;
     if (trimmedName) updateFields.ad_soyad = encryptField(trimmedName);
     if (trimmedPass) {
-      if (trimmedPass.length < 4) {
-        return NextResponse.json({ success: false, error: 'Şifre / PIN en az 4 karakter olmalıdır.' }, { status: 400 });
+      const policyErr = validatePasswordPolicy(trimmedPass, trimmedUser || targetUser?.username);
+      if (policyErr) {
+        return NextResponse.json({ success: false, error: policyErr }, { status: 400 });
       }
       updateFields.sifre_hash = hashPassword(trimmedPass);
-      updateFields.sifre = encryptField(trimmedPass);
+      passwordUpdated = true;
     }
     if (telefon !== undefined) updateFields.telefon = encryptField((telefon || '').trim());
     if (ekip_adi !== undefined) updateFields.ekip_adi = (ekip_adi || '').trim();
@@ -203,7 +231,12 @@ export async function PUT(request: NextRequest) {
       updateFields.active_session_token = null;
     }
 
-    await usersCol.updateOne(buildIdFilter(id), { $set: updateFields });
+    const updateQuery: any = { $set: updateFields };
+    if (passwordUpdated) {
+      updateQuery.$unset = { sifre: '' };
+    }
+
+    await usersCol.updateOne(buildIdFilter(id), updateQuery);
 
     await recordActivityLog({
       kullanici_adi: auth.user.ad_soyad || auth.user.username,
@@ -220,7 +253,7 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error updating personnel:', error);
-    return NextResponse.json({ success: false, error: 'Personel güncellenirken hata oluştu.' }, { status: 500 });
+    return serverError('personnel:PUT', error);
   }
 }
 
@@ -237,18 +270,26 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Personel ID zorunludur' }, { status: 400 });
     }
 
-    // Prevent deleting the last Admin
+    // Prevent deleting self or the last Admin
     const target = await usersCol.findOne(buildIdFilter(id));
-    if (target && target.rol === 'ADMIN') {
-      const adminCount = await usersCol.countDocuments({ rol: 'ADMIN', aktif: 1 });
-      if (adminCount <= 1) {
+    if (target) {
+      if (String(target._id) === String(auth.user._id) || target.username === auth.user.username) {
         return NextResponse.json(
-          {
-            success: false,
-            error: 'Sistemdeki tek aktif yönetici silinemez!',
-          },
+          { success: false, error: 'Güvenlik kuralı: Kendi yönetici hesabınızı silemezsiniz!' },
           { status: 400 }
         );
+      }
+      if (target.rol === 'ADMIN') {
+        const adminCount = await usersCol.countDocuments({ rol: 'ADMIN', aktif: 1 });
+        if (adminCount <= 1) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Sistemdeki tek aktif yönetici silinemez!',
+            },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -268,6 +309,6 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error deleting personnel:', error);
-    return NextResponse.json({ success: false, error: 'Personel silinirken hata oluştu.' }, { status: 500 });
+    return serverError('personnel:DELETE', error);
   }
 }

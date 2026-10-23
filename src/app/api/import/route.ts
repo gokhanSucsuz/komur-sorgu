@@ -4,6 +4,7 @@ import { getDbCollections, recordActivityLog, mapDocs, touchSyncPulse } from '@/
 import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { serverError } from '@/lib/security';
 import { 
   cleanTcNo, 
   isValidTcNo,
@@ -63,8 +64,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Excel dosyası seçilmedi' }, { status: 400 });
     }
 
+    if (file.size > 15 * 1024 * 1024) {
+      return NextResponse.json({ success: false, error: 'Dosya boyutu çok büyük (en fazla 15 MB yüklenebilir).' }, { status: 400 });
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // Validate xlsx magic bytes (PK\x03\x04 - ZIP archive header)
+    if (buffer.length < 4 || buffer[0] !== 0x50 || buffer[1] !== 0x4b || buffer[2] !== 0x03 || buffer[3] !== 0x04) {
+      return NextResponse.json(
+        { success: false, error: 'Geçersiz dosya biçimi! Lütfen geçerli bir Microsoft Excel (.xlsx) dosyası yükleyiniz.' },
+        { status: 400 }
+      );
+    }
 
     // Read Excel workbook with ExcelJS (supports single-sheet and multi-sheet workbooks)
     const workbook = new ExcelJS.Workbook();
@@ -968,6 +981,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error processing Excel import:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('import:POST', error);
   }
 }

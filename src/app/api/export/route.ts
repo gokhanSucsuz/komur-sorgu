@@ -1,8 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
-import { getDbCollections, mapDocs } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString } from '@/lib/security';
+
+/**
+ * Neutralizes Excel formula injection (CSV/XLSX DDE attacks).
+ * If a string begins with =, +, -, @, Tab, or CR, it is prefixed with a single quote.
+ */
+function sanitizeCellValue(v: any): any {
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(v)) {
+    return `'${v}`;
+  }
+  return v;
+}
+
+/**
+ * Builds standard secure Excel HTTP response with strict cache control and nosniff.
+ */
+async function buildExcelResponse(
+  buf: ExcelJS.Buffer,
+  filename: string,
+  session?: any,
+  exportType?: string
+): Promise<NextResponse> {
+  if (session?.valid && exportType && exportType !== 'template') {
+    try {
+      await recordActivityLog({
+        kullanici_adi: session.ad_soyad || session.username || 'Kullanıcı',
+        kullanici_rolu: session.rol || 'PERSONEL',
+        islem_tipi: 'EXCEL_EXPORT',
+        baslik: 'Veri Dışa Aktarıldı',
+        detay: `"${exportType}" türünde Excel dosyası (${filename}) dışa aktarıldı.`,
+        ek_bilgi: { exportType, filename },
+      });
+    } catch (e) {
+      console.error('Failed to log export activity:', e);
+    }
+  }
+
+  return new NextResponse(new Uint8Array(buf), {
+    headers: {
+      'Content-Disposition': buildContentDispositionHeader(filename),
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
 
 /**
  * Sanitizes worksheet name to comply with strict Excel rules:
@@ -135,7 +182,10 @@ function addStyledWorksheet(
     const isSummaryRow = (item['TC Kimlik No'] && String(item['TC Kimlik No']).startsWith('TOPLAM:')) ||
                          (item['Sıra'] === '' && item['Teslim Tarihi / Saati'] === 'TOPLAM:');
 
-    const rowValues = headers.map(h => item[h] !== undefined && item[h] !== null ? item[h] : '');
+    const rowValues = headers.map(h => {
+      const raw = item[h] !== undefined && item[h] !== null ? item[h] : '';
+      return sanitizeCellValue(raw);
+    });
     const row = sheet.addRow(rowValues);
     row.height = isSummaryRow ? 26 : 22;
 
@@ -216,16 +266,29 @@ function addStyledWorksheet(
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get('type') || 'template';
+    const type = asString(searchParams.get('type'), 64) || 'template';
 
+    const session = await verifySession(request);
     // Public download only allowed for empty template; all data exports require active session
     if (type !== 'template') {
-      const session = await verifySession(request);
       if (!session.valid) {
         return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
       }
-      if (type === 'activity_logs' && session.rol !== 'ADMIN') {
-        return NextResponse.json({ success: false, error: 'Yetkisiz erişim' }, { status: 403 });
+
+      // Restrict bulk PII and sensitive system exports to ADMIN
+      const adminOnlyTypes = [
+        'beneficiaries',
+        'batch_by_mahalle',
+        'beneficiaries_by_mahalle',
+        'errors',
+        'season_archive',
+        'activity_logs',
+      ];
+      if (adminOnlyTypes.includes(type) && session.rol !== 'ADMIN') {
+        return NextResponse.json({
+          success: false,
+          error: 'Yetkisiz erişim. Toplu hak sahibi verilerini veya sistem kayıtlarını dışa aktarma yetkisi yalnızca Yöneticilere aittir.'
+        }, { status: 403 });
       }
     }
 
@@ -285,13 +348,7 @@ export async function GET(request: NextRequest) {
       );
 
       const buf = await workbook.xlsx.writeBuffer();
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Komur_Yukleme_Sablonu.xlsx'),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, 'Edirne_SYDV_Komur_Yukleme_Sablonu.xlsx', session, type);
     }
 
 
@@ -380,13 +437,7 @@ export async function GET(request: NextRequest) {
       );
 
       const buf = await workbook.xlsx.writeBuffer();
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx`),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, `Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx`, session, type);
     }
 
     // 2.5. Personel Mesai ve Günlük Çalışma Saatleri Listesi
@@ -494,13 +545,7 @@ export async function GET(request: NextRequest) {
       const buf = await workbook.xlsx.writeBuffer();
       const safeMonth = (month || 'Genel').replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeStaff = (personel || 'Tum_Personel').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Personel_Mesai_Raporu_${safeMonth}_${safeStaff}.xlsx`),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, `Edirne_SYDV_Personel_Mesai_Raporu_${safeMonth}_${safeStaff}.xlsx`, session, type);
     }
 
 
@@ -614,13 +659,7 @@ export async function GET(request: NextRequest) {
       const buf = await workbook.xlsx.writeBuffer();
       const safeStart = (startDate || 'Baslangic').replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeEnd = (endDate || 'Bitis').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(`Edirne_SYDV_Komur_Tonaj_Raporu_${safeStart}_${safeEnd}.xlsx`),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, `Edirne_SYDV_Komur_Tonaj_Raporu_${safeStart}_${safeEnd}.xlsx`, session, type);
     }
 
     // 3. Hak Sahipleri Genel Listesi
@@ -685,13 +724,7 @@ export async function GET(request: NextRequest) {
       );
 
       const buf = await workbook.xlsx.writeBuffer();
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx'),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, 'Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx', session, type);
     }
 
 
@@ -955,13 +988,7 @@ export async function GET(request: NextRequest) {
 
       const buf = await workbook.xlsx.writeBuffer();
       const downloadFilename = `Edirne_SYDV_${cleanFileBase}_Mahalle_Sekmeli.xlsx`;
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(downloadFilename),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, downloadFilename, session, type);
     }
 
     // 4. Excel Yükleme Hata & Mükerrer Kayıt Raporu
@@ -1030,12 +1057,7 @@ export async function GET(request: NextRequest) {
         ? `Edirne_SYDV_Elenen_Kayitlar_${batchId}.xlsx`
         : 'Edirne_SYDV_Komur_Yukleme_Hatalari_Raporu.xlsx';
 
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(filename),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, filename, session, type);
     }
 
     // 5. Sistem Yöneticisi Kullanıcı İşlem & Denetim Logları Raporu
@@ -1085,13 +1107,7 @@ export async function GET(request: NextRequest) {
       );
 
       const buf = await workbook.xlsx.writeBuffer();
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader('Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx'),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, 'Edirne_SYDV_Kullanici_Islem_Loglari_Raporu.xlsx', session, type);
     }
 
     // =========================================================================
@@ -1230,13 +1246,7 @@ export async function GET(request: NextRequest) {
 
       const buf = await workbook.xlsx.writeBuffer();
       const filename = `Edirne_SYDV_${archive.donem_kodu.replace(/[^a-zA-Z0-9_-]/g, '_')}_Donemi_Arsiv_Raporu.xlsx`;
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(filename),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, filename, session, type);
     }
 
     // =========================================================================
@@ -1465,19 +1475,12 @@ export async function GET(request: NextRequest) {
       const buf = await workbook.xlsx.writeBuffer();
       const todayStr = new Date().toLocaleDateString('en-CA');
       const filename = `Edirne_SYDV_Istatistik_Raporu_${todayStr}.xlsx`;
-
-      return new NextResponse(new Uint8Array(buf), {
-        headers: {
-          'Content-Disposition': buildContentDispositionHeader(filename),
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-      });
+      return buildExcelResponse(buf, filename, session, type);
     }
 
     return NextResponse.json({ success: false, error: 'Geçersiz export tipi' }, { status: 400 });
   } catch (error: any) {
     if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw error;
-    console.error('Error generating export:', error);
-    return NextResponse.json({ success: false, error: 'Rapor dışa aktarılırken sunucu hatası oluştu.' }, { status: 500 });
+    return serverError('export:GET', error);
   }
 }

@@ -3,6 +3,7 @@ import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,9 +14,9 @@ export async function GET(request: NextRequest) {
 
     const { deliveryHistory: histCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const islemTipi = (searchParams.get('tip') || '').trim(); // 'TESLIMAT', 'IPTAL', or all
-    const gun = (searchParams.get('gun') || '').trim(); // YYYY-MM-DD
-    const q = (searchParams.get('q') || '').trim();
+    const islemTipi = asString(searchParams.get('tip'), 32); // 'TESLIMAT', 'IPTAL', or all
+    const gun = asString(searchParams.get('gun'), 32); // YYYY-MM-DD
+    const q = asString(searchParams.get('q'), 100);
 
     const filter: any = {};
 
@@ -104,7 +105,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw error;
-    console.error('Error fetching delivery history:', error);
-    return NextResponse.json({ success: false, error: 'Teslimat geçmişi alınırken sunucu hatası oluştu.' }, { status: 500 });
+    return serverError('delivery/history:GET', error);
   }
 }

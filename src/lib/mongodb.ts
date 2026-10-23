@@ -621,7 +621,13 @@ async function initializeIndexesAndSeed(db: Db) {
 
   // 2. Initial Admin User if none exists or update existing admin name to Gökhan SUÇSUZ
   const userCount = await users.countDocuments();
-  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
+  let initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '').trim();
+  if (!initialAdminPass) {
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('[Güvenlik Uyarısı] INITIAL_ADMIN_PASSWORD ortam değişkeni tanımlanmamış. İlk kurulum için güçlü bir şifre belirleyiniz.');
+    }
+    initialAdminPass = 'EdirneSydv2026!';
+  }
   const nowStr = new Date().toLocaleString('tr-TR');
 
   if (userCount === 0) {
@@ -630,7 +636,6 @@ async function initializeIndexesAndSeed(db: Db) {
       username: 'admin',
       ad_soyad: 'Gökhan SUÇSUZ',
       rol: 'ADMIN',
-      sifre: initialAdminPass,
       sifre_hash: hashPassword(initialAdminPass),
       telefon: '05551112233',
       aktif: 1,
@@ -672,7 +677,7 @@ async function initializeIndexesAndSeed(db: Db) {
 
 function seedInMemoryStore(store: Record<string, any[]>) {
   const { nowLocaleTr } = getIstanbulDate();
-  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '784512Gg.').trim();
+  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || 'EdirneSydv2026!').trim();
   store.system_settings = [
     { key: 'varsayilan_hedef_torba', value: '34' },
     { key: 'toplam_tahsis_tonaj', value: '0' },
@@ -683,7 +688,6 @@ function seedInMemoryStore(store: Record<string, any[]>) {
       username: 'admin',
       ad_soyad: 'Gökhan SUÇSUZ',
       rol: 'ADMIN',
-      sifre: initialAdminPass,
       sifre_hash: hashPassword(initialAdminPass),
       telefon: '05551112233',
       aktif: 1,

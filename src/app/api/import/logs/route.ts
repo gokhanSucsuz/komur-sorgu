@@ -2,20 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await verifySession(request);
+    const session = await verifySession(request, { requiredRole: 'ADMIN' });
     if (!session.valid) {
-      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+      return session.response || NextResponse.json({ success: false, error: 'Yetkisiz erişim. İçe aktarma günlüklerini görüntüleme yetkisi yalnızca Yöneticilere aittir.' }, { status: 403 });
     }
 
     const { importLogs: logsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const batchId = (searchParams.get('batchId') || '').trim();
-    const durum = (searchParams.get('durum') || '').trim();
-    const islemSonucu = (searchParams.get('islemSonucu') || '').trim();
-    const q = (searchParams.get('q') || '').trim();
+    const batchId = asString(searchParams.get('batchId'), 128);
+    const durum = asString(searchParams.get('durum'), 64);
+    const islemSonucu = asString(searchParams.get('islemSonucu'), 64);
+    const q = asString(searchParams.get('q'), 100);
 
     const filter: any = {};
 
@@ -120,8 +121,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching import logs:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('import/logs:GET', error);
   }
 }
 
@@ -135,9 +135,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { importLogs: logsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const batchId = searchParams.get('batchId');
+    const { importLogs: logsCol } = await getDbCollections();
+    const batchId = asString(searchParams.get('batchId'), 128);
 
     if (batchId) {
       await logsCol.deleteMany({ batch_id: batchId });
@@ -147,7 +147,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Yükleme kayıtları temizlendi' });
   } catch (error: any) {
-    console.error('Error clearing import logs:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('import/logs:DELETE', error);
   }
 }

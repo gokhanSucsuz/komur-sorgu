@@ -136,9 +136,15 @@ export default function PersonnelManagementModal({
       };
 
       if (sifre.trim()) {
+        if (sifre.trim().length < 8) {
+          throw new Error('Parola en az 8 karakter uzunluğunda olmalıdır.');
+        }
+        if (!/[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(sifre) || !/[0-9]/.test(sifre)) {
+          throw new Error('Parola hem harf hem de rakam içermelidir.');
+        }
         payload.sifre = sifre.trim();
       } else if (!editingId) {
-        throw new Error('Yeni personel için şifre / PIN zorunludur!');
+        throw new Error('Yeni personel için şifre zorunludur (en az 8 karakter, harf ve rakam)!');
       }
 
       const res = await fetch(url, {
@@ -511,14 +517,14 @@ export default function PersonnelManagementModal({
             <div className="grid grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  {editingId ? 'Yeni Şifre / PIN (Değiştirmeyecekseniz boş bırakın)' : 'Şifre / PIN Kodu'}
+                  {editingId ? 'Yeni Şifre (En az 8 karakter, harf+rakam - opsiyonel)' : 'Şifre (En az 8 karakter, harf+rakam)'}
                 </label>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={sifre}
                     onChange={(e) => setSifre(e.target.value)}
-                    placeholder={editingId ? 'Yeni PIN (opsiyonel)' : 'Örn: 1234'}
+                    placeholder={editingId ? 'Yeni şifre (opsiyonel)' : 'Örn: Edirne2026.'}
                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500 pr-8"
                     required={!editingId}
                   />

@@ -5,6 +5,7 @@ import { cleanTcNo, normalizeStaffName } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { checkRouteTeamAuthorization } from '@/app/api/routes/route';
+import { serverError } from '@/lib/security';
 
 export async function POST(request: NextRequest) {
   try {
@@ -481,7 +482,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Geçersiz işlem tipi' }, { status: 400 });
   } catch (error: any) {
-    console.error('Error in delivery handler:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('delivery:POST', error);
   }
 }

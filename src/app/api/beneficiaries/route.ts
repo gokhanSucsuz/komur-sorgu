@@ -25,6 +25,7 @@ import {
 } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString, clampInt, isSafeId } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,15 +36,15 @@ export async function GET(request: NextRequest) {
 
     const { beneficiaries: benCol, systemSettings } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
-    const q = (searchParams.get('q') || '').trim();
-    const mahalle = (searchParams.get('mahalle') || '').trim();
-    const durum = (searchParams.get('durum') || '').trim();
-    const targetTc = (searchParams.get('targetTc') || '').trim();
-    const page = parseInt(searchParams.get('page') || '1', 10);
+    const q = asString(searchParams.get('q'), 100);
+    const mahalle = asString(searchParams.get('mahalle'), 100);
+    const durum = asString(searchParams.get('durum'), 50);
+    const targetTc = asString(searchParams.get('targetTc'), 32);
+    const page = clampInt(searchParams.get('page'), 1, 10000, 1);
     const rawLimit = searchParams.get('limit');
     const limit = (rawLimit === '0' || rawLimit === 'ALL' || rawLimit === 'all' || !rawLimit)
       ? 0
-      : parseInt(rawLimit, 10);
+      : clampInt(rawLimit, 1, 50000, 50);
     const skip = limit > 0 ? (page - 1) * limit : 0;
 
     // Special Query: If looking up a specific TC to show person AND household relatives
@@ -336,8 +337,7 @@ export async function GET(request: NextRequest) {
       toplamUyariSayisi: eksikHaneler.length,
     });
   } catch (error: any) {
-    console.error('Error fetching beneficiaries:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('beneficiaries:GET', error);
   }
 }
 
@@ -481,8 +481,7 @@ export async function POST(request: NextRequest) {
       id: newId,
     });
   } catch (error: any) {
-    console.error('Error creating beneficiary:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('beneficiaries:POST', error);
   }
 }
 
@@ -509,9 +508,9 @@ export async function PUT(request: NextRequest) {
       updated_by,
     } = body;
 
-    if (!id) {
+    if (!id || !isSafeId(id)) {
       return NextResponse.json(
-        { success: false, error: 'Güncellenecek hak sahibi ID bilgisi zorunludur' },
+        { success: false, error: 'Güncellenecek hak sahibi ID bilgisi zorunludur veya geçersiz' },
         { status: 400 }
       );
     }
@@ -694,8 +693,7 @@ export async function PUT(request: NextRequest) {
       data: updatedDoc,
     });
   } catch (error: any) {
-    console.error('Error updating beneficiary:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('beneficiaries:PUT', error);
   }
 }
 
@@ -710,9 +708,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const id = searchParams.get('id');
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Kayıt ID belirtilmedi' }, { status: 400 });
+    const id = asString(searchParams.get('id'), 64);
+    if (!id || !isSafeId(id)) {
+      return NextResponse.json({ success: false, error: 'Kayıt ID belirtilmedi veya geçersiz' }, { status: 400 });
     }
 
     const { beneficiaries: benCol } = await getDbCollections();
@@ -740,8 +738,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Hak sahibi kaydı başarıyla silindi' });
   } catch (error: any) {
-    console.error('Error deleting beneficiary:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('beneficiaries:DELETE', error);
   }
 }
 
@@ -922,8 +919,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Geçersiz işlem parametresi' }, { status: 400 });
   } catch (error: any) {
-    console.error('Error updating beneficiary coal status:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('beneficiaries:PATCH', error);
   }
 }
 

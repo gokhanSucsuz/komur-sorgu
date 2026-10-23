@@ -5,6 +5,7 @@ import { encryptField, encryptDeliveryHistory, encryptRoute, encryptRouteStop } 
 import { compareByAddressAsc, getRecordStreetInfo, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
+import { serverError } from '@/lib/security';
 
 const LOCK_TIMEOUT_MS = 25 * 60 * 1000; // 25 dakika hareketsizlik aşımı
 
@@ -355,8 +356,7 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (error: any) {
-    console.error('Error fetching delivery routes:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('routes:GET', error);
   }
 }
 
@@ -1993,7 +1993,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Geçersiz işlem (action)' }, { status: 400 });
   } catch (error: any) {
-    console.error('Error in routes POST API:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('routes:POST', error);
   }
 }

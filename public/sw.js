@@ -1,4 +1,4 @@
-const CACHE_NAME = 'komur-takip-v2';
+const CACHE_NAME = 'komur-takip-v3';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/edirne-sydv-logo.png',

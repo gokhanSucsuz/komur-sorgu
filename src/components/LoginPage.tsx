@@ -91,12 +91,17 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
     }
   }, []);
 
-  // Fetch registered staff on mount
+  // Fetch registered staff on mount (sends device token if mobile paired)
   useEffect(() => {
     const fetchStaff = async () => {
       setIsLoadingStaff(true);
       try {
-        const res = await fetch('/api/auth');
+        const savedToken = typeof window !== 'undefined' ? localStorage.getItem('komur_device_token') || '' : '';
+        const headers: Record<string, string> = {};
+        if (savedToken) {
+          headers['x-device-token'] = savedToken;
+        }
+        const res = await fetch('/api/auth', { headers });
         const data = await res.json();
         if (data.success && data.personnel) {
           setStaffList(data.personnel);
@@ -530,6 +535,8 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                       <div className="relative">
                         <input
                           type={showPassword ? 'text' : 'password'}
+                          autoComplete="current-password"
+                          enterKeyHint="go"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="PIN Kodunuzu girin"
@@ -583,15 +590,19 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
             </div>
           </form>
 
-          {/* Security Notice Footer */}
-          <div className="p-3 bg-slate-50 border-t border-slate-100 text-center text-[11px] text-slate-500 space-y-1">
-            <div className="flex items-center justify-center gap-1.5 font-bold text-slate-600">
-              <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>Tek Cihaz Koruması Aktiftir</span>
+          {/* Security & KVKK Notice Footer */}
+          <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-center text-[11px] text-slate-600 space-y-2">
+            <div className="flex items-center justify-center gap-1.5 font-bold text-slate-700">
+              <Shield className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span>Resmi Kurum Bilgi Sistemi & KVKK Bildirimi</span>
             </div>
-            <p className="text-[10px] text-slate-400">
-              Aynı kullanıcı adı ile aynı anda yalnızca 1 cihaz sisteme girebilir. Başka bir cihazdan giriş yapıldığında önceki oturum otomatik sonlandırılır.
+            <p className="text-[10px] text-slate-500 leading-relaxed max-w-sm mx-auto">
+              Bu sistem yalnızca yetkili kurum personeli içindir. Tüm işlemler ve erişimler kayıt altına alınmaktadır; yetkisiz erişim yasal işleme tabidir. Kişisel veriler 6698 sayılı KVKK kapsamında işlenmektedir.
             </p>
+            <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 font-medium">
+              <Lock className="w-3 h-3 text-amber-600 inline" />
+              <span>Tek aktif oturum & yetkili cihaz güvenlik kalkanı devrededir.</span>
+            </div>
           </div>
         </div>
       </div>

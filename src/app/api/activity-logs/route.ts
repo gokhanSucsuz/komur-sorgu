@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { turkishRecordMatches } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
+import { serverError, asString, clampInt } from '@/lib/security';
 
 // GET /api/activity-logs - Query user activity/audit logs
 export async function GET(request: NextRequest) {
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
     if (!session.valid) {
       return session.response || NextResponse.json(
         { success: false, error: 'Yetkisiz erişim! Güvenlik ve denetim loglarını sadece Sistem Yöneticisi görüntüleyebilir.' },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
@@ -18,14 +19,14 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
 
-    const q = (searchParams.get('q') || '').trim();
-    const islemTipi = (searchParams.get('islem_tipi') || '').trim();
-    const personel = (searchParams.get('personel') || '').trim();
-    const startDate = (searchParams.get('startDate') || '').trim();
-    const endDate = (searchParams.get('endDate') || '').trim();
-    const gun = (searchParams.get('gun') || '').trim();
-    const limit = parseInt(searchParams.get('limit') || '200', 10);
-    const page = parseInt(searchParams.get('page') || '1', 10);
+    const q = asString(searchParams.get('q'), 100);
+    const islemTipi = asString(searchParams.get('islem_tipi'), 50);
+    const personel = asString(searchParams.get('personel'), 100);
+    const startDate = asString(searchParams.get('startDate'), 30);
+    const endDate = asString(searchParams.get('endDate'), 30);
+    const gun = asString(searchParams.get('gun'), 30);
+    const limit = clampInt(searchParams.get('limit'), 1, 1000, 200);
+    const page = clampInt(searchParams.get('page'), 1, 10000, 1);
 
     const filter: any = {};
 
@@ -140,8 +141,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching activity logs:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('activity-logs:GET', error);
   }
 }
 
@@ -154,31 +154,34 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { kullanici_adi, kullanici_rolu, islem_tipi, baslik, detay, hedef_kisi, hedef_tc, mahalle, torba_sayisi, ek_bilgi } = body;
+    const { islem_tipi, baslik, detay, hedef_kisi, hedef_tc, mahalle, torba_sayisi, ek_bilgi } = body;
 
-    const finalUser = (session.ad_soyad || session.username || kullanici_adi || '').trim();
+    const finalUser = session.ad_soyad || session.username || 'Kullanıcı';
     const finalRole = session.rol || 'PERSONEL';
 
-    if (!finalUser || !islem_tipi || !baslik) {
-      return NextResponse.json({ success: false, error: 'Kullanıcı adı, işlem tipi ve başlık zorunludur' }, { status: 400 });
+    const cleanIslemTipi = asString(islem_tipi, 50);
+    const cleanBaslik = asString(baslik, 150);
+    const cleanDetay = asString(detay, 1000);
+
+    if (!finalUser || !cleanIslemTipi || !cleanBaslik) {
+      return NextResponse.json({ success: false, error: 'İşlem tipi ve başlık zorunludur' }, { status: 400 });
     }
 
     const recorded = await recordActivityLog({
       kullanici_adi: finalUser,
       kullanici_rolu: finalRole,
-      islem_tipi,
-      baslik,
-      detay: detay || '',
-      hedef_kisi,
-      hedef_tc,
-      mahalle,
-      torba_sayisi,
-      ek_bilgi,
+      islem_tipi: cleanIslemTipi,
+      baslik: cleanBaslik,
+      detay: cleanDetay,
+      hedef_kisi: asString(hedef_kisi, 100) || undefined,
+      hedef_tc: asString(hedef_tc, 20) || undefined,
+      mahalle: asString(mahalle, 100) || undefined,
+      torba_sayisi: typeof torba_sayisi === 'number' ? torba_sayisi : undefined,
+      ek_bilgi: typeof ek_bilgi === 'object' && ek_bilgi !== null ? ek_bilgi : undefined,
     });
 
     return NextResponse.json({ success: true, log: recorded });
   } catch (error: any) {
-    console.error('Error creating activity log:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('activity-logs:POST', error);
   }
 }

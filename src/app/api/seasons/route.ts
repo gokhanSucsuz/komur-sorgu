@@ -11,6 +11,7 @@ import {
 import { normalizeMahalleName, normalizeToTon } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
+import { serverError, asString } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -90,8 +91,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching season data:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('seasons:GET', error);
   }
 }
 
@@ -448,7 +448,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: false, error: 'Geçersiz işlem (action)' }, { status: 400 });
   } catch (error: any) {
-    console.error('Error in seasons POST API:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('seasons:POST', error);
   }
 }

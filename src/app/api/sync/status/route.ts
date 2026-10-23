@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections } from '@/lib/mongodb';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { serverError } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -67,6 +68,7 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw error;
+    return serverError('sync/status:GET', error);
   }
 }

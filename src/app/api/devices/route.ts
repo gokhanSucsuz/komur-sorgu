@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
-import { verifySession } from '@/lib/auth';
+import { verifySession, checkDistributedRateLimit, recordDistributedFailedAttempt, clearDistributedRateLimit } from '@/lib/auth';
 import { generateQrCodeSvgDataUrl } from '@/lib/totp';
 import { encryptField, decryptField, isEncrypted } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
+import { getClientIp, serverError } from '@/lib/security';
 
 function hashDeviceToken(token: string): string {
   return crypto.createHash('sha256').update(token.trim()).digest('hex');
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error in devices GET API:', error);
-    return NextResponse.json({ success: false, error: 'Cihaz bilgileri alınamadı.' }, { status: 500 });
+    return serverError('devices:GET', error);
   }
 }
 
@@ -119,13 +120,22 @@ export async function POST(request: NextRequest) {
     const { authorizedDevices: devCol } = await getDbCollections();
     const body = await request.json().catch(() => ({}));
     const { action } = body;
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || '127.0.0.1';
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz';
 
     // =========================================================================
     // ACTION 1: ACTIVATE_DEVICE (Phone side pairing with 6-digit code)
     // =========================================================================
     if (action === 'ACTIVATE_DEVICE') {
+      const rlKey = `device_activate::${clientIp}`;
+      const rl = await checkDistributedRateLimit(rlKey);
+      if (rl.locked) {
+        return NextResponse.json(
+          { success: false, error: `Çok fazla hatalı kod denemesi yapıldı! Lütfen ${rl.waitSeconds} saniye bekleyiniz.` },
+          { status: 429 }
+        );
+      }
+
       const rawCode = String(body.code || '').replace(/\s+/g, '').trim();
       const deviceModel = (body.device_model || userAgent.substring(0, 100)).trim();
 
@@ -142,6 +152,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!slot) {
+        await recordDistributedFailedAttempt(rlKey, 5, 10 * 60 * 1000, 15 * 60 * 1000);
         return NextResponse.json(
           { success: false, error: 'Girdiğiniz aktivasyon kodu hatalı veya süresi dolmuş! Lütfen Sistem Yöneticisinden (Admin) yeni kod alınız.' },
           { status: 400 }
@@ -149,11 +160,14 @@ export async function POST(request: NextRequest) {
       }
 
       if (slot.activation_code_expires_at && new Date(slot.activation_code_expires_at).getTime() < now) {
+        await recordDistributedFailedAttempt(rlKey, 5, 10 * 60 * 1000, 15 * 60 * 1000);
         return NextResponse.json(
           { success: false, error: 'Bu aktivasyon kodunun 15 dakikalık geçerlilik süresi dolmuştur. Lütfen yöneticinizden yeni kod üretmesini isteyiniz.' },
           { status: 400 }
         );
       }
+
+      await clearDistributedRateLimit(rlKey);
 
       // Generate cryptographically strong unique device token
       const newDeviceToken = crypto.randomBytes(32).toString('hex');
@@ -223,8 +237,8 @@ export async function POST(request: NextRequest) {
       const existingSlot = await devCol.findOne({ slot_no: slotNo });
       const slotName = existingSlot?.slot_name || `${slotNo}. Saha Dağıtım Telefonu`;
 
-      // Generate 6-digit random code e.g. "739215"
-      const code = String(Math.floor(100000 + Math.random() * 900000));
+      // Generate cryptographically secure 6-digit random code
+      const code = crypto.randomInt(100000, 1000000).toString();
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 min TTL
 
       // Build QR SVG: If origin is available, link directly with pair_code so phone camera can open and activate
@@ -383,6 +397,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Bilinmeyen işlem.' }, { status: 400 });
   } catch (error: any) {
     console.error('Error in devices POST API:', error);
-    return NextResponse.json({ success: false, error: 'Cihaz işlemi sırasında hata oluştu.' }, { status: 500 });
+    return serverError('devices:POST', error);
   }
 }

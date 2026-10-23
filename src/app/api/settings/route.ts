@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
 import { normalizeToTon, formatTonnage } from '@/lib/normalizer';
+import { serverError } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,8 +35,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching settings:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('settings:GET', error);
   }
 }
 
@@ -140,7 +140,6 @@ export async function POST(request: NextRequest) {
       message: `Hane başı hedef torba sayısı ${bagVal} olarak güncellendi.`,
     });
   } catch (error: any) {
-    console.error('Error updating settings:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return serverError('settings:POST', error);
   }
 }
