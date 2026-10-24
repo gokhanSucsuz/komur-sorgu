@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDoc } from './mongodb';
 import { timingSafeTokenEqual } from './crypto';
+import { isSameOriginRequest } from './security';
 
 /**
  * Kurumsal Mutlak Oturum Süresi: 6 Saat (Milisaniye ve Saniye)
@@ -65,6 +66,25 @@ export async function verifySession(
   request: NextRequest,
   options: { requiredRole?: 'ADMIN' | 'PERSONEL' } = {}
 ): Promise<AuthSessionResult> {
+  // Enforce Same-Origin (CSRF) protection on state-changing HTTP methods
+  const method = (request.method || 'GET').toUpperCase();
+  if (
+    (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') &&
+    !isSameOriginRequest(request)
+  ) {
+    return {
+      valid: false,
+      response: NextResponse.json(
+        {
+          success: false,
+          code: 'CSRF_REJECTED',
+          error: 'Güvenlik doğrulaması başarısız: Farklı kaynaktan (Cross-Origin) gelen işlem isteği reddedildi.',
+        },
+        { status: 403 }
+      ),
+    };
+  }
+
   const token = extractSessionToken(request);
 
   if (!token || typeof token !== 'string' || token.length < 32 || !/^[a-f0-9-]+$/i.test(token)) {

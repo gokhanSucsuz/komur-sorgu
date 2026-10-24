@@ -6,7 +6,9 @@
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./tests/ts-loader.mjs --test tests/security-kvkk.test.ts"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

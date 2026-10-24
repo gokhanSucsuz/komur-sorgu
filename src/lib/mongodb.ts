@@ -223,6 +223,37 @@ export function mapDoc<T = any>(doc: any): T {
     mapped.ek_liste_no = typeof mapped.ek_liste_no === 'number' ? mapped.ek_liste_no : 0;
     mapped.ek_liste_adi = mapped.ek_liste_adi || 'Ana Liste';
   }
+
+  // KVKK: Hide deterministic HMAC blind-index hashes from JSON.stringify / NextResponse.json
+  // while keeping them readable by server-side property access (e.g. doc.tc_hash).
+  const blindHashFields = ['tc_hash', 'hane_hash', 'adres_hash', 'irsaliye_hash', 'cakisan_tc_hash', 'hedef_tc_hash'];
+  for (const hf of blindHashFields) {
+    if (hf in mapped) {
+      Object.defineProperty(mapped, hf, {
+        value: mapped[hf],
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+  if (Array.isArray(mapped.duraklar)) {
+    for (const stop of mapped.duraklar) {
+      if (stop && typeof stop === 'object') {
+        for (const hf of blindHashFields) {
+          if (hf in stop) {
+            Object.defineProperty(stop, hf, {
+              value: stop[hf],
+              enumerable: false,
+              configurable: true,
+              writable: true,
+            });
+          }
+        }
+      }
+    }
+  }
+
   return mapped;
 }
 

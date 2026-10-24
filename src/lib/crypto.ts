@@ -754,7 +754,7 @@ export function verifyPassword(password: string, storedHash: string | null | und
       const derivedKey = crypto.scryptSync(cleanPass, salt, expectedBuf.length, { N, r, p, maxmem: SCRYPT_MAXMEM });
       return crypto.timingSafeEqual(derivedKey, expectedBuf);
     }
-    if (storedHash.startsWith('SCRYPT:')) {
+    if (storedHash.startsWith('SCRYPT:') || storedHash.startsWith('SCRYPT1:')) {
       const parts = storedHash.split(':');
       if (parts.length !== 3) return false;
       const [, salt, expectedHashHex] = parts;

@@ -169,3 +169,37 @@ export function isSameOriginRequest(request: { headers: Headers; nextUrl?: { hos
 
   return true;
 }
+
+// ============================================================================
+// KVKK Kör İndeks (Blind Index Hash) Temizleyici
+// ============================================================================
+
+const BLIND_HASH_KEYS = new Set([
+  'tc_hash',
+  'hane_hash',
+  'adres_hash',
+  'irsaliye_hash',
+  'cakisan_tc_hash',
+  'hedef_tc_hash',
+]);
+
+/**
+ * API yanıtlarından deterministik HMAC-SHA256 kör indeks özetlerini (tc_hash, hane_hash, adres_hash vb.)
+ * temizler; böylece istemciye yalnızca yetkili olduğu açık alanlar gider, veritabanı indeks özetleri dışarı sızmaz.
+ */
+export function stripBlindHashes<T>(input: T): T {
+  if (!input || typeof input !== 'object') return input;
+  if (Array.isArray(input)) {
+    return input.map((item) => stripBlindHashes(item)) as unknown as T;
+  }
+  const cloned: Record<string, any> = {};
+  for (const [k, v] of Object.entries(input as Record<string, any>)) {
+    if (BLIND_HASH_KEYS.has(k)) continue;
+    if (k === 'duraklar' && Array.isArray(v)) {
+      cloned[k] = v.map((stop) => stripBlindHashes(stop));
+    } else {
+      cloned[k] = v;
+    }
+  }
+  return cloned as T;
+}
