@@ -13,7 +13,9 @@ import {
   cleanHaneKey,
   formatDeliveryStatusSummary,
   isBirebirBeneficiaryMatch,
-  normalizeMahalleName
+  normalizeMahalleName,
+  normalizeStreetForCompare,
+  getRecordStreetInfo
 } from '@/lib/normalizer';
 import {
   hashTc,
@@ -343,58 +345,102 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await verifySession(request, { requiredRole: 'ADMIN' });
+    // Hem Saha Personeli (PERSONEL) hem de Sistem Yöneticisi (ADMIN) durumu uygun tek haneleri ekleyebilir
+    const session = await verifySession(request);
     if (!session.valid) {
       return session.response || NextResponse.json(
-        { success: false, error: 'Yetkisiz erişim! Yeni hak sahibi ekleme yetkisi sadece Sistem Yöneticisine aittir.' },
+        { success: false, error: 'Oturum gerekli! Lütfen tekrar giriş yapınız.' },
         { status: 401 }
       );
     }
 
     const { beneficiaries: benCol, systemSettings } = await getDbCollections();
     const body = await request.json();
-    const { tc_no, ad_soyad, telefon, telefon2, mahalle, acik_adres, hane_no, hedef_torba } = body;
+    const {
+      tc_no,
+      ad_soyad,
+      telefon,
+      telefon2,
+      mahalle,
+      acik_adres,
+      sokak,
+      kapi_no,
+      daire_no,
+      hane_no,
+      hedef_torba,
+      liste_turu,
+      imza_alindi,
+      ekleme_notu,
+      check_only,
+      confirm_same_address,
+    } = body;
 
     const cleanedTc = cleanTcNo(tc_no);
-    if (!cleanedTc || cleanedTc.length !== 11) {
-      return NextResponse.json({ success: false, error: 'Geçersiz TC Kimlik Numarası (11 hane olmalı)' }, { status: 400 });
-    }
 
-    if (!ad_soyad || !mahalle || !acik_adres) {
-      return NextResponse.json({ success: false, error: 'Ad Soyad, Mahalle ve Açık Adres zorunludur' }, { status: 400 });
-    }
+    // 1. T.C. KİMLİK NO MÜKERRERLİK KONTROLÜ (KESİN ENGEL - HARD BLOCK)
+    // Sistemde kaydı olan TC Kimlik No varsa kesinlikle eklemez ve personele detaylı uyarı verir
+    if (cleanedTc && cleanedTc.length === 11) {
+      const tcHash = hashTc(cleanedTc);
+      const existingTc = await benCol.findOne({
+        $or: [
+          ...(tcHash ? [{ tc_hash: tcHash }] : []),
+          { tc_no: cleanedTc },
+        ],
+      });
 
-    // Check duplicate TC with blind index
-    const tcHash = hashTc(cleanedTc);
-    const existingTc = await benCol.findOne({
-      $or: [
-        ...(tcHash ? [{ tc_hash: tcHash }] : []),
-        { tc_no: cleanedTc },
-      ],
-    });
-    if (existingTc) {
-      const decTc = mapDoc(existingTc);
+      if (existingTc) {
+        const decTc = mapDoc(existingTc);
+        const statusSummary = formatDeliveryStatusSummary(decTc);
+        const existingRecordSummary = {
+          id: decTc.id || String(decTc._id || ''),
+          tc_no: decTc.tc_no || cleanedTc,
+          ad_soyad: decTc.ad_soyad || 'Bilinmiyor',
+          mahalle: decTc.mahalle || '-',
+          acik_adres: decTc.acik_adres || '-',
+          sokak: decTc.sokak || '',
+          kapi_no: decTc.kapi_no || null,
+          daire_no: decTc.daire_no || null,
+          telefon: decTc.telefon || '',
+          hane_no: decTc.hane_no || null,
+          teslimat_durumu: decTc.teslimat_durumu || 'BEKLIYOR',
+          torba_sayisi: Number(decTc.torba_sayisi || 0),
+          hedef_torba: Number(decTc.hedef_torba || 34),
+          teslimat_tarihi: decTc.teslimat_tarihi || null,
+          teslim_alan: decTc.teslim_alan || null,
+          teslim_eden_personel: decTc.teslim_eden_personel || null,
+          komur_verilmeyecek: Boolean(decTc.komur_verilmeyecek),
+          komur_iptal_nedeni: decTc.komur_iptal_nedeni || null,
+          durum_ozeti: statusSummary,
+        };
+
+        return NextResponse.json(
+          {
+            success: false,
+            duplicate_tc: true,
+            existing_record: existingRecordSummary,
+            error: `Bu T.C. Kimlik Numarası (${cleanedTc}) sistemde zaten kayıtlıdır! Mevcut Hak Sahibi: ${decTc.ad_soyad} | Mahalle: ${decTc.mahalle || '-'} | Adres: ${decTc.acik_adres || '-'} | Kömür Durumu: ${statusSummary}. Mükerrer kayıt oluşmaması için bu TC tekrar eklenemez.`,
+          },
+          { status: check_only ? 200 : 409 }
+        );
+      }
+    } else if (!check_only) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Bu TC Kimlik Numarası zaten kayıtlı: ${decTc.ad_soyad}`,
-        },
+        { success: false, error: 'Geçersiz T.C. Kimlik Numarası (11 haneli rakam olmalıdır)' },
         { status: 400 }
       );
     }
 
+    // 2. HANE NUMARASI MÜKERRERLİK KONTROLÜ (Eğer Hane No girilmişse)
     const cleanedHaneNo = cleanHaneNo(hane_no);
     const cleanHane = cleanHaneKey(cleanedHaneNo);
 
-    // Hane numarası kontrolü: Sistemde TC kimlik gibi yalnızca 1 adet olabilir.
-    // İkinci kez girilirse sisteme eklenmez ve detaylı hata gösterilir.
     if (cleanHane) {
       const haneHash = hashHane(cleanHane);
       const existingHaneDoc = await benCol.findOne({
         $or: [
           ...(haneHash ? [{ hane_hash: haneHash }] : []),
           { hane_no: cleanedHaneNo },
-          { hane_no: hane_no.trim() },
+          ...(hane_no ? [{ hane_no: String(hane_no).trim() }] : []),
         ],
       });
 
@@ -404,31 +450,228 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `Bu Hane Numarası (${cleanedHaneNo}) sistemde zaten kayıtlıdır! Sistemde her hane numarası TC kimlik gibi yalnızca 1 adet bulunabilir. Mevcut Hak Sahibi: ${decHane.ad_soyad} (TC: ${decHane.tc_no || 'Belirtilmemiş'}) | Mahalle: ${decHane.mahalle || '-'}, Adres: ${decHane.acik_adres || '-'} | Kömür Teslim Durumu: ${statusSummary}. Mükerrer kömür yardımı tahsis edilmemesi için bu kayıt sisteme eklenemez.`,
+            duplicate_hane: true,
+            existing_record: {
+              id: decHane.id || String(decHane._id || ''),
+              tc_no: decHane.tc_no || '',
+              ad_soyad: decHane.ad_soyad || 'Bilinmiyor',
+              mahalle: decHane.mahalle || '-',
+              acik_adres: decHane.acik_adres || '-',
+              hane_no: decHane.hane_no || cleanedHaneNo,
+              teslimat_durumu: decHane.teslimat_durumu || 'BEKLIYOR',
+              torba_sayisi: Number(decHane.torba_sayisi || 0),
+              hedef_torba: Number(decHane.hedef_torba || 34),
+              durum_ozeti: statusSummary,
+            },
+            error: `Bu Hane Numarası (${cleanedHaneNo}) sistemde zaten kayıtlıdır! Mevcut Hak Sahibi: ${decHane.ad_soyad} (TC: ${decHane.tc_no || 'Belirtilmemiş'}) | Mahalle: ${decHane.mahalle || '-'} | Kömür Durumu: ${statusSummary}.`,
           },
-          { status: 400 }
+          { status: check_only ? 200 : 400 }
         );
       }
     }
 
-    const settlement = detectSettlement(mahalle, body.koy, acik_adres);
-    const streetInfo = extractStreetAndDoor(acik_adres, body.sokak, body.kapi_no, settlement.name);
-    const normAdres = normalizeAddress(settlement.name, acik_adres);
+    // 3. ADRES NORMALİZASYONU VE AYNI ADRESTE BAŞKA HANE KONTROLÜ (UYARI VERİR, ONAYLA EKLENEBİLİR)
+    const rawMahalleStr = mahalle ? String(mahalle).trim() : '';
+    const rawAcikAdresStr = acik_adres ? String(acik_adres).trim() : '';
+    const rawSokakStr = sokak ? String(sokak).trim() : '';
+    const rawKapiNoStr = kapi_no !== undefined && kapi_no !== null ? String(kapi_no).trim() : '';
 
-    // Not: Gecekonduların veya müstakil yapıların yoğun olduğu bölgelerde
-    // aynı adreste farklı TC Kimlik numarasına sahip birden fazla aile ikamet edebilmektedir.
-    // TC Kimlik No ve Hane No kontrolleri yukarıda yapıldığından, aynı adresli farklı TC'ler hata/uyarı olarak işaretlenmez.
+    // Eğer sokak/kapı no ayrı girilmiş ama açık adreste yazılmamışsa açık adresi zenginleştir
+    let compositeAddress = rawAcikAdresStr;
+    if (!compositeAddress && (rawSokakStr || rawKapiNoStr)) {
+      compositeAddress = [
+        rawSokakStr,
+        rawKapiNoStr ? `No: ${rawKapiNoStr}` : '',
+        daire_no ? `Daire: ${daire_no}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    }
+
+    let sameAddressRecords: any[] = [];
+    let settlement = { name: rawMahalleStr || 'Belirtilmemiş', type: 'MAHALLE' as 'MAHALLE' | 'KOY' };
+    let streetInfo: { sokak: string; kapiNo: string | number; daireNo: number } = {
+      sokak: 'Belirtilmemiş',
+      kapiNo: 999999,
+      daireNo: 0,
+    };
+    let normAdres = '';
+
+    if (rawMahalleStr || compositeAddress) {
+      settlement = detectSettlement(rawMahalleStr, body.koy, compositeAddress);
+      streetInfo = extractStreetAndDoor(compositeAddress, rawSokakStr, rawKapiNoStr, settlement.name);
+      if (daire_no !== undefined && daire_no !== null && String(daire_no).trim() !== '') {
+        const parsedDaire = parseInt(String(daire_no).replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(parsedDaire) && parsedDaire > 0) {
+          streetInfo.daireNo = parsedDaire;
+        }
+      }
+      normAdres = normalizeAddress(settlement.name, compositeAddress);
+      const adresHash = normAdres ? hashAddress(normAdres) : null;
+
+      // Aynı mahalledeki veya aynı adres özetindeki aday kayıtları çek
+      const normMahalleTarget = normalizeMahalleName(settlement.name) || settlement.name;
+      const mahalleOrConditions: any[] = [];
+      if (adresHash) mahalleOrConditions.push({ adres_hash: adresHash });
+      if (normAdres) mahalleOrConditions.push({ norm_adres: normAdres });
+      if (settlement.name) mahalleOrConditions.push({ mahalle: settlement.name });
+      if (rawMahalleStr && rawMahalleStr !== settlement.name) {
+        mahalleOrConditions.push({ mahalle: rawMahalleStr });
+      }
+
+      if (mahalleOrConditions.length > 0) {
+        const candidateDocs = await benCol.find({ $or: mahalleOrConditions }).toArray();
+        const decryptedCandidates = mapDocs(candidateDocs);
+
+        const targetStreetNorm =
+          streetInfo.sokak && streetInfo.sokak !== 'Belirtilmemiş'
+            ? normalizeStreetForCompare(streetInfo.sokak)
+            : '';
+        const targetDoorNum =
+          streetInfo.kapiNo && streetInfo.kapiNo !== 999999 ? Number(streetInfo.kapiNo) : null;
+
+        for (const cand of decryptedCandidates) {
+          if (cleanedTc && cand.tc_no === cleanedTc) continue;
+
+          // Eşleşme 1: Normalize edilmiş açık adres birebir aynıysa
+          const candPhysicalNorm = normalizeAddress(cand.mahalle || '', cand.acik_adres || '');
+          const isExactNormMatch =
+            normAdres.length >= 5 &&
+            (cand.norm_adres === normAdres ||
+              (candPhysicalNorm.length >= 5 && candPhysicalNorm === normAdres));
+
+          // Eşleşme 2: Aynı Mahalle + Aynı Sokak/Cadde + Aynı Kapı/Bina Numarası
+          let isSameStreetAndDoor = false;
+          if (targetStreetNorm && targetDoorNum !== null) {
+            const candMahalleNorm = normalizeMahalleName(cand.mahalle || '') || cand.mahalle || '';
+            if (candMahalleNorm.toLocaleLowerCase('tr-TR') === normMahalleTarget.toLocaleLowerCase('tr-TR')) {
+              const candSt = getRecordStreetInfo(cand);
+              const candStreetNorm =
+                candSt.sokak && candSt.sokak !== 'Belirtilmemiş'
+                  ? normalizeStreetForCompare(candSt.sokak)
+                  : '';
+              const candDoorNum =
+                candSt.kapiNo && candSt.kapiNo !== 999999 ? Number(candSt.kapiNo) : null;
+
+              if (
+                candStreetNorm &&
+                candStreetNorm === targetStreetNorm &&
+                candDoorNum !== null &&
+                candDoorNum === targetDoorNum
+              ) {
+                isSameStreetAndDoor = true;
+              }
+            }
+          }
+
+          if (isExactNormMatch || isSameStreetAndDoor) {
+            const statusSummary = formatDeliveryStatusSummary(cand);
+            sameAddressRecords.push({
+              id: cand.id || String(cand._id || ''),
+              tc_no: cand.tc_no || '',
+              ad_soyad: cand.ad_soyad || 'Bilinmiyor',
+              mahalle: cand.mahalle || settlement.name,
+              acik_adres: cand.acik_adres || '-',
+              sokak: cand.sokak || '',
+              kapi_no: cand.kapi_no && cand.kapi_no !== 999999 ? cand.kapi_no : null,
+              daire_no: cand.daire_no && cand.daire_no > 0 ? cand.daire_no : null,
+              telefon: cand.telefon || '',
+              hane_no: cand.hane_no || null,
+              teslimat_durumu: cand.teslimat_durumu || 'BEKLIYOR',
+              torba_sayisi: Number(cand.torba_sayisi || 0),
+              hedef_torba: Number(cand.hedef_torba || 34),
+              teslimat_tarihi: cand.teslimat_tarihi || null,
+              teslim_alan: cand.teslim_alan || null,
+              teslim_eden_personel: cand.teslim_eden_personel || null,
+              komur_verilmeyecek: Boolean(cand.komur_verilmeyecek),
+              komur_iptal_nedeni: cand.komur_iptal_nedeni || null,
+              durum_ozeti: statusSummary,
+              eslesme_tipi: isExactNormMatch ? 'TAM_ADRES' : 'AYNI_BINA_KAPI_NO',
+            });
+          }
+        }
+      }
+    }
+
+    // Sadece canlı ön kontrol (check_only) istenmişse sonuçları döndür
+    if (check_only) {
+      return NextResponse.json({
+        success: true,
+        check_only: true,
+        duplicate_tc: false,
+        duplicate_hane: false,
+        address_warning: sameAddressRecords.length > 0,
+        same_address_records: sameAddressRecords,
+      });
+    }
+
+    if (!ad_soyad || !String(ad_soyad).trim() || !rawMahalleStr || !compositeAddress) {
+      return NextResponse.json(
+        { success: false, error: 'Ad Soyad, Mahalle/Köy ve Açık Adres alanları zorunludur' },
+        { status: 400 }
+      );
+    }
+
+    // Eğer aynı adreste başka hane(ler) varsa ve personel henüz onaylamadıysa uyarı döndür (onaylarsa eklenebilir!)
+    if (sameAddressRecords.length > 0 && !confirm_same_address) {
+      return NextResponse.json({
+        success: false,
+        requires_address_confirmation: true,
+        address_warning: true,
+        same_address_records: sameAddressRecords,
+        warning: `Bu adreste kayıtlı ${sameAddressRecords.length} başka hane bulundu (${sameAddressRecords.map((r) => r.ad_soyad).join(', ')}). Hane durumu uygun ise onaylayarak kaydı tamamlayabilirsiniz.`,
+      });
+    }
 
     const phones = extractPhoneNumbers(telefon, telefon2);
 
-    // Default target quota from settings
+    // Varsayılan hane kömür kotasını sistem ayarlarından al
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const targetQuota = parseInt(hedef_torba || settingDoc?.value || '34', 10);
-    const nowStr = new Date().toLocaleString('tr-TR');
+    const { nowLocaleTr } = getIstanbulDate();
+    const nowStr = nowLocaleTr;
+    const creatorName = (body.personel || session.ad_soyad || session.username || 'Saha Personeli').trim();
 
-    const newDoc = {
+    // Mahalle içindeki sıra numarasını hesapla
+    const existingMahalleCount = await benCol.countDocuments({ mahalle: settlement.name });
+    const mahalleSira = existingMahalleCount + 1;
+
+    const selectedListType =
+      liste_turu === 'ANA_LISTE' || liste_turu === 'SIGORTALI' || liste_turu === 'EK_LISTE'
+        ? liste_turu
+        : 'EK_LISTE';
+
+    let siraNo = `Ek1 - ${mahalleSira}`;
+    let ekListeNo = 1;
+    let ekListeAdi = 'Saha Tekil Ekleme';
+
+    if (selectedListType === 'ANA_LISTE') {
+      siraNo = String(mahalleSira);
+      ekListeNo = 0;
+      ekListeAdi = 'Ana Liste';
+    } else if (selectedListType === 'SIGORTALI') {
+      siraNo = `Sigortalı - ${mahalleSira}`;
+      ekListeNo = 1000;
+      ekListeAdi = 'Sigortalılar Listesi';
+    }
+
+    const uyarilarList: string[] = [];
+    if (sameAddressRecords.length > 0) {
+      uyarilarList.push(
+        `Aynı adreste ${sameAddressRecords.length} hane daha mevcut (${sameAddressRecords
+          .map((r) => `${r.ad_soyad}`)
+          .join(', ')}) — Saha personeli (${creatorName}) kontrolüyle eklendi`
+      );
+    }
+    if (ekleme_notu && String(ekleme_notu).trim()) {
+      uyarilarList.push(`Saha Ekleme Notu: ${String(ekleme_notu).trim()}`);
+    }
+
+    const isSignedAtDoor = Boolean(imza_alindi);
+
+    const newDoc: any = {
       tc_no: cleanedTc,
-      ad_soyad: ad_soyad.trim(),
+      ad_soyad: String(ad_soyad).trim(),
       telefon: phones[0] || '',
       telefon2: phones[1] || '',
       mahalle: settlement.name,
@@ -436,7 +679,7 @@ export async function POST(request: NextRequest) {
       sokak: streetInfo.sokak,
       kapi_no: streetInfo.kapiNo,
       daire_no: streetInfo.daireNo,
-      acik_adres: acik_adres.trim(),
+      acik_adres: compositeAddress,
       hane_no: cleanedHaneNo || null,
       norm_adres: normAdres,
       hedef_torba: targetQuota,
@@ -445,26 +688,41 @@ export async function POST(request: NextRequest) {
       teslimat_tarihi: null,
       teslim_alan: null,
       teslim_eden_personel: null,
-      teslimat_notu: null,
-      uyarilar: [],
-      uyari_notu: null,
+      teslimat_notu: ekleme_notu ? String(ekleme_notu).trim() : null,
+      imza_durumu: isSignedAtDoor ? 'IMZALANDI' : 'BEKLIYOR',
+      imza_tarihi: isSignedAtDoor ? nowStr : null,
+      imza_alan_personel: isSignedAtDoor ? creatorName : null,
+      sira_no: siraNo,
+      mahalle_sira: mahalleSira,
+      liste_turu: selectedListType,
+      ek_liste_no: ekListeNo,
+      ek_liste_adi: ekListeAdi,
+      ekleyen_personel: creatorName,
+      ekleyen_rol: session.rol || 'PERSONEL',
+      uyarilar: uyarilarList,
+      uyari_notu: uyarilarList.length > 0 ? uyarilarList.join(' | ') : null,
       created_at: nowStr,
       updated_at: nowStr,
     };
 
-    // Encrypt with AES-256-GCM and generate blind indexes
+    // AES-256-GCM ile şifrele ve blind index'leri oluştur
     const encryptedDoc = encryptBeneficiary(newDoc);
     const res = await benCol.insertOne(encryptedDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
 
-    const creatorName = session.ad_soyad || session.username || 'Sistem Yöneticisi';
+    // Tüm saha cihazlarının anında senkronize olması için sync pulse tetikle
+    await touchSyncPulse(creatorName);
 
     await recordActivityLog({
       islem_tipi: 'HANE_EKLEME',
       kullanici_adi: creatorName,
-      kullanici_rolu: session.rol || 'ADMIN',
-      baslik: `Yeni Hane Eklendi (${newDoc.ad_soyad})`,
-      detay: `Yeni vatandaş/hane sisteme kaydedildi: ${newDoc.ad_soyad} (${newDoc.mahalle}) - TC: ${newDoc.tc_no}, Hedef: ${targetQuota} Torba`,
+      kullanici_rolu: session.rol || 'PERSONEL',
+      baslik: `Tek Hane Eklendi (${newDoc.ad_soyad})`,
+      detay: `Saha/Tekil hane eklendi: ${newDoc.ad_soyad} (${newDoc.mahalle}) - TC: ${newDoc.tc_no}, Hedef: ${targetQuota} Torba${
+        sameAddressRecords.length > 0
+          ? ` [Aynı adreste mevcut ${sameAddressRecords.length} hane uyarısı görülerek onaylandı]`
+          : ''
+      }`,
       hedef_kisi: newDoc.ad_soyad,
       hedef_tc: newDoc.tc_no,
       mahalle: newDoc.mahalle,
@@ -472,13 +730,24 @@ export async function POST(request: NextRequest) {
       ek_bilgi: {
         id: newId,
         adres: newDoc.acik_adres,
+        ayni_adres_hane_sayisi: sameAddressRecords.length,
+        ekleyen: creatorName,
       },
     });
 
+    const createdBeneficiary = {
+      ...newDoc,
+      id: newId,
+      _id: newId,
+      kalan_torba: targetQuota,
+    };
+
     return NextResponse.json({
       success: true,
-      message: 'Kayıt başarıyla eklendi',
+      message: 'Yeni hane başarıyla sisteme eklendi',
       id: newId,
+      beneficiary: createdBeneficiary,
+      same_address_records: sameAddressRecords,
     });
   } catch (error: any) {
     return serverError('beneficiaries:POST', error);

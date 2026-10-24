@@ -7,7 +7,7 @@ import {
   ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download
+  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { 
@@ -46,6 +46,7 @@ interface BeneficiaryListProps {
   onOpenKomurIptal?: (person: any) => void;
   onToggleSignature?: (person: any) => void;
   onNavigateToRoute?: () => void;
+  onOpenAddHousehold?: (initialQuery?: string) => void;
   defaultQuota?: number;
   isLoading?: boolean;
 }
@@ -68,6 +69,7 @@ export default function BeneficiaryList({
   onOpenKomurIptal,
   onToggleSignature,
   onNavigateToRoute,
+  onOpenAddHousehold,
   defaultQuota = 34,
   isLoading = false
 }: BeneficiaryListProps) {
@@ -643,9 +645,9 @@ export default function BeneficiaryList({
 
   return (
     <div className="space-y-4">
-      {/* Search Header Bar - Light Mode */}
-      <div className="relative">
-        <div className="relative flex items-center">
+      {/* Search Header Bar & Quick Single Household Add Button */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="relative flex-1 flex items-center">
           <Search className="w-5 h-5 absolute left-3.5 text-slate-400 pointer-events-none" />
           <input
             type="text"
@@ -663,6 +665,17 @@ export default function BeneficiaryList({
             </button>
           )}
         </div>
+        {onOpenAddHousehold && (
+          <button
+            type="button"
+            onClick={() => onOpenAddHousehold(searchQuery)}
+            className="px-4 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 shrink-0"
+            title="Sahada durumu uygun olan yeni tek haneyi sisteme ekle"
+          >
+            <UserPlus className="w-4 h-4 shrink-0" />
+            <span>Tek Hane Ekle</span>
+          </button>
+        )}
       </div>
 
       {/* 4 DİNAMİK KUYRUK SEKMESİ (Teslim Edilecek vs Teslim Edilen vs Verilmeyecek vs Tüm Kayıtlar) */}
@@ -1468,11 +1481,21 @@ export default function BeneficiaryList({
                   </div>
                 )}
 
-                <div className="pt-1">
+                <div className="pt-1 flex flex-wrap items-center justify-center gap-2">
+                  {onOpenAddHousehold && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenAddHousehold(searchQuery)}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>Durumu Uygunsa Tek Hane Olarak Ekle</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onSearchChange('')}
-                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 border border-slate-200 shadow-2xs"
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 transition-all active:scale-95 border border-slate-200 shadow-2xs"
                   >
                     <span>✕ Aramayı Temizle</span>
                   </button>

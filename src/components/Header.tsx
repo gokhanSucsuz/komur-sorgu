@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone
+  Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 import ProfileModal from '@/components/ProfileModal';
@@ -68,6 +68,11 @@ export default function Header({
       badgeColor: 'bg-amber-600 text-white'
     },
     {
+      id: 'add_household' as NavTab,
+      label: 'Tek Hane Ekle',
+      icon: UserPlus
+    },
+    {
       id: 'route' as NavTab,
       label: 'Dağıtım Rotası',
       icon: RouteIcon,
@@ -106,7 +111,7 @@ export default function Header({
     }
   ];
 
-  // Restrict Analytics and Excel tabs strictly to ADMIN (Archive is open to all users)
+  // Restrict Analytics and Excel tabs strictly to ADMIN (Archive and Tek Hane Ekle are open to all users)
   const adminOnlyTabs: NavTab[] = ['analytics', 'import'];
   const visibleNavTabs = allNavTabs.filter(
     (tab) => !adminOnlyTabs.includes(tab.id) || userRole === 'ADMIN'
@@ -302,6 +307,22 @@ export default function Header({
 
           {/* MOBILE ONLY: Quick Management Ribbon (Horizontal scrollable, zero overflow or overlap) */}
           <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 pb-0.5 border-t border-slate-100/90 w-full">
+            {/* Quick Single Household Add Button on Mobile Ribbon */}
+            {onTabChange && (
+              <button
+                onClick={() => onTabChange('add_household')}
+                title="Durumu Uygun Tek Hane Ekle"
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-extrabold shrink-0 shadow-2xs active:scale-95 ${
+                  currentTab === 'add_household'
+                    ? 'bg-emerald-600 text-white border-emerald-700'
+                    : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
+                }`}
+              >
+                <UserPlus className="w-3 h-3" />
+                <span>Tek Hane Ekle</span>
+              </button>
+            )}
+
             {/* Target Quota */}
             {userRole === 'ADMIN' && onOpenQuotaModal ? (
               <button

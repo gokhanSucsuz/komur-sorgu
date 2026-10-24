@@ -24,6 +24,7 @@ import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
 import KomurIptalModal from '@/components/KomurIptalModal';
 import SeasonManagementModal from '@/components/SeasonManagementModal';
 import GuidePage from '@/components/GuidePage';
+import SingleHouseholdAddPage from '@/components/SingleHouseholdAddPage';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 import { signatureQueue } from '@/lib/signatureQueue';
 import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
@@ -33,13 +34,14 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('komur_active_tab') as NavTab | null;
-        if (saved && ['search', 'route', 'shift', 'analytics', 'archive', 'tonnage', 'import', 'guide'].includes(saved)) {
+        if (saved && ['search', 'add_household', 'route', 'shift', 'analytics', 'archive', 'tonnage', 'import', 'guide'].includes(saved)) {
           return saved;
         }
       } catch (e) {}
     }
     return 'search';
   });
+  const [addHouseholdInitialQuery, setAddHouseholdInitialQuery] = useState<string>('');
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
@@ -921,10 +923,51 @@ export default function Home() {
               onOpenKomurIptal={(person) => setKomurIptalTarget(person)}
               onToggleSignature={handleToggleSignature}
               onNavigateToRoute={() => setCurrentTab('route')}
+              onOpenAddHousehold={(initialQuery) => {
+                setAddHouseholdInitialQuery(initialQuery || '');
+                setCurrentTab('add_household');
+              }}
               defaultQuota={defaultQuota}
               isLoading={isLoadingBeneficiaries}
             />
           </>
+        )}
+
+        {/* Tab: Saha Tek Hane Kömür Ekleme (Hem Saha Personeli Hem Yönetici) */}
+        {currentTab === 'add_household' && (
+          <SingleHouseholdAddPage
+            records={beneficiaries}
+            mahalleler={mahalleler}
+            userRole={userRole}
+            userName={userName}
+            defaultQuota={defaultQuota}
+            initialTcOrName={addHouseholdInitialQuery}
+            onClearInitialQuery={() => setAddHouseholdInitialQuery('')}
+            onSuccess={(createdBeneficiary) => {
+              if (createdBeneficiary) {
+                setBeneficiaries((prev) => {
+                  const exists = prev.some(
+                    (p) => String(p.id) === String(createdBeneficiary.id) || p.tc_no === createdBeneficiary.tc_no
+                  );
+                  const next = exists ? prev : [createdBeneficiary, ...prev];
+                  beneficiariesMemoryCacheRef.current = {
+                    data: next,
+                    mahalleler,
+                    eksikHaneler,
+                  };
+                  return next;
+                });
+              }
+              handleRefreshAll();
+            }}
+            onOpenDelivery={(person) => setDeliveryTarget(person)}
+            onNavigateToSearch={(query) => {
+              if (query !== undefined) {
+                setSearchQuery(query);
+              }
+              setCurrentTab('search');
+            }}
+          />
         )}
 
         {/* Tab: Dağıtım Rotası & İmza Takibi */}

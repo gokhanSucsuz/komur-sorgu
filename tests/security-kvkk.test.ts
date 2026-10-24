@@ -49,6 +49,10 @@ import {
 import {
   cleanTcNo,
   normalizeMahalleName,
+  normalizeAddress,
+  detectSettlement,
+  extractStreetAndDoor,
+  normalizeStreetForCompare,
   getRecordStreetInfo,
   getBeneficiaryListTypeInfo,
 } from '@/lib/normalizer';
@@ -357,5 +361,33 @@ describe('6. Oturum Yaşam Döngüsü, Kullanıcı Arındırma (sanitizeUser) ve
 
     assert.equal(isSessionExpired(freshLogin), false);
     assert.equal(isSessionExpired(expiredLogin), true);
+  });
+});
+
+describe('7. Saha Tek Hane Ekleme: Mükerrer TC Engeli & Aynı Adres Uyarı Tespiti Testleri', () => {
+  it('Aynı T.C. Kimlik Numarası (farklı formatlarda girilse bile) blind index ile kesin olarak yakalanır', () => {
+    const existingTc = cleanTcNo('12345678901');
+    const inputTcWithSpaces = cleanTcNo(' 123 456 789 01 ');
+    assert.equal(existingTc, inputTcWithSpaces);
+    assert.equal(hashTc(existingTc), hashTc(inputTcWithSpaces));
+  });
+
+  it('Aynı adreste farklı yazım biçimleriyle (Sokak/Sk., Mah./Mahallesi, No/Kapı) kayıtlı başka hane olduğunda adres uyarısını yakalar', () => {
+    const existingSettlement = detectSettlement('Yıldırım Beyazıt Mahallesi', '', 'Karanfil Sokak No: 14');
+    const existingNorm = normalizeAddress(existingSettlement.name, 'Karanfil Sokak No: 14');
+
+    const newSettlement = detectSettlement('Yıldırım Beyazıt Mah.', '', 'Karanfil Sk. Kapı No:14');
+    const newNorm = normalizeAddress(newSettlement.name, 'Karanfil Sk. Kapı No:14');
+
+    assert.equal(existingSettlement.name, newSettlement.name);
+    assert.equal(existingNorm, newNorm);
+    assert.equal(hashAddress(existingNorm), hashAddress(newNorm));
+
+    // Sokak + Kapı No bazlı bina eşleşmesi (farklı daire veya tarif olsa bile aynı bina tespiti)
+    const st1 = extractStreetAndDoor('Karanfil Sokak No: 14 Daire: 1', '', '', existingSettlement.name);
+    const st2 = extractStreetAndDoor('Karanfil Sk. No: 14 D: 2 (Bahçe katı)', 'Karanfil Sk.', '14', newSettlement.name);
+
+    assert.equal(normalizeStreetForCompare(st1.sokak), normalizeStreetForCompare(st2.sokak));
+    assert.equal(st1.kapiNo, st2.kapiNo);
   });
 });

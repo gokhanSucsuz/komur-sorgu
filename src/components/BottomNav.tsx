@@ -1,8 +1,8 @@
 'use client';
 
-import { Search, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, BookOpen } from 'lucide-react';
+import { Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, BookOpen } from 'lucide-react';
 
-export type NavTab = 'search' | 'route' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import' | 'guide';
+export type NavTab = 'search' | 'add_household' | 'route' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import' | 'guide';
 
 interface BottomNavProps {
   currentTab: NavTab;
@@ -30,6 +30,11 @@ export default function BottomNav({
       icon: Search,
       badge: incompleteDeliveriesCount && incompleteDeliveriesCount > 0 ? incompleteDeliveriesCount : undefined,
       badgeColor: 'bg-amber-600 text-white'
+    },
+    {
+      id: 'add_household' as NavTab,
+      label: 'Hane Ekle',
+      icon: UserPlus
     },
     {
       id: 'route' as NavTab,
@@ -70,7 +75,7 @@ export default function BottomNav({
     }
   ];
 
-  // Restrict Analytics and Excel tabs strictly to ADMIN (Archive is open to all users)
+  // Restrict Analytics and Excel tabs strictly to ADMIN (Archive and Hane Ekle are open to all users)
   const adminOnlyTabs: NavTab[] = ['analytics', 'import'];
   const visibleTabs = tabs.filter(
     (tab) => !adminOnlyTabs.includes(tab.id) || userRole === 'ADMIN'
