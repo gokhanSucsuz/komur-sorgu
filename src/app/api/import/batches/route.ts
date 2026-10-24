@@ -22,16 +22,43 @@ export async function GET(request: NextRequest) {
       archivedImportBatches,
       archivedBeneficiaries,
       archivedImportLogs,
+      systemSettings,
     } = await getDbCollections();
 
     const searchParams = request.nextUrl.searchParams;
     const requestedDonem = asString(searchParams.get('donem_kodu'), 64);
     const isArchivedQuery = Boolean(requestedDonem && requestedDonem !== 'AKTIF');
 
+    // Aktif dönem bilgisini sistem ayarlarından çek
+    const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
+    let activeSeasonCode = '2026-2027';
+    let activeSeasonTitle = '2026-2027 Kömür Dağıtım Dönemi';
+    if (seasonDoc && seasonDoc.value) {
+      try {
+        const parsed = typeof seasonDoc.value === 'string' ? JSON.parse(seasonDoc.value) : seasonDoc.value;
+        if (parsed?.kod) activeSeasonCode = String(parsed.kod).trim();
+        if (parsed?.baslik) activeSeasonTitle = String(parsed.baslik).trim();
+      } catch {
+        activeSeasonCode = String(seasonDoc.value).trim() || '2026-2027';
+      }
+    }
+
     const targetBatchesCol = isArchivedQuery ? archivedImportBatches : batchesCol;
     const targetBenCol = isArchivedQuery ? archivedBeneficiaries : benCol;
     const targetLogsCol = isArchivedQuery ? archivedImportLogs : logsCol;
-    const batchQueryFilter = isArchivedQuery ? { donem_kodu: requestedDonem } : {};
+
+    // Aktif sorguda geçmiş/arşivlenmiş dönem listelerinin sızmasını engelle; yalnızca aktif döneme ait listeleri getir
+    const batchQueryFilter = isArchivedQuery
+      ? { donem_kodu: requestedDonem }
+      : {
+          $or: [
+            { donem_kodu: activeSeasonCode },
+            { donem_kodu: 'AKTIF' },
+            { donem_kodu: { $exists: false } },
+            { donem_kodu: null },
+            { donem_kodu: '' },
+          ],
+        };
 
     const rawBatches = await targetBatchesCol.find(batchQueryFilter).sort({ _id: -1 }).toArray();
     const batches = mapDocs(rawBatches);
@@ -168,6 +195,8 @@ export async function GET(request: NextRequest) {
       unbatchedCount,
       isArchived: isArchivedQuery,
       donemKodu: isArchivedQuery ? requestedDonem : 'AKTIF',
+      activeSeasonCode,
+      activeSeasonTitle,
       archivedSeasons,
     });
   } catch (error: any) {

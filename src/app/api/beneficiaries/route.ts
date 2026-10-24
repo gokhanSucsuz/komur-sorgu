@@ -354,7 +354,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { beneficiaries: benCol, systemSettings } = await getDbCollections();
+    const {
+      beneficiaries: benCol,
+      systemSettings,
+      importBatches: batchesCol,
+      archivedImportBatches,
+    } = await getDbCollections();
     const body = await request.json();
     const {
       tc_no,
@@ -369,6 +374,8 @@ export async function POST(request: NextRequest) {
       hane_no,
       hedef_torba,
       liste_turu,
+      batch_id,
+      donem_kodu,
       imza_alindi,
       ekleme_notu,
       check_only,
@@ -625,6 +632,63 @@ export async function POST(request: NextRequest) {
 
     const phones = extractPhoneNumbers(telefon, telefon2);
 
+    // Aktif kömür dağıtım dönemini al (Sıfırlanmış / yeni dönem kontrolü)
+    const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
+    let activeSeasonCode = '2026-2027';
+    if (seasonDoc && seasonDoc.value) {
+      try {
+        const parsed = typeof seasonDoc.value === 'string' ? JSON.parse(seasonDoc.value) : seasonDoc.value;
+        if (parsed?.kod) activeSeasonCode = String(parsed.kod).trim();
+      } catch {
+        activeSeasonCode = String(seasonDoc.value).trim() || '2026-2027';
+      }
+    }
+
+    // KURAL: Eğer eski/arşivlenmiş bir dönem kodu seçilmeye çalışıldıysa reddet
+    if (donem_kodu && String(donem_kodu).trim() !== activeSeasonCode) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Eski dönem listeleri arşivlenmiştir (${donem_kodu}). Yeni hane yalnızca sıfırlanmış aktif döneme (${activeSeasonCode}) ait listelere eklenebilir.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // KURAL: Eğer belirli bir batch_id seçilmişse, bu listenin arşivde mi aktifte mi olduğunu doğrula
+    let attachedBatch: any = null;
+    if (batch_id && String(batch_id).trim()) {
+      const cleanBatchId = String(batch_id).trim();
+
+      // 1. Arşivlenmiş listeler arasında mı?
+      const archivedBatch = await archivedImportBatches.findOne({
+        $or: [{ batch_id: cleanBatchId }, { id: cleanBatchId }],
+      });
+      if (archivedBatch) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Seçilen liste (${archivedBatch.dosya_adi || cleanBatchId}) geçmiş döneme (${archivedBatch.donem_kodu || 'Arşiv'}) aittir ve arşivlenmiştir. Arşivlenmiş listelere yeni hane eklenemez. Lütfen güncel aktif döneme ait bir liste seçiniz.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // 2. Aktif listeler tablosunda mı?
+      attachedBatch = await batchesCol.findOne({
+        $or: [{ batch_id: cleanBatchId }, { id: cleanBatchId }],
+      });
+      if (attachedBatch && attachedBatch.donem_kodu && attachedBatch.donem_kodu !== activeSeasonCode) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Seçilen liste aktif döneme (${activeSeasonCode}) ait değildir ve arşivlenmiştir. Yalnızca aktif döneme ait listelere hane eklenebilir.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Varsayılan hane kömür kotasını sistem ayarlarından al
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const targetQuota = parseInt(hedef_torba || settingDoc?.value || '34', 10);
@@ -632,7 +696,7 @@ export async function POST(request: NextRequest) {
     const nowStr = nowLocaleTr;
     const creatorName = (body.personel || session.ad_soyad || session.username || 'Saha Personeli').trim();
 
-    // Mahalle içindeki sıra numarasını hesapla
+    // Mahalle içindeki sıra numarasını hesapla (Yalnızca aktif dönem hanelerini sayar)
     const existingMahalleCount = await benCol.countDocuments({ mahalle: settlement.name });
     const mahalleSira = existingMahalleCount + 1;
 
@@ -643,16 +707,16 @@ export async function POST(request: NextRequest) {
 
     let siraNo = `Ek1 - ${mahalleSira}`;
     let ekListeNo = 1;
-    let ekListeAdi = 'Saha Tekil Ekleme';
+    let ekListeAdi = attachedBatch?.ek_liste_adi || 'Saha Tekil Ekleme';
 
     if (selectedListType === 'ANA_LISTE') {
       siraNo = String(mahalleSira);
       ekListeNo = 0;
-      ekListeAdi = 'Ana Liste';
+      ekListeAdi = attachedBatch?.ek_liste_adi || 'Ana Liste';
     } else if (selectedListType === 'SIGORTALI') {
       siraNo = `Sigortalı - ${mahalleSira}`;
       ekListeNo = 1000;
-      ekListeAdi = 'Sigortalılar Listesi';
+      ekListeAdi = attachedBatch?.ek_liste_adi || 'Sigortalılar Listesi';
     }
 
     const uyarilarList: string[] = [];
@@ -697,6 +761,8 @@ export async function POST(request: NextRequest) {
       liste_turu: selectedListType,
       ek_liste_no: ekListeNo,
       ek_liste_adi: ekListeAdi,
+      batch_id: attachedBatch ? (attachedBatch.batch_id || attachedBatch.id || String(attachedBatch._id)) : (batch_id ? String(batch_id).trim() : null),
+      donem_kodu: activeSeasonCode,
       ekleyen_personel: creatorName,
       ekleyen_rol: session.rol || 'PERSONEL',
       uyarilar: uyarilarList,
@@ -709,6 +775,18 @@ export async function POST(request: NextRequest) {
     const encryptedDoc = encryptBeneficiary(newDoc);
     const res = await benCol.insertOne(encryptedDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
+
+    // Eğer aktif bir Excel listesine / batch'e bağlandıysa sayaçlarını güncelle
+    if (attachedBatch) {
+      try {
+        await batchesCol.updateOne(
+          { _id: attachedBatch._id },
+          { $inc: { mevcut_kisi: 1, eklenen_kisi: 1 } }
+        );
+      } catch (e) {
+        console.warn('Batch count increment warning:', e);
+      }
+    }
 
     // Tüm saha cihazlarının anında senkronize olması için sync pulse tetikle
     await touchSyncPulse(creatorName);

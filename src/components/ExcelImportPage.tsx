@@ -19,12 +19,14 @@ const isKoySettlement = (name: string, tip?: string) => {
 
 interface ExcelImportPageProps {
   userRole: 'ADMIN' | 'PERSONEL';
+  activeSeasonCode?: string;
   onSwitchToAdmin: () => void;
   onRefreshAll: () => void;
 }
 
 export default function ExcelImportPage({
   userRole,
+  activeSeasonCode = '2026-2027',
   onSwitchToAdmin,
   onRefreshAll
 }: ExcelImportPageProps) {
@@ -482,8 +484,14 @@ export default function ExcelImportPage({
               <FileSpreadsheet className="w-6 h-6 text-emerald-700" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-slate-900 leading-tight">Excel Dosyası Yükle</h3>
-              <p className="text-xs text-slate-500 font-medium">Hak sahibi vatandaş listesini otomatik aktarın</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-extrabold text-slate-900 leading-tight">Excel Dosyası Yükle</h3>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  Aktif Dönem: {activeSeasonCode}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Hak sahibi vatandaş listesini otomatik aktarın (Eski dönem listeleri arşivde saklanır)</p>
             </div>
           </div>
 
@@ -497,6 +505,19 @@ export default function ExcelImportPage({
             <span>Örnek Şablon</span>
           </a>
         </div>
+
+        {/* Geçmiş Dönem Arşiv Görünümü Uyarısı */}
+        {selectedSeasonView !== 'AKTIF' && (
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-black">Geçmiş Dönem Arşivi Görüntüleniyor ({selectedSeasonView})</span>
+              <p className="text-[11px] text-amber-800">
+                Şu anda geçmiş döneme ait arşivlenmiş listeleri incelemektesiniz. Yeni bir Excel yüklediğinizde bu liste otomatik olarak sıfırlanmış güncel aktif döneme (<strong>{activeSeasonCode}</strong>) eklenecektir. Eski dönem listeleri arşivde salt-okunur olarak kalır.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Info Box on Automatic Checks */}
         <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1.5">

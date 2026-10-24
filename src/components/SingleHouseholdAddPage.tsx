@@ -24,6 +24,8 @@ import {
   Sparkles,
   Ban,
   Flame,
+  FileSpreadsheet,
+  Lock,
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import {
@@ -48,6 +50,7 @@ interface SingleHouseholdAddPageProps {
   userName: string;
   defaultQuota?: number;
   initialTcOrName?: string;
+  activeSeasonCode?: string;
   onClearInitialQuery?: () => void;
   onSuccess: (createdBeneficiary: any) => void;
   onOpenDelivery?: (person: any) => void;
@@ -61,6 +64,7 @@ export default function SingleHouseholdAddPage({
   userName,
   defaultQuota = 34,
   initialTcOrName = '',
+  activeSeasonCode = '2026-2027',
   onClearInitialQuery,
   onSuccess,
   onOpenDelivery,
@@ -81,6 +85,48 @@ export default function SingleHouseholdAddPage({
   const [listeTuru, setListeTuru] = useState<'EK_LISTE' | 'ANA_LISTE' | 'SIGORTALI'>('EK_LISTE');
   const [imzaAlindi, setImzaAlindi] = useState<boolean>(false);
   const [eklemeNotu, setEklemeNotu] = useState<string>('');
+
+  // Aktif Dönem ve Liste Seçim Durumu (Sıfırlanmış yeni dönem & arşivlenmiş listeler yönetimi)
+  const [currentSeasonCode, setCurrentSeasonCode] = useState<string>(activeSeasonCode || '2026-2027');
+  const [activeBatches, setActiveBatches] = useState<any[]>([]);
+  const [archivedSeasonsList, setArchivedSeasonsList] = useState<any[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+  const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
+
+  // Aktif döneme ait Excel listelerini ve arşivlenmiş dönemleri yükle
+  useEffect(() => {
+    let isMounted = true;
+    const loadActiveLists = async () => {
+      setIsLoadingBatches(true);
+      try {
+        const res = await fetch('/api/import/batches?donem_kodu=AKTIF');
+        const data = await res.json();
+        if (isMounted && data.success) {
+          if (data.activeSeasonCode) {
+            setCurrentSeasonCode(data.activeSeasonCode);
+          }
+          setActiveBatches(data.batches || []);
+          if (Array.isArray(data.archivedSeasons)) {
+            setArchivedSeasonsList(data.archivedSeasons);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching active lists for household creation:', err);
+      } finally {
+        if (isMounted) setIsLoadingBatches(false);
+      }
+    };
+    loadActiveLists();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeSeasonCode) {
+      setCurrentSeasonCode(activeSeasonCode);
+    }
+  }, [activeSeasonCode]);
 
   // Aynı Adres Uyarı Onayı
   const [confirmSameAddress, setConfirmSameAddress] = useState<boolean>(false);
@@ -493,6 +539,8 @@ export default function SingleHouseholdAddPage({
           hane_no: haneNo.trim(),
           hedef_torba: parseInt(hedefTorba || String(defaultQuota), 10) || defaultQuota,
           liste_turu: listeTuru,
+          batch_id: selectedBatchId || null,
+          donem_kodu: currentSeasonCode,
           imza_alindi: imzaAlindi,
           ekleme_notu: eklemeNotu.trim(),
           personel: userName,
@@ -1156,7 +1204,8 @@ export default function SingleHouseholdAddPage({
             </h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* HEDEF KÖMÜR VE HANE NO */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* HEDEF KÖMÜR TORBA SAYISI */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
@@ -1171,24 +1220,8 @@ export default function SingleHouseholdAddPage({
                 max={200}
                 value={hedefTorba}
                 onChange={(e) => setHedefTorba(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-black focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-black focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
               />
-            </div>
-
-            {/* LİSTE TÜRÜ */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 block">
-                Eklenecek Liste Kategorisi
-              </label>
-              <select
-                value={listeTuru}
-                onChange={(e) => setListeTuru(e.target.value as any)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              >
-                <option value="EK_LISTE">Saha Ek Liste (Önerilen)</option>
-                <option value="ANA_LISTE">Ana Liste</option>
-                <option value="SIGORTALI">Sigortalılar Listesi</option>
-              </select>
             </div>
 
             {/* HANE NO (OPSİYONEL) */}
@@ -1205,9 +1238,92 @@ export default function SingleHouseholdAddPage({
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-mono font-bold focus:outline-none focus:ring-2 ${
                   activeDuplicateHane
                     ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                    : 'border-slate-300 bg-white text-slate-900 focus:ring-amber-500'
+                    : 'border-slate-300 bg-white text-slate-900 focus:ring-amber-500 shadow-2xs'
                 }`}
               />
+            </div>
+          </div>
+
+          {/* EKLENECEK HANE LİSTESİ SEÇİMİ (AKTİF DÖNEM & ARŞİV KONTROLÜ) */}
+          <div className="space-y-2.5 bg-gradient-to-br from-amber-50/70 via-white to-slate-50 p-4 rounded-2xl border-2 border-amber-200/90 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2">
+              <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
+                <FileSpreadsheet className="w-4 h-4 text-amber-600" />
+                <span>Eklenecek Hane Listesi Seçimi</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  Aktif Dönem: {currentSeasonCode}
+                </span>
+                {archivedSeasonsList.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5 text-slate-500" />
+                    {archivedSeasonsList.length} Geçmiş Dönem Arşivlendi
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+              {/* 1. Liste Kategorisi / Türü */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 block">
+                  Liste Kategorisi (Islak İmza Dosyası)
+                </label>
+                <select
+                  value={listeTuru}
+                  onChange={(e) => setListeTuru(e.target.value as any)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                >
+                  <option value="EK_LISTE">📋 Saha Ek Liste (Önerilen - Otomatik Sıralı)</option>
+                  <option value="ANA_LISTE">📄 Ana Dağıtım Listesi (1, 2, 3...)</option>
+                  <option value="SIGORTALI">🛡️ Sigortalılar Listesi (Ayrı İmza Dosyası)</option>
+                </select>
+              </div>
+
+              {/* 2. Aktif Dönem Listesi / Excel Grubu */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                  <span>Bağlanacak Liste / Excel Grubu</span>
+                  <span className="text-[10px] text-emerald-700 font-bold">Yalnızca Aktif Dönem</span>
+                </label>
+                <select
+                  value={selectedBatchId}
+                  onChange={(e) => setSelectedBatchId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                >
+                  <option value="">
+                    ✨ [Aktif Dönem: {currentSeasonCode}] Genel Dağıtım Listesi (Varsayılan)
+                  </option>
+                  {activeBatches.length > 0 && (
+                    <optgroup label={`📁 Aktif Döneme (${currentSeasonCode}) Yüklenen Excel Listeleri`}>
+                      {activeBatches.map((b) => (
+                        <option key={b.batch_id || b.id} value={b.batch_id || b.id}>
+                          📄 {b.dosya_adi || b.batch_id} ({b.mevcut_kisi || b.eklenen_kisi || 0} Hane)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {archivedSeasonsList.length > 0 && (
+                    <optgroup label="🔒 Arşivlenmiş Geçmiş Dönemler (Yeni Hane Eklenemez)">
+                      {archivedSeasonsList.map((sa) => (
+                        <option key={sa.donem_kodu} value="" disabled>
+                          🔒 {sa.donem_kodu} Dönemi Listeleri (Arşivlendi - Salt Okunur)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            {/* Bilgilendirme ve Güvence Notu */}
+            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-[11px] text-amber-950 font-medium leading-relaxed">
+              <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <span>
+                Sıfırlanmış / yeni dönem başladığında eski dönemlere ait listeler otomatik olarak <strong>arşivlenir</strong> ve seçime kapatılır. Eklenen tüm haneler doğrudan sıfırlanmış güncel aktif <strong>{currentSeasonCode}</strong> dönemi listelerine dahil edilir.
+              </span>
             </div>
           </div>
 

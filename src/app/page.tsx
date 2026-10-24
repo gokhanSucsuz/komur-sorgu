@@ -941,6 +941,7 @@ export default function Home() {
             userRole={userRole}
             userName={userName}
             defaultQuota={defaultQuota}
+            activeSeasonCode={activeSeasonCode}
             initialTcOrName={addHouseholdInitialQuery}
             onClearInitialQuery={() => setAddHouseholdInitialQuery('')}
             onSuccess={(createdBeneficiary) => {
@@ -1028,6 +1029,7 @@ export default function Home() {
         {currentTab === 'import' && userRole === 'ADMIN' && (
           <ExcelImportPage
             userRole={userRole}
+            activeSeasonCode={activeSeasonCode}
             onSwitchToAdmin={() => setShowAdminAuthModal(true)}
             onRefreshAll={handleRefreshAll}
           />
