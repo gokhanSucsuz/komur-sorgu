@@ -53,6 +53,16 @@
     - 11.1. İnternetsiz Köy ve Bodrum Katlarında Kesintisiz Çalışma
     - 11.2. Sunucu Eşitleme (Sync)
     - 11.3. Cep Telefonuna Uygulama Olarak Yükleme (PWA)
+12. [Kurumsal Bilgi Güvenliği, KVKK ve Kriptografik Sistem Mimarisi](#12-kurumsal-bilgi-güvenliği-kvkk-ve-kriptografik-sistem-mimarisi)
+    - 12.1. İki Aşamalı Doğrulama (2FA - TOTP) ve Cihaz Eşleştirme (Device Pairing)
+    - 12.2. Mobil Cihazlar İçin 6 Saatlik 2FA Giriş Muafiyeti (Grace Period)
+    - 12.3. Veritabanı Düzeyinde AES-256-GCM Şifreleme ve Kriptografik Kör İndeks (Blind Indexing)
+    - 12.4. İstemci Tarafı (Client-Side) LocalStorage Şifreleme ve Önbellek Güvenliği
+    - 12.5. Tek Cihaz Eşzamanlılık Koruması (Single Active Session) ve Kalp Atışı (Heartbeat)
+    - 12.6. CSRF, NoSQL Enjeksiyon Koruması, HTTP Güvenlik Başlıkları ve Girdi Sanitizasyonu
+    - 12.7. Sezon Arşivleme İzolasyonu ve Sıfırlanmış Dönem Veri Güvencesi
+    - 12.8. Dokunmatik Islak İmza, Zaman Damgası ve Hukuki İspat Zinciri
+    - 12.9. Değiştirilemez Denetim Günlükleri (Audit Logs) ve Teftiş Uyumluluğu
 
 ---
 
@@ -267,6 +277,70 @@ Sistemde kronometre veya "mesai başlat/bitir" baskısı kaldırılmıştır. Pe
 - **Android (Chrome):** Sağ üstteki üç noktaya basıp **"Uygulamayı Yükle"** veya **"Ana Ekrana Ekle"** seçilir.
 - **iOS (Safari):** Alttaki Paylaş butonuna basıp **"Ana Ekrana Ekle"** seçilir.
 - Uygulama masaüstüne Edirne SYDV logosuyla bir mobil uygulama gibi yerleşir.
+
+---
+
+## 12. KURUMSAL BİLGİ GÜVENLİĞİ, KVKK VE KRİPTOGRAFİK SİSTEM MİMARİSİ
+
+Bu bölüm; Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı Kömür Dağıtım ve Saha Takip Sistemi'nin 6698 Sayılı Kişisel Verilerin Korunması Kanunu (KVKK), Cumhurbaşkanlığı Dijital Dönüşüm Ofisi Bilgi ve İletişim Güvenliği Rehberi ve Kamu Bilişim Standartları doğrultusunda inşa edilen uçtan uca kurumsal güvenlik mimarisini, veri koruma mekanizmalarını ve işleyiş kurallarını en ince ayrıntısına kadar açıklamaktadır.
+
+### 12.1. İki Aşamalı Doğrulama (2FA - TOTP) ve Cihaz Eşleştirme (Device Pairing)
+- **RFC 6238 Standardı (Time-Based One-Time Password):** Sistemde hem Yönetici (`ADMIN`) hem de Saha Personeli (`PERSONEL`) hesapları için endüstri standardı zamana dayalı tek kullanımlık doğrulama kodu (TOTP - Google Authenticator) mimarisi uygulanır.
+- **Admin Merkezi Yetkilendirme Güvencesi:** Saha personelinin cep telefonunu kaybetmesi, telefonunun bozulması, authenticator uygulamasının silinmesi veya parolasını unutması gibi kriz durumlarında yetki karmaşası yaşanmaz. Sistem Yöneticisi (`ADMIN`), Personel Yönetim Paneli üzerinden tek tıkla personelin eşleşmiş cihazını sıfırlayabilir veya geçici acil erişim kodu üreterek operasyonun aksamasını önler.
+- **Kişiselleştirilmiş Cihaz Eşleştirme QR Kodu:** Sistem, 1 Yönetici ve 3 Saha Personelinin kendi mobil cihazlarını sisteme bağlayabilmesi için özel 4 adet güvenli cihaz slotu (`slot_admin`, `slot_p1`, `slot_p2`, `slot_p3`) sunar. Admin veya personel telefondan sisteme girdiğinde doğrudan QR kodunu veya eşleme anahtarını taratarak cihazını güvenle sisteme bağlar.
+- **Donanımsal Parmak İzi (Device Fingerprinting):** Eşleştirilen mobil cihazların tarayıcı imzası, ekran çözünürlüğü ve kriptografik cihaz belirteci sunucuda kaydedilir. Yetkisiz üçüncü şahısların farklı cihazlardan hesaba sızması engellenir.
+
+### 12.2. Mobil Cihazlar İçin 6 Saatlik 2FA Giriş Muafiyeti (Grace Period)
+Saha ekiplerinin dağıtım koşullarında (eldivenle çalışma, soğuk hava, araç kullanırken sürekli kod girme zorluğu) iş verimliliğini korumak ve güvenliği aksatmamak amacıyla akıllı bir muafiyet mimarisi kurgulanmıştır:
+1. **Günün İlk Girişinde 2FA Zorunluluğu:** Personel, eşleşmiş mobil cihazı ile günün ilk oturumunu açarken şifresinin ardından mutlaka Google Authenticator kodunu girmek zorundadır.
+2. **6 Saatlik Muafiyet Penceresi:** Kod başarıyla doğrulandıktan sonra sunucu tarafında kriptografik olarak imzalanmış 6 saatlik bir `2fa_grace_until` zaman damgası açılır.
+3. **Çıkış Yapılsa Dahi Hatırlama:** Personel aynı gün içerisinde uygulamadan çıkış yapsa (`Logout`) dahi, 6 saatlik muafiyet süresi dolmadığı sürece eşleşmiş kendi telefonundan tekrar giriş yaparken yalnızca şifresini girer; ikinci kez 2FA kodu sorulmaz.
+4. **Süre Bitiminde Kesintisiz Çalışma (No Forced Mid-Work Kick):** Eğer personel sahada aktif olarak kömür dağıtımı yaparken 6 saatlik süre dolarsa, ekran aniden kapanıp personeli sistemden dışarı atmaz. Personel teslimatlarını tamamlayabilir.
+5. **Süre Sonrası Güvenli Kilitlenme:** 6 saatlik süre dolduktan sonra personel çıkış yaparsa veya yeni bir oturum açarsa sistem otomatik olarak tekrar Google Authenticator 2FA kodunu şart koşar.
+6. **Eşleşmemiş Yabancı Cihazlar:** Eşleşmemiş veya masaüstü cihazlardan yapılan her girişte muafiyet tanınmaz; her defasında 2FA kodu zorunludur.
+
+### 12.3. Veritabanı Düzeyinde AES-256-GCM Şifreleme ve Kriptografik Kör İndeks (Blind Indexing)
+- **Durağan Veri Şifrelemesi (Encryption at Rest - AES-256-GCM):** Hak sahiplerine ait tüm hassas kişisel veriler (`tc_no`, `ad_soyad`, `telefon`, `telefon2`, `acik_adres`, `sokak`, `kapi_no`, `daire_no`, `teslimat_notu`, `komur_iptal_nedeni`) MongoDB veritabanında açık metin (plaintext) olarak değil, askeri standart olan AES-256-GCM algoritması ile simetrik olarak şifrelenmiş halde saklanır. Her kayıt için benzersiz bir Başlatma Vektörü (IV - Initialization Vector) ve Kimlik Doğrulama Etiketi (Auth Tag) üretilir. Veritabanı yedekleri çalınsa veya fiziksel diske erişilse dahi çözülemez.
+- **Kriptografik Kör İndeksleme (HMAC-SHA256 Blind Indexing):** Şifrelenmiş veriler üzerinde hızlı arama yapabilmek amacıyla veritabanında gizli bir HMAC anahtarı ile üretilen `tc_hash`, `hane_hash` ve `adres_hash` alanları tutulur. Bu mimari sayesinde sunucu, vatandaşın gerçek TC numarasını veya adresini veritabanında açıkça görmeden doğrudan hash eşleşmesi ile milisaniyeler içinde arama yapar.
+- **Oturum Belirteçlerinin Kriptografik Özetlenmesi (Session Token Hashing):** Kullanıcı oturum açtığında üretilen `session_token` veritabanında açık olarak tutulmaz; SHA-256 özeti alınarak kaydedilir. Böylece veritabanını okuma yetkisi olan biri dahi kullanıcı oturumlarını taklit edemez.
+- **Geri Döndürülemez Parola Mimarisi (Argon2id / PBKDF2):** Yönetici ve personellerin şifreleri tek yönlü, yüksek hesaplama maliyetli kriptografik algoritmalar ve rastgele tuzlama (salt) ile özetlenir; sistem yöneticisi dahil hiç kimse personelin gerçek parolasını göremez.
+
+### 12.4. İstemci Tarafı (Client-Side) LocalStorage Şifreleme ve Önbellek Güvenliği
+- **Rastgele Anahtarlı İstemci Şifrelemesi (`src/lib/secureStorage.ts`):** Tarayıcının Geliştirici Araçları (`F12 -> Application -> Local Storage`) incelendiğinde; Yönetici Adı-Soyadı (`komur_user_name`), Rolü (`komur_user_role`), Kullanıcı Adı (`komur_username`), Oturum Belirteci ve Ekip Bilgileri **kesinlikle açık metin olarak yazılmaz**. İstemci cihazın donanım kimliğine özel türetilen dinamik bir şifreleme anahtarı ile şifrelenmiş anlamsız karakter dizileri olarak saklanır. Cihazı ele geçiren kötü niyetli kişiler veya XSS saldırganları açık kimlik bilgilerini okuyamaz.
+- **PWA Manifest ve Cache Storage Ayrımı:** PWA `manifest.json` dosyası ve Service Worker önbelleği titizlikle optimize edilmiştir; önbellekte yalnızca statik tasarım varlıkları (ikonlar, yazı tipleri, CSS) tutulur, hiçbir hak sahibi veya personel bilgisi tarayıcı disk önbelleğine yazılmaz.
+- **Uçucu Bellek Yönetimi (Volatile In-Memory Caching):** KVKK ilkeleri uyarınca binlerce kişilik hak sahibi listesi hiçbir zaman tarayıcının yerel diskine düz metin olarak depolanmaz. Veriler yalnızca ekran açıkken RAM bellekte tutulur, sekme veya tarayıcı kapatıldığında anında bellekten silinir.
+
+### 12.5. Tek Cihaz Eşzamanlılık Koruması (Single Active Session) ve Kalp Atışı (Heartbeat)
+- **Eşzamanlı Giriş Yasağı:** Aynı kullanıcı hesabı ile aynı anda birden fazla cihazdan çalışılması kesin olarak engellenir.
+- **Arka Planda Dinamik Kalp Atışı (30s Heartbeat):** İstemci, sunucuyla her 30 saniyede bir arka planda kriptografik kalp atışı sinyali paylaşır.
+- **Anında Dışarı Atma (Revocation):** Bir personelin şifresiyle başka bir telefondan giriş yapıldığı anda önceki cihazın oturumu sunucuda derhal iptal edilir. Önceki cihazın ekranında *"Başka bir cihazdan oturum açıldığı için bu cihazdaki oturumunuz güvenlik nedeniyle sonlandırıldı"* uyarısı çıkarak sistem kilitlenir.
+- **6 Saatlik Mutlak Oturum Süresi (Absolute TTL):** Açık kalan unutulmuş oturumlar, güvenlik politikası gereği 6 saat sonunda sunucu tarafından otomatik olarak düşürülür.
+
+### 12.6. CSRF, NoSQL Enjeksiyon Koruması, HTTP Güvenlik Başlıkları ve Girdi Sanitizasyonu
+- **Çapraz İstek Sahteciliği (CSRF) Koruması:** Durum değiştiren (`POST`, `PUT`, `DELETE`, `PATCH`) tüm API uç noktalarında `Sec-Fetch-Site` ve `Origin` başlıkları doğrulanır; dış sitelerden tetiklenebilecek sahte isteklere karşı tam koruma sağlanır.
+- **NoSQL Enjeksiyonu Kalkanı:** Kullanıcıdan gelen ID parametreleri `isSafeId` fonksiyonu ile 24 karakterlik onaltılık (hex) ObjectId denetiminden geçirilir (`$gt`, `$ne`, `$where` gibi operatör enjeksiyonları tamamen filtrelenir).
+- **String ve Sayı Kırpma (Sanitization):** Tüm metin girdileri `asString` ile maksimum karakter uzunluğu sınırına tabi tutulur, sayısal girdiler `clampInt` ile mantıklı aralıklara hapsedilir (Buffer overflow ve bellek tüketim saldırıları engellenir).
+- **Katı HTTP Güvenlik Başlıkları (Security Headers):**
+  - `X-Frame-Options: DENY` (Clickjacking saldırılarına karşı iframe içinde çalıştırılamaz).
+  - `X-Content-Type-Options: nosniff` (MIME türü saptırma saldırılarını engeller).
+  - `Referrer-Policy: strict-origin-when-cross-origin` (Hassas URL sızıntılarını önler).
+  - `Content-Security-Policy` (Zararlı harici script yürütülmesini engeller).
+
+### 12.7. Sezon Arşivleme İzolasyonu ve Sıfırlanmış Dönem Veri Güvencesi
+- **Tam Koleksiyon İzolasyonu:** Kömür dağıtım dönemi tamamlanıp kapatıldığında (`CLOSE_AND_ARCHIVE_SEASON`); hak sahipleri, teslimat geçmişi, tır kayıtları, yüklenen Excel listeleri ve hata kayıtları aktif tablolardan alınıp bağımsız `archived_*` koleksiyonlarına kilitlenir.
+- **Yeni Dönem Liste İzolasyonu:** Yeni sıfırlanan aktif dönemde (`SingleHouseholdAddPage`), kullanıcı yalnızca güncel aktif döneme ait listeleri (`Ana Liste`, `Saha Ek Liste`, `Sigortalılar Listesi` veya o dönem yüklenen aktif Excel'leri) seçebilir.
+- **Eski Dönem Listelerine Müdahale Yasağı:** Sunucu tarafında (`POST /api/beneficiaries`), arşivlenmiş geçmiş bir döneme ait liste veya batch seçilmeye çalışılırsa işlem reddedilir; geçmiş arşivlerin veri bütünlüğü kanunen korunur.
+- **16MB BSON Limiti Güvencesi:** Yüzbinlerce hanelik dağıtım verisi tek bir JSON nesnesine sıkıştırılmaz; 500'lük atomik paketlerle güvenli parçalama yapılarak MongoDB bellek taşma riski sıfıra indirilir.
+
+### 12.8. Dokunmatik Islak İmza, Zaman Damgası ve Hukuki İspat Zinciri
+- **Vektörel Biyometrik İmza İmzalanması:** Kömür torbaları kapıda vatandaşa teslim edilirken cep telefonu veya tablet ekranında parmakla/kalemle atılan imza, piksel kaybı olmaksızın vektörel çizim koordinatlarıyla sunucuda şifrelenir.
+- **Mühürlü Teslimat Kaydı:** İmzanın atıldığı an, teslimatı yapan personelin adı, teslim alan kişinin kimliği ve T.C. İçişleri Bakanlığı / Valilik formatındaki tarih-saat damgası kayda iliştirilir.
+- **Sayıştay ve Mülki Teftiş Geçerliliği:** Alınan dijital ıslak imzalar, sonradan değiştirilemez veya tahrif edilemez biçimde saklanır; fiziki imza çizelgelerinin kaybolma, yırtılma ve ıslanma riskini ortadan kaldırır.
+
+### 12.9. Değiştirilemez Denetim Günlükleri (Audit Logs) ve Teftiş Uyumluluğu
+- **Kapsamlı Eylem Kaydı:** Sistemde gerçekleştirilen her türlü işlem (kullanıcı girişi, hane ekleme, adres güncelleme, kömür teslimatı, imza kaydı, rota oluşturma, excel yükleme, şifre değişimi, teslimat iptali) saniyesi saniyesine kayıt altına alınır.
+- **Değiştirilemezlik (Append-Only):** Denetim logları tablosundan hiçbir kayıt kullanıcılar veya personel tarafından silinemez ya da güncellenemez.
+- **Yönetici Denetim Paneli:** Sistem Yöneticisi, Denetim Logları (`AuditLogsModal`) ekranından tüm saha hareketlerini filtreleyebilir, belirli bir personelin gün içindeki tüm adımlarını inceleyebilir ve resmi incelemeler için Excel formatında dışa aktarabilir.
 
 ---
 

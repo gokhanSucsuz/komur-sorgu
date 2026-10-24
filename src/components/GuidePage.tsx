@@ -58,6 +58,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
     { id: 'import', order: 9, label: 'Excel Yükleme', fullTitle: '9. Excel Hak Sahibi Yükleme', icon: FileSpreadsheet },
     { id: 'offline', order: 10, label: 'Çevrimdışı & PWA', fullTitle: '10. Çevrimdışı Mod & Mobil PWA', icon: WifiOff },
     { id: 'compliance', order: 11, label: 'Sistem Karnesi (10/10)', fullTitle: '11. Resmi Kurum Güvenlik & Sistem Karnesi (10/10)', icon: Award },
+    { id: 'security_arch', order: 12, label: 'Güvenlik Mimarisi', fullTitle: '12. Kurumsal Güvenlik Mimarisi & KVKK Detayı', icon: Lock },
   ];
 
   const adminOnlyGuides = ['season', 'analytics', 'import'];
@@ -862,6 +863,187 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             <p className="text-[11px] text-emerald-900 leading-relaxed">
               Bu sistemde işlenen tüm kişisel veriler (TC Kimlik No, Ad-Soyad, Telefon, Açık Adres ve Aktarım Çakışma Logları), veritabanına yazılmadan önce uygulama katmanında <strong>AES-256-GCM (Authenticated Encryption)</strong> ile şifrelenmekte ve şifreleme anahtarları (<code>ENCRYPTION_MASTER_KEY</code> &amp; <code>BLIND_INDEX_KEY</code>) veritabanı sunucusundan tamamen bağımsız tutulmaktadır. Bu mimari sayesinde sistem hem <strong>6698 Sayılı Kişisel Verilerin Korunması Kanunu (Madde 12)</strong> hem de <strong>T.C. Cumhurbaşkanlığı Dijital Dönüşüm Ofisi Bilgi ve İletişim Güvenliği Rehberi</strong> kriterlerini <strong>10 / 10</strong> tam puanla karşılamaktadır.
             </p>
+          </div>
+        </div>
+      ),
+    },
+
+    // 12. KURUMSAL SİSTEM GÜVENLİK MİMARİSİ VE İŞLEYİŞİ
+    {
+      id: 'security_arch',
+      order: 12,
+      title: '12. Kurumsal Bilgi Güvenliği, KVKK ve Kriptografik Sistem Mimarisi',
+      badge: 'KRİPTOGRAFİK MİMARİ',
+      badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+      description: '2FA TOTP ve cihaz eşleştirme, 6 saatlik muafiyet penceresi, AES-256-GCM kör indeksleme, şifreli LocalStorage ve sezon izolasyonu mimarisi.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
+          {/* Giriş Bilgi Paneli */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white space-y-2 shadow-sm border border-blue-900/60">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-amber-400" />
+              <h4 className="text-sm sm:text-base font-black text-white">
+                Kurumsal Güvenlik ve Veri Koruma Standartları
+              </h4>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Kömür Dağıtım Sistemi; <strong>6698 Sayılı KVKK</strong>, <strong>Cumhurbaşkanlığı Dijital Dönüşüm Ofisi Bilgi ve İletişim Güvenliği Rehberi</strong> ve Sayıştay denetim standartlarına tam uyumlu olarak çok katmanlı savunma mimarisiyle (Defense in Depth) korunmaktadır.
+            </p>
+          </div>
+
+          {/* 1. İKİ AŞAMALI DOĞRULAMA & 4 CİHAZ SLOTLU EŞLEŞTİRME */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+            <div className="flex items-center gap-2 text-indigo-900 font-black text-xs sm:text-sm">
+              <KeyRound className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>1. İki Aşamalı Doğrulama (2FA - TOTP) ve 4 Cihaz Slotlu Eşleştirme</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-slate-600">
+              <p>
+                <strong>RFC 6238 Standardı:</strong> Sistemde hem Yönetici hem de Saha Personeli için Google Authenticator tabanlı zamana bağlı tek kullanımlık şifreler (TOTP) kullanılır.
+              </p>
+              <p>
+                <strong>Admin Tek Yetkili Güvencesi:</strong> Personelin telefonunun bozulması, authenticator uygulamasının silinmesi veya parolasını unutması durumunda kriz yaşanmaz. Sistem Yöneticisi, Personel Yönetim Paneli üzerinden personelin 2FA cihaz eşleştirmesini tek tıkla sıfırlayabilir veya geçici acil erişim kodu oluşturabilir.
+              </p>
+              <p>
+                <strong>4 Mobil Cihaz Slotu:</strong> 1 Yönetici ve 3 Saha Personelinin mobil cihazları için özel slotlar ayrılmıştır. Admin telefondan bağlandığında kendi telefonunu ekleyebilir; personel de aynı şekilde kendi cihazını QR kod okutarak veya eşleme anahtarı girerek sisteme bağlar.
+              </p>
+            </div>
+          </div>
+
+          {/* 2. MOBİL CİHAZLAR İÇİN 6 SAATLİK 2FA GİRİŞ MUAFİYETİ (GRACE PERIOD) */}
+          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-amber-950 space-y-2.5">
+            <div className="flex items-center gap-2 text-amber-950 font-black text-xs sm:text-sm">
+              <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>2. Mobil Cihazlar İçin 6 Saatlik 2FA Giriş Muafiyeti (Grace Period)</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-amber-900">
+              <p>
+                <strong>Günün İlk Girişi:</strong> Personel, eşleşmiş telefonuyla günün ilk oturumunu açarken şifresinin ardından mutlaka 6 haneli Google Authenticator kodunu girmek zorundadır.
+              </p>
+              <p>
+                <strong>6 Saat Boyunca Hatırlama:</strong> Başarılı ilk girişin ardından sistem aynı gün içinde 6 saatlik muafiyet tanır. Personel uygulama penceresini kapatsa veya çıkış yapsa dahi, 6 saat dolana kadar aynı cihazdan tekrar giriş yaparken yalnızca şifresini girer; yeniden 2FA kodu istenmez.
+              </p>
+              <p>
+                <strong>Sahadaki Personeli Aniden Dışarı Atmama:</strong> Dağıtım sırasında 6 saatlik süre dolsa dahi aktif çalışan personel ekran başından aniden atılmaz. Ancak personel kendi isteğiyle çıkış yapar ve 6 saat geçmişse, tekrar girişte güvenlik gereği 2FA kodu zorunlu kılınır.
+              </p>
+              <p>
+                <strong>Eşleşmemiş Cihaz Koruması:</strong> Eşleşmemiş yabancı bir cihazdan veya masaüstü bilgisayardan girildiğinde bu muafiyet geçerli değildir; her girişte 2FA kodu sorulur.
+              </p>
+            </div>
+          </div>
+
+          {/* 3. VERİTABANI DÜZEYİNDE AES-256-GCM & BLIND INDEXING */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+            <div className="flex items-center gap-2 text-emerald-900 font-black text-xs sm:text-sm">
+              <Lock className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>3. Veritabanı Düzeyinde AES-256-GCM Şifreleme ve Kriptografik Kör İndeks</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-slate-600">
+              <p>
+                <strong>Durağan Veri Şifrelemesi (Encryption at Rest):</strong> Hak sahiplerine ait tüm hassas kişisel veriler (TC No, Ad-Soyad, Telefon, Açık Adres, Teslimat Notları), MongoDB veritabanında AES-256-GCM simetrik şifreleme ile şifrelenir. Veritabanı diski veya yedeği çalınsa dahi veriler asla okunamaz.
+              </p>
+              <p>
+                <strong>Kriptografik Kör İndeks (HMAC-SHA256 Blind Indexing):</strong> Şifrelenmiş veriler üzerinde hızlı arama yapabilmek için deterministik <code>tc_hash</code>, <code>hane_hash</code> ve <code>adres_hash</code> üretilir. Sunucu, veritabanını çözmeden doğrudan kör indeks eşleşmesi ile milisaniyeler içinde arama yapar.
+              </p>
+              <p>
+                <strong>Oturum Belirteçlerinin Özetlenmesi:</strong> Aktif oturum tokenları veritabanında düz metin tutulmaz; SHA-256 hash'i alınarak kaydedilir.
+              </p>
+            </div>
+          </div>
+
+          {/* 4. İSTEMCİ TARAFI LOCALSTORAGE ŞİFRELEME & CACHE GÜVENLİĞİ */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+            <div className="flex items-center gap-2 text-slate-900 font-black text-xs sm:text-sm">
+              <Monitor className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>4. İstemci Tarafı LocalStorage Şifreleme ve Önbellek Güvenliği</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-slate-600">
+              <p>
+                <strong>Şifreli LocalStorage (<code>secureStorage.ts</code>):</strong> Tarayıcının Geliştirici Araçları (F12) açıldığında; Yönetici Adı-Soyadı, Rolü, Kullanıcı Adı ve Oturum Bilgileri <strong>kesinlikle açık olarak görünmez</strong>. Cihaza özel dinamik anahtarlarla şifrelenmiş anlamsız metinler olarak saklanır.
+              </p>
+              <p>
+                <strong>Cache Storage ve Manifest İzolasyonu:</strong> PWA <code>manifest.json</code> ve Service Worker önbelleğinde hiçbir kişisel veya kurumsal gizli bilgi depolanmaz; yalnızca statik arayüz varlıkları önbelleklenir.
+              </p>
+              <p>
+                <strong>Volatile In-Memory Caching:</strong> KVKK gereği binlerce kişilik vatandaş listesi tarayıcının yerel diskine düz metin olarak kaydedilmez; yalnızca bileşen yaşam döngüsü boyunca geçici RAM bellekte tutulur.
+              </p>
+            </div>
+          </div>
+
+          {/* 5. TEK CİHAZ OTURUMU & 30s KALP ATIŞI */}
+          <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 text-rose-950 space-y-2.5">
+            <div className="flex items-center gap-2 text-rose-950 font-black text-xs sm:text-sm">
+              <Smartphone className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>5. Tek Cihaz Eşzamanlılık Koruması ve 30 Saniyelik Kalp Atışı (Heartbeat)</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-rose-900">
+              <p>
+                <strong>Eşzamanlı Giriş Yasağı:</strong> Aynı kullanıcı adı ve şifre ile aynı anda birden fazla cihazdan oturum açılamaz.
+              </p>
+              <p>
+                <strong>Anında Oturum İptali:</strong> Bir hesaba yeni bir cihazdan girildiği anda önceki cihazın oturumu sunucuda geçersiz kılınır. İstemci her 30 saniyede bir kalp atışı göndererek oturumunu doğrular; önceki cihazda anında oturum sonlandırılır.
+              </p>
+              <p>
+                <strong>6 Saatlik Mutlak Zaman Aşımı:</strong> Açık unutulan tüm oturumlar 6 saatin sonunda sunucu tarafından otomatik olarak düşürülür.
+              </p>
+            </div>
+          </div>
+
+          {/* 6. CSRF, NOSQL ENJEKSİYON KORUMASI & HTTP BAŞLIKLARI */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+            <div className="flex items-center gap-2 text-slate-900 font-black text-xs sm:text-sm">
+              <Shield className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>6. CSRF Kalkanı, NoSQL Enjeksiyon Koruması ve Katı Güvenlik Başlıkları</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-slate-600">
+              <p>
+                <strong>CSRF Koruması:</strong> Durum değiştiren tüm API isteklerinde (POST, PUT, DELETE, PATCH) <code>Sec-Fetch-Site</code> ve <code>Origin</code> başlıkları sıkı kontrolden geçer.
+              </p>
+              <p>
+                <strong>NoSQL Enjeksiyon Kalkanı:</strong> Gelen tüm ID parametreleri <code>isSafeId</code> ile 24 karakterlik onaltılık ObjectId formatında doğrulanır; operatör enjeksiyonları tamamen filtrelenir.
+              </p>
+              <p>
+                <strong>Girdi Kırpma (Sanitization):</strong> Tüm metin girdileri <code>asString</code> ile maksimum karakter sınırına tabi tutulur, sayısal girdiler <code>clampInt</code> ile mantıklı aralıklara hapsedilir.
+              </p>
+              <p>
+                <strong>Güvenlik Başlıkları:</strong> <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>.
+              </p>
+            </div>
+          </div>
+
+          {/* 7. SEZON İZOLASYONU VE SIFIRLANMIŞ YENİ DÖNEM GÜVENCESİ */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+            <div className="flex items-center gap-2 text-amber-900 font-black text-xs sm:text-sm">
+              <Archive className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>7. Sezon Arşivleme İzolasyonu ve Sıfırlanmış Dönem Veri Güvencesi</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-slate-600">
+              <p>
+                <strong>Tam Arşiv İzolasyonu:</strong> Kömür dönemi kapatıldığında tüm hak sahipleri, teslimatlar, tır kayıtları, excel dosyaları ve hata kayıtları bağımsız <code>archived_*</code> koleksiyonlarına kilitlenir.
+              </p>
+              <p>
+                <strong>Yalnızca Aktif Dönem Listelerinin Seçilebilmesi:</strong> Yeni sıfırlanan aktif dönemde, hane ekleme ekranında yalnızca güncel aktif döneme ait listeler seçilebilir.
+              </p>
+              <p>
+                <strong>Eski Listelere Müdahale Engeli:</strong> Arşivlenmiş eski listelere sunucu tarafında (<code>POST /api/beneficiaries</code>) yeni hane eklenmesi kesin olarak engellenir; veri bütünlüğü kanunen güvence altındadır.
+              </p>
+            </div>
+          </div>
+
+          {/* 8. DOKUNMATİK ISLAK İMZA & DEĞİŞTİRİLEMEZ DENETİM LOGLARI */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-2.5">
+            <div className="flex items-center gap-2 text-indigo-900 font-black text-xs sm:text-sm">
+              <PenTool className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>8. Dokunmatik Biyometrik Islak İmza ve Değiştirilemez Denetim Günlükleri</span>
+            </div>
+            <div className="space-y-1.5 text-[11px] text-slate-600">
+              <p>
+                <strong>Biyometrik Islak İmza:</strong> Kapıda vatandaşın dokunmatik ekranda attığı imza, piksel kaybı olmaksızın vektörel çizim koordinatlarıyla sunucuda mühürlenir; Sayıştay ve mülki denetimlerde doğrudan yasal kanıt niteliğindedir.
+              </p>
+              <p>
+                <strong>Değiştirilemez Denetim Günlükleri (Audit Logs):</strong> Sistemde yapılan her işlem (giriş, teslimat, hane ekleme, imza, excel yükleme, şifre değişimi, iptal) operatör adı, rolü ve zaman damgasıyla silinemez log tablosuna kaydedilir. Yöneticiler bu kütükleri resmi incelemeler için Excel olarak indirebilir.
+              </p>
+            </div>
           </div>
         </div>
       ),
