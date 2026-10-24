@@ -6,7 +6,8 @@ import {
   mapDoc, 
   mapDocs, 
   recordActivityLog, 
-  touchSyncPulse 
+  touchSyncPulse,
+  reconcileArchivedSeasonImports
 } from '@/lib/mongodb';
 import { normalizeMahalleName, normalizeToTon } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
@@ -19,6 +20,8 @@ export async function GET(request: NextRequest) {
     if (!session.valid) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
+
+    await reconcileArchivedSeasonImports();
 
     const { 
       systemSettings, 
@@ -111,10 +114,14 @@ export async function POST(request: NextRequest) {
       archivedBeneficiaries, 
       archivedTruckDeliveries,
       archivedDeliveryHistory,
+      archivedImportBatches,
+      archivedImportLogs,
       beneficiaries: benCol, 
       truckDeliveries: truckCol,
       deliveryRoutes: routeCol,
-      deliveryHistory: histCol
+      deliveryHistory: histCol,
+      importBatches: batchesCol,
+      importLogs: logsCol,
     } = await getDbCollections();
 
     const body = await request.json();
@@ -394,6 +401,51 @@ export async function POST(request: NextRequest) {
           throw new Error(`Arşivleme doğrulama hatası: Teslimat geçmişi eksik arşivlendi. Aktif geçmiş silinmedi!`);
         }
         await histCol.deleteMany({});
+      }
+
+      // 7.5. Yüklenen Excel Listeleri (import_batches) ve Hatalı/Mükerrer Kayıtların (import_logs) tamamını da kapanan dönem koduyla arşivle ve yeni dönem için sıfırla!
+      const activeImportBatches = await batchesCol.find({}).toArray();
+      if (activeImportBatches.length > 0) {
+        const archivedBatchesList = activeImportBatches.map((b: any) => ({
+          ...b,
+          _id: new ObjectId(),
+          original_id: b.id || (b._id ? b._id.toString() : ''),
+          batch_id: b.batch_id || b.id || (b._id ? b._id.toString() : ''),
+          donem_kodu: closingCode,
+          arsivlenme_tarihi: localToday,
+        }));
+        await archivedImportBatches.insertMany(archivedBatchesList, { ordered: false });
+
+        const archivedBatchCount = await archivedImportBatches.countDocuments({ donem_kodu: closingCode });
+        if (archivedBatchCount < activeImportBatches.length) {
+          throw new Error(`Arşivleme doğrulama hatası: Yüklenen Excel listeleri eksik arşivlendi. Aktif Excel listeleri silinmedi!`);
+        }
+        await batchesCol.deleteMany({});
+      }
+
+      const activeImportLogs = await logsCol.find({}).toArray();
+      if (activeImportLogs.length > 0) {
+        const CHUNK_SIZE = 500;
+        for (let i = 0; i < activeImportLogs.length; i += CHUNK_SIZE) {
+          const chunk = activeImportLogs.slice(i, i + CHUNK_SIZE).map((l: any) => ({
+            ...l,
+            _id: new ObjectId(),
+            original_id: l.id || (l._id ? l._id.toString() : ''),
+            donem_kodu: closingCode,
+            arsivlenme_tarihi: localToday,
+          }));
+          try {
+            await archivedImportLogs.insertMany(chunk, { ordered: false });
+          } catch (chunkErr) {
+            console.warn(`[Archive ImportLogs Batch ${i}] Notice:`, chunkErr);
+          }
+        }
+
+        const archivedLogCount = await archivedImportLogs.countDocuments({ donem_kodu: closingCode });
+        if (archivedLogCount < activeImportLogs.length) {
+          throw new Error(`Arşivleme doğrulama hatası: Excel hata/mükerrer kayıtları eksik arşivlendi. Aktif hata kayıtları silinmedi!`);
+        }
+        await logsCol.deleteMany({});
       }
 
       // 8. Complete and archive all remaining active routes

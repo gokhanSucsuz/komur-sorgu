@@ -731,7 +731,8 @@ export async function GET(request: NextRequest) {
     // 3.5. Yüklenen Excel Dosyası / Hak Sahipleri - Mahalle İsimlerine Göre Sekmelere Bölünmüş Çalışma Kitabı
     if (type === 'batch_by_mahalle' || type === 'beneficiaries_by_mahalle') {
       const batchId = (searchParams.get('batchId') || '').trim();
-      const { importBatches: batchesCol } = await getDbCollections();
+      const donemKodu = (searchParams.get('donem_kodu') || '').trim();
+      const { importBatches: batchesCol, archivedImportBatches, archivedBeneficiaries } = await getDbCollections();
 
       let batchDoc: any = null;
       let filter: any = {};
@@ -750,9 +751,23 @@ export async function GET(request: NextRequest) {
             { id: batchId },
           ],
         });
+        if (!batchDoc) {
+          batchDoc = await archivedImportBatches.findOne({
+            $or: [
+              { batch_id: batchId },
+              { id: batchId },
+            ],
+          });
+        }
       }
 
-      const rawRecords = await benCol.find(filter).toArray();
+      let rawRecords = donemKodu && donemKodu !== 'AKTIF'
+        ? await archivedBeneficiaries.find({ ...filter, donem_kodu: donemKodu }).toArray()
+        : await benCol.find(filter).toArray();
+
+      if (rawRecords.length === 0 && batchId && batchId !== 'ALL') {
+        rawRecords = await archivedBeneficiaries.find(filter).toArray();
+      }
       const records = mapDocs(rawRecords);
 
       const dosyaAdi = batchDoc?.dosya_adi || (batchId && batchId !== 'ALL' ? `Dosya_${batchId}` : 'Tum_Hak_Sahipleri');
@@ -994,15 +1009,30 @@ export async function GET(request: NextRequest) {
     // 4. Excel Yükleme Hata & Mükerrer Kayıt Raporu
     if (type === 'errors') {
       const batchId = (searchParams.get('batchId') || '').trim();
+      const donemKodu = (searchParams.get('donem_kodu') || '').trim();
+      const { archivedImportLogs } = await getDbCollections();
       const filter: any = {};
       if (batchId && batchId !== 'ALL') {
         filter.batch_id = batchId;
       }
 
-      const rawRecords = await logsCol
-        .find(filter)
-        .sort({ satir_no: 1, _id: -1 })
-        .toArray();
+      let rawRecords =
+        donemKodu && donemKodu !== 'AKTIF'
+          ? await archivedImportLogs
+              .find({ ...filter, donem_kodu: donemKodu })
+              .sort({ satir_no: 1, _id: -1 })
+              .toArray()
+          : await logsCol
+              .find(filter)
+              .sort({ satir_no: 1, _id: -1 })
+              .toArray();
+
+      if (rawRecords.length === 0 && batchId && batchId !== 'ALL') {
+        rawRecords = await archivedImportLogs
+          .find(filter)
+          .sort({ satir_no: 1, _id: -1 })
+          .toArray();
+      }
 
       const records = mapDocs(rawRecords);
 

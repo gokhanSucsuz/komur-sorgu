@@ -516,6 +516,8 @@ export async function getDbCollections() {
         archivedBeneficiaries: db.collection<any>('archived_beneficiaries'),
         archivedTruckDeliveries: db.collection<any>('archived_truck_deliveries'),
         archivedDeliveryHistory: db.collection<any>('archived_delivery_history'),
+        archivedImportBatches: db.collection<any>('archived_import_batches'),
+        archivedImportLogs: db.collection<any>('archived_import_logs'),
         securityRateLimits: db.collection<any>('security_rate_limits'),
         authorizedDevices: db.collection<any>('authorized_devices'),
       };
@@ -548,6 +550,8 @@ export async function getDbCollections() {
     archivedBeneficiaries: new InMemoryCollection('archived_beneficiaries') as any,
     archivedTruckDeliveries: new InMemoryCollection('archived_truck_deliveries') as any,
     archivedDeliveryHistory: new InMemoryCollection('archived_delivery_history') as any,
+    archivedImportBatches: new InMemoryCollection('archived_import_batches') as any,
+    archivedImportLogs: new InMemoryCollection('archived_import_logs') as any,
     securityRateLimits: new InMemoryCollection('security_rate_limits') as any,
     authorizedDevices: new InMemoryCollection('authorized_devices') as any,
   };
@@ -617,6 +621,10 @@ async function initializeIndexesAndSeed(db: Db) {
       db.collection('archived_beneficiaries').createIndex({ donem_kodu: 1, mahalle: 1 }),
       db.collection('archived_truck_deliveries').createIndex({ donem_kodu: 1 }),
       db.collection('archived_delivery_history').createIndex({ donem_kodu: 1 }),
+      db.collection('archived_import_batches').createIndex({ donem_kodu: 1 }),
+      db.collection('archived_import_batches').createIndex({ batch_id: 1 }),
+      db.collection('archived_import_logs').createIndex({ donem_kodu: 1 }),
+      db.collection('archived_import_logs').createIndex({ batch_id: 1 }),
 
       // Dağıtık Brute-Force Koruma İndeksleri (TTL otomatik temizleme dahil)
       rateLimits.createIndex({ key: 1 }, { unique: true }),
@@ -735,6 +743,8 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.archived_beneficiaries = [];
   store.archived_truck_deliveries = [];
   store.archived_delivery_history = [];
+  store.archived_import_batches = [];
+  store.archived_import_logs = [];
   store.authorized_devices = [
     { slot_no: 1, slot_name: '1. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
     { slot_no: 2, slot_name: '2. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
@@ -1602,6 +1612,178 @@ export async function touchSyncPulse(updatedBy: string = 'Sistem'): Promise<stri
     console.error('Error touching sync pulse:', err);
   }
   return nowIso;
+}
+
+/**
+ * Geçmiş dönem arşivlendiğinde (veya daha önce arşivlenmiş bir dönem varsa)
+ * o döneme ait yüklenen Excel listelerini (import_batches) ve hatalı/mükerrer kayıtları (import_logs)
+ * otomatik olarak archived_import_batches ve archived_import_logs koleksiyonlarına taşır
+ * ve yeni dönem için aktif Excel Aktarımı bölümünü tertemiz sıfırlar.
+ */
+export async function reconcileArchivedSeasonImports(): Promise<void> {
+  try {
+    const {
+      systemSettings,
+      seasonArchives,
+      beneficiaries: benCol,
+      importBatches: batchesCol,
+      importLogs: logsCol,
+      archivedBeneficiaries,
+      archivedImportBatches,
+      archivedImportLogs,
+    } = await getDbCollections();
+
+    const rawArchives = await seasonArchives
+      .find({})
+      .sort({ kapanis_tarihi_iso: -1, _id: -1 })
+      .toArray();
+
+    if (!rawArchives || rawArchives.length === 0) {
+      return;
+    }
+
+    const latestArchive = rawArchives[0];
+    const archivedSeasonCodes = new Set(
+      rawArchives.map((a: any) => String(a.donem_kodu || '').trim()).filter(Boolean)
+    );
+
+    const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
+    let activeSeasonCode = '';
+    if (seasonDoc && seasonDoc.value) {
+      try {
+        const parsed = typeof seasonDoc.value === 'string' ? JSON.parse(seasonDoc.value) : seasonDoc.value;
+        activeSeasonCode = String(parsed?.kod || '').trim();
+      } catch {
+        activeSeasonCode = String(seasonDoc.value).trim();
+      }
+    }
+
+    const { nowEnCa } = getIstanbulDate();
+
+    // 1. Aktif import_batches içindeki geçmiş döneme ait listeleri tespit et ve arşivle
+    const activeBatches = await batchesCol.find({}).toArray();
+    for (const b of activeBatches) {
+      const batchId = b.batch_id || b.id || (b._id ? b._id.toString() : '');
+      if (!batchId) continue;
+
+      const activeBenCount = await benCol.countDocuments({ batch_id: batchId });
+      const batchDonem = String(b.donem_kodu || '').trim();
+
+      // Eğer bu batch açıkça yeni aktif döneme aitse ve aktif hak sahipleri duruyorsa dokunma
+      if (
+        activeSeasonCode &&
+        batchDonem === activeSeasonCode &&
+        !archivedSeasonCodes.has(batchDonem) &&
+        activeBenCount > 0
+      ) {
+        continue;
+      }
+
+      let targetDonemKodu = '';
+      let targetArchiveDate = latestArchive.kapanis_tarihi || nowEnCa;
+
+      if (batchDonem && archivedSeasonCodes.has(batchDonem)) {
+        targetDonemKodu = batchDonem;
+      } else {
+        // Arşivlenen hak sahipleri tablosunda bu batch_id var mı kontrol et
+        const sampleArchivedBen = await archivedBeneficiaries.findOne(
+          { batch_id: batchId },
+          { projection: { donem_kodu: 1, arsivlenme_tarihi: 1 } }
+        );
+        if (sampleArchivedBen && sampleArchivedBen.donem_kodu) {
+          targetDonemKodu = sampleArchivedBen.donem_kodu;
+          targetArchiveDate = sampleArchivedBen.arsivlenme_tarihi || targetArchiveDate;
+        } else if (activeBenCount === 0) {
+          // Aktif hak sahipleri tablosunda hiç kaydı kalmamışsa (dönem arşivlenip sıfırlanmışsa)
+          // veya yükleme tarihi son arşiv kapanışından önceyse geçmiş döneme aittir
+          const batchIso = b.tarih_iso || '';
+          const matchedArchive =
+            rawArchives.find((a: any) => batchIso && a.kapanis_tarihi_iso && batchIso <= a.kapanis_tarihi_iso) ||
+            latestArchive;
+          targetDonemKodu = matchedArchive.donem_kodu;
+          targetArchiveDate = matchedArchive.kapanis_tarihi || targetArchiveDate;
+        }
+      }
+
+      if (targetDonemKodu) {
+        const alreadyInArchive = await archivedImportBatches.findOne({
+          batch_id: batchId,
+          donem_kodu: targetDonemKodu,
+        });
+
+        if (!alreadyInArchive) {
+          await archivedImportBatches.insertOne({
+            ...b,
+            _id: new ObjectId(),
+            original_id: b.id || (b._id ? b._id.toString() : ''),
+            batch_id: batchId,
+            donem_kodu: targetDonemKodu,
+            arsivlenme_tarihi: targetArchiveDate,
+          });
+        }
+
+        // Bu batch'e ait tüm hata/mükerrer kayıtlarını da arşivle
+        const batchLogs = await logsCol.find({ batch_id: batchId }).toArray();
+        if (batchLogs.length > 0) {
+          const CHUNK_SIZE = 500;
+          for (let i = 0; i < batchLogs.length; i += CHUNK_SIZE) {
+            const chunk = batchLogs.slice(i, i + CHUNK_SIZE).map((l: any) => ({
+              ...l,
+              _id: new ObjectId(),
+              original_id: l.id || (l._id ? l._id.toString() : ''),
+              donem_kodu: targetDonemKodu,
+              arsivlenme_tarihi: targetArchiveDate,
+            }));
+            await archivedImportLogs.insertMany(chunk, { ordered: false }).catch(() => {});
+          }
+          await logsCol.deleteMany({ batch_id: batchId });
+        }
+
+        await batchesCol.deleteOne({ _id: b._id });
+      }
+    }
+
+    // 2. Aktif import_logs içinde kalan ama geçmiş döneme ait olan yetim hata kayıtlarını da arşivle ve temizle
+    const remainingBatches = await batchesCol.find({}, { projection: { batch_id: 1, id: 1 } }).toArray();
+    const activeBatchIds = new Set(
+      remainingBatches.map((b: any) => b.batch_id || b.id).filter(Boolean)
+    );
+
+    const orphanFilter: any =
+      activeBatchIds.size > 0
+        ? {
+            $or: [
+              { batch_id: { $nin: Array.from(activeBatchIds) } },
+              { donem_kodu: { $in: Array.from(archivedSeasonCodes) } },
+            ],
+          }
+        : {};
+
+    const orphanLogs = await logsCol.find(orphanFilter).toArray();
+    if (orphanLogs.length > 0) {
+      const targetDonemKodu = latestArchive.donem_kodu;
+      const targetArchiveDate = latestArchive.kapanis_tarihi || nowEnCa;
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < orphanLogs.length; i += CHUNK_SIZE) {
+        const chunk = orphanLogs.slice(i, i + CHUNK_SIZE).map((l: any) => ({
+          ...l,
+          _id: new ObjectId(),
+          original_id: l.id || (l._id ? l._id.toString() : ''),
+          donem_kodu: l.donem_kodu && archivedSeasonCodes.has(l.donem_kodu) ? l.donem_kodu : targetDonemKodu,
+          arsivlenme_tarihi: targetArchiveDate,
+        }));
+        await archivedImportLogs.insertMany(chunk, { ordered: false }).catch(() => {});
+      }
+      const orphanIds = orphanLogs.map((l: any) => l._id).filter(Boolean);
+      if (orphanIds.length > 0) {
+        await logsCol.deleteMany({ _id: { $in: orphanIds } });
+      } else {
+        await logsCol.deleteMany(orphanFilter);
+      }
+    }
+  } catch (err) {
+    console.warn('[reconcileArchivedSeasonImports] Notice:', err);
+  }
 }
 
 

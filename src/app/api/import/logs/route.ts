@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString } from '@/lib/security';
@@ -11,17 +11,25 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Yetkisiz erişim. İçe aktarma günlüklerini görüntüleme yetkisi yalnızca Yöneticilere aittir.' }, { status: 403 });
     }
 
-    const { importLogs: logsCol } = await getDbCollections();
+    // Bir önceki dönem arşivlendiyse geçmiş dönem Excel hata kayıtlarını otomatik arşivle ve yeni dönem için sıfırla
+    await reconcileArchivedSeasonImports();
+
+    const { importLogs: logsCol, archivedImportLogs } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const batchId = asString(searchParams.get('batchId'), 128);
     const durum = asString(searchParams.get('durum'), 64);
     const islemSonucu = asString(searchParams.get('islemSonucu'), 64);
     const q = asString(searchParams.get('q'), 100);
+    const requestedDonem = asString(searchParams.get('donem_kodu'), 64);
+    const isArchivedQuery = Boolean(requestedDonem && requestedDonem !== 'AKTIF');
 
-    const filter: any = {};
+    const targetLogsCol = isArchivedQuery ? archivedImportLogs : logsCol;
+    const filter: any = isArchivedQuery ? { donem_kodu: requestedDonem } : {};
 
     // Clean up any legacy 'BILGI' (same address, different TC) logs so they are never shown as errors
-    await logsCol.deleteMany({ durum: 'BILGI' });
+    if (!isArchivedQuery) {
+      await logsCol.deleteMany({ durum: 'BILGI' });
+    }
 
     if (batchId && batchId !== 'ALL') {
       filter.batch_id = batchId;
@@ -31,7 +39,7 @@ export async function GET(request: NextRequest) {
       filter.durum = durum;
     }
 
-    const rawLogs = await logsCol
+    const rawLogs = await targetLogsCol
       .find(filter)
       .sort({ satir_no: 1, _id: -1 })
       .toArray();
@@ -60,8 +68,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get list of batches & stats using lightweight projection on unencrypted fields
-    const allLogs = await logsCol
-      .find({}, { projection: { batch_id: 1, tarih: 1, durum: 1, islem_sonucu: 1 } })
+    const allLogsFilter = isArchivedQuery ? { donem_kodu: requestedDonem } : {};
+    const allLogs = await targetLogsCol
+      .find(allLogsFilter, { projection: { batch_id: 1, tarih: 1, durum: 1, islem_sonucu: 1 } })
       .toArray();
     const batchMap = new Map<string, { batch_id: string; tarih: string; hata_sayisi: number; elenen_sayisi: number; uyarili_sayisi: number }>();
 

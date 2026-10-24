@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
+import { getDbCollections, mapDocs, recordActivityLog, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString } from '@/lib/security';
 
@@ -11,16 +11,38 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { importBatches: batchesCol, beneficiaries: benCol, importLogs: logsCol } = await getDbCollections();
+    // Bir önceki dönem arşivlendiyse geçmiş dönem Excel listelerini ve hata kayıtlarını arşiv koleksiyonuna taşı ve aktif dönemi sıfırla
+    await reconcileArchivedSeasonImports();
 
-    const rawBatches = await batchesCol.find({}).sort({ _id: -1 }).toArray();
+    const {
+      importBatches: batchesCol,
+      beneficiaries: benCol,
+      importLogs: logsCol,
+      seasonArchives,
+      archivedImportBatches,
+      archivedBeneficiaries,
+      archivedImportLogs,
+    } = await getDbCollections();
+
+    const searchParams = request.nextUrl.searchParams;
+    const requestedDonem = asString(searchParams.get('donem_kodu'), 64);
+    const isArchivedQuery = Boolean(requestedDonem && requestedDonem !== 'AKTIF');
+
+    const targetBatchesCol = isArchivedQuery ? archivedImportBatches : batchesCol;
+    const targetBenCol = isArchivedQuery ? archivedBeneficiaries : benCol;
+    const targetLogsCol = isArchivedQuery ? archivedImportLogs : logsCol;
+    const batchQueryFilter = isArchivedQuery ? { donem_kodu: requestedDonem } : {};
+
+    const rawBatches = await targetBatchesCol.find(batchQueryFilter).sort({ _id: -1 }).toArray();
     const batches = mapDocs(rawBatches);
 
     // Calculate live status for each batch
     const enrichedBatches = await Promise.all(
       batches.map(async (b: any) => {
         const batchId = b.batch_id || b.id;
-        const matchingBeneficiaries = await benCol.find({ batch_id: batchId }).toArray();
+        const benFilter: any = { batch_id: batchId };
+        if (isArchivedQuery) benFilter.donem_kodu = requestedDonem;
+        const matchingBeneficiaries = await targetBenCol.find(benFilter).toArray();
         const mevcutKisi = matchingBeneficiaries.length;
 
         let teslimEdilen = 0;
@@ -36,7 +58,9 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const rawBatchLogs = await logsCol.find({ batch_id: batchId }).toArray();
+        const logFilter: any = { batch_id: batchId };
+        if (isArchivedQuery) logFilter.donem_kodu = requestedDonem;
+        const rawBatchLogs = await targetLogsCol.find(logFilter).toArray();
         const batchLogs = mapDocs(rawBatchLogs);
         const elenenSayisi = batchLogs.filter(
           (l: any) => l.islem_sonucu === 'EKLENMEDİ' || (l.islem_sonucu !== 'EKLENDİ_UYARILI' && (l.durum === 'MUKERRER_TC' || l.durum === 'MUKERRER_HANE'))
@@ -115,14 +139,36 @@ export async function GET(request: NextRequest) {
     );
 
     // Also check if there are orphan/seed beneficiaries without a batch_id
-    const unbatchedCount = await benCol.countDocuments({
-      $or: [{ batch_id: { $exists: false } }, { batch_id: null }, { batch_id: '' }],
-    });
+    const unbatchedCount = isArchivedQuery
+      ? 0
+      : await benCol.countDocuments({
+          $or: [{ batch_id: { $exists: false } }, { batch_id: null }, { batch_id: '' }],
+        });
+
+    // Arşivlenmiş geçmiş dönemlerin özet bilgilerini de getir
+    const rawSeasonArchives = await seasonArchives.find({}).sort({ kapanis_tarihi_iso: -1, _id: -1 }).toArray();
+    const archivedSeasons = await Promise.all(
+      rawSeasonArchives.map(async (sa: any) => {
+        const dKod = sa.donem_kodu;
+        const bCount = await archivedImportBatches.countDocuments({ donem_kodu: dKod });
+        const lCount = await archivedImportLogs.countDocuments({ donem_kodu: dKod });
+        return {
+          donem_kodu: dKod,
+          baslik: sa.baslik || `${dKod} Kömür Dağıtım Dönemi`,
+          kapanis_tarihi: sa.kapanis_tarihi,
+          batch_count: bCount,
+          log_count: lCount,
+        };
+      })
+    );
 
     return NextResponse.json({
       success: true,
       batches: enrichedBatches,
       unbatchedCount,
+      isArchived: isArchivedQuery,
+      donemKodu: isArchivedQuery ? requestedDonem : 'AKTIF',
+      archivedSeasons,
     });
   } catch (error: any) {
     return serverError('import/batches:GET', error);

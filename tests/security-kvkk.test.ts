@@ -57,7 +57,7 @@ import {
   getBeneficiaryListTypeInfo,
 } from '@/lib/normalizer';
 
-import { mapDoc } from '@/lib/mongodb';
+import { mapDoc, getDbCollections, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { sanitizeUser, isSessionExpired, SESSION_MAX_AGE_MS } from '@/lib/auth';
 
 describe('1. KVKK & AES-256-GCM Kriptografik Güvenlik Testleri', () => {
@@ -389,5 +389,55 @@ describe('7. Saha Tek Hane Ekleme: Mükerrer TC Engeli & Aynı Adres Uyarı Tesp
 
     assert.equal(normalizeStreetForCompare(st1.sokak), normalizeStreetForCompare(st2.sokak));
     assert.equal(st1.kapiNo, st2.kapiNo);
+  });
+
+  it('Önceki dönem arşivlendiğinde geçmiş dönem yüklenen Excel listeleri ve hatalı kayıtlar arşivlenir ve yeni dönemde sıfırlanır', async () => {
+    const cols = await getDbCollections();
+
+    // Önceki dönemden (2025-2026) kalan bir Excel listesi ve hata kaydı simüle et
+    await cols.seasonArchives.insertOne({
+      donem_kodu: '2025-2026',
+      baslik: '2025-2026 Kömür Dağıtım Dönemi',
+      kapanis_tarihi: '2026-05-01',
+      kapanis_tarihi_iso: '2026-05-01T12:00:00.000Z',
+    });
+
+    await cols.archivedBeneficiaries.insertOne({
+      batch_id: 'BATCH-OLD-2025',
+      donem_kodu: '2025-2026',
+      tc_no: '12345678901',
+      ad_soyad: 'ESKİ DÖNEM VATANDAŞ',
+    });
+
+    await cols.importBatches.insertOne({
+      batch_id: 'BATCH-OLD-2025',
+      dosya_adi: 'Eski_Donem_Listesi.xlsx',
+      eklenen_kisi: 100,
+      elenen_kisi: 2,
+      tarih_iso: '2025-11-10T10:00:00.000Z',
+    });
+
+    await cols.importLogs.insertOne({
+      batch_id: 'BATCH-OLD-2025',
+      durum: 'MUKERRER_TC',
+      islem_sonucu: 'EKLENMEDİ',
+      tc_no: '99999999999',
+      ad_soyad: 'MÜKERRER KİŞİ',
+    });
+
+    // Otomatik uzlaştırma ve arşivleme çalıştığında:
+    await reconcileArchivedSeasonImports();
+
+    // Aktif dönem Excel listeleri ve hatalı kayıtlar sıfırlanmış (0) olmalı
+    const activeBatchCount = await cols.importBatches.countDocuments({});
+    const activeLogCount = await cols.importLogs.countDocuments({});
+    assert.equal(activeBatchCount, 0);
+    assert.equal(activeLogCount, 0);
+
+    // Arşiv koleksiyonlarına geçmiş dönem koduyla taşınmış olmalı
+    const archivedBatchCount = await cols.archivedImportBatches.countDocuments({ donem_kodu: '2025-2026' });
+    const archivedLogCount = await cols.archivedImportLogs.countDocuments({ donem_kodu: '2025-2026' });
+    assert.equal(archivedBatchCount, 1);
+    assert.equal(archivedLogCount, 1);
   });
 });

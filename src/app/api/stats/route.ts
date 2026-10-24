@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDbCollections } from '@/lib/mongodb';
+import { getDbCollections, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
 import { normalizeToTon } from '@/lib/normalizer';
 
@@ -9,6 +9,8 @@ export async function GET(request: NextRequest) {
     if (!session.valid) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
+
+    await reconcileArchivedSeasonImports();
 
     const {
       isFallback,

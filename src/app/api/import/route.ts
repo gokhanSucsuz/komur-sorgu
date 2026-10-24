@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
-import { getDbCollections, recordActivityLog, mapDocs, touchSyncPulse } from '@/lib/mongodb';
+import { getDbCollections, recordActivityLog, mapDocs, touchSyncPulse, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
@@ -175,6 +175,8 @@ export async function POST(request: NextRequest) {
     }
 
     const { beneficiaries: benCol, importLogs: logsCol, importBatches: batchesCol, systemSettings } = await getDbCollections();
+    await reconcileArchivedSeasonImports();
+
     const { nowIso, nowLocaleTr } = getIstanbulDate();
     const batchId = `BATCH-${Date.now()}`;
     const nowStr = nowLocaleTr;
@@ -186,6 +188,17 @@ export async function POST(request: NextRequest) {
 
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const defaultQuota = settingDoc ? parseInt(settingDoc.value, 10) : 34;
+
+    const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
+    let activeSeasonCode = '2026-2027';
+    if (seasonDoc && seasonDoc.value) {
+      try {
+        const parsed = typeof seasonDoc.value === 'string' ? JSON.parse(seasonDoc.value) : seasonDoc.value;
+        if (parsed?.kod) activeSeasonCode = String(parsed.kod).trim();
+      } catch {
+        activeSeasonCode = String(seasonDoc.value).trim() || '2026-2027';
+      }
+    }
 
     // Cache existing TCs, Hanes, and Addresses with their Coal Delivery Status (Transparently Decrypted)
     const rawExistingList = await benCol.find({}).toArray();
@@ -866,11 +879,15 @@ export async function POST(request: NextRequest) {
 
     // Insert batches into MongoDB (AES-256-GCM Şifreleme ve HMAC-SHA256 Kör Dizinler ile)
     if (toInsertBeneficiaries.length > 0) {
-      const encryptedBeneficiaries = toInsertBeneficiaries.map(encryptBeneficiary);
+      const encryptedBeneficiaries = toInsertBeneficiaries.map((b) =>
+        encryptBeneficiary({ ...b, donem_kodu: activeSeasonCode })
+      );
       await benCol.insertMany(encryptedBeneficiaries);
     }
     if (toInsertLogs.length > 0) {
-      const encryptedLogs = toInsertLogs.map(encryptImportLog);
+      const encryptedLogs = toInsertLogs.map((l) =>
+        encryptImportLog({ ...l, donem_kodu: activeSeasonCode })
+      );
       await logsCol.insertMany(encryptedLogs);
     }
 
@@ -930,6 +947,7 @@ export async function POST(request: NextRequest) {
     // Record batch metadata in import_batches
     await batchesCol.insertOne({
       batch_id: batchId,
+      donem_kodu: activeSeasonCode,
       dosya_adi: file.name,
       dosya_boyutu: file.size,
       liste_turu: listeTuru,

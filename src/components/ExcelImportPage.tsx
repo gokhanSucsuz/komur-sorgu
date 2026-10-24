@@ -69,6 +69,8 @@ export default function ExcelImportPage({
   // Uploaded Excel Batches State & Rollback Target
   const [uploadedBatches, setUploadedBatches] = useState<any[]>([]);
   const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
+  const [archivedSeasons, setArchivedSeasons] = useState<any[]>([]);
+  const [selectedSeasonView, setSelectedSeasonView] = useState<string>('AKTIF');
   const [batchDeleteTarget, setBatchDeleteTarget] = useState<any | null>(null);
   const [deleteDeliveredChoice, setDeleteDeliveredChoice] = useState<boolean>(false);
   const [isDeletingBatch, setIsDeletingBatch] = useState<boolean>(false);
@@ -111,7 +113,8 @@ export default function ExcelImportPage({
     if (target.batchId) {
       setIsLoadingModalRecords(true);
       try {
-        const res = await fetch(`/api/import/logs?batchId=${encodeURIComponent(target.batchId)}&islemSonucu=EKLENMEDI`);
+        const donemParam = selectedSeasonView !== 'AKTIF' ? `&donem_kodu=${encodeURIComponent(selectedSeasonView)}` : '';
+        const res = await fetch(`/api/import/logs?batchId=${encodeURIComponent(target.batchId)}&islemSonucu=EKLENMEDI${donemParam}`);
         const data = await res.json();
         if (data.success) {
           setModalRecords(data.logs || []);
@@ -148,13 +151,18 @@ export default function ExcelImportPage({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchUploadedBatches = async () => {
+  const fetchUploadedBatches = async (donemOverride?: string) => {
+    const targetDonem = typeof donemOverride === 'string' ? donemOverride : selectedSeasonView;
     setIsLoadingBatches(true);
     try {
-      const res = await fetch('/api/import/batches');
+      const query = targetDonem && targetDonem !== 'AKTIF' ? `?donem_kodu=${encodeURIComponent(targetDonem)}` : '';
+      const res = await fetch(`/api/import/batches${query}`);
       const data = await res.json();
       if (data.success) {
         setUploadedBatches(data.batches || []);
+        if (Array.isArray(data.archivedSeasons)) {
+          setArchivedSeasons(data.archivedSeasons);
+        }
       }
     } catch (err) {
       console.error('Batches fetch error:', err);
@@ -163,13 +171,14 @@ export default function ExcelImportPage({
     }
   };
 
-  const fetchLogs = async () => {
-    // Only show full loading skeleton on initial empty load so existing scroll height never collapses
+  const fetchLogs = async (donemOverride?: string) => {
+    const targetDonem = typeof donemOverride === 'string' ? donemOverride : selectedSeasonView;
     if (logs.length === 0) {
       setIsLoadingLogs(true);
     }
     try {
-      const res = await fetch('/api/import/logs?durum=HEPSI');
+      const donemParam = targetDonem && targetDonem !== 'AKTIF' ? `&donem_kodu=${encodeURIComponent(targetDonem)}` : '';
+      const res = await fetch(`/api/import/logs?durum=HEPSI${donemParam}`);
       const data = await res.json();
       if (data.success) {
         setLogs(data.logs || []);
@@ -185,10 +194,10 @@ export default function ExcelImportPage({
 
   useEffect(() => {
     if (userRole === 'ADMIN') {
-      fetchLogs();
-      fetchUploadedBatches();
+      fetchLogs(selectedSeasonView);
+      fetchUploadedBatches(selectedSeasonView);
     }
-  }, [userRole]);
+  }, [userRole, selectedSeasonView]);
 
   const isRecordElenen = (l: any) => {
     if (l.islem_sonucu === 'EKLENMEDİ') return true;
@@ -931,6 +940,58 @@ export default function ExcelImportPage({
         </div>
       </div>
 
+      {/* GEÇMİŞ DÖNEM ARŞİVLENEN EXCEL LİSTELERİ VE HATA KAYITLARI SEÇİCİSİ */}
+      {archivedSeasons.length > 0 && (
+        <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-black uppercase tracking-wider">
+                Dönem Arşiv Koruması Aktif
+              </span>
+              <h4 className="text-xs sm:text-sm font-black text-white">
+                {selectedSeasonView === 'AKTIF'
+                  ? 'Aktif Dönem Excel Aktarımı (Geçmiş Dönem Listeleri ve Hataları Arşivlendi)'
+                  : `📦 Arşivlenen Dönem Görünümü: ${selectedSeasonView}`}
+              </h4>
+            </div>
+            <p className="text-[11px] text-slate-300 font-medium">
+              {selectedSeasonView === 'AKTIF'
+                ? 'Yeni dönem başladığında önceki döneme ait yüklenen Excel listeleri ve hatalı kayıtlar otomatik arşivlenerek bu ekran sıfırlanmıştır.'
+                : 'Şu anda arşivlenmiş geçmiş bir dönemin Excel listelerini ve elenen/hatalı kayıtlarını salt okunur olarak inceliyorsunuz.'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+            <button
+              type="button"
+              onClick={() => setSelectedSeasonView('AKTIF')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                selectedSeasonView === 'AKTIF'
+                  ? 'bg-emerald-500 text-white shadow-xs'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+              }`}
+            >
+              🟢 Aktif Dönem (Güncel)
+            </button>
+            {archivedSeasons.map((sa: any) => (
+              <button
+                key={sa.donem_kodu}
+                type="button"
+                onClick={() => setSelectedSeasonView(sa.donem_kodu)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                  selectedSeasonView === sa.donem_kodu
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                }`}
+                title={`${sa.baslik} — ${sa.batch_count || 0} Excel Listesi, ${sa.log_count || 0} Hata/Mükerrer Kaydı`}
+              >
+                📦 {sa.donem_kodu} Arşivi ({sa.batch_count || 0} Liste)
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* YÜKLENEN EXCEL DOSYALARI VE GERİ ALMA (DOSYA SİLME) YÖNETİMİ */}
       <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
@@ -939,18 +1000,29 @@ export default function ExcelImportPage({
               <FolderSync className="w-5 h-5 text-amber-700" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-slate-900 leading-tight">
-                Yüklenen Excel Dosyaları ve Geri Alma (İptal)
-              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                  {selectedSeasonView === 'AKTIF'
+                    ? 'Yüklenen Excel Dosyaları ve Geri Alma (İptal)'
+                    : `Arşivlenen Excel Dosyaları (${selectedSeasonView} Dönemi)`}
+                </h3>
+                {selectedSeasonView !== 'AKTIF' && (
+                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                    ARŞİV KAYDI
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500 font-medium">
-                Yanlış yüklenen Excel dosyalarını ve bu dosyalardan eklenen kayıtları tek tıkla geri alın
+                {selectedSeasonView === 'AKTIF'
+                  ? 'Aktif dönemde yüklenen Excel dosyalarını görüntüleyin veya yanlış yüklenen dosyaları tek tıkla geri alın'
+                  : `${selectedSeasonView} döneminde yüklenmiş ve dönem kapanışında arşivlenmiş Excel listeleri`}
               </p>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={fetchUploadedBatches}
+            onClick={() => fetchUploadedBatches(selectedSeasonView)}
             className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBatches ? 'animate-spin text-amber-600' : ''}`} />
@@ -1076,17 +1148,19 @@ export default function ExcelImportPage({
                       </>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBatchDeleteTarget(batch);
-                        setDeleteDeliveredChoice(false);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      <span>Geri Al</span>
-                    </button>
+                    {selectedSeasonView === 'AKTIF' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBatchDeleteTarget(batch);
+                          setDeleteDeliveredChoice(false);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Geri Al</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
