@@ -19,9 +19,14 @@ export async function GET(request: NextRequest) {
 
     // 1. Client Status Check (Phone verifying if its stored device_token is authorized)
     if (action === 'check_status') {
-      const token = (searchParams.get('token') || '').trim();
-      if (!token) {
-        return NextResponse.json({ success: true, is_authorized: false });
+      const token = (
+        request.headers.get('x-device-token') ||
+        request.cookies.get('komur_device_token')?.value ||
+        searchParams.get('token') ||
+        ''
+      ).trim();
+      if (!token || token.length < 16 || token.length > 256) {
+        return NextResponse.json({ success: true, is_authorized: false, authorized: false });
       }
 
       const tokenHash = hashDeviceToken(token);
@@ -31,13 +36,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           success: true,
           is_authorized: true,
+          authorized: true,
           slot_no: slot.slot_no,
           slot_name: slot.slot_name,
           device_model: slot.device_model,
         });
       }
 
-      return NextResponse.json({ success: true, is_authorized: false });
+      return NextResponse.json({ success: true, is_authorized: false, authorized: false });
     }
 
     // 2. Admin Slot Listing
@@ -136,10 +142,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const rawCode = String(body.code || '').replace(/\s+/g, '').trim();
-      const deviceModel = (body.device_model || userAgent.substring(0, 100)).trim();
+      const rawCode = typeof body.code === 'string' ? body.code.replace(/\s+/g, '').trim() : '';
+      const deviceModel = (typeof body.device_model === 'string' ? body.device_model : userAgent).substring(0, 100).trim();
 
-      if (!rawCode || rawCode.length < 6) {
+      if (!/^\d{6}$/.test(rawCode)) {
         return NextResponse.json(
           { success: false, error: 'Lütfen yöneticinizden aldığınız 6 haneli aktivasyon kodunu giriniz.' },
           { status: 400 }

@@ -915,11 +915,11 @@ export async function migrateAndEncryptExistingData(db: Db) {
       }
     }
 
-    // 5. Kullanıcı Hesapları (Users) Şifreleme Migrasyonu (Ad Soyad, Şifre, Telefon, scrypt Hash)
+    // 5. Kullanıcı Hesapları (Users) Şifreleme Migrasyonu (Ad Soyad, Telefon, tek yönlü scrypt Hash)
     const usersCol = db.collection('users');
     const unencryptedUsers = await usersCol.find({
       $or: [
-        { sifre: { $not: /^ENC:GCM:v1:/ } },
+        { sifre: { $exists: true } },
         { ad_soyad: { $not: /^ENC:GCM:v1:/ } },
         { telefon: { $not: /^ENC:GCM:v1:/ } },
         { sifre_hash: { $exists: false } }
@@ -930,20 +930,23 @@ export async function migrateAndEncryptExistingData(db: Db) {
       console.log(`[AES-256-GCM] ${unencryptedUsers.length} kullanıcı hesabı şifreleniyor...`);
       for (const u of unencryptedUsers) {
         const plainName = isEncrypted(u.ad_soyad) ? decryptField(u.ad_soyad) : u.ad_soyad;
-        const plainPass = isEncrypted(u.sifre) ? decryptField(u.sifre) : u.sifre;
+        const plainPass = u.sifre ? (isEncrypted(u.sifre) ? decryptField(u.sifre) : u.sifre) : '';
         const plainTel = isEncrypted(u.telefon) ? decryptField(u.telefon) : u.telefon;
 
         const updateFields: any = {
           ad_soyad: encryptField(plainName),
-          sifre: encryptField(plainPass),
           telefon: encryptField(plainTel),
         };
         if (!u.sifre_hash && plainPass) {
           updateFields.sifre_hash = hashPassword(String(plainPass));
         }
-        await usersCol.updateOne({ _id: u._id }, { $set: updateFields });
+        const updateOp: any = { $set: updateFields };
+        if (u.sifre !== undefined && (u.sifre_hash || plainPass)) {
+          updateOp.$unset = { sifre: '' };
+        }
+        await usersCol.updateOne({ _id: u._id }, updateOp);
       }
-      console.log(`[AES-256-GCM] Kullanıcı hesapları (şifre, telefon, isim) başarıyla şifrelendi.`);
+      console.log(`[AES-256-GCM] Kullanıcı hesapları (şifre hash, telefon, isim) başarıyla şifrelendi.`);
     }
 
     // 6. Şoförler ve Tır Sevkiyatları (Truck Deliveries) Şifreleme Migrasyonu
@@ -1193,6 +1196,26 @@ export async function migrateAndEncryptExistingData(db: Db) {
     await settings.updateOne(
       { key: 'migrations_trucks_tonnage_scale_v1_done' },
       { $set: { key: 'migrations_trucks_tonnage_scale_v1_done', value: 'true', completed_at: new Date().toISOString() } },
+      { upsert: true }
+    );
+  }
+
+  // 9. KVKK v6: Geri döndürülebilir sifre alanlarını kalıcı olarak kaldır (yalnızca tek yönlü scrypt sifre_hash tut)
+  const migV6Flag = await settings.findOne({ key: 'migrations_complete_v6_drop_reversible_sifre' });
+  if (migV6Flag?.value !== 'true') {
+    const usersCol = db.collection('users');
+    const legacyPassUsers = await usersCol.find({ sifre: { $exists: true } }).toArray();
+    for (const u of legacyPassUsers) {
+      const plainPass = u.sifre ? (isEncrypted(u.sifre) ? decryptField(u.sifre) : String(u.sifre)) : '';
+      const updateOp: any = { $unset: { sifre: '' } };
+      if (!u.sifre_hash && plainPass) {
+        updateOp.$set = { sifre_hash: hashPassword(plainPass) };
+      }
+      await usersCol.updateOne({ _id: u._id }, updateOp);
+    }
+    await settings.updateOne(
+      { key: 'migrations_complete_v6_drop_reversible_sifre' },
+      { $set: { key: 'migrations_complete_v6_drop_reversible_sifre', value: 'true', completed_at: new Date().toISOString() } },
       { upsert: true }
     );
   }

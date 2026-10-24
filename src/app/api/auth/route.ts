@@ -95,16 +95,28 @@ export async function GET(request: NextRequest) {
     // 1. Session Verification for Single Device Checking & 6h TTL (GET)
     if (action === 'verify') {
       const username = (searchParams.get('username') || '').trim();
-      const sessionToken = (searchParams.get('session_token') || '').trim();
+      const sessionToken = (
+        searchParams.get('session_token') ||
+        request.cookies.get('komur_session_token')?.value ||
+        request.headers.get('x-session-token') ||
+        ''
+      ).trim();
 
-      if (!username || !sessionToken) {
+      if (!sessionToken) {
         return NextResponse.json(
           { success: false, valid: false, code: 'INVALID_PARAMS', error: 'Kullanıcı adı ve oturum anahtarı gereklidir.' },
           { status: 400 }
         );
       }
 
-      const rawUser = await findActiveUserByIdentifier(usersCol, username);
+      const tokenHash = crypto.createHash('sha256').update(sessionToken).digest('hex');
+      let rawUser = username ? await findActiveUserByIdentifier(usersCol, username) : null;
+      if (!rawUser) {
+        rawUser = await usersCol.findOne({
+          active_session_token: { $in: [sessionToken, tokenHash] },
+          aktif: 1,
+        });
+      }
 
       if (!rawUser) {
         return NextResponse.json(
@@ -113,8 +125,12 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Strictly require an active session token and verify in constant time
-      if (!rawUser.active_session_token || !timingSafeTokenEqual(rawUser.active_session_token, sessionToken)) {
+      // Strictly require an active session token and verify in constant time (supports raw or SHA-256 hashed DB token)
+      const isTokenMatch = rawUser.active_session_token && (
+        timingSafeTokenEqual(rawUser.active_session_token, sessionToken) ||
+        timingSafeTokenEqual(rawUser.active_session_token, tokenHash)
+      );
+      if (!isTokenMatch) {
         return NextResponse.json(
           {
             success: false,
@@ -928,14 +944,13 @@ export async function POST(request: NextRequest) {
     // Reset failed attempts on full authentication (password + 2FA if enabled)
     await clearDistributedRateLimit(rateLimitKey);
 
-    // Generate or reuse session token and bind cookie so server-side verifySession(req, { requiredRole: 'ADMIN' }) succeeds
-    const newSessionToken = (is_elevation && rawUser.active_session_token)
-      ? rawUser.active_session_token
-      : crypto.randomUUID();
+    // Generate fresh session token and store only its SHA-256 hash in MongoDB (prevents session hijacking on DB leak)
+    const newSessionToken = crypto.randomUUID();
+    const newSessionTokenHash = crypto.createHash('sha256').update(newSessionToken).digest('hex');
     const { iso: nowIso } = getIstanbulDate();
 
     const loginUpdateDoc: any = {
-      active_session_token: newSessionToken,
+      active_session_token: newSessionTokenHash,
       last_login_at: nowIso,
       last_device: encryptField(userAgent.substring(0, 150)),
       last_ip: encryptField(clientIp),
@@ -1277,6 +1292,21 @@ export async function PUT(request: NextRequest) {
       updateFields.telefon = encryptField((telefon || '').trim());
     }
 
+    let rotatedSessionToken: string | null = null;
+    const isSelfUpdate = String(decUser.id) === String(session.id);
+    if (passwordChanged || usernameChanged) {
+      if (rawUser.active_session_token) {
+        clearSessionMicroCache(rawUser.active_session_token);
+      }
+      if (isSelfUpdate) {
+        rotatedSessionToken = crypto.randomUUID();
+        updateFields.active_session_token = crypto.createHash('sha256').update(rotatedSessionToken).digest('hex');
+        updateFields.last_login_at = getIstanbulDate().iso;
+      } else {
+        updateFields.active_session_token = null;
+      }
+    }
+
     const updateOp: any = { $set: updateFields };
     if (passwordChanged) {
       updateOp.$unset = { sifre: '' };
@@ -1295,9 +1325,10 @@ export async function PUT(request: NextRequest) {
       detay: `"${decUser.username}" kullanıcısı profil bilgilerini güncelledi. (${usernameChanged ? 'Kullanıcı adı değişti, ' : ''}${passwordChanged ? 'Şifre güncellendi' : 'Bilgiler güncellendi'}).`,
     });
 
-    return NextResponse.json({
+    const putRes = NextResponse.json({
       success: true,
       message: 'Profil ve giriş bilgileriniz başarıyla güncellendi.',
+      ...(rotatedSessionToken ? { session_token: rotatedSessionToken } : {}),
       user: {
         id: decUser.id,
         username: finalUsername,
@@ -1307,6 +1338,18 @@ export async function PUT(request: NextRequest) {
         totp_enabled: Boolean(rawUser.totp_enabled),
       },
     });
+
+    if (rotatedSessionToken) {
+      putRes.cookies.set('komur_session_token', rotatedSessionToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: SESSION_MAX_AGE_SECONDS,
+      });
+    }
+
+    return putRes;
   } catch (error: any) {
     console.error('Error updating user profile:', error);
     return serverError('auth:PUT', error);

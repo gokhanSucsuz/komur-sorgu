@@ -605,7 +605,7 @@ export default function RoutePage({
     };
   }, [isRouteModeOpen, requestWakeLock, releaseWakeLock]);
 
-  // Oturum durumunu anlık olarak localStorage'a kaydet (Uygulama kapansa/telefon kapansa bile korunur)
+  // Oturum durumunu anlık olarak localStorage'a kaydet (KVKK: vatandaş adı/notu gibi kişisel veriler localStorage'a yazılmaz)
   const saveCurrentSession = useCallback(() => {
     if (typeof window === 'undefined') return;
     const storageKey = `komur_active_route_session_${sessionUserKey}`;
@@ -616,8 +616,6 @@ export default function RoutePage({
         isRouteModeOpen: true,
         routeModeIndex,
         routeModeTorba,
-        routeModeRecipient,
-        routeModeNote,
         routeModeTab,
         routeModeDeferType,
         timestamp: Date.now()
@@ -631,8 +629,6 @@ export default function RoutePage({
     activeRoute,
     routeModeIndex,
     routeModeTorba,
-    routeModeRecipient,
-    routeModeNote,
     routeModeTab,
     routeModeDeferType,
     sessionUserKey
