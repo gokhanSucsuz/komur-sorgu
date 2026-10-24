@@ -17,6 +17,7 @@ import {
   decryptShift,
   encryptRouteStop,
   decryptRouteStop,
+  encryptRoute,
   encryptField,
   decryptField,
   hashBlindIndex,
@@ -1974,9 +1975,24 @@ export async function seedSandboxFakeData(options?: {
     { prefix: 900100802, ad_soyad: 'HALİME POLAT (DENEME)', mahalle: 'Büyükdöllük Köyü', sokak: 'Köy İçi', kapi_no: 19, daire_no: 1, telefon: '05550008002', durum: 'TAMAMLANDI', torba: defaultQuota, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
   ];
 
+  const dayAt = (offsetDays: number, hour = 10, minute = 0) => {
+    const d = new Date(Date.now() - offsetDays * 86400000);
+    const trDate = d.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
+    const p = trDate.split('.');
+    const hh = String(hour).padStart(2, '0');
+    const mm = String(minute).padStart(2, '0');
+    return {
+      tr: `${trDate} ${hh}:${mm}:00`,
+      en: `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`,
+      iso: d.toISOString(),
+      time: `${hh}:${mm}`,
+    };
+  };
+
   const mahalleCounters = new Map<string, number>();
   const docsToInsert: any[] = [];
   const historyToInsert: any[] = [];
+  const fakeBeneficiaryIds: string[] = [];
   let anaCount = 0;
   let ekCount = 0;
 
@@ -1994,8 +2010,12 @@ export async function seedSandboxFakeData(options?: {
     const acikAdres = `${item.mahalle} ${item.sokak} No: ${item.kapi_no}${item.daire_no > 1 ? ` Daire: ${item.daire_no}` : ''}`;
     const normAdres = normalizeAddress(item.mahalle, acikAdres);
     const isDelivered = item.durum === 'TAMAMLANDI' || item.durum === 'EKSIK';
+    const deliveredAt = dayAt(isDelivered ? i % 5 : 0, 9 + (i % 7), (i * 7) % 60);
+    const benObjectId = new ObjectId();
+    fakeBeneficiaryIds.push(benObjectId.toString());
 
     const doc: any = {
+      _id: benObjectId,
       tc_no: tcNo,
       ad_soyad: item.ad_soyad,
       telefon: item.telefon,
@@ -2011,12 +2031,12 @@ export async function seedSandboxFakeData(options?: {
       hedef_torba: defaultQuota,
       teslimat_durumu: item.durum,
       torba_sayisi: item.torba,
-      teslimat_tarihi: isDelivered ? nowLocaleTr : null,
+      teslimat_tarihi: isDelivered ? deliveredAt.tr : null,
       teslim_alan: isDelivered ? item.ad_soyad : null,
       teslim_eden_personel: isDelivered ? 'Deneme Saha Ekibi' : null,
       teslimat_notu: item.durum === 'EKSIK' ? 'Deneme kısmi teslimat kaydı' : null,
       imza_durumu: item.imza,
-      imza_tarihi: item.imza === 'IMZALANDI' ? nowLocaleTr : null,
+      imza_tarihi: item.imza === 'IMZALANDI' ? deliveredAt.tr : null,
       imza_alan_personel: item.imza === 'IMZALANDI' ? 'Deneme Saha Ekibi' : null,
       sira_no: isEk ? `Ek1 - ${mSira}` : String(mSira),
       mahalle_sira: mSira,
@@ -2041,7 +2061,7 @@ export async function seedSandboxFakeData(options?: {
     if (isDelivered) {
       historyToInsert.push(
         encryptDeliveryHistory({
-          beneficiary_id: `fake-ben-${i + 1}`,
+          beneficiary_id: benObjectId.toString(),
           tc_no: tcNo,
           ad_soyad: item.ad_soyad,
           mahalle: item.mahalle,
@@ -2052,8 +2072,8 @@ export async function seedSandboxFakeData(options?: {
           personel: 'Deneme Saha Ekibi',
           notlar: 'Deneme Modu örnek teslimat kaydı',
           iptal_nedeni: null,
-          tarih: nowLocaleTr,
-          gun_tarihi: nowEnCa,
+          tarih: deliveredAt.tr,
+          gun_tarihi: deliveredAt.en,
         })
       );
     }
@@ -2138,6 +2158,293 @@ export async function seedSandboxFakeData(options?: {
       }),
     ]);
   }
+
+  // ======================================================================
+  // DENEME MODU: Sistemin HER bölümünde örnek veri (tonaj, istatistik, mesai, rota, loglar...)
+  // Tüm yazmalar yalnızca sandbox_* koleksiyonlarına ve sandbox_* ayar anahtarlarına yapılır.
+  // ======================================================================
+
+  // 1) TONAJ: Daha önce gelen ek kömür tırları + kuruma gelecek toplam tahsis (sandbox ayarı)
+  const extraTrucksRaw = [
+    { order: 3, plaka: '22 TEST 003', dorse: '22 DENEME 03', irs: 'DENEME-IRS-2026-003', off: 1, net: 27.1, brut: 41.9, tara: 14.8, sofor: 'Deneme Şoför 3' },
+    { order: 4, plaka: '22 TEST 004', dorse: '22 DENEME 04', irs: 'DENEME-IRS-2026-004', off: 2, net: 25.4, brut: 39.8, tara: 14.4, sofor: 'Deneme Şoför 4' },
+    { order: 5, plaka: '22 TEST 005', dorse: '22 DENEME 05', irs: 'DENEME-IRS-2026-005', off: 3, net: 26.9, brut: 41.5, tara: 14.6, sofor: 'Deneme Şoför 5' },
+    { order: 6, plaka: '22 TEST 006', dorse: '22 DENEME 06', irs: 'DENEME-IRS-2026-006', off: 4, net: 24.8, brut: 39.2, tara: 14.4, sofor: 'Deneme Şoför 6' },
+  ];
+  const trucksNow = await sandboxTruckDeliveries.countDocuments({});
+  if (trucksNow < 3) {
+    await sandboxTruckDeliveries.insertMany(
+      extraTrucksRaw.map((t) =>
+        encryptTruck({
+          tir_sirasi: t.order,
+          plaka: t.plaka,
+          dorse_plaka: t.dorse,
+          irsaliye_no: t.irs,
+          ocak_cikis_tarihi: dayAt(t.off + 1).en,
+          tarih: dayAt(t.off).en,
+          net_tonaj: t.net,
+          brut_tonaj: t.brut,
+          tara_tonaj: t.tara,
+          sofor_adi: t.sofor,
+          notlar: 'Deneme Modu Örnek Kömür Tırı Sevkiyatı',
+          created_at: dayAt(t.off, 14).tr,
+        })
+      )
+    );
+  }
+  await systemSettings.updateOne(
+    { key: 'sandbox_toplam_tahsis_tonaj' },
+    { $set: { key: 'sandbox_toplam_tahsis_tonaj', value: '400' } },
+    { upsert: true }
+  );
+
+  // 2) ÇALIŞMA SAATLERİ (MESAİ): Son 5 gün için 3 örnek personel + bugün devam eden 1 mesai
+  const fakeStaff = ['Deneme Personel - Murat', 'Deneme Personel - Selin', 'Deneme Personel - Kemal'];
+  const shiftsToInsert: any[] = [];
+  for (let off = 1; off <= 5; off++) {
+    fakeStaff.forEach((staff, si) => {
+      const startH = 8;
+      const startM = si * 15;
+      const endH = 16 + ((off + si) % 3);
+      const endM = (off * 10 + si * 5) % 60;
+      const total = (endH * 60 + endM) - (startH * 60 + startM);
+      const d = dayAt(off);
+      const hane = 6 + ((off * 3 + si * 2) % 9);
+      shiftsToInsert.push(
+        encryptShift({
+          personel_adi: staff,
+          tarih: d.en,
+          baslama_saati: `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`,
+          bitis_saati: `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`,
+          toplam_dakika: total,
+          durum: 'TAMAMLANDI',
+          mahalleler: ['Şükrüpaşa Mah.', 'Fatih Mah.', 'Cumhuriyet Mah.'][(off + si) % 3],
+          teslim_edilen_torba: hane * 34,
+          teslim_edilen_hane: hane,
+          notlar: 'Deneme Modu örnek mesai kaydı',
+          created_at: d.tr,
+          updated_at: d.tr,
+        })
+      );
+    });
+  }
+  shiftsToInsert.push(
+    encryptShift({
+      personel_adi: fakeStaff[0],
+      tarih: nowEnCa,
+      baslama_saati: '08:00',
+      bitis_saati: null,
+      toplam_dakika: 0,
+      durum: 'DEVAM_EDIYOR',
+      mahalleler: '',
+      teslim_edilen_torba: 0,
+      teslim_edilen_hane: 0,
+      notlar: 'Deneme Modu örnek devam eden mesai',
+      created_at: nowLocaleTr,
+      updated_at: nowLocaleTr,
+    })
+  );
+  await sandboxWorkShifts.insertMany(shiftsToInsert);
+
+  // 3) EXCEL HATA / MÜKERRER KAYITLARI (Yükleme günlüğü örnekleri)
+  const importLogDefaults = {
+    batch_id: mainBatchId,
+    donem_kodu: activeSeasonCode,
+    teslimat_durumu: 'BEKLIYOR',
+    torba_sayisi: 0,
+    hedef_torba: defaultQuota,
+    teslimat_tarihi: null,
+    teslim_alan: null,
+    teslimat_durumu_ozeti: 'BEKLİYOR - Henüz Dağıtıma Çıkmadı',
+    tarih: nowLocaleTr,
+  };
+  await sandboxImportLogs.insertMany([
+    encryptImportLog({
+      ...importLogDefaults,
+      satir_no: 7,
+      tc_no: 'Eksik',
+      ad_soyad: 'DENEME EKSİK TC KİŞİSİ',
+      telefon: '05550009001',
+      mahalle: 'Fatih Mah.',
+      acik_adres: 'Fatih Mah. Örnek Sok. No: 3',
+      hane_no: null,
+      hata_nedeni: 'Geçersiz veya Eksik TC Kimlik Numarası (Kayıt Geçici TC ile Sisteme Eklendi)',
+      durum: 'HATALI',
+      islem_sonucu: 'EKLENDİ_UYARILI',
+    }),
+    encryptImportLog({
+      ...importLogDefaults,
+      satir_no: 12,
+      tc_no: buildValidFakeTc(900100101),
+      ad_soyad: 'AHMET YILMAZ (DENEME) - TEKRAR',
+      telefon: '05550001001',
+      mahalle: 'Şükrüpaşa Mah.',
+      acik_adres: 'Şükrüpaşa Mah. Zübeyde Hanım Cad. No: 12',
+      hane_no: null,
+      hata_nedeni: 'Mükerrer T.C. Kimlik No: Bu kişi sistemde zaten kayıtlı (kayıt atlandı)',
+      durum: 'MUKERRER_TC',
+      islem_sonucu: 'EKLENMEDİ',
+    }),
+    encryptImportLog({
+      ...importLogDefaults,
+      satir_no: 15,
+      tc_no: buildValidFakeTc(900100301),
+      ad_soyad: 'EMİNE AYDIN (DENEME) - AYNI HANE',
+      telefon: '05550003001',
+      mahalle: 'Cumhuriyet Mah.',
+      acik_adres: 'Cumhuriyet Mah. Kuvayi Milliye Bulvarı No: 31 Daire: 5',
+      hane_no: 'DENEME-H107',
+      hata_nedeni: 'Mükerrer Hane: Aynı adreste kayıtlı başka hane mevcut (kayıt atlandı)',
+      durum: 'MUKERRER_HANE',
+      islem_sonucu: 'EKLENMEDİ',
+    }),
+  ]);
+  await sandboxImportBatches.updateOne(
+    { batch_id: mainBatchId },
+    { $set: { hatali_kayit: 1, mukerrer_tc: 1, mukerrer_hane: 1, toplam_satir: anaCount + 3 } }
+  );
+
+  // 4) ROTALAR: 1 aktif rota (karışık durumlu duraklar) + 1 tamamlanmış rota
+  const buildFakeStop = (idx: number, order: number) => {
+    const item = fakeHouseholdsRaw[idx];
+    const done = item.durum === 'TAMAMLANDI';
+    const partial = item.durum === 'EKSIK';
+    const at = dayAt(done || partial ? idx % 5 : 0, 9 + (idx % 7), (idx * 7) % 60);
+    return {
+      sira: order,
+      beneficiary_id: fakeBeneficiaryIds[idx],
+      tc_no: buildValidFakeTc(item.prefix),
+      ad_soyad: item.ad_soyad,
+      sira_no: item.liste === 'EK_LISTE' ? `Ek1 - ${order}` : String(order),
+      liste_turu: item.liste === 'EK_LISTE' ? 'EK_LISTE' : 'ANA_LISTE',
+      ek_liste_no: item.liste === 'EK_LISTE' ? 1 : null,
+      ek_liste_adi: item.liste === 'EK_LISTE' ? 'Ek Liste' : 'Ana Liste',
+      telefon: item.telefon,
+      telefon2: '',
+      mahalle: item.mahalle,
+      sokak: item.sokak,
+      kapi_no: item.kapi_no,
+      daire_no: item.daire_no > 1 ? item.daire_no : '',
+      acik_adres: `${item.mahalle} ${item.sokak} No: ${item.kapi_no}${item.daire_no > 1 ? ` Daire: ${item.daire_no}` : ''}`,
+      hedef_torba: defaultQuota,
+      imza_durumu: item.imza === 'IMZALANDI' ? 'IMZALANDI' : 'BEKLIYOR',
+      imza_tarihi: item.imza === 'IMZALANDI' ? at.tr : null,
+      imza_alan_personel: item.imza === 'IMZALANDI' ? 'Deneme Saha Ekibi' : null,
+      durum: done ? 'TAMAMLANDI' : partial ? 'EKSIK' : 'BEKLIYOR',
+      teslim_edilen_torba: done || partial ? item.torba : 0,
+      teslim_tarihi: done || partial ? at.tr : null,
+      teslim_eden_personel: done || partial ? 'Deneme Saha Ekibi' : null,
+      teslimat_notu: partial ? 'Deneme kısmi teslimat kaydı' : '',
+    };
+  };
+  const summarizeRoute = (stops: any[]) => ({
+    toplam_hane: stops.length,
+    tamamlanan_hane: stops.filter((s) => s.durum === 'TAMAMLANDI').length,
+    eksik_hane: stops.filter((s) => s.durum === 'EKSIK').length,
+    teslim_edilemeyen_hane: 0,
+    toplam_dagitilan_torba: stops.reduce((a, s) => a + (s.teslim_edilen_torba || 0), 0),
+    hedef_toplam_torba: stops.reduce((a, s) => a + (s.hedef_torba || 0), 0),
+  });
+
+  const activeRouteStops = [0, 1, 2, 3, 4, 5, 6].map((idx, k) => buildFakeStop(idx, k + 1));
+  const doneRouteStops = [11, 14, 17].map((idx, k) => buildFakeStop(idx, k + 1));
+  const activeRouteId = new ObjectId();
+  const doneRouteId = new ObjectId();
+  const doneAt = dayAt(2, 17, 30);
+  await sandboxDeliveryRoutes.insertMany([
+    encryptRoute({
+      _id: activeRouteId,
+      id: activeRouteId.toString(),
+      rota_adi: `${nowEnCa} Şükrüpaşa - Fatih Dağıtım Rotası (Deneme)`,
+      tarih: nowEnCa,
+      durum: 'AKTIF',
+      olusturan_personel: creator,
+      olusturan_username: 'deneme',
+      dagitim_personeli: 'Deneme Saha Ekibi',
+      isleten_personel: 'Deneme Saha Ekibi',
+      isleten_username: 'deneme',
+      ekip_adi: 'Deneme Ekibi 1',
+      ekip_arkadaslari: [],
+      arac_plaka: '22 TEST 001',
+      mahalleler: ['Şükrüpaşa Mah.', 'Fatih Mah.'],
+      duraklar: activeRouteStops,
+      ...summarizeRoute(activeRouteStops),
+      notlar: 'Deneme Modu örnek aktif rota',
+      created_at: nowLocaleTr,
+      completed_at: null,
+    }),
+    encryptRoute({
+      _id: doneRouteId,
+      id: doneRouteId.toString(),
+      rota_adi: `${doneAt.en} 100. Yıl - Karaağaç - Köyler Rotası (Deneme)`,
+      tarih: doneAt.en,
+      durum: 'TAMAMLANDI',
+      olusturan_personel: creator,
+      olusturan_username: 'deneme',
+      dagitim_personeli: 'Deneme Saha Ekibi',
+      isleten_personel: 'Deneme Saha Ekibi',
+      isleten_username: 'deneme',
+      ekip_adi: 'Deneme Ekibi 2',
+      ekip_arkadaslari: [],
+      arac_plaka: '22 TEST 002',
+      mahalleler: ['100. Yıl Mah.', 'Karaağaç Mah.', 'Büyükdöllük Köyü'],
+      duraklar: doneRouteStops,
+      ...summarizeRoute(doneRouteStops),
+      aktif_rota_modu: false,
+      notlar: 'Deneme Modu örnek tamamlanmış rota',
+      kapanis_notu: 'Tüm duraklar eksiksiz tamamlandığı için rota otomatik kapatıldı.',
+      created_at: doneAt.tr,
+      completed_at: doneAt.tr,
+    }),
+  ]);
+
+  // 5) İŞLEM GEÇMİŞİ (Aktivite günlüğü) örnekleri
+  const logEntry = (off: number, hour: number, kullanici: string, rol: 'ADMIN' | 'PERSONEL', tip: string, baslik: string, detay: string, extra: any = {}) => {
+    const d = dayAt(off, hour, (hour * 11) % 60);
+    return encryptActivityLog({
+      kullanici_adi: kullanici,
+      kullanici_rolu: rol,
+      islem_tipi: tip,
+      baslik,
+      detay,
+      calisma_modu: 'DENEME',
+      tarih: d.tr,
+      tarih_iso: d.iso,
+      gun_tarihi: d.en,
+      ...extra,
+    });
+  };
+  const deliveredFake = fakeHouseholdsRaw
+    .map((h, idx) => ({ h, idx }))
+    .filter(({ h }) => h.durum === 'TAMAMLANDI' || h.durum === 'EKSIK');
+  const activityDocs: any[] = [
+    logEntry(5, 9, creator, 'ADMIN', 'EXCEL_YUKLEME', '[DENEME] Excel Listesi Yüklendi', `Deneme Ana Dağıtım Listesi (Fake Veri).xlsx dosyasından ${anaCount} hane yüklendi.`),
+    logEntry(5, 10, creator, 'ADMIN', 'TAHSIS_GUNCELLEME', '[DENEME] Kömür Tahsisi Güncellendi', 'Kuruma gelecek toplam kömür miktarı 400 ton olarak belirlendi.'),
+    ...extraTrucksRaw.map((t) =>
+      logEntry(t.off, 14, creator, 'ADMIN', 'TIR_GIRIS', '[DENEME] Yeni Kömür Tırı Girişi', `#${t.order} Sıra No | Tır Plakası: ${t.plaka} | İrsaliye No: ${t.irs} | Net Tonaj: ${t.net} ton`)
+    ),
+    ...fakeStaff.map((s, si) =>
+      logEntry(1, 8, s, 'PERSONEL', 'MESAI_GIRIS', 'Günlük Çalışma Saati Kaydedildi', `${s} için ${dayAt(1).en} tarihli mesai kaydı eklendi.`, { ek_bilgi: { gun_tarihi: dayAt(1).en, sira: si } })
+    ),
+    logEntry(2, 17, 'Deneme Saha Ekibi', 'PERSONEL', 'ROTA_OLUSTURMA', 'Yeni Dağıtım Rotası Oluşturuldu', `"${doneAt.en} 100. Yıl - Karaağaç - Köyler Rotası (Deneme)" oluşturuldu. Toplam ${doneRouteStops.length} durak.`),
+    logEntry(2, 18, 'Deneme Saha Ekibi', 'PERSONEL', 'ROTA_KAPATMA', 'Rota Tamamlandı', `Rota duraklarının tamamı teslim edildiği için TAMAMLANDI durumuna alındı.`),
+    logEntry(0, 8, creator, 'ADMIN', 'ROTA_OLUSTURMA', 'Yeni Dağıtım Rotası Oluşturuldu', `"${nowEnCa} Şükrüpaşa - Fatih Dağıtım Rotası (Deneme)" oluşturuldu. Toplam ${activeRouteStops.length} durak.`),
+    logEntry(0, 8, creator, 'ADMIN', 'HANE_EKLEME', '[DENEME] Ek Liste Kaydı Eklendi', 'HASAN ÖZTÜRK (DENEME) Ek Liste altına eklendi.'),
+    ...deliveredFake.map(({ h, idx }) => {
+      const at = dayAt(idx % 5, 9 + (idx % 7), (idx * 7) % 60);
+      return logEntry(
+        idx % 5,
+        9 + (idx % 7),
+        'Deneme Saha Ekibi',
+        'PERSONEL',
+        h.durum === 'EKSIK' ? 'EKSIK_TESLIMAT' : 'TESLIMAT',
+        h.durum === 'EKSIK' ? 'Eksik Kömür Teslimatı' : 'Kömür Teslim Edildi',
+        `${h.ad_soyad} (${h.mahalle}) hanesine ${h.torba} torba kömür teslim edildi.`,
+        { hedef_kisi: h.ad_soyad, hedef_tc: buildValidFakeTc(h.prefix), mahalle: h.mahalle, torba_sayisi: h.torba, tarih: at.tr }
+      );
+    }),
+  ];
+  await sandboxActivityLogs.insertMany(activityDocs);
 
   return { seededCount: docsToInsert.length, batchCount: 2 };
 }

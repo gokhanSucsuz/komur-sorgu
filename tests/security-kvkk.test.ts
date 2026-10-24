@@ -594,6 +594,13 @@ describe('7. Saha Tek Hane Ekleme: Mükerrer TC Engeli & Aynı Adres Uyarı Tesp
     assert.equal(await cols.sandboxBeneficiaries.countDocuments({}), result.seededCount);
     assert.ok((await cols.sandboxImportBatches.countDocuments({})) >= 2);
     assert.ok((await cols.sandboxTruckDeliveries.countDocuments({})) >= 2);
+    // Tüm bölümlerde deneme verisi: tonaj, mesai, rota, loglar, işlem geçmişi
+    assert.ok((await cols.sandboxTruckDeliveries.countDocuments({})) >= 6);
+    assert.ok((await cols.sandboxWorkShifts.countDocuments({})) >= 10);
+    assert.ok((await cols.sandboxDeliveryRoutes.countDocuments({})) >= 2);
+    assert.ok((await cols.sandboxImportLogs.countDocuments({})) >= 3);
+    assert.ok((await cols.sandboxActivityLogs.countDocuments({})) >= 10);
+    assert.ok((await cols.sandboxDeliveryHistory.countDocuments({})) >= 5);
 
     // Resmi veriler değişmemeli
     assert.equal(await cols.officialBeneficiaries.countDocuments({}), officialBefore);
