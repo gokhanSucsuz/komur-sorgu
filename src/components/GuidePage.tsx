@@ -180,6 +180,13 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
               Sahaya gidildiğinde vatandaş taşınmış veya yeni telefon numarası almışsa, hak sahibi kartındaki <strong>&quot;Düzenle&quot;</strong> butonuna basılarak mahalle, açık adres ve telefon bilgisi anında güncellenir.
             </p>
           </div>
+
+          <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-200">
+            <h5 className="font-bold text-sky-950 text-xs mb-1">📱 Pratik Mobil Saha Hane Ekleme (&quot;Ek Liste&quot;, Zorunlu TC &amp; Ad Soyad, Opsiyonel Adres/Telefon):</h5>
+            <p className="text-[11px] text-sky-900 leading-normal">
+              Sahada personel cep telefonundan yeni bir ek hane eklerken yalnızca <strong>T.C. Kimlik No (11 Hane)</strong> ve <strong>Ad Soyad</strong> girilmesi zorunludur; <strong>Adres (Mahalle/Sokak/Kapı No)</strong> ve <strong>Telefon</strong> girişi tamamen <strong>isteğe bağlıdır (opsiyonel)</strong>. İstenirse sistemde var olan <strong>Mahalle Etiketlerine</strong> ve ardından <strong>Sokak Etiketlerine</strong> dokunularak adres saniyeler içinde seçilebilir. Eklenen tüm kayıtlar otomatik olarak <strong>&quot;Ek Liste&quot;</strong> adı altında tutulur ve <strong>Ara &amp; Bul</strong> ekranında, teslimat/imza işlemlerinde, rotalarda, tüm istatistiklerde ve raporlarda normal liste elemanları gibi yer alır.
+            </p>
+          </div>
         </div>
       ),
     },
@@ -476,6 +483,13 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
               Telefon numaraları otomatik olarak <code>05XXXXXXXXX</code> formatına dönüştürülür. TC Kimlik No ve Hane No benzersizliği sıkı denetlenirken, gecekondu ve müstakil bölgelerde <strong>aynı adreste ikamet eden farklı TC Kimlik numaralı aileler</strong> hata olarak işaretlenmeden sorunsuz kaydedilir.
             </p>
           </div>
+
+          <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950">
+            <h5 className="font-bold text-xs text-indigo-950 mb-1">🧪 Yönetici Excel Deneme Alanı &amp; Esnek Deneme Modu Sıfırlama:</h5>
+            <p className="text-[11px] text-indigo-900 leading-normal">
+              Excel Aktarımı sayfasındaki <strong>Deneme Alanı</strong> sayesinde eklenecek listeler önce deneme amacıyla izole test veritabanına (<code>sandbox_*</code>) kaydedilebilir. Deneme modunda yapılan işlemler <strong>resmi işlem sayılmaz</strong>; listelerdeki eksiklikler, değiştirilmesi gereken alanlar, mükerrerlikler ve dağıtım akışı güvenle test edilir. Yönetici istediği an hem Deneme Alanı kartından hem de ekranın en üstündeki sabit <strong>DENEME MODU AKTİF</strong> çubuğundan <strong>&quot;Deneme Modunu Sıfırla&quot;</strong> butonuna basarak tüm deneme verilerini tek tıkla sıfırlayabilir veya <strong>Gerçek (Resmi) Moda</strong> geçebilir.
+            </p>
+          </div>
         </div>
       ),
     },
@@ -508,10 +522,10 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
               <span className="font-bold text-blue-950 block mb-1 flex items-center gap-1.5">
                 <Smartphone className="w-4 h-4 text-blue-700" />
-                <span>Mobil Uygulama Olarak Ekleme (PWA)</span>
+                <span>Mobil Uygulama (PWA) &amp; Eski Model Android Çözümü</span>
               </span>
               <p className="text-[11px] text-blue-800">
-                Android veya iOS cihazınızda Chrome/Safari tarayıcısında <strong>&quot;Ana Ekrana Ekle&quot;</strong> seçeneğine tıklayarak sistemi telefonunuza gerçek bir mobil uygulama gibi yükleyebilirsiniz.
+                Android veya iOS cihazınızda <strong>&quot;Ana Ekrana Ekle&quot;</strong> seçeneğiyle sistemi telefonunuza yükleyebilirsiniz. Uygulama yüklenmeyen eski model Android telefonlar için üst menüde ve giriş ekranında <strong>&quot;Eski Android Çözümü &amp; Hızlı Mod&quot;</strong> asistanı yer alır; <strong>0 MB Hafif Saha Modu (Lite Mode)</strong>, <strong>Tam Ekran</strong> ve <strong>APK&apos;sız Masaüstü Kısayolu</strong> ile en eski telefonlarda bile takılmadan çalışır.
               </p>
             </div>
           </div>

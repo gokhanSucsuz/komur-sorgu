@@ -178,6 +178,14 @@ class SignatureQueueManager {
   public getPendingCount(): number {
     return this.queue.size;
   }
+
+  public clear() {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    this.queue.clear();
+  }
 }
 
 export const signatureQueue = new SignatureQueueManager();

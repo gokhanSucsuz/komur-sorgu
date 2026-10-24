@@ -36,18 +36,86 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { beneficiaries: benCol, systemSettings } = await getDbCollections();
+    const {
+      beneficiaries: benCol,
+      officialBeneficiaries,
+      archivedBeneficiaries,
+      systemSettings,
+      calismaModu,
+      isSandboxMode,
+    } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const q = asString(searchParams.get('q'), 100);
     const mahalle = asString(searchParams.get('mahalle'), 100);
     const durum = asString(searchParams.get('durum'), 50);
     const targetTc = asString(searchParams.get('targetTc'), 32);
+    const streetTagsMode = searchParams.get('streetTags') === '1';
     const page = clampInt(searchParams.get('page'), 1, 10000, 1);
     const rawLimit = searchParams.get('limit');
     const limit = (rawLimit === '0' || rawLimit === 'ALL' || rawLimit === 'all' || !rawLimit)
       ? 0
       : clampInt(rawLimit, 1, 50000, 50);
     const skip = limit > 0 ? (page - 1) * limit : 0;
+
+    // Fast lookup for mobile field household addition: existing neighborhoods & street tags in the system
+    if (streetTagsMode) {
+      const targetMah = mahalle ? (normalizeMahalleName(mahalle) || mahalle.trim()) : '';
+      const mahVariants: string[] = [];
+      if (targetMah) {
+        mahVariants.push(targetMah, mahalle.trim());
+        const cleanBase = targetMah.replace(/\s+(?:Mahallesi|Mah\.?|Mh\.?|Köyü|Koy|Koyu)$/i, '').trim();
+        if (cleanBase) {
+          mahVariants.push(cleanBase, `${cleanBase} Mah.`, `${cleanBase} Mahallesi`, `${cleanBase} Köyü`);
+        }
+      }
+      const mahFilter = mahVariants.length > 0 ? { mahalle: { $in: Array.from(new Set(mahVariants)) } } : {};
+      const proj = { projection: { mahalle: 1, sokak: 1, acik_adres: 1, kapi_no: 1, yerlesim_tipi: 1 } };
+
+      const [activeDocs, officialDocs, archivedDocs] = await Promise.all([
+        benCol.find(mahFilter, proj).limit(2500).toArray(),
+        isSandboxMode ? officialBeneficiaries.find(mahFilter, proj).limit(2500).toArray() : Promise.resolve([]),
+        archivedBeneficiaries.find(mahFilter, proj).limit(2500).toArray(),
+      ]);
+
+      const combinedRaw = [...activeDocs, ...officialDocs, ...archivedDocs];
+      const decryptedList = mapDocs(combinedRaw);
+
+      const streetCountMap = new Map<string, { sokak: string; count: number }>();
+      const mahalleSet = new Set<string>();
+
+      for (const rec of decryptedList) {
+        const mNorm = normalizeMahalleName(rec.mahalle || '') || (rec.mahalle || '').trim();
+        if (mNorm && mNorm !== 'Belirtilmemiş') {
+          mahalleSet.add(mNorm);
+        }
+        if (targetMah && mNorm.toLocaleLowerCase('tr-TR') !== targetMah.toLocaleLowerCase('tr-TR')) {
+          continue;
+        }
+        const stInfo = getRecordStreetInfo(rec);
+        const stName = (stInfo.sokak || '').trim();
+        if (stName && stName !== 'Belirtilmemiş') {
+          const normKey = stName.toLocaleLowerCase('tr-TR');
+          const prev = streetCountMap.get(normKey);
+          if (prev) {
+            prev.count += 1;
+          } else {
+            streetCountMap.set(normKey, { sokak: stName, count: 1 });
+          }
+        }
+      }
+
+      const streets = Array.from(streetCountMap.values())
+        .sort((a, b) => a.sokak.localeCompare(b.sokak, 'tr'))
+        .map((x) => ({ sokak: x.sokak, hane_sayisi: x.count }));
+
+      return NextResponse.json({
+        success: true,
+        mahalle: targetMah,
+        streets,
+        streetNames: streets.map((s) => s.sokak),
+        mahalleler: Array.from(mahalleSet).sort((a, b) => a.localeCompare(b, 'tr')),
+      });
+    }
 
     // Special Query: If looking up a specific TC to show person AND household relatives
     if (targetTc) {
@@ -184,7 +252,8 @@ export async function GET(request: NextRequest) {
       const rawRecords = await query.toArray();
 
       records = mapDocs(rawRecords).map((r: any) => {
-        r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle;
+        r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle || 'Adres Belirtilmemiş';
+        if (r.ek_liste_adi === 'Saha Tekil Ekleme') r.ek_liste_adi = 'Ek Liste';
         r.hedef_torba = r.hedef_torba || 34;
         r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
         return r;
@@ -202,7 +271,8 @@ export async function GET(request: NextRequest) {
         total = await benCol.countDocuments(filter);
         const rawRecords = await benCol.find(filter).toArray();
         records = mapDocs(rawRecords).map((r: any) => {
-          r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle;
+          r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle || 'Adres Belirtilmemiş';
+          if (r.ek_liste_adi === 'Saha Tekil Ekleme') r.ek_liste_adi = 'Ek Liste';
           r.hedef_torba = r.hedef_torba || 34;
           r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
           return r;
@@ -219,7 +289,8 @@ export async function GET(request: NextRequest) {
         total = filtered.length;
         const sliced = (limit > 0) ? filtered.slice(skip, skip + limit) : (skip > 0 ? filtered.slice(skip) : filtered);
         records = sliced.map((r: any) => {
-          r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle;
+          r.mahalle = normalizeMahalleName(r.mahalle) || r.mahalle || 'Adres Belirtilmemiş';
+          if (r.ek_liste_adi === 'Saha Tekil Ekleme') r.ek_liste_adi = 'Ek Liste';
           r.hedef_torba = r.hedef_torba || 34;
           r.kalan_torba = Math.max(0, r.hedef_torba - (r.torba_sayisi || 0));
           return r;
@@ -327,6 +398,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      calismaModu,
+      isSandboxMode,
       data: records,
       total,
       page,
@@ -483,11 +556,23 @@ export async function POST(request: NextRequest) {
     const rawSokakStr = sokak ? String(sokak).trim() : '';
     const rawKapiNoStr = kapi_no !== undefined && kapi_no !== null ? String(kapi_no).trim() : '';
 
-    // Eğer sokak/kapı no ayrı girilmiş ama açık adreste yazılmamışsa açık adresi zenginleştir
+    // Eğer sokak/kapı no ayrı girilmiş veya sadece mahalle/sokak etiketi seçilmişse açık adresi otomatik oluştur (sahada personel detay yazmak zorunda kalmaz)
     let compositeAddress = rawAcikAdresStr;
     if (!compositeAddress && (rawSokakStr || rawKapiNoStr)) {
       compositeAddress = [
+        rawMahalleStr,
         rawSokakStr,
+        rawKapiNoStr ? `No: ${rawKapiNoStr}` : '',
+        daire_no ? `Daire: ${daire_no}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    }
+    if (!compositeAddress && rawMahalleStr) {
+      const autoStreet = /(?:Köyü|Koy|Koyu)$/i.test(rawMahalleStr) ? 'Köy İçi' : 'Merkez';
+      compositeAddress = [
+        rawMahalleStr,
+        autoStreet,
         rawKapiNoStr ? `No: ${rawKapiNoStr}` : '',
         daire_no ? `Daire: ${daire_no}` : '',
       ]
@@ -496,13 +581,17 @@ export async function POST(request: NextRequest) {
     }
 
     let sameAddressRecords: any[] = [];
-    let settlement = { name: rawMahalleStr || 'Belirtilmemiş', type: 'MAHALLE' as 'MAHALLE' | 'KOY' };
+    let settlement = {
+      name: rawMahalleStr ? (normalizeMahalleName(rawMahalleStr) || rawMahalleStr) : 'Adres Belirtilmemiş',
+      type: 'MAHALLE' as 'MAHALLE' | 'KOY',
+    };
     let streetInfo: { sokak: string; kapiNo: string | number; daireNo: number } = {
-      sokak: 'Belirtilmemiş',
+      sokak: rawSokakStr || (rawMahalleStr ? 'Mahalle İçi / Cadde-Sokak Belirtilmemiş' : 'Adres Belirtilmemiş'),
       kapiNo: 999999,
       daireNo: 0,
     };
     let normAdres = '';
+    const hasSpecificHouseAddress = Boolean(rawKapiNoStr || rawAcikAdresStr.length >= 5);
 
     if (rawMahalleStr || compositeAddress) {
       settlement = detectSettlement(rawMahalleStr, body.koy, compositeAddress);
@@ -513,17 +602,19 @@ export async function POST(request: NextRequest) {
           streetInfo.daireNo = parsedDaire;
         }
       }
-      normAdres = normalizeAddress(settlement.name, compositeAddress);
+      normAdres = hasSpecificHouseAddress ? normalizeAddress(settlement.name, compositeAddress) : '';
       const adresHash = normAdres ? hashAddress(normAdres) : null;
 
-      // Aynı mahalledeki veya aynı adres özetindeki aday kayıtları çek
+      // Aynı mahalledeki veya aynı adres özetindeki aday kayıtları çek (Yalnızca spesifik kapı no veya açık adres girildiyse kontrol et)
       const normMahalleTarget = normalizeMahalleName(settlement.name) || settlement.name;
       const mahalleOrConditions: any[] = [];
-      if (adresHash) mahalleOrConditions.push({ adres_hash: adresHash });
-      if (normAdres) mahalleOrConditions.push({ norm_adres: normAdres });
-      if (settlement.name) mahalleOrConditions.push({ mahalle: settlement.name });
-      if (rawMahalleStr && rawMahalleStr !== settlement.name) {
-        mahalleOrConditions.push({ mahalle: rawMahalleStr });
+      if (hasSpecificHouseAddress) {
+        if (adresHash) mahalleOrConditions.push({ adres_hash: adresHash });
+        if (normAdres) mahalleOrConditions.push({ norm_adres: normAdres });
+        if (settlement.name) mahalleOrConditions.push({ mahalle: settlement.name });
+        if (rawMahalleStr && rawMahalleStr !== settlement.name) {
+          mahalleOrConditions.push({ mahalle: rawMahalleStr });
+        }
       }
 
       if (mahalleOrConditions.length > 0) {
@@ -612,11 +703,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!ad_soyad || !String(ad_soyad).trim() || !rawMahalleStr || !compositeAddress) {
+    if (!ad_soyad || !String(ad_soyad).trim()) {
       return NextResponse.json(
-        { success: false, error: 'Ad Soyad, Mahalle/Köy ve Açık Adres alanları zorunludur' },
+        { success: false, error: 'Ad Soyad ve T.C. Kimlik Numarası alanları zorunludur (Adres ve telefon isteğe bağlıdır)' },
         { status: 400 }
       );
+    }
+
+    if (!compositeAddress) {
+      compositeAddress = rawMahalleStr ? `${settlement.name}` : 'Adres Belirtilmemiş';
     }
 
     // Eğer aynı adreste başka hane(ler) varsa ve personel henüz onaylamadıysa uyarı döndür (onaylarsa eklenebilir!)
@@ -705,9 +800,45 @@ export async function POST(request: NextRequest) {
         ? liste_turu
         : 'EK_LISTE';
 
+    // Eğer Ek Liste olarak ekleniyorsa ve özel bir batch seçilmediyse, otomatik "Ek Liste" grubunu (batch) bul veya oluştur
+    const defaultEkBatchId = `BATCH_EK_LISTE_${activeSeasonCode}`;
+    if (selectedListType === 'EK_LISTE' && !attachedBatch) {
+      attachedBatch = await batchesCol.findOne({
+        $or: [
+          { batch_id: defaultEkBatchId },
+          { dosya_adi: 'Ek Liste', donem_kodu: activeSeasonCode },
+          { ek_liste_adi: 'Ek Liste', donem_kodu: activeSeasonCode },
+        ],
+      });
+      if (!attachedBatch) {
+        const newEkBatch: any = {
+          batch_id: defaultEkBatchId,
+          dosya_adi: 'Ek Liste',
+          ek_liste_adi: 'Ek Liste',
+          ek_liste_no: 1,
+          liste_turu: 'EK_LISTE',
+          donem_kodu: activeSeasonCode,
+          toplam_satir: 0,
+          eklenen_kisi: 0,
+          mevcut_kisi: 0,
+          mukerrer_tc: 0,
+          mukerrer_hane: 0,
+          hatali_kayit: 0,
+          yukleyen: creatorName,
+          created_at: nowStr,
+          updated_at: nowStr,
+        };
+        const insBatch = await batchesCol.insertOne(newEkBatch);
+        attachedBatch = { ...newEkBatch, _id: insBatch.insertedId };
+      }
+    }
+
     let siraNo = `Ek1 - ${mahalleSira}`;
     let ekListeNo = 1;
-    let ekListeAdi = attachedBatch?.ek_liste_adi || 'Saha Tekil Ekleme';
+    let ekListeAdi = attachedBatch?.ek_liste_adi || 'Ek Liste';
+    if (ekListeAdi === 'Saha Tekil Ekleme') {
+      ekListeAdi = 'Ek Liste';
+    }
 
     if (selectedListType === 'ANA_LISTE') {
       siraNo = String(mahalleSira);
@@ -732,6 +863,13 @@ export async function POST(request: NextRequest) {
     }
 
     const isSignedAtDoor = Boolean(imza_alindi);
+    const resolvedBatchId = attachedBatch
+      ? attachedBatch.batch_id || attachedBatch.id || String(attachedBatch._id)
+      : batch_id
+      ? String(batch_id).trim()
+      : selectedListType === 'EK_LISTE'
+      ? defaultEkBatchId
+      : null;
 
     const newDoc: any = {
       tc_no: cleanedTc,
@@ -759,9 +897,12 @@ export async function POST(request: NextRequest) {
       sira_no: siraNo,
       mahalle_sira: mahalleSira,
       liste_turu: selectedListType,
+      liste_kategorisi: selectedListType === 'EK_LISTE' ? 'EK_KAYIT' : selectedListType,
       ek_liste_no: ekListeNo,
       ek_liste_adi: ekListeAdi,
-      batch_id: attachedBatch ? (attachedBatch.batch_id || attachedBatch.id || String(attachedBatch._id)) : (batch_id ? String(batch_id).trim() : null),
+      kaynak_dosya: attachedBatch?.dosya_adi || ekListeAdi,
+      batch_id: resolvedBatchId,
+      import_batch_id: resolvedBatchId,
       donem_kodu: activeSeasonCode,
       ekleyen_personel: creatorName,
       ekleyen_rol: session.rol || 'PERSONEL',
@@ -776,12 +917,15 @@ export async function POST(request: NextRequest) {
     const res = await benCol.insertOne(encryptedDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
 
-    // Eğer aktif bir Excel listesine / batch'e bağlandıysa sayaçlarını güncelle
-    if (attachedBatch) {
+    // Eğer aktif bir Excel listesine veya otomatik "Ek Liste" grubuna bağlandıysa sayaçlarını güncelle
+    if (attachedBatch && attachedBatch._id) {
       try {
         await batchesCol.updateOne(
           { _id: attachedBatch._id },
-          { $inc: { mevcut_kisi: 1, eklenen_kisi: 1 } }
+          {
+            $inc: { mevcut_kisi: 1, eklenen_kisi: 1, toplam_satir: 1 },
+            $set: { updated_at: nowStr },
+          }
         );
       } catch (e) {
         console.warn('Batch count increment warning:', e);

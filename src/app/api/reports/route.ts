@@ -235,7 +235,14 @@ export async function GET(request: NextRequest) {
     // Group beneficiaries by batch_id
     const beneficiariesByBatch = new Map<string, any[]>();
     for (const b of allBeneficiaries) {
-      const bId = b.batch_id || 'ONCEKI_KAYITLAR';
+      if (b.ek_liste_adi === 'Saha Tekil Ekleme') {
+        b.ek_liste_adi = 'Ek Liste';
+      }
+      const isEkRecord =
+        b.liste_turu === 'EK_LISTE' ||
+        b.liste_kategorisi === 'EK_KAYIT' ||
+        b.ek_liste_adi === 'Ek Liste';
+      const bId = b.batch_id || (isEkRecord ? 'EK_LISTE_KAYITLARI' : 'ONCEKI_KAYITLAR');
       if (!beneficiariesByBatch.has(bId)) {
         beneficiariesByBatch.set(bId, []);
       }
@@ -328,6 +335,51 @@ export async function GET(request: NextRequest) {
         bekleyen: batchPending,
         yuzde: list.length > 0 ? parseFloat(((batchDelivered / list.length) * 100).toFixed(1)) : 0,
         mahalleler,
+      });
+    }
+
+    // Check unbatched Ek Liste records if any
+    const unbatchedEkList = beneficiariesByBatch.get('EK_LISTE_KAYITLARI') || [];
+    if (unbatchedEkList.length > 0) {
+      const mBatchMap = new Map<string, any>();
+      let del = 0;
+      let pend = 0;
+      for (const b of unbatchedEkList) {
+        const m = b.mahalle || 'Adres Belirtilmemiş';
+        if (!mBatchMap.has(m)) {
+          mBatchMap.set(m, { mahalle: m, ekListeAdi: 'Ek Liste', siraNoList: [], toplamKayit: 0, teslimEdilen: 0, bekleyen: 0 });
+        }
+        const mi = mBatchMap.get(m)!;
+        mi.toplamKayit += 1;
+        if (b.sira_no) mi.siraNoList.push(b.sira_no);
+        if (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI') {
+          mi.teslimEdilen += 1;
+          del += 1;
+        } else {
+          mi.bekleyen += 1;
+          pend += 1;
+        }
+      }
+
+      batchStats.unshift({
+        batchId: 'EK_LISTE_KAYITLARI',
+        dosyaAdi: 'Ek Liste',
+        yuklemeTarihi: 'Saha & Ek Liste Kayıtları',
+        toplamSatir: unbatchedEkList.length,
+        eklenenKisi: unbatchedEkList.length,
+        teslimEdilen: del,
+        bekleyen: pend,
+        yuzde: unbatchedEkList.length > 0 ? parseFloat(((del / unbatchedEkList.length) * 100).toFixed(1)) : 0,
+        mahalleler: Array.from(mBatchMap.values()).map((m) => ({
+          mahalle: m.mahalle,
+          ekListeAdi: 'Ek Liste',
+          ekListeNo: 1,
+          siraAraligi: `Ek1 - 1'den Ek1 - ${m.toplamKayit}'e`,
+          toplamKayit: m.toplamKayit,
+          teslimEdilen: m.teslimEdilen,
+          bekleyen: m.bekleyen,
+          yuzde: m.toplamKayit > 0 ? parseFloat(((m.teslimEdilen / m.toplamKayit) * 100).toFixed(1)) : 0,
+        })),
       });
     }
 

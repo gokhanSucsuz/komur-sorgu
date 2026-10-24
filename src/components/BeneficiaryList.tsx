@@ -84,11 +84,16 @@ export default function BeneficiaryList({
   const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
 
-  // Sayfalama Durumu (Mobil cihazlarda akıcı performans için 50, masaüstünde 250 kayıt)
+  // Sayfalama Durumu (Eski model Android / Hafif modda 25, normal mobilde 50, masaüstünde 250 kayıt)
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      return 50;
+    if (typeof window !== 'undefined') {
+      try {
+        if (localStorage.getItem('komur_lite_mode') === 'true') return 25;
+      } catch {}
+      if (window.innerWidth < 768) {
+        return 50;
+      }
     }
     return 250;
   });
@@ -507,7 +512,7 @@ export default function BeneficiaryList({
 
           <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-200">
             <span className="text-[11px] text-slate-400 font-bold">Sayfa Başı:</span>
-            {[50, 100, 250, 500].map((size) => (
+            {[25, 50, 100, 250, 500].map((size) => (
               <button
                 key={size}
                 type="button"
@@ -811,7 +816,7 @@ export default function BeneficiaryList({
                   {selectedListTypeFilter === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-700" />}
                   {selectedListTypeFilter === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-amber-700" />}
                   {selectedListTypeFilter === 'ANA_LISTE' && <FileText className="w-3 h-3 text-sky-700" />}
-                  <span>{selectedListTypeFilter === 'SIGORTALI' ? 'Sigortalılar Listesi' : selectedListTypeFilter === 'EK_LISTE' ? 'Ek Listeler' : 'Ana Liste'}</span>
+                  <span>{selectedListTypeFilter === 'SIGORTALI' ? 'Sigortalılar Listesi' : selectedListTypeFilter === 'EK_LISTE' ? 'Ek Liste' : 'Ana Liste'}</span>
                   <button
                     type="button"
                     onClick={() => setSelectedListTypeFilter('HEPSI')}
@@ -1207,7 +1212,7 @@ export default function BeneficiaryList({
                     }`}
                   >
                     <FileSpreadsheet className="w-3 h-3" />
-                    <span>Ek Listeler ({listTypeCounts.ek})</span>
+                    <span>Ek Liste ({listTypeCounts.ek})</span>
                   </button>
                   <button
                     type="button"

@@ -26,6 +26,12 @@ import {
   Flame,
   FileSpreadsheet,
   Lock,
+  ChevronDown,
+  ChevronUp,
+  Tag,
+  FlaskConical,
+  Check,
+  X,
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import {
@@ -51,6 +57,7 @@ interface SingleHouseholdAddPageProps {
   defaultQuota?: number;
   initialTcOrName?: string;
   activeSeasonCode?: string;
+  calismaModu?: 'RESMI' | 'DENEME';
   onClearInitialQuery?: () => void;
   onSuccess: (createdBeneficiary: any) => void;
   onOpenDelivery?: (person: any) => void;
@@ -65,6 +72,7 @@ export default function SingleHouseholdAddPage({
   defaultQuota = 34,
   initialTcOrName = '',
   activeSeasonCode = '2026-2027',
+  calismaModu = 'RESMI',
   onClearInitialQuery,
   onSuccess,
   onOpenDelivery,
@@ -85,6 +93,17 @@ export default function SingleHouseholdAddPage({
   const [listeTuru, setListeTuru] = useState<'EK_LISTE' | 'ANA_LISTE' | 'SIGORTALI'>('EK_LISTE');
   const [imzaAlindi, setImzaAlindi] = useState<boolean>(false);
   const [eklemeNotu, setEklemeNotu] = useState<string>('');
+
+  // Mobil Pratik Etiket Seçim ve Filtre Durumu
+  const [mahalleSearch, setMahalleSearch] = useState<string>('');
+  const [sokakSearch, setSokakSearch] = useState<string>('');
+  const [showMahallePicker, setShowMahallePicker] = useState<boolean>(true);
+  const [showExtraDetails, setShowExtraDetails] = useState<boolean>(false);
+  const [serverStreetsForMahalle, setServerStreetsForMahalle] = useState<
+    { sokak: string; hane_sayisi: number }[]
+  >([]);
+  const [systemMahallelerFromServer, setSystemMahallelerFromServer] = useState<string[]>([]);
+  const [isLoadingStreets, setIsLoadingStreets] = useState<boolean>(false);
 
   // Aktif Dönem ve Liste Seçim Durumu (Sıfırlanmış yeni dönem & arşivlenmiş listeler yönetimi)
   const [currentSeasonCode, setCurrentSeasonCode] = useState<string>(activeSeasonCode || '2026-2027');
@@ -223,7 +242,7 @@ export default function SingleHouseholdAddPage({
         .join(' ');
     }
 
-    if (!rawMah && compositeAddr.length < 5) return [];
+    if (!rawKapi && rawAcik.length < 5) return [];
 
     const settlement = detectSettlement(rawMah, '', compositeAddr);
     const streetInfo = extractStreetAndDoor(compositeAddr, rawSok, rawKapi, settlement.name);
@@ -369,32 +388,111 @@ export default function SingleHouseholdAddPage({
     return () => clearTimeout(timer);
   }, [cleanedTc, mahalle, sokak, kapiNo, daireNo, acikAdres, haneNo]);
 
-  // Seçili mahalledeki mevcut sokakların otomatik tamamlama listesi
-  const availableStreetsInMahalle = useMemo(() => {
+  // Seçili mahalle değiştiğinde sunucudan (aktif + resmi + arşiv) o mahallenin tüm sokak etiketlerini çek
+  useEffect(() => {
+    let isMounted = true;
+    const trimmedMah = mahalle.trim();
+    if (!trimmedMah) {
+      setServerStreetsForMahalle([]);
+      return;
+    }
+    setIsLoadingStreets(true);
+    fetch(`/api/beneficiaries?streetTags=1&mahalle=${encodeURIComponent(trimmedMah)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!isMounted) return;
+        if (data?.success && Array.isArray(data.streets)) {
+          setServerStreetsForMahalle(data.streets);
+        }
+        if (data?.success && Array.isArray(data.mahalleler) && data.mahalleler.length > 0) {
+          setSystemMahallelerFromServer((prev) =>
+            Array.from(new Set([...prev, ...data.mahalleler]))
+          );
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setIsLoadingStreets(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [mahalle]);
+
+  // İlk açılışta sistemdeki tüm mahalle etiketlerini (aktif + resmi + arşiv) çek
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/beneficiaries?streetTags=1')
+      .then((r) => r.json())
+      .then((data) => {
+        if (isMounted && data?.success && Array.isArray(data.mahalleler)) {
+          setSystemMahallelerFromServer(data.mahalleler);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Seçili mahalledeki mevcut sokak etiketleri (Yerel kayıtlar + Sunucu sokak etiketleri birleşimi)
+  const streetTagItemsInMahalle = useMemo(() => {
     if (!mahalle.trim()) return [];
     const normM = normalizeMahalleName(mahalle) || mahalle.trim();
-    const streetSet = new Set<string>();
+    const countMap = new Map<string, { sokak: string; count: number }>();
+
     for (const r of records) {
       const rMah = normalizeMahalleName(r.mahalle || '') || r.mahalle || '';
       if (rMah.toLocaleLowerCase('tr-TR') === normM.toLocaleLowerCase('tr-TR')) {
         const st = getRecordStreetInfo(r);
         if (st.sokak && st.sokak !== 'Belirtilmemiş') {
-          streetSet.add(st.sokak);
+          const key = st.sokak.toLocaleLowerCase('tr-TR');
+          const prev = countMap.get(key);
+          if (prev) prev.count += 1;
+          else countMap.set(key, { sokak: st.sokak, count: 1 });
         }
       }
     }
-    return Array.from(streetSet).sort((a, b) => a.localeCompare(b, 'tr'));
-  }, [records, mahalle]);
 
-  // Mahalle seçenekleri (Kayıtlardan + sistem listesinden + Edirne standart mahallelerinden)
+    for (const srvSt of serverStreetsForMahalle) {
+      if (srvSt?.sokak && srvSt.sokak !== 'Belirtilmemiş') {
+        const key = srvSt.sokak.toLocaleLowerCase('tr-TR');
+        if (!countMap.has(key)) {
+          countMap.set(key, { sokak: srvSt.sokak, count: srvSt.hane_sayisi || 1 });
+        }
+      }
+    }
+
+    return Array.from(countMap.values()).sort((a, b) => a.sokak.localeCompare(b.sokak, 'tr'));
+  }, [records, mahalle, serverStreetsForMahalle]);
+
+  const availableStreetsInMahalle = useMemo(
+    () => streetTagItemsInMahalle.map((item) => item.sokak),
+    [streetTagItemsInMahalle]
+  );
+
+  const filteredStreetTags = useMemo(() => {
+    const q = sokakSearch.trim().toLocaleLowerCase('tr-TR');
+    if (!q) return streetTagItemsInMahalle;
+    return streetTagItemsInMahalle.filter((item) =>
+      item.sokak.toLocaleLowerCase('tr-TR').includes(q)
+    );
+  }, [streetTagItemsInMahalle, sokakSearch]);
+
+  // Mahalle seçenekleri (Kayıtlardan + sistem listesinden + sunucu arşivinden + Edirne standart mahalle/köylerinden)
   const mahalleOptions = useMemo(() => {
     const set = new Set<string>();
     mahalleler.forEach((m: any) => {
       const name = typeof m === 'string' ? m : m?.mahalle;
-      if (name) set.add(name);
+      if (name && name !== 'Belirtilmemiş') set.add(normalizeMahalleName(name) || name);
     });
     records.forEach((r: any) => {
-      if (r?.mahalle) set.add(r.mahalle);
+      if (r?.mahalle && r.mahalle !== 'Belirtilmemiş') {
+        set.add(normalizeMahalleName(r.mahalle) || r.mahalle);
+      }
+    });
+    systemMahallelerFromServer.forEach((m) => {
+      if (m && m !== 'Belirtilmemiş') set.add(normalizeMahalleName(m) || m);
     });
     const defaults = [
       'Abdurrahman Mah.',
@@ -426,18 +524,71 @@ export default function SingleHouseholdAddPage({
     ];
     defaults.forEach((d) => set.add(d));
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'));
+  }, [mahalleler, records, systemMahallelerFromServer]);
+
+  // Mahalle başına mevcut hane sayısı haritası
+  const mahalleCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    mahalleler.forEach((m: any) => {
+      if (m && typeof m === 'object' && m.mahalle) {
+        const norm = normalizeMahalleName(m.mahalle) || m.mahalle;
+        map.set(norm, Number(m.kisi_sayisi || 0));
+      }
+    });
+    if (map.size === 0 && records.length > 0) {
+      records.forEach((r: any) => {
+        if (r?.mahalle) {
+          const norm = normalizeMahalleName(r.mahalle) || r.mahalle;
+          map.set(norm, (map.get(norm) || 0) + 1);
+        }
+      });
+    }
+    return map;
   }, [mahalleler, records]);
 
-  // Sokak + Kapı No + Daire No girildiğinde Açık Adres boşsa otomatik oluşturma yardımcısı
+  const filteredMahalleOptions = useMemo(() => {
+    const q = mahalleSearch.trim().toLocaleLowerCase('tr-TR');
+    if (!q) return mahalleOptions;
+    return mahalleOptions.filter((m) => m.toLocaleLowerCase('tr-TR').includes(q));
+  }, [mahalleOptions, mahalleSearch]);
+
+  // Mahalle + Sokak Etiketi (+ Kapı No) seçildiğinde Açık Adresi otomatik oluşturur (ayrıntı yazmaya gerek kalmaz)
   const buildEffectiveAcikAdres = useCallback(() => {
     if (acikAdres.trim()) return acikAdres.trim();
     const parts: string[] = [];
-    if (mahalle.trim()) parts.push(mahalle.trim());
-    if (sokak.trim()) parts.push(sokak.trim());
+    const cleanMah = mahalle.trim();
+    const cleanSok = sokak.trim();
+    if (!cleanMah && !cleanSok && !kapiNo.trim() && !daireNo.trim()) {
+      return '';
+    }
+    if (cleanMah) parts.push(cleanMah);
+    if (cleanSok) {
+      parts.push(cleanSok);
+    } else if (cleanMah) {
+      const isKoy = /(?:Köyü|Koy|Koyu)$/i.test(cleanMah);
+      parts.push(isKoy ? 'Köy İçi' : 'Merkez');
+    }
     if (kapiNo.trim()) parts.push(`No: ${kapiNo.trim()}`);
     if (daireNo.trim()) parts.push(`Daire: ${daireNo.trim()}`);
     return parts.join(' ');
   }, [acikAdres, mahalle, sokak, kapiNo, daireNo]);
+
+  const handleSelectMahalleChip = (selectedMah: string) => {
+    const prevMah = mahalle;
+    setMahalle(selectedMah);
+    setShowMahallePicker(false);
+    setErrorMessage(null);
+    if (prevMah !== selectedMah) {
+      const isKoy = /(?:Köyü|Koy|Koyu)$/i.test(selectedMah);
+      setSokak(isKoy ? 'Köy İçi' : '');
+      setSokakSearch('');
+    }
+  };
+
+  const handleSelectSokakChip = (selectedSokak: string) => {
+    setSokak(selectedSokak);
+    setErrorMessage(null);
+  };
 
   const handleResetForm = () => {
     setTcNo('');
@@ -496,16 +647,7 @@ export default function SingleHouseholdAddPage({
       return;
     }
 
-    if (!mahalle.trim()) {
-      setErrorMessage('Lütfen Mahalle veya Köy bilgisini seçiniz.');
-      return;
-    }
-
     const effectiveAddress = buildEffectiveAcikAdres();
-    if (!effectiveAddress || (!acikAdres.trim() && !sokak.trim())) {
-      setErrorMessage('Lütfen Açık Adres veya Sokak/Cadde ve Kapı No bilgisini giriniz.');
-      return;
-    }
 
     // KURAL 2: Aynı Adreste Başka Hane Varsa Uyarı Ver, Onayla Eklenebilir
     const isAddressConfirmed = confirmSameAddress || forceConfirmAddress;
@@ -612,26 +754,37 @@ export default function SingleHouseholdAddPage({
       <div
         className="rounded-2xl p-4 sm:p-5 border border-emerald-700/30 shadow-md text-white"
         style={{
-          background: 'linear-gradient(135deg, #059669 0%, #0d9488 55%, #0f766e 100%)',
+          background:
+            calismaModu === 'DENEME'
+              ? 'linear-gradient(135deg, #4f46e5 0%, #6366f1 55%, #4338ca 100%)'
+              : 'linear-gradient(135deg, #059669 0%, #0d9488 55%, #0f766e 100%)',
         }}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="w-11 h-11 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center shrink-0 shadow-inner">
-              <UserPlus className="w-6 h-6 text-white" />
+              {calismaModu === 'DENEME' ? (
+                <FlaskConical className="w-6 h-6 text-white" />
+              ) : (
+                <UserPlus className="w-6 h-6 text-white" />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
-                  Saha Tek Hane Kömür Ekleme
+                  Pratik Saha Hane Ekleme (Ek Liste)
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 border border-white/30 text-white">
-                  {userRole === 'ADMIN' ? 'Yönetici & Saha' : 'Saha Personeli Yetkisi'}
+                  📋 Ek Liste Kaydı
                 </span>
+                {calismaModu === 'DENEME' && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-300 text-indigo-950 border border-amber-200">
+                    🧪 Deneme Modu (Resmi Değildir)
+                  </span>
+                )}
               </div>
               <p className="text-xs text-emerald-50 font-medium mt-0.5 leading-relaxed">
-                Sahada durumu uygun görülen haneleri anında sisteme ekleyebilirsiniz. Kayıtlı T.C. Kimlik No
-                varsa sistem otomatik engeller; aynı adreste başka hane varsa uyarı verir ve onayınızla ekler.
+                <strong>T.C. Kimlik No</strong> ve <strong>Ad Soyad</strong> girilmesi zorunludur; <strong>adres ve telefon girişi isteğe bağlıdır</strong>. Eklenen kayıtlar <strong>Ek Liste</strong> adı altında tutulur ve <strong>Ara Bul</strong>, istatistikler ve tüm işlemlerde yer alır.
               </p>
             </div>
           </div>
@@ -925,169 +1078,336 @@ export default function SingleHouseholdAddPage({
             </div>
           )}
 
-          {/* TELEFON NUMARALARI */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+          {/* CEP TELEFONU (TEK SATIR - İSTEĞE BAĞLI) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Telefon 1 (Cep Telefonu)</span>
-              </label>
-              <input
-                type="tel"
-                value={telefon1}
-                onChange={(e) => setTelefon1(e.target.value)}
-                placeholder="05XX XXX XX XX"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-teal-600" />
-                <span>Telefon 2 (Yedek / Eş / Yakını)</span>
-              </label>
-              <input
-                type="tel"
-                value={telefon2}
-                onChange={(e) => setTelefon2(e.target.value)}
-                placeholder="05XX XXX XX XX (İsteğe bağlı)"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
+                <span>Cep Telefonu (İsteğe Bağlı)</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-semibold">Opsiyonel</span>
+            </label>
+            <input
+              type="tel"
+              inputMode="tel"
+              value={telefon1}
+              onChange={(e) => setTelefon1(e.target.value)}
+              placeholder="05XX XXX XX XX (Varsa giriniz, yoksa boş bırakabilirsiniz)"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
           </div>
         </div>
 
-        {/* BÖLÜM 2: ADRES BİLGİLERİ VE AYNI ADRES KONTROLÜ */}
+        {/* BÖLÜM 2: DOKUNMATİK MAHALLE VE SOKAK ETİKETİ SEÇİMİ (İSTEĞE BAĞLI - AYRINTI GİRMEYE GEREK YOK) */}
         <div className="space-y-4 pt-2 border-t border-slate-200/80">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
             <div className="flex items-center gap-2">
               <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 font-black text-xs flex items-center justify-center">
                 2
               </span>
               <h3 className="text-sm font-black text-slate-900">
-                İkametgah Adresi ve Aynı Adres Kontrolü
+                Mahalle ve Sokak Etiketi Seçimi (İsteğe Bağlı)
               </h3>
             </div>
-            <span className="text-[11px] font-semibold text-slate-500">
-              Aynı adreste başka hane varsa sistem uyarır
+            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              Opsiyonel • Etiketlere Dokunarak Hızlı Seçim
             </span>
           </div>
 
-          {/* MAHALLE / KÖY SEÇİMİ */}
-          <div className="space-y-2">
-            <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-amber-600" />
-              <span>Mahalle veya Köy *</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <select
-                value={mahalleOptions.includes(mahalle) ? mahalle : ''}
-                onChange={(e) => {
-                  if (e.target.value) setMahalle(e.target.value);
-                }}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-900 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              >
-                <option value="">-- Listeden Hızlı Mahalle / Köy Seçin --</option>
-                {mahalleOptions.map((mName) => (
-                  <option key={mName} value={mName}>
-                    {mName}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                list="tek-hane-mahalle-datalist"
-                value={mahalle}
-                onChange={(e) => setMahalle(e.target.value)}
-                placeholder="Veya mahalle/köy adını buraya yazın..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                required
-              />
-              <datalist id="tek-hane-mahalle-datalist">
-                {mahalleOptions.map((mName) => (
-                  <option key={mName} value={mName} />
-                ))}
-              </datalist>
-            </div>
-          </div>
-
-          {/* SOKAK / CADDE, KAPI NO, DAİRE NO */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-sky-600" />
-                <span>Sokak / Cadde / Küme Evleri</span>
+          {/* ADIM 2A: MAHALLE / KÖY ETİKETİ SEÇİMİ */}
+          <div className="space-y-2.5 rounded-2xl bg-slate-50/80 border border-slate-200 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>1. Mahalle veya Köy Seçin (İsteğe Bağlı)</span>
               </label>
-              <input
-                type="text"
-                list="tek-hane-sokak-datalist"
-                value={sokak}
-                onChange={(e) => setSokak(e.target.value)}
-                placeholder="Örn: Karanfil Sokak"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <datalist id="tek-hane-sokak-datalist">
-                {availableStreetsInMahalle.map((sName) => (
-                  <option key={sName} value={sName} />
-                ))}
-              </datalist>
-            </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Hash className="w-3.5 h-3.5 text-slate-600" />
-                <span>Dış Kapı / Bina No</span>
-              </label>
-              <input
-                type="text"
-                value={kapiNo}
-                onChange={(e) => setKapiNo(e.target.value)}
-                placeholder="Örn: 14"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Home className="w-3.5 h-3.5 text-slate-600" />
-                <span>İç Kapı / Daire No</span>
-              </label>
-              <input
-                type="text"
-                value={daireNo}
-                onChange={(e) => setDaireNo(e.target.value)}
-                placeholder="Örn: 2"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-          </div>
-
-          {/* AÇIK ADRES */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                <span>Açık Adres ve Saha Tarifi *</span>
-              </label>
-              {(sokak.trim() || kapiNo.trim()) && !acikAdres.trim() && (
-                <button
-                  type="button"
-                  onClick={() => setAcikAdres(buildEffectiveAcikAdres())}
-                  className="text-[11px] font-extrabold text-amber-700 hover:text-amber-900 underline"
-                >
-                  Sokak ve Kapı No&apos;dan Otomatik Doldur
-                </button>
+              {mahalle && !showMahallePicker && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowMahallePicker(true)}
+                    className="px-2.5 py-1 rounded-xl bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 text-xs font-extrabold flex items-center gap-1 shadow-2xs transition-all active:scale-95"
+                  >
+                    <span>Değiştir</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMahalle('');
+                      setSokak('');
+                      setShowMahallePicker(true);
+                    }}
+                    className="px-2 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold flex items-center gap-1 shadow-2xs transition-all active:scale-95"
+                    title="Mahalle seçimini kaldır (Adres belirtmeden kaydet)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Temizle</span>
+                  </button>
+                </div>
               )}
             </div>
-            <textarea
-              rows={2}
-              value={acikAdres}
-              onChange={(e) => setAcikAdres(e.target.value)}
-              placeholder="Örn: Yıldırım Beyazıt Mah. Karanfil Sokak No: 14 Daire: 2 (Camii arkası tek katlı müstakil ev)"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed"
-            />
+
+            {/* Seçili Mahalle Rozeti (Kapalıyken Kompakt Görünüm) */}
+            {mahalle && !showMahallePicker ? (
+              <div
+                onClick={() => setShowMahallePicker(true)}
+                className="p-3 rounded-xl bg-emerald-600 text-white flex items-center justify-between gap-2 cursor-pointer shadow-xs active:scale-[0.99] transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-100 block">
+                      Seçilen Mahalle / Köy (Aynı Mahallede Devam Ediliyor)
+                    </span>
+                    <span className="text-sm sm:text-base font-black">{mahalle}</span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-white/20 text-[11px] font-extrabold">
+                  Değiştir
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {/* Hızlı Mahalle Arama Kutusu */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={mahalleSearch}
+                    onChange={(e) => setMahalleSearch(e.target.value)}
+                    placeholder="Mahalle veya köy ara (veya aşağıdaki etiketlere dokunun)..."
+                    className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  {mahalleSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setMahalleSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Dokunmatik Mahalle Etiketleri (Chips) */}
+                <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto p-1">
+                  {filteredMahalleOptions.map((mName) => {
+                    const isSelected = mahalle === mName;
+                    const count = mahalleCountMap.get(mName) || 0;
+                    const isKoy = /(?:Köyü|Koy|Koyu)$/i.test(mName);
+                    return (
+                      <button
+                        key={mName}
+                        type="button"
+                        onClick={() => handleSelectMahalleChip(mName)}
+                        className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 border transition-all active:scale-95 select-none ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
+                            : isKoy
+                            ? 'bg-amber-50/70 hover:bg-amber-100 text-amber-950 border-amber-200'
+                            : 'bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-950 border-slate-200 shadow-2xs'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                        <span>{mName}</span>
+                        {count > 0 && (
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                              isSelected
+                                ? 'bg-white/25 text-white'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* Arama sonucunda listede olmayan yeni bir mahalle/köy adı yazıldıysa tek dokunuşla ekleme */}
+                  {mahalleSearch.trim().length >= 2 &&
+                    !filteredMahalleOptions.some(
+                      (m) => m.toLocaleLowerCase('tr-TR') === mahalleSearch.trim().toLocaleLowerCase('tr-TR')
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectMahalleChip(mahalleSearch.trim())}
+                        className="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1.5 shadow-xs"
+                      >
+                        <span>+ &quot;{mahalleSearch.trim()}&quot; Olarak Seç</span>
+                      </button>
+                    )}
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* ADIM 2B: SİSTEMDE VAR OLAN SOKAK ETİKETLERİNDEN TEK DOKUNUŞLA SEÇİM */}
+          {mahalle ? (
+            <div className="space-y-3 rounded-2xl bg-sky-50/60 border-2 border-sky-200/90 p-3.5 animate-in fade-in">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-sky-600 shrink-0" />
+                  <span>2. {mahalle} — Sokak Etiketi Seçin</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  {isLoadingStreets && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Sokaklar Yükleniyor...</span>
+                    </span>
+                  )}
+                  <span className="text-[11px] font-extrabold text-sky-800 bg-white px-2.5 py-0.5 rounded-full border border-sky-200">
+                    {streetTagItemsInMahalle.length} Kayıtlı Sokak Etiketi
+                  </span>
+                </div>
+              </div>
+
+              {/* Seçili Sokak ve Opsiyonel Kapı No Satırı */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="sm:col-span-2 relative">
+                  <Navigation className="w-4 h-4 text-sky-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={sokak}
+                    onChange={(e) => {
+                      setSokak(e.target.value);
+                      setSokakSearch(e.target.value);
+                      setErrorMessage(null);
+                    }}
+                    placeholder="Aşağıdaki sokak etiketlerinden seçin veya sokak adı yazın..."
+                    className={`w-full pl-9 pr-8 py-2.5 rounded-xl border text-xs sm:text-sm font-extrabold focus:outline-none focus:ring-2 transition-all ${
+                      sokak.trim()
+                        ? 'border-sky-500 bg-white text-sky-950 ring-2 ring-sky-200'
+                        : 'border-slate-300 bg-white text-slate-900 focus:ring-sky-500'
+                    }`}
+                  />
+                  {sokak && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSokak('');
+                        setSokakSearch('');
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
+                      title="Sokak seçimini temizle"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* İsteğe Bağlı Kapı No (Tek Dokunuşla Sayısal Tuş Takımı) */}
+                <div className="relative">
+                  <Hash className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={kapiNo}
+                    onChange={(e) => setKapiNo(e.target.value)}
+                    placeholder="Kapı No (İsteğe bağlı)"
+                    className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+              </div>
+
+              {/* Sistemde Var Olan Sokak Etiketleri (Dokunmatik Chips) */}
+              {filteredStreetTags.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 px-0.5">
+                    <span>🏷️ Sistemde Var Olan Sokak Etiketleri (Dokunarak Seçin):</span>
+                    {sokakSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setSokakSearch('')}
+                        className="text-sky-700 hover:underline font-extrabold"
+                      >
+                        Tüm Sokakları Göster ({streetTagItemsInMahalle.length})
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto p-1 bg-white/80 rounded-xl border border-sky-100">
+                    {filteredStreetTags.map((item) => {
+                      const isSelected =
+                        sokak.trim().toLocaleLowerCase('tr-TR') ===
+                        item.sokak.toLocaleLowerCase('tr-TR');
+                      return (
+                        <button
+                          key={item.sokak}
+                          type="button"
+                          onClick={() => handleSelectSokakChip(item.sokak)}
+                          className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 border transition-all active:scale-95 select-none ${
+                            isSelected
+                              ? 'bg-sky-600 text-white border-sky-700 shadow-xs ring-2 ring-sky-300'
+                              : 'bg-white hover:bg-sky-50 text-slate-800 hover:text-sky-950 border-slate-200 shadow-2xs'
+                          }`}
+                        >
+                          {isSelected ? (
+                            <Check className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <Tag className="w-3 h-3 text-sky-600 shrink-0" />
+                          )}
+                          <span>{item.sokak}</span>
+                          {item.count > 0 && (
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                                isSelected
+                                  ? 'bg-white/25 text-white'
+                                  : 'bg-sky-50 text-sky-800'
+                              }`}
+                            >
+                              {item.count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-bold text-slate-600 mr-1">Hızlı Sokak Etiketi:</span>
+                  {['Merkez', 'Köy İçi', 'Küme Evleri', 'Ana Cadde'].map((quickSt) => (
+                    <button
+                      key={quickSt}
+                      type="button"
+                      onClick={() => handleSelectSokakChip(quickSt)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all active:scale-95 ${
+                        sokak === quickSt
+                          ? 'bg-sky-600 text-white border-sky-700'
+                          : 'bg-white hover:bg-sky-50 text-slate-800 border-slate-200'
+                      }`}
+                    >
+                      {quickSt}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Otomatik Oluşturulan Adres Önizleme Rozeti */}
+              <div className="p-2.5 rounded-xl bg-white border border-sky-200 flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div className="truncate">
+                    <span className="text-slate-500 font-bold mr-1.5">Kaydedilecek Adres:</span>
+                    <strong className="text-slate-900 font-black">{buildEffectiveAcikAdres()}</strong>
+                  </div>
+                </div>
+                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 shrink-0">
+                  Otomatik Hazır
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 font-bold flex items-center gap-2">
+              <Info className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>İsteğe bağlı: Yukarıdan bir Mahalle veya Köy etiketine dokunduğunuzda o mahallenin sokak etiketleri açılır. Seçim yapmadan da doğrudan Ek Listeye kaydedebilirsiniz.</span>
+            </div>
+          )}
 
           {/* ======================================================== */}
           {/* KURAL 2 UYARI KARTI: AYNI ADRESTE BAŞKA HANE VARSA (SADECE UYARI VERİR, ONAYLA EKLENEBİLİR) */}
@@ -1193,192 +1513,228 @@ export default function SingleHouseholdAddPage({
           )}
         </div>
 
-        {/* BÖLÜM 3: KÖMÜR KOTASI, LİSTE TÜRÜ, İMZA VE SAHA NOTU */}
-        <div className="space-y-4 pt-2 border-t border-slate-200/80">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
-            <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 font-black text-xs flex items-center justify-center">
-              3
-            </span>
-            <h3 className="text-sm font-black text-slate-900">
-              Kömür Tahsis Kotası, İmza Durumu ve Saha Notu
-            </h3>
-          </div>
-
-          {/* HEDEF KÖMÜR VE HANE NO */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* HEDEF KÖMÜR TORBA SAYISI */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span>Tahsis Edilen Hedef Torba</span>
-                <span className="text-[10px] font-bold text-amber-700">
-                  Varsayılan: {defaultQuota} Torba
-                </span>
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={hedefTorba}
-                onChange={(e) => setHedefTorba(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-black focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
-              />
-            </div>
-
-            {/* HANE NO (OPSİYONEL) */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span>SYDV Hane No (İsteğe Bağlı)</span>
-                <span className="text-[10px] text-slate-400">Opsiyonel</span>
-              </label>
-              <input
-                type="text"
-                value={haneNo}
-                onChange={(e) => setHaneNo(e.target.value)}
-                placeholder="Boş bırakılabilir"
-                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-mono font-bold focus:outline-none focus:ring-2 ${
-                  activeDuplicateHane
-                    ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                    : 'border-slate-300 bg-white text-slate-900 focus:ring-amber-500 shadow-2xs'
-                }`}
-              />
-            </div>
-          </div>
-
-          {/* EKLENECEK HANE LİSTESİ SEÇİMİ (AKTİF DÖNEM & ARŞİV KONTROLÜ) */}
-          <div className="space-y-2.5 bg-gradient-to-br from-amber-50/70 via-white to-slate-50 p-4 rounded-2xl border-2 border-amber-200/90 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2">
-              <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
-                <FileSpreadsheet className="w-4 h-4 text-amber-600" />
-                <span>Eklenecek Hane Listesi Seçimi</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  Aktif Dönem: {currentSeasonCode}
-                </span>
-                {archivedSeasonsList.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center gap-1">
-                    <Lock className="w-2.5 h-2.5 text-slate-500" />
-                    {archivedSeasonsList.length} Geçmiş Dönem Arşivlendi
-                  </span>
-                )}
+        {/* BÖLÜM 3: HIZLI İMZA ONAYI VE İSTEĞE BAĞLI EK DETAYLAR AKORDEONU */}
+        <div className="space-y-3 pt-2 border-t border-slate-200/80">
+          {/* Kapıda Islak İmza Kutusu (Tek Dokunuş) */}
+          <label
+            className={`p-3.5 rounded-2xl border-2 flex items-start gap-3 cursor-pointer select-none transition-all ${
+              imzaAlindi
+                ? 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-2xs'
+                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={imzaAlindi}
+              onChange={(e) => setImzaAlindi(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+            />
+            <div>
+              <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm">
+                <PenTool className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Kapıda Islak İmza Alındı Olarak İşaretle</span>
               </div>
+              <p className="text-[11px] text-slate-600 font-medium mt-0.5 leading-relaxed">
+                Vatandaştan saha tutanağına/listeye ıslak imza alındıysa işaretleyin; kömür teslimat kilidi anında açılır.
+              </p>
             </div>
+          </label>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
-              {/* 1. Liste Kategorisi / Türü */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-700 block">
-                  Liste Kategorisi (Islak İmza Dosyası)
-                </label>
-                <select
-                  value={listeTuru}
-                  onChange={(e) => setListeTuru(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
-                >
-                  <option value="EK_LISTE">📋 Saha Ek Liste (Önerilen - Otomatik Sıralı)</option>
-                  <option value="ANA_LISTE">📄 Ana Dağıtım Listesi (1, 2, 3...)</option>
-                  <option value="SIGORTALI">🛡️ Sigortalılar Listesi (Ayrı İmza Dosyası)</option>
-                </select>
-              </div>
-
-              {/* 2. Aktif Dönem Listesi / Excel Grubu */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-                  <span>Bağlanacak Liste / Excel Grubu</span>
-                  <span className="text-[10px] text-emerald-700 font-bold">Yalnızca Aktif Dönem</span>
-                </label>
-                <select
-                  value={selectedBatchId}
-                  onChange={(e) => setSelectedBatchId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
-                >
-                  <option value="">
-                    ✨ [Aktif Dönem: {currentSeasonCode}] Genel Dağıtım Listesi (Varsayılan)
-                  </option>
-                  {activeBatches.length > 0 && (
-                    <optgroup label={`📁 Aktif Döneme (${currentSeasonCode}) Yüklenen Excel Listeleri`}>
-                      {activeBatches.map((b) => (
-                        <option key={b.batch_id || b.id} value={b.batch_id || b.id}>
-                          📄 {b.dosya_adi || b.batch_id} ({b.mevcut_kisi || b.eklenen_kisi || 0} Hane)
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {archivedSeasonsList.length > 0 && (
-                    <optgroup label="🔒 Arşivlenmiş Geçmiş Dönemler (Yeni Hane Eklenemez)">
-                      {archivedSeasonsList.map((sa) => (
-                        <option key={sa.donem_kodu} value="" disabled>
-                          🔒 {sa.donem_kodu} Dönemi Listeleri (Arşivlendi - Salt Okunur)
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            {/* Bilgilendirme ve Güvence Notu */}
-            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-[11px] text-amber-950 font-medium leading-relaxed">
-              <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-              <span>
-                Sıfırlanmış / yeni dönem başladığında eski dönemlere ait listeler otomatik olarak <strong>arşivlenir</strong> ve seçime kapatılır. Eklenen tüm haneler doğrudan sıfırlanmış güncel aktif <strong>{currentSeasonCode}</strong> dönemi listelerine dahil edilir.
-              </span>
-            </div>
-          </div>
-
-          {/* KAPIDA ISLAK İMZA DURUMU VE SAHA NOTU */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label
-              className={`p-3.5 rounded-2xl border-2 flex items-start gap-3 cursor-pointer select-none transition-all ${
-                imzaAlindi
-                  ? 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-2xs'
-                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
-              }`}
+          {/* İsteğe Bağlı Ek Detaylar & Liste Ayarları (Daraltılabilir Akordeon) */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowExtraDetails((prev) => !prev)}
+              className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-slate-100/80 transition-colors"
             >
-              <input
-                type="checkbox"
-                checked={imzaAlindi}
-                onChange={(e) => setImzaAlindi(e.target.checked)}
-                className="mt-1 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-              />
-              <div>
-                <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm">
-                  <PenTool className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Kapıda Islak İmza Alındı Olarak İşaretle</span>
-                </div>
-                <p className="text-[11px] text-slate-600 font-medium mt-0.5 leading-relaxed">
-                  Vatandaştan saha tutanağına/listeye ıslak imza alındıysa işaretleyin. İşaretlendiğinde
-                  kömür teslimat kilidi anında açılır.
-                </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-extrabold text-slate-700">
+                  ⚙️ İsteğe Bağlı Ek Detaylar & Liste Ayarları
+                </span>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Varsayılan: Ek Liste • {hedefTorba || defaultQuota} Torba • {currentSeasonCode}
+                </span>
               </div>
-            </label>
+              {showExtraDetails ? (
+                <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+              )}
+            </button>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
-                <span>Saha Tespit / Ekleme Notu (İsteğe Bağlı)</span>
-              </label>
-              <input
-                type="text"
-                value={eklemeNotu}
-                onChange={(e) => setEklemeNotu(e.target.value)}
-                placeholder="Örn: Sahada yerinde incelendi, durumu uygun"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {quickNotes.map((note) => (
-                  <button
-                    key={note}
-                    type="button"
-                    onClick={() => setEklemeNotu(note)}
-                    className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-900 border border-slate-200 text-[10px] font-bold transition-colors"
-                  >
-                    + {note}
-                  </button>
-                ))}
+            {showExtraDetails && (
+              <div className="p-4 pt-2 border-t border-slate-200 bg-white space-y-4 animate-in fade-in">
+                {/* EKLENECEK HANE LİSTESİ SEÇİMİ (AKTİF DÖNEM & ARŞİV KONTROLÜ) */}
+                <div className="space-y-2.5 bg-gradient-to-br from-amber-50/70 via-white to-slate-50 p-3.5 rounded-2xl border border-amber-200/90">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2">
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
+                      <FileSpreadsheet className="w-4 h-4 text-amber-600" />
+                      <span>Eklenecek Hane Listesi Seçimi</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Aktif Dönem: {currentSeasonCode}
+                      </span>
+                      {archivedSeasonsList.length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5 text-slate-500" />
+                          {archivedSeasonsList.length} Geçmiş Dönem Arşivlendi
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-700 block">
+                        Liste Kategorisi (Islak İmza Dosyası)
+                      </label>
+                      <select
+                        value={listeTuru}
+                        onChange={(e) => setListeTuru(e.target.value as any)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      >
+                        <option value="EK_LISTE">📋 Saha Ek Liste (Önerilen - Otomatik Sıralı)</option>
+                        <option value="ANA_LISTE">📄 Ana Dağıtım Listesi (1, 2, 3...)</option>
+                        <option value="SIGORTALI">🛡️ Sigortalılar Listesi (Ayrı İmza Dosyası)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                        <span>Bağlanacak Liste / Excel Grubu</span>
+                        <span className="text-[10px] text-emerald-700 font-bold">Yalnızca Aktif Dönem</span>
+                      </label>
+                      <select
+                        value={selectedBatchId}
+                        onChange={(e) => setSelectedBatchId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      >
+                        <option value="">
+                          ✨ [Aktif Dönem: {currentSeasonCode}] Genel Dağıtım Listesi (Varsayılan)
+                        </option>
+                        {activeBatches.length > 0 && (
+                          <optgroup label={`📁 Aktif Döneme (${currentSeasonCode}) Yüklenen Excel Listeleri`}>
+                            {activeBatches.map((b) => (
+                              <option key={b.batch_id || b.id} value={b.batch_id || b.id}>
+                                📄 {b.dosya_adi || b.batch_id} ({b.mevcut_kisi || b.eklenen_kisi || 0} Hane)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {archivedSeasonsList.length > 0 && (
+                          <optgroup label="🔒 Arşivlenmiş Geçmiş Dönemler (Yeni Hane Eklenemez)">
+                            {archivedSeasonsList.map((sa) => (
+                              <option key={sa.donem_kodu} value="" disabled>
+                                🔒 {sa.donem_kodu} Dönemi Listeleri (Arşivlendi - Salt Okunur)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* HEDEF TORBA, DAİRE NO, 2. TELEFON VE HANE NO */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Hedef Torba (Varsayılan: {defaultQuota})
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={hedefTorba}
+                      onChange={(e) => setHedefTorba(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-black"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      İç Kapı / Daire No
+                    </label>
+                    <input
+                      type="text"
+                      value={daireNo}
+                      onChange={(e) => setDaireNo(e.target.value)}
+                      placeholder="Örn: 2"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      2. Telefon (Yedek)
+                    </label>
+                    <input
+                      type="tel"
+                      value={telefon2}
+                      onChange={(e) => setTelefon2(e.target.value)}
+                      placeholder="05XX XXX XX XX"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-mono font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      SYDV Hane No
+                    </label>
+                    <input
+                      type="text"
+                      value={haneNo}
+                      onChange={(e) => setHaneNo(e.target.value)}
+                      placeholder="Opsiyonel"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* MANUEL AÇIK ADRES VE SAHA NOTU */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Özel Açık Adres Tarifi (Boş bırakılırsa otomatik oluşturulur)
+                    </label>
+                    <input
+                      type="text"
+                      value={acikAdres}
+                      onChange={(e) => setAcikAdres(e.target.value)}
+                      placeholder="Örn: Camii arkası tek katlı müstakil ev"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs sm:text-sm font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Saha Tespit / Ekleme Notu
+                    </label>
+                    <input
+                      type="text"
+                      value={eklemeNotu}
+                      onChange={(e) => setEklemeNotu(e.target.value)}
+                      placeholder="Örn: Sahada yerinde incelendi, durumu uygun"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs sm:text-sm font-medium"
+                    />
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {quickNotes.map((note) => (
+                        <button
+                          key={note}
+                          type="button"
+                          onClick={() => setEklemeNotu(note)}
+                          className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-900 border border-slate-200 text-[10px] font-bold"
+                        >
+                          + {note}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1440,7 +1796,7 @@ export default function SingleHouseholdAddPage({
               ) : (
                 <>
                   <UserPlus className="w-4 h-4" />
-                  <span>Haneyi Sisteme Ekle ({hedefTorba || defaultQuota} Torba)</span>
+                  <span>Ek Listeye Kaydet ({hedefTorba || defaultQuota} Torba)</span>
                 </>
               )}
             </button>

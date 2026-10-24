@@ -18,8 +18,36 @@ export interface OfflineDeliveryItem {
   created_at_formatted: string;
 }
 
-const STORAGE_KEY = 'komur_offline_queue';
+const STORAGE_KEY_OFFICIAL = 'komur_offline_queue';
+const STORAGE_KEY_SANDBOX = 'komur_offline_queue_sandbox';
+const ACTIVE_MODE_STORAGE_KEY = 'komur_active_calisma_modu';
 const OBF_PREFIX = 'KVKK_OBF_v1:';
+
+export function setOfflineQueueActiveMode(mode: 'RESMI' | 'DENEME'): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(ACTIVE_MODE_STORAGE_KEY, mode);
+    window.dispatchEvent(new CustomEvent('komur_offline_queue_changed'));
+  } catch {}
+}
+
+function getActiveStorageKey(): string {
+  if (typeof window === 'undefined') return STORAGE_KEY_OFFICIAL;
+  try {
+    const mode = localStorage.getItem(ACTIVE_MODE_STORAGE_KEY);
+    return mode === 'DENEME' ? STORAGE_KEY_SANDBOX : STORAGE_KEY_OFFICIAL;
+  } catch {
+    return STORAGE_KEY_OFFICIAL;
+  }
+}
+
+export function clearSandboxOfflineQueue(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(STORAGE_KEY_SANDBOX);
+    window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: 0 } }));
+  } catch {}
+}
 
 /**
  * Masks TC Identity Number so full plaintext TC is never persisted in mobile localStorage.
@@ -82,7 +110,7 @@ function decodeStoragePayload(raw: string): OfflineDeliveryItem[] {
 export function getOfflineQueue(): OfflineDeliveryItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getActiveStorageKey());
     return raw ? decodeStoragePayload(raw) : [];
   } catch (e) {
     console.error('Failed to parse offline queue:', e);
@@ -105,7 +133,7 @@ export function saveOfflineDelivery(
 
   queue.push(newItem);
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, encodeStoragePayload(queue));
+    localStorage.setItem(getActiveStorageKey(), encodeStoragePayload(queue));
     // Dispatch custom event for UI updates
     window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: queue.length } }));
   }
@@ -121,7 +149,7 @@ export function getPendingOfflineCount(): number {
 export function removeOfflineItem(clientUuid: string): void {
   const queue = getOfflineQueue().filter((item) => item.client_uuid !== clientUuid);
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, encodeStoragePayload(queue));
+    localStorage.setItem(getActiveStorageKey(), encodeStoragePayload(queue));
     window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: queue.length } }));
   }
 }
@@ -203,7 +231,7 @@ export async function syncOfflineDeliveries(
     }
   }
 
-  localStorage.setItem(STORAGE_KEY, encodeStoragePayload(updatedQueue));
+  localStorage.setItem(getActiveStorageKey(), encodeStoragePayload(updatedQueue));
   window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: updatedQueue.length } }));
 
   return {

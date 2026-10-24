@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { 
+      isSandboxMode,
       systemSettings, 
       seasonArchives, 
       archivedBeneficiaries, 
@@ -126,6 +127,16 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { action } = body;
+
+    if (isSandboxMode && (action === 'CLOSE_AND_ARCHIVE_SEASON' || action === 'SET_ACTIVE_SEASON')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Deneme (Test) Modundayken resmi kömür dağıtım dönemi değiştirilemez veya arşivlenemez! Resmi dönem işlemleri için lütfen önce Deneme Modunu kapatıp "Gerçek (Resmi) Mod"a geçiş yapınız.',
+        },
+        { status: 400 }
+      );
+    }
 
     const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
     const localToday = nowEnCa;

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { systemSettings, deliveryRoutes: routeCol } = await getDbCollections();
+    const { systemSettings, deliveryRoutes: routeCol, calismaModu, isSandboxMode } = await getDbCollections();
     const syncDoc = await systemSettings.findOne({ key: 'last_delivery_sync_time' });
     const { nowIso } = getIstanbulDate();
 
@@ -57,6 +57,8 @@ export async function GET(request: NextRequest) {
         lastSyncTime: syncDoc?.value || '',
         lastUpdatedBy: syncDoc?.updated_by || '',
         serverTime: nowIso,
+        calismaModu,
+        isSandboxMode,
         activeRouteLocks
       },
       {

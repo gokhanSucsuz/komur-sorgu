@@ -489,8 +489,9 @@ class InMemoryCollection {
 
 /**
  * Get typed collection handles - automatically handles MongoDB Atlas or fallback
+ * Supports isolated Sandbox/Test Mode ('DENEME') vs Official Mode ('RESMI').
  */
-export async function getDbCollections() {
+export async function getDbCollections(options?: { forceMode?: 'RESMI' | 'DENEME' }) {
   if (isMongoConfigured()) {
     try {
       const db = await getMongoDb();
@@ -499,19 +500,35 @@ export async function getDbCollections() {
         await migrateMahalleNames(db);
         await migrateFixMerkezAndStreets(db);
       }
+      const systemSettings = db.collection<any>('system_settings');
+      let calismaModu: 'RESMI' | 'DENEME' = 'RESMI';
+      if (options?.forceMode === 'RESMI' || options?.forceMode === 'DENEME') {
+        calismaModu = options.forceMode;
+      } else {
+        try {
+          const modeDoc = await systemSettings.findOne({ key: 'calisma_modu' });
+          if (modeDoc?.value === 'DENEME') {
+            calismaModu = 'DENEME';
+          }
+        } catch {}
+      }
+      const isSandboxMode = calismaModu === 'DENEME';
+
       return {
         isFallback: false,
         db,
-        beneficiaries: db.collection<any>('beneficiaries'),
+        calismaModu,
+        isSandboxMode,
+        beneficiaries: db.collection<any>(isSandboxMode ? 'sandbox_beneficiaries' : 'beneficiaries'),
         users: db.collection<any>('users'),
-        deliveryHistory: db.collection<any>('delivery_history'),
-        truckDeliveries: db.collection<any>('truck_deliveries'),
-        importLogs: db.collection<any>('import_logs'),
-        systemSettings: db.collection<any>('system_settings'),
-        workShifts: db.collection<any>('work_shifts'),
-        importBatches: db.collection<any>('import_batches'),
-        deliveryRoutes: db.collection<any>('delivery_routes'),
-        activityLogs: db.collection<any>('activity_logs'),
+        deliveryHistory: db.collection<any>(isSandboxMode ? 'sandbox_delivery_history' : 'delivery_history'),
+        truckDeliveries: db.collection<any>(isSandboxMode ? 'sandbox_truck_deliveries' : 'truck_deliveries'),
+        importLogs: db.collection<any>(isSandboxMode ? 'sandbox_import_logs' : 'import_logs'),
+        systemSettings,
+        workShifts: db.collection<any>(isSandboxMode ? 'sandbox_work_shifts' : 'work_shifts'),
+        importBatches: db.collection<any>(isSandboxMode ? 'sandbox_import_batches' : 'import_batches'),
+        deliveryRoutes: db.collection<any>(isSandboxMode ? 'sandbox_delivery_routes' : 'delivery_routes'),
+        activityLogs: db.collection<any>(isSandboxMode ? 'sandbox_activity_logs' : 'activity_logs'),
         seasonArchives: db.collection<any>('season_archives'),
         archivedBeneficiaries: db.collection<any>('archived_beneficiaries'),
         archivedTruckDeliveries: db.collection<any>('archived_truck_deliveries'),
@@ -520,6 +537,17 @@ export async function getDbCollections() {
         archivedImportLogs: db.collection<any>('archived_import_logs'),
         securityRateLimits: db.collection<any>('security_rate_limits'),
         authorizedDevices: db.collection<any>('authorized_devices'),
+        officialBeneficiaries: db.collection<any>('beneficiaries'),
+        officialImportBatches: db.collection<any>('import_batches'),
+        officialActivityLogs: db.collection<any>('activity_logs'),
+        sandboxBeneficiaries: db.collection<any>('sandbox_beneficiaries'),
+        sandboxDeliveryHistory: db.collection<any>('sandbox_delivery_history'),
+        sandboxTruckDeliveries: db.collection<any>('sandbox_truck_deliveries'),
+        sandboxImportLogs: db.collection<any>('sandbox_import_logs'),
+        sandboxImportBatches: db.collection<any>('sandbox_import_batches'),
+        sandboxDeliveryRoutes: db.collection<any>('sandbox_delivery_routes'),
+        sandboxWorkShifts: db.collection<any>('sandbox_work_shifts'),
+        sandboxActivityLogs: db.collection<any>('sandbox_activity_logs'),
       };
     } catch (err) {
       console.error('[MongoDB] Atlas connection failure:', err);
@@ -533,19 +561,35 @@ export async function getDbCollections() {
     await migrateMahalleNames(null);
     await migrateFixMerkezAndStreets(null);
   }
+  const systemSettings = new InMemoryCollection('system_settings') as any;
+  let calismaModu: 'RESMI' | 'DENEME' = 'RESMI';
+  if (options?.forceMode === 'RESMI' || options?.forceMode === 'DENEME') {
+    calismaModu = options.forceMode;
+  } else {
+    try {
+      const modeDoc = await systemSettings.findOne({ key: 'calisma_modu' });
+      if (modeDoc?.value === 'DENEME') {
+        calismaModu = 'DENEME';
+      }
+    } catch {}
+  }
+  const isSandboxMode = calismaModu === 'DENEME';
+
   return {
     isFallback: true,
     db: null as any,
-    beneficiaries: new InMemoryCollection('beneficiaries') as any,
+    calismaModu,
+    isSandboxMode,
+    beneficiaries: new InMemoryCollection(isSandboxMode ? 'sandbox_beneficiaries' : 'beneficiaries') as any,
     users: new InMemoryCollection('users') as any,
-    deliveryHistory: new InMemoryCollection('delivery_history') as any,
-    truckDeliveries: new InMemoryCollection('truck_deliveries') as any,
-    importLogs: new InMemoryCollection('import_logs') as any,
-    systemSettings: new InMemoryCollection('system_settings') as any,
-    workShifts: new InMemoryCollection('work_shifts') as any,
-    importBatches: new InMemoryCollection('import_batches') as any,
-    deliveryRoutes: new InMemoryCollection('delivery_routes') as any,
-    activityLogs: new InMemoryCollection('activity_logs') as any,
+    deliveryHistory: new InMemoryCollection(isSandboxMode ? 'sandbox_delivery_history' : 'delivery_history') as any,
+    truckDeliveries: new InMemoryCollection(isSandboxMode ? 'sandbox_truck_deliveries' : 'truck_deliveries') as any,
+    importLogs: new InMemoryCollection(isSandboxMode ? 'sandbox_import_logs' : 'import_logs') as any,
+    systemSettings,
+    workShifts: new InMemoryCollection(isSandboxMode ? 'sandbox_work_shifts' : 'work_shifts') as any,
+    importBatches: new InMemoryCollection(isSandboxMode ? 'sandbox_import_batches' : 'import_batches') as any,
+    deliveryRoutes: new InMemoryCollection(isSandboxMode ? 'sandbox_delivery_routes' : 'delivery_routes') as any,
+    activityLogs: new InMemoryCollection(isSandboxMode ? 'sandbox_activity_logs' : 'activity_logs') as any,
     seasonArchives: new InMemoryCollection('season_archives') as any,
     archivedBeneficiaries: new InMemoryCollection('archived_beneficiaries') as any,
     archivedTruckDeliveries: new InMemoryCollection('archived_truck_deliveries') as any,
@@ -554,6 +598,17 @@ export async function getDbCollections() {
     archivedImportLogs: new InMemoryCollection('archived_import_logs') as any,
     securityRateLimits: new InMemoryCollection('security_rate_limits') as any,
     authorizedDevices: new InMemoryCollection('authorized_devices') as any,
+    officialBeneficiaries: new InMemoryCollection('beneficiaries') as any,
+    officialImportBatches: new InMemoryCollection('import_batches') as any,
+    officialActivityLogs: new InMemoryCollection('activity_logs') as any,
+    sandboxBeneficiaries: new InMemoryCollection('sandbox_beneficiaries') as any,
+    sandboxDeliveryHistory: new InMemoryCollection('sandbox_delivery_history') as any,
+    sandboxTruckDeliveries: new InMemoryCollection('sandbox_truck_deliveries') as any,
+    sandboxImportLogs: new InMemoryCollection('sandbox_import_logs') as any,
+    sandboxImportBatches: new InMemoryCollection('sandbox_import_batches') as any,
+    sandboxDeliveryRoutes: new InMemoryCollection('sandbox_delivery_routes') as any,
+    sandboxWorkShifts: new InMemoryCollection('sandbox_work_shifts') as any,
+    sandboxActivityLogs: new InMemoryCollection('sandbox_activity_logs') as any,
   };
 }
 
@@ -629,12 +684,21 @@ async function initializeIndexesAndSeed(db: Db) {
       // Dağıtık Brute-Force Koruma İndeksleri (TTL otomatik temizleme dahil)
       rateLimits.createIndex({ key: 1 }, { unique: true }),
       rateLimits.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 }),
+
+      // Deneme Alanı / Sandbox Koleksiyon İndeksleri (Gerçek Mod ile Birebir Aynı Güvenlik & Mükerrerlik Koruması)
+      db.collection('sandbox_beneficiaries').createIndex({ tc_hash: 1 }, { unique: true, sparse: true }),
+      db.collection('sandbox_beneficiaries').createIndex({ hane_hash: 1 }, { sparse: true }),
+      db.collection('sandbox_beneficiaries').createIndex({ adres_hash: 1 }, { sparse: true }),
+      db.collection('sandbox_beneficiaries').createIndex({ mahalle: 1 }),
+      db.collection('sandbox_beneficiaries').createIndex({ teslimat_durumu: 1 }),
+      db.collection('sandbox_import_logs').createIndex({ batch_id: 1 }),
+      db.collection('sandbox_delivery_history').createIndex({ gun_tarihi: -1 }),
     ]);
   } catch (err) {
     console.warn('[MongoDB] Index initialization notice:', err);
   }
 
-  // 1. Seed Settings (Quota, Total Allocation & Active Season)
+  // 1. Seed Settings (Quota, Total Allocation, Active Season & Working Mode)
   const existingSetting = await settings.findOne({ key: 'varsayilan_hedef_torba' });
   if (!existingSetting) {
     await settings.insertOne({ key: 'varsayilan_hedef_torba', value: '34' });
@@ -643,6 +707,11 @@ async function initializeIndexesAndSeed(db: Db) {
   const existingTahsis = await settings.findOne({ key: 'toplam_tahsis_tonaj' });
   if (!existingTahsis) {
     await settings.insertOne({ key: 'toplam_tahsis_tonaj', value: '0' });
+  }
+
+  const existingCalismaModu = await settings.findOne({ key: 'calisma_modu' });
+  if (!existingCalismaModu) {
+    await settings.insertOne({ key: 'calisma_modu', value: 'RESMI' });
   }
 
   const existingSeason = await settings.findOne({ key: 'aktif_donem' });
@@ -720,6 +789,7 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.system_settings = [
     { key: 'varsayilan_hedef_torba', value: '34' },
     { key: 'toplam_tahsis_tonaj', value: '0' },
+    { key: 'calisma_modu', value: 'RESMI' },
   ];
   store.users = [
     encryptUser({
@@ -739,6 +809,16 @@ function seedInMemoryStore(store: Record<string, any[]>) {
   store.work_shifts = [];
   store.activity_logs = [];
   store.import_logs = [];
+  store.import_batches = [];
+  store.delivery_routes = [];
+  store.sandbox_beneficiaries = [];
+  store.sandbox_delivery_history = [];
+  store.sandbox_truck_deliveries = [];
+  store.sandbox_work_shifts = [];
+  store.sandbox_activity_logs = [];
+  store.sandbox_import_logs = [];
+  store.sandbox_import_batches = [];
+  store.sandbox_delivery_routes = [];
   store.season_archives = [];
   store.archived_beneficiaries = [];
   store.archived_truck_deliveries = [];
@@ -769,12 +849,15 @@ export async function recordActivityLog(item: {
   tarih?: string;
   tarih_iso?: string;
   ek_bilgi?: any;
+  forceOfficial?: boolean;
 }) {
   try {
-    const { activityLogs } = await getDbCollections();
+    const { activityLogs, officialActivityLogs, calismaModu } = await getDbCollections();
     const { nowIso, nowLocaleTr, nowEnCa } = getIstanbulDate();
+    const { forceOfficial, ...restItem } = item;
     const doc = {
-      ...item,
+      ...restItem,
+      calisma_modu: calismaModu,
       kullanici_rolu: item.kullanici_rolu || (item.kullanici_adi?.toLowerCase().includes('admin') || item.kullanici_adi?.toLowerCase().includes('yönetici') ? 'ADMIN' : 'PERSONEL'),
       tarih: item.tarih || nowLocaleTr,
       tarih_iso: item.tarih_iso || nowIso,
@@ -782,7 +865,8 @@ export async function recordActivityLog(item: {
     };
     // Encrypt sensitive details before writing to MongoDB Atlas
     const encryptedDoc = encryptActivityLog(doc);
-    await activityLogs.insertOne(encryptedDoc);
+    const targetCol = forceOfficial ? officialActivityLogs : activityLogs;
+    await targetCol.insertOne(encryptedDoc);
     return doc;
   } catch (err) {
     console.error('Error recording activity log:', err);
@@ -1622,6 +1706,7 @@ export async function touchSyncPulse(updatedBy: string = 'Sistem'): Promise<stri
  */
 export async function reconcileArchivedSeasonImports(): Promise<void> {
   try {
+    // Her zaman yalnızca resmi (RESMI) veri koleksiyonlarını arşivle eşleştir; Deneme Alanı (sandbox_*) verilerini asla arşive taşıma!
     const {
       systemSettings,
       seasonArchives,
@@ -1631,7 +1716,7 @@ export async function reconcileArchivedSeasonImports(): Promise<void> {
       archivedBeneficiaries,
       archivedImportBatches,
       archivedImportLogs,
-    } = await getDbCollections();
+    } = await getDbCollections({ forceMode: 'RESMI' });
 
     const rawArchives = await seasonArchives
       .find({})
@@ -1785,6 +1870,278 @@ export async function reconcileArchivedSeasonImports(): Promise<void> {
     console.warn('[reconcileArchivedSeasonImports] Notice:', err);
   }
 }
+
+function buildValidFakeTc(nineDigitPrefix: number): string {
+  const s = String(nineDigitPrefix).padStart(9, '1').slice(0, 9);
+  const d = s.split('').map(Number);
+  const oddSum = d[0] + d[2] + d[4] + d[6] + d[8];
+  const evenSum = d[1] + d[3] + d[5] + d[7];
+  const d10 = (((oddSum * 7) - evenSum) % 10 + 10) % 10;
+  const d11 = (oddSum + evenSum + d10) % 10;
+  return `${s}${d10}${d11}`;
+}
+
+/**
+ * Deneme Modu (Sandbox) için gerçeğe birebir uygun sahte (fake) listeler, haneler,
+ * teslimat geçmişi ve kömür tırı verileri üretir.
+ * KESİN GÜVENLİK KURALI: Yalnızca `sandbox_*` koleksiyonlarına yazar; asıl (RESMİ) verilere asla dokunmaz!
+ */
+export async function seedSandboxFakeData(options?: {
+  clearExistingSandbox?: boolean;
+  createdBy?: string;
+}): Promise<{ seededCount: number; batchCount: number }> {
+  const {
+    systemSettings,
+    sandboxBeneficiaries,
+    sandboxImportBatches,
+    sandboxImportLogs,
+    sandboxDeliveryHistory,
+    sandboxDeliveryRoutes,
+    sandboxTruckDeliveries,
+    sandboxWorkShifts,
+    sandboxActivityLogs,
+  } = await getDbCollections({ forceMode: 'DENEME' });
+
+  if (options?.clearExistingSandbox) {
+    await Promise.all([
+      sandboxBeneficiaries.deleteMany({}),
+      sandboxImportBatches.deleteMany({}),
+      sandboxImportLogs.deleteMany({}),
+      sandboxDeliveryHistory.deleteMany({}),
+      sandboxDeliveryRoutes.deleteMany({}),
+      sandboxTruckDeliveries.deleteMany({}),
+      sandboxWorkShifts.deleteMany({}),
+      sandboxActivityLogs.deleteMany({}),
+    ]);
+  } else {
+    const existingCount = await sandboxBeneficiaries.countDocuments({});
+    if (existingCount > 0) {
+      const bCount = await sandboxImportBatches.countDocuments({});
+      return { seededCount: existingCount, batchCount: bCount };
+    }
+  }
+
+  const { nowLocaleTr, nowIso, nowEnCa } = getIstanbulDate();
+  const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
+  let activeSeasonCode = '2026-2027';
+  if (seasonDoc?.value) {
+    try {
+      const parsed = typeof seasonDoc.value === 'string' ? JSON.parse(seasonDoc.value) : seasonDoc.value;
+      if (parsed?.kod) activeSeasonCode = String(parsed.kod).trim();
+    } catch {
+      activeSeasonCode = String(seasonDoc.value).trim() || '2026-2027';
+    }
+  }
+
+  const quotaDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
+  const defaultQuota = quotaDoc ? parseInt(quotaDoc.value, 10) || 34 : 34;
+  const creator = options?.createdBy || 'Sistem Yöneticisi (Deneme Modu)';
+
+  const mainBatchId = `BATCH_DENEME_ANA_${activeSeasonCode}`;
+  const ekBatchId = `BATCH_EK_LISTE_${activeSeasonCode}`;
+
+  const fakeHouseholdsRaw = [
+    // Şükrüpaşa Mah.
+    { prefix: 900100101, ad_soyad: 'AHMET YILMAZ (DENEME)', mahalle: 'Şükrüpaşa Mah.', sokak: 'Zübeyde Hanım Cad.', kapi_no: 12, daire_no: 1, telefon: '05550001001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100102, ad_soyad: 'AYŞE KAYA (DENEME)', mahalle: 'Şükrüpaşa Mah.', sokak: 'Zübeyde Hanım Cad.', kapi_no: 18, daire_no: 3, telefon: '05550001002', durum: 'BEKLIYOR', torba: 0, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+    { prefix: 900100103, ad_soyad: 'MEHMET DEMİR (DENEME)', mahalle: 'Şükrüpaşa Mah.', sokak: 'İlhami Ertem Cad.', kapi_no: 24, daire_no: 2, telefon: '05550001003', durum: 'TAMAMLANDI', torba: defaultQuota, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+    { prefix: 900100104, ad_soyad: 'FATMA ÇELİK (DENEME)', mahalle: 'Şükrüpaşa Mah.', sokak: 'Bahriye Üçok Cad.', kapi_no: 7, daire_no: 1, telefon: '05550001004', durum: 'EKSIK', torba: 20, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+
+    // Fatih Mah.
+    { prefix: 900100201, ad_soyad: 'MUSTAFA ŞAHİN (DENEME)', mahalle: 'Fatih Mah.', sokak: 'İbrahim Zagra Cad.', kapi_no: 5, daire_no: 4, telefon: '05550002001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100202, ad_soyad: 'ZEYNEP YILDIZ (DENEME)', mahalle: 'Fatih Mah.', sokak: 'Ümran Akkan Cad.', kapi_no: 14, daire_no: 2, telefon: '05550002002', durum: 'TAMAMLANDI', torba: defaultQuota, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+    { prefix: 900100203, ad_soyad: 'HASAN ÖZTÜRK (DENEME)', mahalle: 'Fatih Mah.', sokak: 'Muammer Aksoy Cad.', kapi_no: 9, daire_no: 1, telefon: '05550002003', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'EK_LISTE' },
+
+    // Cumhuriyet Mah.
+    { prefix: 900100301, ad_soyad: 'EMİNE AYDIN (DENEME)', mahalle: 'Cumhuriyet Mah.', sokak: 'Kuvayi Milliye Bulvarı', kapi_no: 31, daire_no: 5, telefon: '05550003001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100302, ad_soyad: 'ALİ ÖZDEMİR (DENEME)', mahalle: 'Cumhuriyet Mah.', sokak: '101. Sok.', kapi_no: 4, daire_no: 1, telefon: '05550003002', durum: 'EKSIK', torba: 18, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+    { prefix: 900100303, ad_soyad: 'HATİCE ARSLAN (DENEME)', mahalle: 'Cumhuriyet Mah.', sokak: '101. Sok.', kapi_no: 10, daire_no: 2, telefon: '05550003003', durum: 'BEKLIYOR', torba: 0, imza: 'IMZALANDI', liste: 'EK_LISTE' },
+
+    // 100. Yıl Mah.
+    { prefix: 900100401, ad_soyad: 'HÜSEYİN DOĞAN (DENEME)', mahalle: '100. Yıl Mah.', sokak: 'Mimar Sinan Cad.', kapi_no: 16, daire_no: 1, telefon: '05550004001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100402, ad_soyad: 'ELİF KILIÇ (DENEME)', mahalle: '100. Yıl Mah.', sokak: 'Lalezar Sok.', kapi_no: 8, daire_no: 3, telefon: '05550004002', durum: 'TAMAMLANDI', torba: defaultQuota, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+
+    // Yıldırım Beyazıt Mah. & Karaağaç Mah.
+    { prefix: 900100501, ad_soyad: 'İBRAHİM ASLAN (DENEME)', mahalle: 'Yıldırım Beyazıt Mah.', sokak: 'Kıyık Cad.', kapi_no: 42, daire_no: 1, telefon: '05550005001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100502, ad_soyad: 'MERYEM ÇETİN (DENEME)', mahalle: 'Yıldırım Beyazıt Mah.', sokak: 'Balkan Cad.', kapi_no: 15, daire_no: 1, telefon: '05550005002', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'EK_LISTE' },
+    { prefix: 900100601, ad_soyad: 'ÖMER KARA (DENEME)', mahalle: 'Karaağaç Mah.', sokak: 'Lozan Cad.', kapi_no: 22, daire_no: 1, telefon: '05550006001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100602, ad_soyad: 'SULTAN KOÇ (DENEME)', mahalle: 'Karaağaç Mah.', sokak: 'İstasyon Cad.', kapi_no: 6, daire_no: 2, telefon: '05550006002', durum: 'TAMAMLANDI', torba: defaultQuota, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+
+    // Köyler (Tayakadın Köyü & Büyükdöllük Köyü)
+    { prefix: 900100701, ad_soyad: 'RAMAZAN KURT (DENEME)', mahalle: 'Tayakadın Köyü', sokak: 'Köy İçi', kapi_no: 35, daire_no: 1, telefon: '05550007001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100702, ad_soyad: 'FADİME ÖZKAN (DENEME)', mahalle: 'Tayakadın Köyü', sokak: 'Köy İçi', kapi_no: 48, daire_no: 1, telefon: '05550007002', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'EK_LISTE' },
+    { prefix: 900100801, ad_soyad: 'SÜLEYMAN ŞİMŞEK (DENEME)', mahalle: 'Büyükdöllük Köyü', sokak: 'Köy İçi', kapi_no: 11, daire_no: 1, telefon: '05550008001', durum: 'BEKLIYOR', torba: 0, imza: 'BEKLIYOR', liste: 'ANA_LISTE' },
+    { prefix: 900100802, ad_soyad: 'HALİME POLAT (DENEME)', mahalle: 'Büyükdöllük Köyü', sokak: 'Köy İçi', kapi_no: 19, daire_no: 1, telefon: '05550008002', durum: 'TAMAMLANDI', torba: defaultQuota, imza: 'IMZALANDI', liste: 'ANA_LISTE' },
+  ];
+
+  const mahalleCounters = new Map<string, number>();
+  const docsToInsert: any[] = [];
+  const historyToInsert: any[] = [];
+  let anaCount = 0;
+  let ekCount = 0;
+
+  for (let i = 0; i < fakeHouseholdsRaw.length; i++) {
+    const item = fakeHouseholdsRaw[i];
+    const tcNo = buildValidFakeTc(item.prefix);
+    const isVillage = item.mahalle.endsWith('Köyü');
+    const mSira = (mahalleCounters.get(item.mahalle) || 0) + 1;
+    mahalleCounters.set(item.mahalle, mSira);
+
+    const isEk = item.liste === 'EK_LISTE';
+    if (isEk) ekCount++;
+    else anaCount++;
+
+    const acikAdres = `${item.mahalle} ${item.sokak} No: ${item.kapi_no}${item.daire_no > 1 ? ` Daire: ${item.daire_no}` : ''}`;
+    const normAdres = normalizeAddress(item.mahalle, acikAdres);
+    const isDelivered = item.durum === 'TAMAMLANDI' || item.durum === 'EKSIK';
+
+    const doc: any = {
+      tc_no: tcNo,
+      ad_soyad: item.ad_soyad,
+      telefon: item.telefon,
+      telefon2: '',
+      mahalle: item.mahalle,
+      yerlesim_tipi: isVillage ? 'KOY' : 'MAHALLE',
+      sokak: item.sokak,
+      kapi_no: item.kapi_no,
+      daire_no: item.daire_no,
+      acik_adres: acikAdres,
+      hane_no: `DENEME-H${100 + i}`,
+      norm_adres: normAdres,
+      hedef_torba: defaultQuota,
+      teslimat_durumu: item.durum,
+      torba_sayisi: item.torba,
+      teslimat_tarihi: isDelivered ? nowLocaleTr : null,
+      teslim_alan: isDelivered ? item.ad_soyad : null,
+      teslim_eden_personel: isDelivered ? 'Deneme Saha Ekibi' : null,
+      teslimat_notu: item.durum === 'EKSIK' ? 'Deneme kısmi teslimat kaydı' : null,
+      imza_durumu: item.imza,
+      imza_tarihi: item.imza === 'IMZALANDI' ? nowLocaleTr : null,
+      imza_alan_personel: item.imza === 'IMZALANDI' ? 'Deneme Saha Ekibi' : null,
+      sira_no: isEk ? `Ek1 - ${mSira}` : String(mSira),
+      mahalle_sira: mSira,
+      liste_turu: isEk ? 'EK_LISTE' : 'ANA_LISTE',
+      liste_kategorisi: isEk ? 'EK_KAYIT' : 'ANA_LISTE',
+      ek_liste_no: isEk ? 1 : 0,
+      ek_liste_adi: isEk ? 'Ek Liste' : 'Ana Liste',
+      kaynak_dosya: isEk ? 'Ek Liste' : 'Deneme Ana Dağıtım Listesi (Fake Veri).xlsx',
+      batch_id: isEk ? ekBatchId : mainBatchId,
+      import_batch_id: isEk ? ekBatchId : mainBatchId,
+      donem_kodu: activeSeasonCode,
+      ekleyen_personel: creator,
+      ekleyen_rol: 'ADMIN',
+      uyarilar: [],
+      uyari_notu: null,
+      created_at: nowLocaleTr,
+      updated_at: nowLocaleTr,
+    };
+
+    docsToInsert.push(encryptBeneficiary(doc));
+
+    if (isDelivered) {
+      historyToInsert.push(
+        encryptDeliveryHistory({
+          beneficiary_id: `fake-ben-${i + 1}`,
+          tc_no: tcNo,
+          ad_soyad: item.ad_soyad,
+          mahalle: item.mahalle,
+          acik_adres: acikAdres,
+          islem_tipi: 'TESLIMAT',
+          torba_sayisi: item.torba,
+          teslim_alan: item.ad_soyad,
+          personel: 'Deneme Saha Ekibi',
+          notlar: 'Deneme Modu örnek teslimat kaydı',
+          iptal_nedeni: null,
+          tarih: nowLocaleTr,
+          gun_tarihi: nowEnCa,
+        })
+      );
+    }
+  }
+
+  await sandboxBeneficiaries.insertMany(docsToInsert);
+  if (historyToInsert.length > 0) {
+    await sandboxDeliveryHistory.insertMany(historyToInsert);
+  }
+
+  await sandboxImportBatches.insertMany([
+    {
+      batch_id: mainBatchId,
+      dosya_adi: 'Deneme Ana Dağıtım Listesi (Fake Veri).xlsx',
+      ek_liste_adi: 'Ana Liste',
+      ek_liste_no: 0,
+      liste_turu: 'ANA_LISTE',
+      donem_kodu: activeSeasonCode,
+      toplam_satir: anaCount,
+      eklenen_kisi: anaCount,
+      mevcut_kisi: anaCount,
+      mukerrer_tc: 0,
+      mukerrer_hane: 0,
+      hatali_kayit: 0,
+      yukleyen: creator,
+      tarih: nowLocaleTr,
+      tarih_iso: nowIso,
+      created_at: nowLocaleTr,
+      updated_at: nowLocaleTr,
+    },
+    {
+      batch_id: ekBatchId,
+      dosya_adi: 'Ek Liste',
+      ek_liste_adi: 'Ek Liste',
+      ek_liste_no: 1,
+      liste_turu: 'EK_LISTE',
+      donem_kodu: activeSeasonCode,
+      toplam_satir: ekCount,
+      eklenen_kisi: ekCount,
+      mevcut_kisi: ekCount,
+      mukerrer_tc: 0,
+      mukerrer_hane: 0,
+      hatali_kayit: 0,
+      yukleyen: creator,
+      tarih: nowLocaleTr,
+      tarih_iso: nowIso,
+      created_at: nowLocaleTr,
+      updated_at: nowLocaleTr,
+    },
+  ]);
+
+  const existingTruckCount = await sandboxTruckDeliveries.countDocuments({});
+  if (existingTruckCount === 0) {
+    await sandboxTruckDeliveries.insertMany([
+      encryptTruck({
+        tir_sirasi: 1,
+        plaka: '22 TEST 001',
+        dorse_plaka: '22 DENEME 01',
+        irsaliye_no: 'DENEME-IRS-2026-001',
+        ocak_cikis_tarihi: nowEnCa,
+        tarih: nowEnCa,
+        net_tonaj: 26.5,
+        brut_tonaj: 41.2,
+        tara_tonaj: 14.7,
+        sofor_adi: 'Deneme Şoför 1',
+        notlar: 'Deneme Modu Örnek Kömür Tırı Sevkiyatı',
+        created_at: nowLocaleTr,
+      }),
+      encryptTruck({
+        tir_sirasi: 2,
+        plaka: '22 TEST 002',
+        dorse_plaka: '22 DENEME 02',
+        irsaliye_no: 'DENEME-IRS-2026-002',
+        ocak_cikis_tarihi: nowEnCa,
+        tarih: nowEnCa,
+        net_tonaj: 25.8,
+        brut_tonaj: 40.3,
+        tara_tonaj: 14.5,
+        sofor_adi: 'Deneme Şoför 2',
+        notlar: 'Deneme Modu Örnek Kömür Tırı Sevkiyatı',
+        created_at: nowLocaleTr,
+      }),
+    ]);
+  }
+
+  return { seededCount: docsToInsert.length, batchCount: 2 };
+}
+
 
 
 

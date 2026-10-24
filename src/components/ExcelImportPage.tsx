@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
   Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
   Eye, Phone, MapPin, Copy, Check, Users, Info, Hash, Building2, Trees,
-  ChevronDown, ChevronUp, ChevronRight
+  ChevronDown, ChevronUp, ChevronRight, FlaskConical, Play, RotateCcw, Loader2
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
@@ -20,6 +20,19 @@ const isKoySettlement = (name: string, tip?: string) => {
 interface ExcelImportPageProps {
   userRole: 'ADMIN' | 'PERSONEL';
   activeSeasonCode?: string;
+  calismaModu?: 'RESMI' | 'DENEME';
+  sandboxStats?: {
+    hane_sayisi: number;
+    liste_sayisi: number;
+    hata_log_sayisi: number;
+    teslimat_sayisi: number;
+  } | null;
+  officialStats?: {
+    hane_sayisi: number;
+    liste_sayisi: number;
+  } | null;
+  onChangeCalismaModu?: (newMode: 'RESMI' | 'DENEME') => Promise<void>;
+  onResetSandbox?: () => Promise<void>;
   onSwitchToAdmin: () => void;
   onRefreshAll: () => void;
 }
@@ -27,6 +40,11 @@ interface ExcelImportPageProps {
 export default function ExcelImportPage({
   userRole,
   activeSeasonCode = '2026-2027',
+  calismaModu = 'RESMI',
+  sandboxStats = null,
+  officialStats = null,
+  onChangeCalismaModu,
+  onResetSandbox,
   onSwitchToAdmin,
   onRefreshAll
 }: ExcelImportPageProps) {
@@ -35,6 +53,167 @@ export default function ExcelImportPage({
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [selectedListeTuru, setSelectedListeTuru] = useState<'STANDART' | 'SIGORTALI' | 'EK_LISTE'>('STANDART');
+
+  // Deneme Alanı (Sandbox) & Çalışma Modu Durumu
+  const [localCalismaModu, setLocalCalismaModu] = useState<'RESMI' | 'DENEME'>(calismaModu);
+  const [localSandboxStats, setLocalSandboxStats] = useState<any>(sandboxStats);
+  const [localOfficialStats, setLocalOfficialStats] = useState<any>(officialStats);
+  const [isSwitchingMode, setIsSwitchingMode] = useState<boolean>(false);
+  const [isResettingSandbox, setIsResettingSandbox] = useState<boolean>(false);
+
+  useEffect(() => {
+    setLocalCalismaModu(calismaModu);
+  }, [calismaModu]);
+
+  useEffect(() => {
+    if (sandboxStats) setLocalSandboxStats(sandboxStats);
+  }, [sandboxStats]);
+
+  useEffect(() => {
+    if (officialStats) setLocalOfficialStats(officialStats);
+  }, [officialStats]);
+
+  const fetchModeStats = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      if (data.success && data.settings) {
+        if (data.settings.calisma_modu) setLocalCalismaModu(data.settings.calisma_modu);
+        if (data.settings.sandbox_stats) setLocalSandboxStats(data.settings.sandbox_stats);
+        if (data.settings.official_stats) setLocalOfficialStats(data.settings.official_stats);
+      }
+    } catch {}
+  };
+
+  const handleModeSwitch = async (targetMode: 'RESMI' | 'DENEME') => {
+    if (targetMode === localCalismaModu || isSwitchingMode) return;
+    setIsSwitchingMode(true);
+    try {
+      if (onChangeCalismaModu) {
+        await onChangeCalismaModu(targetMode);
+      } else {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'SET_CALISMA_MODU', calisma_modu: targetMode }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Mod değiştirilemedi');
+        showToast({
+          type: targetMode === 'DENEME' ? 'info' : 'success',
+          title: targetMode === 'DENEME' ? 'Deneme Modu Aktif Edildi' : 'Gerçek (Resmi) Moda Geçildi',
+          message: data.message,
+        });
+      }
+      setLocalCalismaModu(targetMode);
+      setUploadResult(null);
+      setSelectedSeasonView('AKTIF');
+      await Promise.all([
+        fetchLogs('AKTIF'),
+        fetchUploadedBatches('AKTIF'),
+        fetchModeStats(),
+      ]);
+      onRefreshAll();
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Mod Değiştirme Hatası',
+        message: err.message || 'Çalışma modu değiştirilirken hata oluştu.',
+      });
+    } finally {
+      setIsSwitchingMode(false);
+    }
+  };
+
+  const handleResetSandboxData = async () => {
+    const confirmed = await showConfirm({
+      title: 'Deneme Alanı Verilerini Sıfırla',
+      message:
+        'Deneme (Test) modunda yüklediğiniz tüm test Excel listeleri, test haneleri ve deneme işlemleri tamamen silinecektir. Gerçek (Resmi) listelerinize hiçbir şekilde dokunulmaz. Onaylıyor musunuz?',
+      type: 'warning',
+      confirmText: 'Evet, Deneme Verilerini Temizle',
+      cancelText: 'Vazgeç',
+    });
+    if (!confirmed) return;
+
+    setIsResettingSandbox(true);
+    try {
+      if (onResetSandbox) {
+        await onResetSandbox();
+      } else {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'RESET_SANDBOX_DATA' }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Deneme verileri sıfırlanamadı');
+        showToast({
+          type: 'success',
+          title: 'Deneme Alanı Temizlendi',
+          message: data.message,
+        });
+      }
+      setUploadResult(null);
+      await Promise.all([
+        fetchLogs('AKTIF'),
+        fetchUploadedBatches('AKTIF'),
+        fetchModeStats(),
+      ]);
+      onRefreshAll();
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Hata',
+        message: err.message || 'Deneme verileri temizlenirken hata oluştu.',
+      });
+    } finally {
+      setIsResettingSandbox(false);
+    }
+  };
+
+  const handleSeedFakeSandboxData = async () => {
+    const confirmed = await showConfirm({
+      title: 'Örnek (Fake) Deneme Verilerini Yükle / Yenile',
+      message:
+        'Deneme alanı temizlenerek 20 adet örnek (fake) hane, fake dağıtım listesi, ek liste ve test tır kayıtları yüklenecektir. Gerçek (Resmi) listeleriniz %100 güvendedir ve etkilenmez. Devam edilsin mi?',
+      type: 'info',
+      confirmText: 'Evet, Fake Verileri Yükle',
+      cancelText: 'Vazgeç',
+    });
+    if (!confirmed) return;
+
+    setIsResettingSandbox(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'RESET_SANDBOX_DATA', seed_fake_data: true }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Fake veriler yüklenemedi');
+      showToast({
+        type: 'success',
+        title: 'Fake Deneme Verileri Yüklendi',
+        message: data.message,
+      });
+      setUploadResult(null);
+      await Promise.all([
+        fetchLogs('AKTIF'),
+        fetchUploadedBatches('AKTIF'),
+        fetchModeStats(),
+      ]);
+      onRefreshAll();
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Hata',
+        message: err.message || 'Fake veriler yüklenirken hata oluştu.',
+      });
+    } finally {
+      setIsResettingSandbox(false);
+    }
+  };
   
   // Logs state
   const [logs, setLogs] = useState<any[]>([]);
@@ -198,8 +377,9 @@ export default function ExcelImportPage({
     if (userRole === 'ADMIN') {
       fetchLogs(selectedSeasonView);
       fetchUploadedBatches(selectedSeasonView);
+      fetchModeStats();
     }
-  }, [userRole, selectedSeasonView]);
+  }, [userRole, selectedSeasonView, localCalismaModu]);
 
   const isRecordElenen = (l: any) => {
     if (l.islem_sonucu === 'EKLENMEDİ') return true;
@@ -473,25 +653,284 @@ export default function ExcelImportPage({
 
   return (
     <div className="space-y-6">
+      {/* ===================================================================== */}
+      {/* YÖNETİCİ DENEME ALANI (TEST & SİMÜLASYON MODU) KONTROL MERKEZİ        */}
+      {/* ===================================================================== */}
+      <div
+        className={`rounded-2xl border-2 p-4 sm:p-5 shadow-sm transition-all ${
+          localCalismaModu === 'DENEME'
+            ? 'bg-gradient-to-br from-indigo-50 via-white to-amber-50/60 border-indigo-500 ring-2 ring-indigo-300/60'
+            : 'bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 border-slate-200'
+        }`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs border ${
+                localCalismaModu === 'DENEME'
+                  ? 'bg-indigo-600 text-white border-indigo-700'
+                  : 'bg-emerald-600 text-white border-emerald-700'
+              }`}
+            >
+              {localCalismaModu === 'DENEME' ? (
+                <FlaskConical className="w-6 h-6 text-white" />
+              ) : (
+                <Shield className="w-6 h-6 text-white" />
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-black text-slate-900">
+                  Excel Deneme Alanı & Çalışma Modu Yönetimi
+                </h3>
+                {localCalismaModu === 'DENEME' ? (
+                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                    <FlaskConical className="w-3 h-3" />
+                    Deneme Modu Aktif (Resmi İşlem Değildir)
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Gerçek (Resmi) Mod Aktif
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                <strong>Deneme Alanı:</strong> Eklenecek Excel listelerini resmi veritabanına dokunmadan önce test amacıyla sisteme kaydedebilir; eksik veya değiştirilmesi gereken sütunları, mükerrer TC/hane kontrollerini, adres etiketlerini ve dağıtım işlemlerini güvenle deneyebilirsiniz. İstediğiniz an tek dokunuşla <strong>Gerçek Moda</strong> geçerek resmi listelerle çalışabilirsiniz.
+              </p>
+            </div>
+          </div>
+
+          {/* Deneme Verilerini Sıfırlama Butonu (Admin için Her Zaman Esnek Erişim) */}
+          <button
+            type="button"
+            disabled={isResettingSandbox}
+            onClick={handleResetSandboxData}
+            className="self-start lg:self-center px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shrink-0 disabled:opacity-50 shadow-2xs"
+          >
+            {isResettingSandbox ? (
+              <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+            ) : (
+              <RotateCcw className="w-4 h-4 text-rose-600" />
+            )}
+            <span>Deneme Modunu Sıfırla</span>
+          </button>
+        </div>
+
+        {/* İKİ MOD SEÇİM KARTLARI (MOBİL %100 ERGONOMİK) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+          {/* 1. GERÇEK (RESMİ) MOD KARTI */}
+          <div
+            onClick={() => handleModeSwitch('RESMI')}
+            className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2.5 ${
+              localCalismaModu === 'RESMI'
+                ? 'border-emerald-600 bg-emerald-50/80 shadow-xs ring-2 ring-emerald-400/40'
+                : 'border-slate-200 bg-white hover:border-emerald-300'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    localCalismaModu === 'RESMI'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs sm:text-sm font-black text-slate-900">
+                      🏛️ Gerçek (Resmi) Çalışma Modu
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 font-medium">
+                    Resmi vakıf dağıtım listeleri ve canlı saha teslimatları
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase shrink-0 ${
+                  localCalismaModu === 'RESMI'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-900'
+                }`}
+              >
+                {localCalismaModu === 'RESMI' ? '✓ Şu An Aktif' : 'Gerçek Moda Geç'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-emerald-200/60 text-[11px] font-bold text-slate-700">
+              <span>
+                Resmi Kayıtlı Hane:{' '}
+                <strong className="text-emerald-900 font-black">
+                  {localOfficialStats?.hane_sayisi ?? 0}
+                </strong>
+              </span>
+              <span>
+                Resmi Excel Listesi:{' '}
+                <strong className="text-emerald-900 font-black">
+                  {localOfficialStats?.liste_sayisi ?? 0}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          {/* 2. DENEME ALANI (TEST & SİMÜLASYON MODU) KARTI */}
+          <div
+            onClick={() => handleModeSwitch('DENEME')}
+            className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2.5 ${
+              localCalismaModu === 'DENEME'
+                ? 'border-indigo-600 bg-indigo-50/90 shadow-xs ring-2 ring-indigo-400/50'
+                : 'border-slate-200 bg-white hover:border-indigo-300'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    localCalismaModu === 'DENEME'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  <FlaskConical className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs sm:text-sm font-black text-slate-900">
+                      🧪 Deneme Alanı (Test & Simülasyon Modu)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 font-medium">
+                    Resmi olmayan liste testi, eksiklik kontrolü ve simülasyon alanı
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase shrink-0 ${
+                  localCalismaModu === 'DENEME'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-600 hover:text-white'
+                }`}
+              >
+                {localCalismaModu === 'DENEME' ? '✓ Deneme Aktif' : 'Deneme Modunu Aç'}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-indigo-200/60 text-[11px] font-bold text-slate-700">
+              <span>
+                Test Hanesi:{' '}
+                <strong className="text-indigo-900 font-black">
+                  {localSandboxStats?.hane_sayisi ?? 0}
+                </strong>
+              </span>
+              <span>
+                Test Listesi:{' '}
+                <strong className="text-indigo-900 font-black">
+                  {localSandboxStats?.liste_sayisi ?? 0}
+                </strong>
+              </span>
+              <span>
+                Tespit Edilen Eksik/Mükerrer:{' '}
+                <strong className="text-amber-800 font-black">
+                  {localSandboxStats?.hata_log_sayisi ?? 0}
+                </strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Deneme Modu Aktifken Bilgilendirme Kutusu */}
+        {localCalismaModu === 'DENEME' && (
+          <div className="mt-3 p-3 rounded-xl bg-indigo-950 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5">
+              <FlaskConical className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <strong className="text-amber-300">Şu Anda Deneme Alanındasınız:</strong> Buradan yükleyeceğiniz Excel listeleri ve sistem genelinde (Sorgu, Tek Hane Ekleme, Teslimat, Rota) yapacağınız tüm denemeler <strong>izole test koleksiyonlarına</strong> kaydedilir; resmi kurum verilerinizi kesinlikle etkilemez. İstediğiniz an sıfırlayabilirsiniz.
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={isResettingSandbox}
+                onClick={handleSeedFakeSandboxData}
+                className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-indigo-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              >
+                <FlaskConical className="w-3.5 h-3.5" />
+                <span>Örnek (Fake) Veri Yükle / Yenile</span>
+              </button>
+              <button
+                type="button"
+                disabled={isResettingSandbox}
+                onClick={handleResetSandboxData}
+                className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Deneme Modunu Sıfırla</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeSwitch('RESMI')}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Gerçek (Resmi) Moda Geç</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* MASAÜSTÜ İKİ KOLONLU DÜZEN: Yükleme Paneli & Yüklenen Dosyalar */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         {/* Excel Upload Section - Light Mode */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+        <div
+          className={`p-5 rounded-2xl bg-white border shadow-sm space-y-4 ${
+            localCalismaModu === 'DENEME' ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-slate-200'
+          }`}
+        >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center border border-emerald-200">
-              <FileSpreadsheet className="w-6 h-6 text-emerald-700" />
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+                localCalismaModu === 'DENEME'
+                  ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                  : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+              }`}
+            >
+              {localCalismaModu === 'DENEME' ? (
+                <FlaskConical className="w-6 h-6 text-indigo-700" />
+              ) : (
+                <FileSpreadsheet className="w-6 h-6 text-emerald-700" />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-extrabold text-slate-900 leading-tight">Excel Dosyası Yükle</h3>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  Aktif Dönem: {activeSeasonCode}
-                </span>
+                <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                  {localCalismaModu === 'DENEME'
+                    ? 'Deneme Alanına Test Excel Listesi Yükle'
+                    : 'Excel Dosyası Yükle'}
+                </h3>
+                {localCalismaModu === 'DENEME' ? (
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black flex items-center gap-1">
+                    <FlaskConical className="w-3 h-3 text-indigo-600" />
+                    Deneme Alanı (Resmi Değil)
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Aktif Dönem: {activeSeasonCode}
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-500 font-medium">Hak sahibi vatandaş listesini otomatik aktarın (Eski dönem listeleri arşivde saklanır)</p>
+              <p className="text-xs text-slate-500 font-medium">
+                {localCalismaModu === 'DENEME'
+                  ? 'Excel dosyanızdaki eksiklikleri, adres/mahalle ayrıştırmasını ve mükerrer kayıtları test edin'
+                  : 'Hak sahibi vatandaş listesini otomatik aktarın (Eski dönem listeleri arşivde saklanır)'}
+              </p>
             </div>
           </div>
 

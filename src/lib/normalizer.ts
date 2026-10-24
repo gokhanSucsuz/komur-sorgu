@@ -651,6 +651,9 @@ export function normalizeMahalleName(name: string | null | undefined): string {
   if (/^(?:Edirne\s+)?Merkez(?:\s+Mahallesi|\s+Mah\.?|\s+Mh\.?)?$/i.test(clean)) {
     return '';
   }
+  if (/^(?:belirtilmemi[sş]|adres\s*belirtilmemi[sş]|genel\s*\(belirtilmemi[sş]\)|belirtilmemi[sş]\s*mah\.?|adres\s*belirtilmemi[sş]\s*mah\.?|ek\s*liste|\-)$/i.test(clean)) {
+    return 'Adres Belirtilmemiş';
+  }
 
   // Dates or purely numeric/punctuation tokens are NEVER neighborhoods
   if (
@@ -1350,13 +1353,19 @@ export function getBeneficiaryListTypeInfo(item: any): ListTypeInfo {
 
   const isEk =
     item.liste_turu === 'EK_LISTE' ||
+    item.liste_kategorisi === 'EK_KAYIT' ||
     (typeof item.ek_liste_no === 'number' && item.ek_liste_no > 0 && item.ek_liste_no < 1000) ||
-    (item.sira_no && typeof item.sira_no === 'string' && /^Ek\s*\d+/i.test(item.sira_no.trim())) ||
-    (item.ek_liste_adi && /^Ek\s*\d+/i.test(item.ek_liste_adi.trim()));
+    (item.sira_no && typeof item.sira_no === 'string' && /^Ek\s*(?:\d+|Liste)/i.test(item.sira_no.trim())) ||
+    (item.ek_liste_adi && /^(?:Ek\s*\d+|Ek\s*Liste|Saha\s*Tekil\s*Ekleme)/i.test(item.ek_liste_adi.trim()));
 
   if (isEk) {
-    const match = (item.sira_no && typeof item.sira_no === 'string') ? item.sira_no.match(/^(Ek\s*\d+)/i) : null;
-    const ekLabel = item.ek_liste_adi || (match ? match[1] : 'Ek Liste');
+    let ekLabel = 'Ek Liste';
+    if (
+      item.ek_liste_adi &&
+      !/^(?:saha\s*tekil\s*ekleme|ek\s*liste)$/i.test(item.ek_liste_adi.trim())
+    ) {
+      ekLabel = item.ek_liste_adi.trim();
+    }
     return {
       type: 'EK_LISTE',
       label: ekLabel,

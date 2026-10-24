@@ -57,7 +57,7 @@ import {
   getBeneficiaryListTypeInfo,
 } from '@/lib/normalizer';
 
-import { mapDoc, getDbCollections, reconcileArchivedSeasonImports } from '@/lib/mongodb';
+import { mapDoc, getDbCollections, reconcileArchivedSeasonImports, seedSandboxFakeData } from '@/lib/mongodb';
 import { sanitizeUser, isSessionExpired, SESSION_MAX_AGE_MS } from '@/lib/auth';
 
 describe('1. KVKK & AES-256-GCM Kriptografik Güvenlik Testleri', () => {
@@ -439,5 +439,176 @@ describe('7. Saha Tek Hane Ekleme: Mükerrer TC Engeli & Aynı Adres Uyarı Tesp
     const archivedLogCount = await cols.archivedImportLogs.countDocuments({ donem_kodu: '2025-2026' });
     assert.equal(archivedBatchCount, 1);
     assert.equal(archivedLogCount, 1);
+  });
+
+  it('Deneme Modu (Sandbox) ile Gerçek (Resmi) Mod verilerini %100 izole eder; deneme işlemleri resmi kayıtları etkilemez', async () => {
+    const initialCols = await getDbCollections();
+    assert.equal(initialCols.calismaModu, 'RESMI');
+    assert.equal(initialCols.isSandboxMode, false);
+
+    // 1. Resmi modda bir hane ekle
+    await initialCols.beneficiaries.insertOne({
+      id: 'resmi-1',
+      tc_no: '11111111110',
+      ad_soyad: 'RESMİ HAK SAHİBİ',
+      mahalle: 'Cumhuriyet Mah.',
+    });
+    assert.equal(await initialCols.officialBeneficiaries.countDocuments({}), 1);
+    assert.equal(await initialCols.sandboxBeneficiaries.countDocuments({}), 0);
+
+    // 2. Deneme (Test) Moduna geç
+    await initialCols.systemSettings.updateOne(
+      { key: 'calisma_modu' },
+      { $set: { key: 'calisma_modu', value: 'DENEME' } },
+      { upsert: true }
+    );
+
+    const sandboxCols = await getDbCollections();
+    assert.equal(sandboxCols.calismaModu, 'DENEME');
+    assert.equal(sandboxCols.isSandboxMode, true);
+    // Deneme modunda başlangıçta 0 kayıt görünmeli (resmi kayıtlar izoledir)
+    assert.equal(await sandboxCols.beneficiaries.countDocuments({}), 0);
+
+    // 3. Deneme modunda test hanesi ve test Excel listesi ekle
+    await sandboxCols.beneficiaries.insertOne({
+      id: 'deneme-1',
+      tc_no: '22222222220',
+      ad_soyad: 'DENEME TEST KİŞİSİ',
+      mahalle: 'Fatih Mah.',
+    });
+    await sandboxCols.importBatches.insertOne({
+      batch_id: 'BATCH-SANDBOX-1',
+      dosya_adi: 'Deneme_Listesi.xlsx',
+      eklenen_kisi: 1,
+    });
+
+    assert.equal(await sandboxCols.beneficiaries.countDocuments({}), 1);
+    // Resmi koleksiyon hala 1 kayıt olmalı, deneme verisi resmi tabloya sızmamalı!
+    assert.equal(await sandboxCols.officialBeneficiaries.countDocuments({}), 1);
+    assert.equal(await sandboxCols.officialImportBatches.countDocuments({}), 0);
+
+    // 4. Gerçek (Resmi) Moda geri dön
+    await sandboxCols.systemSettings.updateOne(
+      { key: 'calisma_modu' },
+      { $set: { key: 'calisma_modu', value: 'RESMI' } },
+      { upsert: true }
+    );
+
+    const restoredCols = await getDbCollections();
+    assert.equal(restoredCols.calismaModu, 'RESMI');
+    assert.equal(restoredCols.isSandboxMode, false);
+    assert.equal(await restoredCols.beneficiaries.countDocuments({}), 1);
+    const officialDoc = await restoredCols.beneficiaries.findOne({ id: 'resmi-1' });
+    assert.equal(officialDoc?.ad_soyad, 'RESMİ HAK SAHİBİ');
+
+    // Temizlik
+    await restoredCols.officialBeneficiaries.deleteMany({ id: 'resmi-1' });
+    await restoredCols.sandboxBeneficiaries.deleteMany({});
+    await restoredCols.sandboxImportBatches.deleteMany({});
+  });
+
+  it('Ek Liste kayıtlarını "Ek Liste" adı altında tutar, isteğe bağlı (opsiyonel) adresi destekler ve Deneme Modu sıfırlamasında resmi verileri korur', async () => {
+    // 1. Adres Belirtilmemiş normalizasyonu ("Mah." eklenmemeli)
+    assert.equal(normalizeMahalleName('Adres Belirtilmemiş'), 'Adres Belirtilmemiş');
+    assert.equal(normalizeMahalleName('Belirtilmemiş'), 'Adres Belirtilmemiş');
+    assert.equal(normalizeMahalleName(''), '');
+
+    // 2. Ek Liste etiket doğrulaması
+    const ekListeInfo1 = getBeneficiaryListTypeInfo({
+      liste_turu: 'EK_LISTE',
+      liste_kategorisi: 'EK_KAYIT',
+      ek_liste_adi: 'Ek Liste',
+    });
+    assert.equal(ekListeInfo1.type, 'EK_LISTE');
+    assert.equal(ekListeInfo1.label, 'Ek Liste');
+    assert.equal(ekListeInfo1.badgeLabel, 'Ek Liste');
+
+    const ekListeInfo2 = getBeneficiaryListTypeInfo({
+      liste_turu: 'EK_LISTE',
+      ek_liste_adi: 'Saha Tekil Ekleme',
+    });
+    assert.equal(ekListeInfo2.type, 'EK_LISTE');
+    assert.equal(ekListeInfo2.label, 'Ek Liste');
+
+    // 3. Deneme Modu sıfırlama esnekliği testi
+    const cols = await getDbCollections();
+    await cols.officialBeneficiaries.insertOne({
+      id: 'official-ek-1',
+      tc_no: '10000000146',
+      ad_soyad: 'RESMİ EK LİSTE KİŞİSİ',
+      liste_tipi: 'EK_LISTE',
+      ek_liste_adi: 'Ek Liste',
+      dosya_adi: 'Ek Liste',
+      mahalle: 'Adres Belirtilmemiş',
+      acik_adres: 'Adres Belirtilmemiş',
+      telefon: '',
+    });
+
+    await cols.sandboxBeneficiaries.insertOne({
+      id: 'sandbox-ek-1',
+      tc_no: '20000000144',
+      ad_soyad: 'DENEME EK LİSTE KİŞİSİ',
+      liste_tipi: 'EK_LISTE',
+      ek_liste_adi: 'Ek Liste',
+    });
+    await cols.sandboxImportBatches.insertOne({
+      batch_id: 'BATCH_EK_LISTE_SANDBOX',
+      dosya_adi: 'Ek Liste',
+      ek_liste_adi: 'Ek Liste',
+      eklenen_kisi: 1,
+    });
+
+    // Deneme Modu sıfırlandığında (RESET_SANDBOX_DATA):
+    await Promise.all([
+      cols.sandboxBeneficiaries.deleteMany({}),
+      cols.sandboxImportBatches.deleteMany({}),
+      cols.sandboxImportLogs.deleteMany({}),
+      cols.sandboxDeliveryHistory.deleteMany({}),
+      cols.sandboxDeliveryRoutes.deleteMany({}),
+    ]);
+
+    assert.equal(await cols.sandboxBeneficiaries.countDocuments({}), 0);
+    assert.equal(await cols.sandboxImportBatches.countDocuments({}), 0);
+    // Resmi Ek Liste kaydı sıfırlamadan etkilenmemeli
+    assert.equal(await cols.officialBeneficiaries.countDocuments({ id: 'official-ek-1' }), 1);
+
+    await cols.officialBeneficiaries.deleteMany({ id: 'official-ek-1' });
+  });
+
+  it('Fake veri tohumlama yalnızca sandbox koleksiyonlarına yazar, resmi veriler etkilenmez', async () => {
+    const cols = await getDbCollections();
+    await cols.officialBeneficiaries.insertOne({
+      id: 'official-seed-guard-1',
+      tc_no: '10000000146',
+      ad_soyad: 'RESMİ KORUMA KİŞİSİ',
+      liste_tipi: 'STANDART',
+    });
+
+    const officialBefore = await cols.officialBeneficiaries.countDocuments({});
+    const officialBatchesBefore = await cols.officialImportBatches.countDocuments({});
+
+    const result = await seedSandboxFakeData({ clearExistingSandbox: true, createdBy: 'test' });
+    assert.ok(result.seededCount >= 20);
+    assert.ok(result.batchCount >= 2);
+
+    assert.equal(await cols.sandboxBeneficiaries.countDocuments({}), result.seededCount);
+    assert.ok((await cols.sandboxImportBatches.countDocuments({})) >= 2);
+    assert.ok((await cols.sandboxTruckDeliveries.countDocuments({})) >= 2);
+
+    // Resmi veriler değişmemeli
+    assert.equal(await cols.officialBeneficiaries.countDocuments({}), officialBefore);
+    assert.equal(await cols.officialImportBatches.countDocuments({}), officialBatchesBefore);
+    assert.equal(await cols.officialBeneficiaries.countDocuments({ id: 'official-seed-guard-1' }), 1);
+
+    // Sandbox sıfırlama sonrası resmi veri hâlâ yerinde
+    await Promise.all([
+      cols.sandboxBeneficiaries.deleteMany({}),
+      cols.sandboxImportBatches.deleteMany({}),
+      cols.sandboxDeliveryHistory.deleteMany({}),
+      cols.sandboxTruckDeliveries.deleteMany({}),
+    ]);
+    assert.equal(await cols.officialBeneficiaries.countDocuments({ id: 'official-seed-guard-1' }), 1);
+
+    await cols.officialBeneficiaries.deleteMany({ id: 'official-seed-guard-1' });
   });
 });

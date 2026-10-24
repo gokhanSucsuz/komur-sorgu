@@ -120,6 +120,12 @@ Sistemde iki ana rol tanımlanmıştır:
 - Sahaya ulaşıldığında vatandaşın taşındığı veya telefonunun değiştiği tespit edilirse, kart üzerindeki **"Düzenle"** butonuna basılır.
 - Yeni mahalle, güncel cadde/sokak/kapı no ve yeni telefon numarası girilerek anında kaydedilir.
 
+### 3.5. Pratik Mobil Saha Hane Ekleme ("Ek Liste", Zorunlu TC & Ad Soyad, İsteğe Bağlı Adres/Telefon)
+- Sahada görevli personel cep telefonundan yeni bir ek hane kaydederken uzun açık adres veya gereksiz ayrıntı yazmak zorunda değildir:
+  1. **Zorunlu Bilgiler (Yalnızca T.C. Kimlik No & Ad Soyad):** Vatandaşın **T.C. Kimlik Numarası** (11 hane) ve **Adı Soyadı** girilmesi zorunludur (sistem anında mükerrer TC kontrolü yapar).
+  2. **İsteğe Bağlı (Opsiyonel) Mahalle, Sokak ve Telefon Girişi:** Adres (Mahalle/Köy, Sokak/Cadde, Kapı No) ve Telefon numarası girilmesi tamamen **isteğe bağlıdır (opsiyonel)**. Adres girilmezse kayıt otomatik olarak `Adres Belirtilmemiş` olarak işlenir; girilmek istenirse sistemde var olan **Mahalle Etiketlerine** ve ardından **Sokak Etiketlerine** tek dokunuşla basılarak pratikçe seçilir.
+  3. **"Ek Liste" Adı Altında Kayıt ve Tam Entegrasyon:** Eklenen tüm kayıtlar otomatik olarak **"Ek Liste"** (`BATCH_EK_LISTE`) adı altında tutulur. **Ara & Bul (Sorgu & Dağıtım)** ekranında, teslimat/imza işlemlerinde, dağıtım rotalarında, tüm istatistiklerde ve Excel/PDF raporlarında normal liste elemanları gibi eksiksiz yer alır.
+
 ---
 
 ## 4. KÖMÜR TESLİMATI, DOKUNMATİK ISLAK İMZA VE EKSİK DAĞITIM
@@ -247,6 +253,12 @@ Sistemde kronometre veya "mesai başlat/bitir" baskısı kaldırılmıştır. Pe
 ### 9.3. Otomatik Telefon ve Adres Normalizasyonu
 - Telefon sütunundaki parantezler, tireler ve boşluklar otomatik ayıklanarak geçerli `05XXXXXXXXX` formatına getirilir.
 
+### 9.4. Yönetici Excel Deneme Alanı / Deneme Modu (İzole Test ve Simülasyon Ortamı)
+- **Amacı:** Yöneticinin yeni gelen Excel listelerini resmi veritabanına kaydetmeden önce test edebilmesi, dosyada eksik/değiştirilmesi gereken sütunlar veya mükerrer kayıtlar olup olmadığını kontrol edebilmesi ve saha işlemlerini (teslimat, imza, rota, tek hane ekleme) resmi kayıtlara dokunmadan deneyebilmesi için geliştirilmiştir.
+- **İzole Veritabanı Mimarisi (`sandbox_*`):** Deneme Modu aktif edildiğinde sistem tüm işlemleri izole `sandbox_beneficiaries`, `sandbox_import_batches`, `sandbox_import_logs`, `sandbox_delivery_history` ve `sandbox_delivery_routes` koleksiyonlarına yönlendirir. **Deneme modunda yapılan hiçbir işlem resmi işlem sayılmaz** ve gerçek verileri kesinlikle etkilemez.
+- **Tam Güvenlik Standardı:** Deneme Alanında da AES-256-GCM kriptografik şifreleme, HMAC-SHA256 kör indeksleme, CSRF/NoSQL koruması ve denetim izi (Audit Log) standartları sıfır tavizle uygulanır; resmi dönem arşivleme (`CLOSE_AND_ARCHIVE_SEASON`) işlemi deneme modundayken güvenlik kilidiyle engellenir.
+- **Esnek Deneme Modu Sıfırlama ve Tek Tıkla Geçiş:** Yönetici istediği an hem Excel Deneme Alanı kartından hem de ekranın en üstündeki sabit **DENEME MODU AKTİF** çubuğundan **"Deneme Modunu Sıfırla"** butonuna basarak tüm test verilerini (test haneleri, test listeleri, test teslimatları ve rotaları) tek tıkla sıfırlayabilir veya **"Gerçek (Resmi) Moda Geç"** butonuyla gerçek listelerle çalışmaya dönebilir.
+
 ---
 
 ## 10. RAPORLAMA, EXCEL İCMALLERİ VE RESMİ PDF DÖKÜMÜ
@@ -273,10 +285,14 @@ Sistemde kronometre veya "mesai başlat/bitir" baskısı kaldırılmıştır. Pe
 - İnternet bağlantısı sağlandığında ekranın üstünde sarı renkli **"Eşitle: X"** rozeti belirir.
 - Rozete veya yenile butonuna tıklandığında çevrimdışı yapılan tüm teslimatlar sunucuya aktarılır ve kayıtlar mühürlenir.
 
-### 11.3. Cep Telefonuna PWA Kurulumu
-- **Android (Chrome):** Sağ üstteki üç noktaya basıp **"Uygulamayı Yükle"** veya **"Ana Ekrana Ekle"** seçilir.
-- **iOS (Safari):** Alttaki Paylaş butonuna basıp **"Ana Ekrana Ekle"** seçilir.
-- Uygulama masaüstüne Edirne SYDV logosuyla bir mobil uygulama gibi yerleşir.
+### 11.3. Cep Telefonuna PWA Kurulumu ve Eski Model Android Telefonlar İçin Çözüm
+- **Modern Android (Chrome) & iOS (Safari):** Chrome'da sağ üstteki üç noktaya basıp **"Uygulamayı Yükle"** veya Safari'de Paylaş butonuna basıp **"Ana Ekrana Ekle"** seçilir.
+- **Eski Model Android Telefonlar (Uygulama Yüklenmeyen Cihazlar İçin Çözüm):**
+  - Bazı personellerin eski model Android (Android 5/6/7/8/9 veya düşük hafızalı) telefonlarında Google Play Services kaynaklı olarak standart APK/WebAPK kurulumu desteklenmeyebilir.
+  - Bu cihazlar için giriş ekranında ve üst menüde **"📱 Eski Android Çözümü / Hızlı Mod"** aracı yer alır:
+    1. **Uygulama Yüklemeden Tam Ekran & Hızlı Mod (0 MB):** Cihaz hafızasına hiçbir paket indirmeden tek dokunuşla **Tam Ekran Saha Modu** ve eski işlemcileri yormayan **Eski Cihaz Hızlı Modu (Lite Mode)** aktif edilir; sayfa başına kayıt sayısı otomatik optimize edilir ve ağır grafik efektleri kapatılır.
+    2. **0 MB Masaüstü Kısayolu ("Ana Ekrana Ekle"):** APK derlemesi gerektirmeden tarayıcı menüsünden doğrudan telefonun ana ekranına 0 MB boyutunda ikon ekleme adımları resimli/adımlı olarak gösterilir.
+    3. **WhatsApp / Kısayol Bağlantısı:** Tek dokunuşla sistem bağlantısı kopyalanabilir veya WhatsApp'tan sabit mesaj olarak gönderilerek uygulama yüklemeye gerek kalmadan tek tıkla açılması sağlanır.
 
 ---
 

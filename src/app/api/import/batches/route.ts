@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
     await reconcileArchivedSeasonImports();
 
     const {
+      calismaModu,
+      isSandboxMode,
       importBatches: batchesCol,
       beneficiaries: benCol,
       importLogs: logsCol,
@@ -191,6 +193,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      calismaModu,
+      isSandboxMode,
       batches: enrichedBatches,
       unbatchedCount,
       isArchived: isArchivedQuery,

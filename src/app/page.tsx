@@ -25,6 +25,9 @@ import KomurIptalModal from '@/components/KomurIptalModal';
 import SeasonManagementModal from '@/components/SeasonManagementModal';
 import GuidePage from '@/components/GuidePage';
 import SingleHouseholdAddPage from '@/components/SingleHouseholdAddPage';
+import { FlaskConical, Play, RotateCcw, Shield, Sparkles } from 'lucide-react';
+import { showToast, showAlert, showConfirm } from '@/components/GlobalAlertManager';
+import { setOfflineQueueActiveMode, clearSandboxOfflineQueue } from '@/lib/offlineSync';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 import { signatureQueue } from '@/lib/signatureQueue';
 import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
@@ -75,6 +78,11 @@ export default function Home() {
   const [showAdminAuthModal, setShowAdminAuthModal] = useState<boolean>(false);
   const [showSeasonModal, setShowSeasonModal] = useState<boolean>(false);
   const [activeSeasonCode, setActiveSeasonCode] = useState<string>('2026-2027');
+  const [calismaModu, setCalismaModu] = useState<'RESMI' | 'DENEME'>('RESMI');
+  const [modeSyncVersion, setModeSyncVersion] = useState<number>(0);
+  const [sandboxStats, setSandboxStats] = useState<any>(null);
+  const [officialStats, setOfficialStats] = useState<any>(null);
+  const [isSwitchingGlobalMode, setIsSwitchingGlobalMode] = useState<boolean>(false);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -389,11 +397,115 @@ export default function Home() {
         if (data.settings?.aktif_donem?.kod) {
           setActiveSeasonCode(data.settings.aktif_donem.kod);
         }
+        const incomingMode = data.calisma_modu || data.settings?.calisma_modu;
+        if (incomingMode === 'DENEME' || incomingMode === 'RESMI') {
+          setCalismaModu(incomingMode);
+          setOfflineQueueActiveMode(incomingMode);
+        }
+        if (data.settings?.sandbox_stats) {
+          setSandboxStats(data.settings.sandbox_stats);
+        }
+        if (data.settings?.official_stats) {
+          setOfficialStats(data.settings.official_stats);
+        }
       }
     } catch (e) {
       console.error('Error fetching settings:', e);
     }
   }, []);
+
+  const clearOpenRecordModals = useCallback(() => {
+    setDeliveryTarget(null);
+    setCancelTarget(null);
+    setHouseholdTarget(null);
+    setEditTarget(null);
+    setKomurIptalTarget(null);
+  }, []);
+
+  const handleGlobalModeSwitch = useCallback(async (targetMode: 'RESMI' | 'DENEME') => {
+    setIsSwitchingGlobalMode(true);
+    try {
+      signatureQueue.clear();
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'SET_CALISMA_MODU', calisma_modu: targetMode }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Çalışma modu değiştirilemedi');
+      }
+      setCalismaModu(targetMode);
+      setOfflineQueueActiveMode(targetMode);
+      setPendingSyncCount(getPendingOfflineCount());
+      beneficiariesMemoryCacheRef.current = null;
+      clearOpenRecordModals();
+      setModeSyncVersion((v) => v + 1);
+      showToast({
+        type: targetMode === 'DENEME' ? 'info' : 'success',
+        title: targetMode === 'DENEME' ? 'Deneme Modu Aktif Edildi' : 'Normal (Resmi) Moda Geçildi',
+        message: data.message,
+      });
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Hata',
+        message: err.message || 'Çalışma modu değiştirilirken hata oluştu.',
+      });
+      throw err;
+    } finally {
+      setIsSwitchingGlobalMode(false);
+    }
+  }, [clearOpenRecordModals]);
+
+  const handleGlobalResetSandbox = useCallback(async (seedFakeAfterReset: boolean = false) => {
+    const confirmed = await showConfirm({
+      title: seedFakeAfterReset ? 'Deneme Verilerini Sıfırla & Fake Veri Yükle' : 'Deneme Modu Verilerini Sıfırla',
+      message: seedFakeAfterReset
+        ? 'Deneme modundaki mevcut test işlemleri sıfırlanacak ve temiz örnek (fake) hane listeleri yeniden yüklenecektir. Asıl (Resmi) verilerinize kesinlikle dokunulmaz. Onaylıyor musunuz?'
+        : 'Deneme (Test) modundaki tüm test Excel listeleri, test haneleri ve deneme işlemleri tamamen sıfırlanacaktır (0 kayıt). Asıl (Resmi) listelerinize hiçbir şekilde dokunulmaz. Onaylıyor musunuz?',
+      type: 'warning',
+      confirmText: seedFakeAfterReset ? 'Evet, Sıfırla ve Fake Veri Yükle' : 'Evet, Deneme Modunu Sıfırla',
+      cancelText: 'Vazgeç',
+    });
+    if (!confirmed) return false;
+
+    setIsSwitchingGlobalMode(true);
+    try {
+      signatureQueue.clear();
+      clearSandboxOfflineQueue();
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'RESET_SANDBOX_DATA',
+          seed_fake_data: seedFakeAfterReset,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Deneme modu sıfırlanamadı');
+      }
+      beneficiariesMemoryCacheRef.current = null;
+      clearOpenRecordModals();
+      setModeSyncVersion((v) => v + 1);
+      showToast({
+        type: 'success',
+        title: seedFakeAfterReset ? 'Örnek (Fake) Veriler Yüklendi' : 'Deneme Modu Sıfırlandı',
+        message: data.message,
+      });
+      return true;
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Hata',
+        message: err.message || 'Deneme modu sıfırlanırken hata oluştu.',
+      });
+      return false;
+    } finally {
+      setIsSwitchingGlobalMode(false);
+    }
+  }, [clearOpenRecordModals]);
 
   const beneficiariesMemoryCacheRef = useRef<{
     data: any[];
@@ -635,16 +747,48 @@ export default function Home() {
       try {
         const res = await fetch('/api/sync/status');
         const data = await res.json();
-        if (data.success && data.lastSyncTime) {
-          if (!lastKnownSyncRef.current) {
-            lastKnownSyncRef.current = data.lastSyncTime;
-          } else if (data.lastSyncTime !== lastKnownSyncRef.current) {
-            // New delivery or update occurred across field staff!
-            lastKnownSyncRef.current = data.lastSyncTime;
-            fetchBeneficiaries(true);
-            fetchArchive();
-            fetchStats();
-            fetchActiveRouteCount();
+        if (data.success) {
+          let modeChangedOnServer = false;
+          if (data.calismaModu === 'DENEME' || data.calismaModu === 'RESMI') {
+            setCalismaModu((prev) => {
+              if (prev !== data.calismaModu) {
+                modeChangedOnServer = true;
+                signatureQueue.clear();
+                setOfflineQueueActiveMode(data.calismaModu);
+                setPendingSyncCount(getPendingOfflineCount());
+                beneficiariesMemoryCacheRef.current = null;
+                clearOpenRecordModals();
+                setModeSyncVersion((v) => v + 1);
+                showToast({
+                  type: data.calismaModu === 'DENEME' ? 'info' : 'success',
+                  title:
+                    data.calismaModu === 'DENEME'
+                      ? '🧪 Deneme Modu Aktif Edildi'
+                      : '🛡️ Normal (Resmi) Moda Geçildi',
+                  message:
+                    data.calismaModu === 'DENEME'
+                      ? 'Yönetici tarafından Deneme Modu açıldı. Şu anda ekranda deneme (fake) kayıtları gösterilmektedir.'
+                      : 'Deneme modu kapatıldı ve normal (resmi) vakıf kayıtları yüklendi.',
+                });
+              }
+              return data.calismaModu;
+            });
+          }
+          if (data.lastSyncTime || modeChangedOnServer) {
+            if (!lastKnownSyncRef.current && !modeChangedOnServer) {
+              lastKnownSyncRef.current = data.lastSyncTime || '';
+            } else if (modeChangedOnServer || data.lastSyncTime !== lastKnownSyncRef.current) {
+              // New delivery, mode switch or update occurred across field staff!
+              if (data.lastSyncTime) {
+                lastKnownSyncRef.current = data.lastSyncTime;
+              }
+              fetchSettings();
+              fetchBeneficiaries(true);
+              fetchArchive();
+              fetchTrucks();
+              fetchStats();
+              fetchActiveRouteCount();
+            }
           }
         }
       } catch (err) {
@@ -886,14 +1030,93 @@ export default function Home() {
         onOpenAuditLogs={() => setShowAuditLogsModal(true)}
         onOpenSeasonModal={() => setShowSeasonModal(true)}
         activeSeasonCode={activeSeasonCode}
+        calismaModu={calismaModu}
+        onToggleDenemeModu={async () => {
+          const nextMode = calismaModu === 'DENEME' ? 'RESMI' : 'DENEME';
+          await handleGlobalModeSwitch(nextMode);
+          await handleRefreshAll();
+        }}
         onLogout={() => handleLogout()}
         onUserUpdated={handleUserUpdated}
         onRefresh={handleRefreshAll}
         isRefreshing={isRefreshing || isSyncingOffline}
       />
 
+      {/* DENEME / TEST MODU AKTİFKEN TÜM EKRANLARDA GÖRÜNEN KÜRESEL UYARI BANDI */}
+      {calismaModu === 'DENEME' && (
+        <div className="bg-indigo-950 border-b-2 border-amber-400 text-white px-3 sm:px-6 py-2.5 shadow-md sticky top-0 z-40 no-print">
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="px-2 py-0.5 rounded-md bg-amber-400 text-indigo-950 font-black uppercase tracking-wider shrink-0 flex items-center gap-1">
+                <FlaskConical className="w-3.5 h-3.5" />
+                DENEME MODU AKTİF
+              </span>
+              <span className="font-semibold text-indigo-100 leading-snug">
+                Şu anda sistemdeki <strong>sahte (fake) deneme verilerini</strong> görüntülüyorsunuz. Tüm personel bu kayıtları görür; <strong>asıl (resmi) verileriniz (%100 korumalı) etkilenmez.</strong>
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white/15 border border-white/20 text-[11px] font-bold text-amber-200 shrink-0">
+                Deneme Verisi: {beneficiaries.length} Hane | Asıl Veri: {officialStats?.hane_sayisi ?? 0} Hane (Güvende)
+              </span>
+            </div>
+
+            {userRole === 'ADMIN' && (
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
+                {currentTab !== 'import' && (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentTab('import')}
+                    className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/25 text-[11px] font-bold transition-all"
+                  >
+                    Deneme Alanı
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={isSwitchingGlobalMode}
+                  onClick={async () => {
+                    const ok = await handleGlobalResetSandbox(true);
+                    if (ok) await handleRefreshAll();
+                  }}
+                  title="Deneme modundaki test işlemlerini sıfırla ve örnek (fake) hane listelerini yeniden yükle"
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-indigo-950 text-[11px] font-black flex items-center gap-1 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Fake Veri Yenile</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSwitchingGlobalMode}
+                  onClick={async () => {
+                    const ok = await handleGlobalResetSandbox(false);
+                    if (ok) await handleRefreshAll();
+                  }}
+                  title="Deneme modundaki tüm verileri sıfırla (boşalt)"
+                  className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black flex items-center gap-1 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Deneme Verilerini Sıfırla</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSwitchingGlobalMode}
+                  onClick={async () => {
+                    await handleGlobalModeSwitch('RESMI');
+                    await handleRefreshAll();
+                  }}
+                  title="Deneme modunu kapat ve hiçbir veri kaybı olmadan normal (resmi) işleyişe devam et"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-black flex items-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Deneme Modunu Kapat (Asıl Moda Dön)</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Container */}
-      <div className="app-container">
+      <div key={`main-view-${calismaModu}-${modeSyncVersion}`} className="app-container">
         {/* Tab 1: Sorgu & Dağıtım Listesi */}
         {currentTab === 'search' && (
           <>
@@ -942,6 +1165,7 @@ export default function Home() {
             userName={userName}
             defaultQuota={defaultQuota}
             activeSeasonCode={activeSeasonCode}
+            calismaModu={calismaModu}
             initialTcOrName={addHouseholdInitialQuery}
             onClearInitialQuery={() => setAddHouseholdInitialQuery('')}
             onSuccess={(createdBeneficiary) => {
@@ -1030,6 +1254,13 @@ export default function Home() {
           <ExcelImportPage
             userRole={userRole}
             activeSeasonCode={activeSeasonCode}
+            calismaModu={calismaModu}
+            sandboxStats={sandboxStats}
+            officialStats={officialStats}
+            onChangeCalismaModu={async (newMode) => {
+              await handleGlobalModeSwitch(newMode);
+              await handleRefreshAll();
+            }}
             onSwitchToAdmin={() => setShowAdminAuthModal(true)}
             onRefreshAll={handleRefreshAll}
           />

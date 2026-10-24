@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında veri satırı bulunamadı' }, { status: 400 });
     }
 
-    const { beneficiaries: benCol, importLogs: logsCol, importBatches: batchesCol, systemSettings } = await getDbCollections();
+    const { beneficiaries: benCol, importLogs: logsCol, importBatches: batchesCol, systemSettings, calismaModu, isSandboxMode } = await getDbCollections();
     await reconcileArchivedSeasonImports();
 
     const { nowIso, nowLocaleTr } = getIstanbulDate();
@@ -948,6 +948,8 @@ export async function POST(request: NextRequest) {
     await batchesCol.insertOne({
       batch_id: batchId,
       donem_kodu: activeSeasonCode,
+      calisma_modu: calismaModu,
+      is_sandbox: isSandboxMode,
       dosya_adi: file.name,
       dosya_boyutu: file.size,
       liste_turu: listeTuru,
@@ -966,9 +968,9 @@ export async function POST(request: NextRequest) {
       kullanici_adi: session.ad_soyad || session.username || 'Sistem Yöneticisi',
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'EXCEL_YUKLEME',
-      baslik: `Excel Dosyası Yüklendi (${listeAdiLabel})`,
-      detay: `"${file.name}" dosyasından [${listeAdiLabel}] kapsamında ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${elenenKayitlar.length} mükerrer kayıt elendi.`,
-      ek_bilgi: { batch_id: batchId, listeTuru, listeAdi: listeAdiLabel, totalRows, insertedCount, elenenCount: elenenKayitlar.length, uyariliCount: uyariliKayitlar.length },
+      baslik: `${isSandboxMode ? '[DENEME MODU] ' : ''}Excel Dosyası Yüklendi (${listeAdiLabel})`,
+      detay: `${isSandboxMode ? '[DENEME / TEST ORTAMI] ' : ''}"${file.name}" dosyasından [${listeAdiLabel}] kapsamında ${totalRows} satır işlendi: ${insertedCount} hak sahibi sisteme başarıyla aktarıldı, ${elenenKayitlar.length} mükerrer kayıt elendi.`,
+      ek_bilgi: { batch_id: batchId, calisma_modu: calismaModu, listeTuru, listeAdi: listeAdiLabel, totalRows, insertedCount, elenenCount: elenenKayitlar.length, uyariliCount: uyariliKayitlar.length },
     });
 
     const mukerrerTcCount = toInsertLogs.filter(l => l.durum === 'MUKERRER_TC').length;
@@ -980,6 +982,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      calismaModu,
+      isSandboxMode,
       batchId,
       dosyaAdi: file.name,
       listeTuru,
@@ -995,7 +999,7 @@ export async function POST(request: NextRequest) {
       mahalleOzet,
       elenenKayitlar, // Full array of eliminated records
       duplicateWarnings: elenenKayitlar, // backwards compatibility
-      message: `${totalRows} satırdan ${insertedCount} hak sahibi başarıyla sisteme aktarıldı. ${elenenKayitlar.length} mükerrer kayıt elendi ve sisteme eklenmedi.`,
+      message: `${isSandboxMode ? '[DENEME ALANI - RESMİ DEĞİLDİR] ' : ''}${totalRows} satırdan ${insertedCount} hak sahibi başarıyla sisteme aktarıldı. ${elenenKayitlar.length} mükerrer kayıt elendi ve sisteme eklenmedi.`,
     });
   } catch (error: any) {
     console.error('Error processing Excel import:', error);

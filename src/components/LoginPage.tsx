@@ -591,7 +591,21 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
           </form>
 
           {/* Security & KVKK Notice Footer */}
-          <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-center text-[11px] text-slate-600 space-y-2">
+          <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-center text-[11px] text-slate-600 space-y-2.5">
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('komur_open_android_helper'));
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-extrabold inline-flex items-center gap-1.5 shadow-2xs transition-all active:scale-95"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>Uygulama Yüklenmiyor mu? (Eski Android Çözümü & Hızlı Mod)</span>
+              </button>
+            </div>
             <div className="flex items-center justify-center gap-1.5 font-bold text-slate-700">
               <Shield className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
               <span>Resmi Kurum Bilgi Sistemi & KVKK Bildirimi</span>

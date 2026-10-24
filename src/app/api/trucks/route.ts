@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { truckDeliveries: trucksCol, beneficiaries: benCol, systemSettings: settingsCol } = await getDbCollections();
+    const { isSandboxMode, truckDeliveries: trucksCol, beneficiaries: benCol, systemSettings: settingsCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const q = asString(searchParams.get('q'), 100);
 
@@ -65,7 +65,10 @@ export async function GET(request: NextRequest) {
     const sonrakiTirSirasi = maxSira + 1;
 
     // Kuruma Gelecek Toplam Kömür Tahsisi ve Geriye Kalan Sevkiyat Miktarı
-    const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
+    const sandboxTahsisDoc = isSandboxMode
+      ? await settingsCol.findOne({ key: 'sandbox_toplam_tahsis_tonaj' })
+      : null;
+    const tahsisDoc = sandboxTahsisDoc || (await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' }));
     const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
     const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? parseFloat(Math.max(0, toplamTahsisTonaj - toplamNetTonaj).toFixed(3)) : 0;
     const tahsisTamamlanmaYuzdesi = toplamTahsisTonaj > 0 ? parseFloat(((toplamNetTonaj / toplamTahsisTonaj) * 100).toFixed(1)) : 0;

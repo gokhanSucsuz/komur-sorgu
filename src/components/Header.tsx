@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone
+  Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone, FlaskConical
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 import ProfileModal from '@/components/ProfileModal';
@@ -27,6 +27,8 @@ interface HeaderProps {
   onOpenAuditLogs?: () => void;
   onOpenSeasonModal?: () => void;
   activeSeasonCode?: string;
+  calismaModu?: 'RESMI' | 'DENEME';
+  onToggleDenemeModu?: () => void;
   onLogout?: () => void;
   onUserUpdated?: (user: { name: string; username: string }) => void;
   onRefresh: () => void;
@@ -52,6 +54,8 @@ export default function Header({
   onOpenAuditLogs,
   onOpenSeasonModal,
   activeSeasonCode = '2026-2027',
+  calismaModu = 'RESMI',
+  onToggleDenemeModu,
   onLogout,
   onUserUpdated,
   onRefresh,
@@ -154,6 +158,34 @@ export default function Header({
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
               {/* DESKTOP ONLY: Management Shortcuts (Hidden on mobile, moved to sub-ribbon) */}
               <div className="hidden sm:flex items-center gap-1 sm:gap-1.5">
+                {/* Admin Deneme Modu Toggle / Personnel Deneme Modu Badge */}
+                {userRole === 'ADMIN' && onToggleDenemeModu ? (
+                  <button
+                    onClick={onToggleDenemeModu}
+                    title={
+                      calismaModu === 'DENEME'
+                        ? 'Deneme Modu Aktif! Kapatıp Gerçek (Resmi) Moda dönmek için tıklayın'
+                        : 'Deneme (Test / Fake Veri) Modunu Aktif Et'
+                    }
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-extrabold transition-all active:scale-95 shadow-sm shrink-0 ${
+                      calismaModu === 'DENEME'
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-amber-400 ring-2 ring-amber-300/60'
+                        : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-900'
+                    }`}
+                  >
+                    <FlaskConical className={`w-3.5 h-3.5 ${calismaModu === 'DENEME' ? 'text-amber-300' : 'text-indigo-700'}`} />
+                    <span>{calismaModu === 'DENEME' ? 'Deneme Açık' : 'Deneme Modu'}</span>
+                  </button>
+                ) : calismaModu === 'DENEME' ? (
+                  <span
+                    title="Yönetici tarafından Deneme (Test) Modu aktif edildi. Ekrandaki kayıtlar deneme verileridir."
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white border border-amber-400 text-xs font-black shrink-0"
+                  >
+                    <FlaskConical className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Deneme Modu</span>
+                  </span>
+                ) : null}
+
                 {/* Admin Personnel Management Shortcut - Admin Only */}
                 {userRole === 'ADMIN' && onOpenPersonnelModal && (
                   <button
@@ -307,6 +339,32 @@ export default function Header({
 
           {/* MOBILE ONLY: Quick Management Ribbon (Horizontal scrollable, zero overflow or overlap) */}
           <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 pb-0.5 border-t border-slate-100/90 w-full">
+            {/* Admin Deneme Modu Toggle / Personnel Deneme Modu Badge on Mobile Ribbon */}
+            {userRole === 'ADMIN' && onToggleDenemeModu ? (
+              <button
+                type="button"
+                onClick={onToggleDenemeModu}
+                title={
+                  calismaModu === 'DENEME'
+                    ? 'Deneme Modunu Kapat (Gerçek Moda Dön)'
+                    : 'Deneme (Test / Fake Veri) Modunu Aktif Et'
+                }
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-extrabold shrink-0 shadow-2xs active:scale-95 ${
+                  calismaModu === 'DENEME'
+                    ? 'bg-indigo-600 text-white border-amber-400'
+                    : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-900'
+                }`}
+              >
+                <FlaskConical className={`w-3 h-3 ${calismaModu === 'DENEME' ? 'text-amber-300' : 'text-indigo-700'}`} />
+                <span>{calismaModu === 'DENEME' ? 'Deneme Açık' : 'Deneme Modu'}</span>
+              </button>
+            ) : calismaModu === 'DENEME' ? (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-white border border-amber-400 text-[11px] font-black shrink-0">
+                <FlaskConical className="w-3 h-3 text-amber-300" />
+                <span>Deneme Modu</span>
+              </span>
+            ) : null}
+
             {/* Quick Single Household Add Button on Mobile Ribbon */}
             {onTabChange && (
               <button
@@ -406,6 +464,21 @@ export default function Header({
                 <span>Kılavuz</span>
               </button>
             )}
+
+            {/* Old Android / App Install Helper Shortcut on Mobile Ribbon */}
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('komur_open_android_helper'));
+                }
+              }}
+              title="Uygulama Yüklenmiyor mu? Eski Model Android Kurulum & Hızlı Mod Çözümü"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-300 text-[11px] font-extrabold text-orange-900 shrink-0 shadow-2xs active:scale-95"
+            >
+              <Smartphone className="w-3 h-3 text-orange-700" />
+              <span>Eski Telefon Çözümü</span>
+            </button>
           </div>
 
           {/* Desktop Navigation Bar */}

@@ -144,6 +144,21 @@ button {
   border: 1px solid var(--border-card);
 }
 
+/* Eski Model Android / Düşük Donanım Hafif & Hızlı Mod (Lite Mode) */
+html.lite-mode *,
+html.lite-mode *::before,
+html.lite-mode *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+  box-shadow: none !important;
+}
+html.lite-mode .app-header,
+html.lite-mode .glass-panel {
+  background: #ffffff !important;
+}
+
 /* App Header - Light Mode */
 .app-header {
   position: sticky;

@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
 
     const {
       isFallback,
+      isSandboxMode,
+      calismaModu,
       beneficiaries: benCol,
       deliveryHistory: histCol,
       truckDeliveries: trucksCol,
@@ -21,8 +23,11 @@ export async function GET(request: NextRequest) {
       systemSettings: settingsCol,
     } = await getDbCollections();
 
-    // Target quota setting
-    const settingDoc = await settingsCol.findOne({ key: 'varsayilan_hedef_torba' });
+    // Target quota setting (isolated in sandbox mode if overridden)
+    const sandboxQuotaDoc = isSandboxMode
+      ? await settingsCol.findOne({ key: 'sandbox_varsayilan_hedef_torba' })
+      : null;
+    const settingDoc = sandboxQuotaDoc || (await settingsCol.findOne({ key: 'varsayilan_hedef_torba' }));
     const varsayilanHedefTorba = settingDoc ? parseInt(settingDoc.value, 10) : 34;
 
     let toplamVatandas = 0;
