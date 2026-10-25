@@ -4396,8 +4396,16 @@ img[src*="edirne-sydv-logo"] {
 .sm\:text-\[10px\]{font-size:10px}
 .sm\:text-3xl{font-size:1.875rem;line-height:2.25rem}
 .sm\:text-left{text-align:left}
+.sm\:flex-wrap{flex-wrap:wrap}
+.sm\:justify-end{justify-content:flex-end}
+.sm\:pt-0{padding-top:0rem}
+.sm\:border-t-0{border-top-width:0}
 }
 @media (min-width: 768px) {
+.md\:hidden{display:none !important}
+.md\:block{display:block !important}
+.md\:table{display:table !important}
+.md\:flex{display:flex !important}
 .md\:border-t-0{border-top-width:0}
 .md\:col-span-3{grid-column:span 3/span 3}
 .md\:col-span-6{grid-column:span 6/span 6}

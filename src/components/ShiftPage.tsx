@@ -724,14 +724,14 @@ export default function ShiftPage({
         </div>
       </div>
 
-      {/* FILTER BAR */}
-      <div className="p-3.5 rounded-2xl bg-slate-100/90 border border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* FILTER & ACTIONS BAR (MOBİL %100 ERGONOMİK & MASAÜSTÜ UYUMLU) */}
+      <div className="p-3.5 rounded-2xl bg-slate-100/90 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Month Filter */}
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-xs focus:outline-hidden"
+            className="w-full sm:w-auto px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-xs focus:outline-hidden"
           >
             <option value="ALL">Tüm Aylar</option>
             {availableMonths.map((m) => (
@@ -744,7 +744,7 @@ export default function ShiftPage({
             <select
               value={selectedPersonnel}
               onChange={(e) => setSelectedPersonnel(e.target.value)}
-              className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-xs focus:outline-hidden"
+              className="w-full sm:w-auto px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-xs focus:outline-hidden"
             >
               <option value="ALL">Tüm Personeller</option>
               {availableStaff.map((st) => (
@@ -754,35 +754,37 @@ export default function ShiftPage({
           )}
         </div>
 
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-            Toplam <strong>{shifts.length}</strong> çalışma saati
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
+          <span className="text-xs text-slate-600 font-bold">
+            Toplam <strong>{shifts.length}</strong> mesai
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              setReportTargetDate('ALL');
-              setShowReportModal(true);
-            }}
-            className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-            title="Seçili filtredeki mesaileri tutanak olarak görüntüle ve yazdır"
-          >
-            <Printer className="w-3.5 h-3.5 text-amber-600" />
-            <span>Tutanak / Yazdır</span>
-          </button>
-          <a
-            href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}`}
-            download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
-            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-            title="Seçili listeyi Excel olarak indir"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-700" />
-            <span>Excel</span>
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setReportTargetDate('ALL');
+                setShowReportModal(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+              title="Seçili filtredeki mesaileri tutanak olarak görüntüle ve yazdır"
+            >
+              <Printer className="w-3.5 h-3.5 text-amber-600" />
+              <span>Tutanak / Yazdır</span>
+            </button>
+            <a
+              href={`/api/export?type=shifts&month=${selectedMonth}&personel=${encodeURIComponent(selectedPersonnel)}`}
+              download={`Edirne_SYDV_Mesai_Raporu_${selectedMonth}_${selectedPersonnel}.xlsx`}
+              className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+              title="Seçili listeyi Excel olarak indir"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Excel</span>
+            </a>
+          </div>
         </div>
       </div>
 
-      {/* WORK HOURS RECORDS LIST / TABLE */}
+      {/* WORK HOURS RECORDS LIST / TABLE (%100 MOBİL KART + MASAÜSTÜ TABLO) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         {isLoading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
@@ -798,119 +800,240 @@ export default function ShiftPage({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <th className="p-3">Tarih</th>
-                  <th className="p-3">Personel</th>
-                  <th className="p-3 text-center">Saat Aralığı</th>
-                  <th className="p-3 text-center">Toplam Süre</th>
-                  <th className="p-3">Çalışılan Bölge / Not</th>
-                  <th className="p-3 text-right">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {shifts.map((shift) => {
-                  const sDate = new Date(shift.tarih + 'T00:00:00');
-                  const dayIdx = isNaN(sDate.getTime()) ? -1 : sDate.getDay();
-                  const isSaturday = dayIdx === 6;
-                  const isSunday = dayIdx === 0;
-                  const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[dayIdx];
+          <>
+            {/* MOBİL GÖRÜNÜM (MD ALTINDA: %100 ERGONOMİK & PRATİK DOKUNMATİK KARTLAR) */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {shifts.map((shift) => {
+                const sDate = new Date(shift.tarih + 'T00:00:00');
+                const dayIdx = isNaN(sDate.getTime()) ? -1 : sDate.getDay();
+                const isSaturday = dayIdx === 6;
+                const isSunday = dayIdx === 0;
+                const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[dayIdx];
+                const isOngoing = shift.durum === 'DEVAM_EDIYOR';
 
-                  return (
-                    <tr
-                      key={shift.id || shift._id}
-                      className={`transition-colors border-l-4 ${
-                        isSaturday
-                          ? 'bg-amber-50/70 hover:bg-amber-100/70 border-l-amber-500'
-                          : isSunday
-                          ? 'bg-purple-50/70 hover:bg-purple-100/70 border-l-purple-500'
-                          : 'hover:bg-slate-50 border-l-transparent'
-                      }`}
-                    >
-                      {/* Tarih & Belirgin Gün Rozeti */}
-                      <td className="p-3 whitespace-nowrap">
-                        <span className="font-extrabold text-slate-900 block">{formatTrDate(shift.tarih)}</span>
-                        {isSaturday ? (
-                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs">
-                            <Calendar className="w-3 h-3 text-white" />
-                            Cumartesi Mesaisi
-                          </span>
-                        ) : isSunday ? (
-                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs">
-                            <Sparkles className="w-3 h-3 text-white" />
-                            Pazar Full Mesai
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{dayName}</span>
-                        )}
-                      </td>
-
-                      {/* Personel */}
-                      <td className="p-3 font-bold text-slate-800 whitespace-nowrap">
-                        {shift.personel_adi}
-                      </td>
-
-                      {/* Saat Aralığı */}
-                      <td className="p-3 text-center whitespace-nowrap">
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 font-bold text-slate-800 text-[11px]">
-                          {shift.baslama_saati || '-'} — {shift.bitis_saati || '-'}
+                return (
+                  <div
+                    key={shift.id || shift._id}
+                    className={`p-4 transition-colors border-l-4 ${
+                      isSaturday
+                        ? 'bg-amber-50/50 hover:bg-amber-100/60 border-l-amber-500'
+                        : isSunday
+                        ? 'bg-purple-50/50 hover:bg-purple-100/60 border-l-purple-500'
+                        : isOngoing
+                        ? 'bg-blue-50/50 hover:bg-blue-100/60 border-l-blue-500'
+                        : 'hover:bg-slate-50 border-l-emerald-600'
+                    }`}
+                  >
+                    {/* 1. Üst Satır: Tarih & Gün Rozeti + Toplam Süre Rozeti */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-extrabold text-slate-900 text-sm block">
+                          {formatTrDate(shift.tarih)}
                         </span>
-                      </td>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {isSaturday ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs">
+                              <Calendar className="w-3 h-3 text-white" />
+                              Cumartesi Mesaisi
+                            </span>
+                          ) : isSunday ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs">
+                              <Sparkles className="w-3 h-3 text-white" />
+                              Pazar Full Mesai
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
+                              {dayName}
+                            </span>
+                          )}
+                          {isOngoing && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-600 text-white animate-pulse">
+                              Devam Ediyor
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
-                      {/* Toplam Süre */}
-                      <td className="p-3 text-center whitespace-nowrap">
-                        <span className="font-extrabold text-emerald-700 text-xs">
-                          {formatMinutes(shift.toplam_dakika || 0)}
+                      {/* Süre Rozeti */}
+                      <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-900 font-black text-xs shrink-0 flex items-center gap-1.5 shadow-2xs">
+                        <Clock className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>{formatMinutes(shift.toplam_dakika || 0)}</span>
+                      </span>
+                    </div>
+
+                    {/* 2. Orta Blok: Personel Bilgisi & Saat Aralığı */}
+                    <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
+                          {shift.personel_adi ? shift.personel_adi.charAt(0).toUpperCase() : 'P'}
+                        </div>
+                        <span className="font-black text-slate-800 text-xs truncate">
+                          {shift.personel_adi}
                         </span>
-                      </td>
+                      </div>
 
-                      {/* Bölge & Not */}
-                      <td className="p-3 text-slate-600">
+                      <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-800 text-xs shrink-0 tracking-wide">
+                        {shift.baslama_saati || '-'} — {shift.bitis_saati || '-'}
+                      </span>
+                    </div>
+
+                    {/* 3. Çalışılan Bölge ve Notlar (Varsa) */}
+                    {(shift.mahalleler || shift.notlar) && (
+                      <div className="mt-2 text-xs space-y-1">
                         {shift.mahalleler && (
-                          <span className="font-semibold text-slate-800 block text-[11px]">
-                            📍 {shift.mahalleler}
-                          </span>
+                          <div className="flex items-start gap-1.5 font-bold text-slate-700">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                            <span>{shift.mahalleler}</span>
+                          </div>
                         )}
                         {shift.notlar && (
-                          <span className="text-[11px] text-slate-500 italic block">
-                            {shift.notlar}
+                          <p className="text-[11px] text-slate-500 italic pl-5">
+                            &ldquo;{shift.notlar}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4. İşlem Butonları (Mobilde Parmakla Kolay Dokunulabilir Geniş Butonlar) */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingShift(shift)}
+                        className="flex-1 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Düzenle</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteShift(shift)}
+                        className="py-2 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                        title="Mesai Kaydını Sil"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Sil</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ (MD VE ÜZERİNDE AKTİF) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                    <th className="p-3">Tarih</th>
+                    <th className="p-3">Personel</th>
+                    <th className="p-3 text-center">Saat Aralığı</th>
+                    <th className="p-3 text-center">Toplam Süre</th>
+                    <th className="p-3">Çalışılan Bölge / Not</th>
+                    <th className="p-3 text-right">İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {shifts.map((shift) => {
+                    const sDate = new Date(shift.tarih + 'T00:00:00');
+                    const dayIdx = isNaN(sDate.getTime()) ? -1 : sDate.getDay();
+                    const isSaturday = dayIdx === 6;
+                    const isSunday = dayIdx === 0;
+                    const dayName = isNaN(sDate.getTime()) ? '' : TR_DAYS[dayIdx];
+
+                    return (
+                      <tr
+                        key={shift.id || shift._id}
+                        className={`transition-colors border-l-4 ${
+                          isSaturday
+                            ? 'bg-amber-50/70 hover:bg-amber-100/70 border-l-amber-500'
+                            : isSunday
+                            ? 'bg-purple-50/70 hover:bg-purple-100/70 border-l-purple-500'
+                            : 'hover:bg-slate-50 border-l-transparent'
+                        }`}
+                      >
+                        {/* Tarih & Belirgin Gün Rozeti */}
+                        <td className="p-3 whitespace-nowrap">
+                          <span className="font-extrabold text-slate-900 block">{formatTrDate(shift.tarih)}</span>
+                          {isSaturday ? (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs">
+                              <Calendar className="w-3 h-3 text-white" />
+                              Cumartesi Mesaisi
+                            </span>
+                          ) : isSunday ? (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs">
+                              <Sparkles className="w-3 h-3 text-white" />
+                              Pazar Full Mesai
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{dayName}</span>
+                          )}
+                        </td>
+
+                        {/* Personel */}
+                        <td className="p-3 font-bold text-slate-800 whitespace-nowrap">
+                          {shift.personel_adi}
+                        </td>
+
+                        {/* Saat Aralığı */}
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-100 font-bold text-slate-800 text-[11px]">
+                            {shift.baslama_saati || '-'} — {shift.bitis_saati || '-'}
                           </span>
-                        )}
-                        {!shift.mahalleler && !shift.notlar && (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* İşlemler (Düzenle & Sil) */}
-                      <td className="p-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setEditingShift(shift)}
-                            className="p-1.5 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors"
-                            title="Çalışma Saatini Düzenle"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                        {/* Toplam Süre */}
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <span className="font-extrabold text-emerald-700 text-xs">
+                            {formatMinutes(shift.toplam_dakika || 0)}
+                          </span>
+                        </td>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteShift(shift)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
-                            title="Kaydı Sil"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        {/* Bölge & Not */}
+                        <td className="p-3 text-slate-600">
+                          {shift.mahalleler && (
+                            <span className="font-semibold text-slate-800 block text-[11px]">
+                              📍 {shift.mahalleler}
+                            </span>
+                          )}
+                          {shift.notlar && (
+                            <span className="text-[11px] text-slate-500 italic block">
+                              {shift.notlar}
+                            </span>
+                          )}
+                          {!shift.mahalleler && !shift.notlar && (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* İşlemler (Düzenle & Sil) */}
+                        <td className="p-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingShift(shift)}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors"
+                              title="Çalışma Saatini Düzenle"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteShift(shift)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                              title="Kaydı Sil"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

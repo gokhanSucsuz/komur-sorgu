@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Target, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { Target, CheckCircle2, AlertCircle, X, ShieldAlert } from 'lucide-react';
+import { showConfirm, showToast } from './GlobalAlertManager';
 
 interface QuotaModalProps {
   currentQuota: number;
@@ -26,6 +27,20 @@ export default function QuotaModal({
       return;
     }
 
+    // Yanlışlıkla basılmaları önlemek için zorunlu kullanıcı onayı
+    const confirmed = await showConfirm({
+      title: 'Hane Kömür Kotasını Değiştir',
+      message: `Hane başı kömür dağıtım kotasını ${currentQuota || 34} torbadan ${quotaVal} torbaya (${(quotaVal * 25).toLocaleString('tr-TR')} kg / hane) güncellemek istediğinize emin misiniz?${
+        updateExisting
+          ? '\n\n⚠️ Dikkat: Mevcut bekleyen ve eksik teslimatlı tüm hanelerin hedef kotası da güncellenecektir.'
+          : '\n\nℹ️ Not: Sadece bundan sonra eklenecek yeni haneler bu kotayı alacaktır.'
+      }`,
+      type: 'warning',
+      confirmText: 'Evet, Kotayı Güncelle',
+      cancelText: 'Vazgeç',
+    });
+    if (!confirmed) return;
+
     setIsSubmitting(true);
     setErrorMsg('');
 
@@ -43,6 +58,12 @@ export default function QuotaModal({
       if (!data.success) {
         throw new Error(data.error || 'Ayar kaydedilemedi');
       }
+
+      showToast({
+        type: 'success',
+        title: 'Kota Başarıyla Güncellendi',
+        message: `Hane kömür kotası ${quotaVal} torba olarak kaydedildi.`
+      });
 
       onSuccess();
       onClose();
