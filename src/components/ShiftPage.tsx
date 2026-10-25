@@ -128,20 +128,26 @@ export default function ShiftPage({
         setShifts(shiftList);
         if (data.availableMonths) setAvailableMonths(data.availableMonths);
 
-        // Collect unique staff list
+        // Collect unique staff list (yalnızca gerçekten mesai kaydı olan personeller).
+        // Yönetici kendi adı için mesai kaydı yoksa filtre listesinde boş seçenek olarak görünmez.
         const staffSet = new Set<string>();
         shiftList.forEach((s: any) => {
           if (s.personel_adi) staffSet.add(s.personel_adi);
         });
-        if (userName) staffSet.add(userName);
-        setAvailableStaff(Array.from(staffSet));
+        if (userName && userRole !== 'ADMIN') staffSet.add(userName);
+        setAvailableStaff((prev) => {
+          // Personel filtresi seçildiğinde diğer personellerin listeden kaybolmaması için önceki liste korunur
+          const merged = new Set<string>(prev.filter((p) => userRole !== 'ADMIN' || p !== userName || staffSet.has(p)));
+          staffSet.forEach((n) => merged.add(n));
+          return Array.from(merged);
+        });
       }
     } catch (err) {
       console.error('Error fetching shifts:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedPersonnel, selectedMonth, userName]);
+  }, [selectedPersonnel, selectedMonth, userName, userRole]);
 
   useEffect(() => {
     fetchShifts();

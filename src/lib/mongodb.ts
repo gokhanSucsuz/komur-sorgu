@@ -1936,7 +1936,8 @@ export async function seedSandboxFakeData(options?: {
 
   const quotaDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
   const defaultQuota = quotaDoc ? parseInt(quotaDoc.value, 10) || 34 : 34;
-  const creator = options?.createdBy || 'Sistem Yöneticisi (Deneme Modu)';
+  // Fake veri içinde gerçek yönetici/personel adı yer almaz; tüm örnek kayıtlar sahte bir kullanıcıya atfedilir.
+  const creator = 'Deneme Yöneticisi';
 
   const mainBatchId = `BATCH_DENEME_ANA_${activeSeasonCode}`;
   const ekBatchId = `BATCH_EK_LISTE_${activeSeasonCode}`;
