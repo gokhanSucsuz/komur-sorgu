@@ -52,7 +52,7 @@ import {
 interface SingleHouseholdAddPageProps {
   records: any[];
   mahalleler: any[];
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
   defaultQuota?: number;
   initialTcOrName?: string;

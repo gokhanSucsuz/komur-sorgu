@@ -7,7 +7,7 @@ export type NavTab = 'search' | 'add_household' | 'route' | 'shift' | 'analytics
 interface BottomNavProps {
   currentTab: NavTab;
   onTabChange: (tab: NavTab) => void;
-  userRole?: 'ADMIN' | 'PERSONEL';
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   hasActiveShift?: boolean;
   incompleteDeliveriesCount?: number;
   importErrorsCount?: number;
@@ -75,11 +75,16 @@ export default function BottomNav({
     }
   ];
 
-  // Restrict Analytics and Excel tabs strictly to ADMIN (Archive and Hane Ekle are open to all users)
-  const adminOnlyTabs: NavTab[] = ['analytics', 'import'];
-  const visibleTabs = tabs.filter(
-    (tab) => !adminOnlyTabs.includes(tab.id) || userRole === 'ADMIN'
-  );
+  // Tab restrictions:
+  // - import (Excel): strictly ADMIN
+  // - analytics: ADMIN and MUDUR
+  // - add_household: ADMIN and PERSONEL (hidden for MUDUR as Müdür cannot add/modify)
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.id === 'import') return userRole === 'ADMIN';
+    if (tab.id === 'analytics') return userRole === 'ADMIN' || userRole === 'MUDUR';
+    if (tab.id === 'add_household') return userRole !== 'MUDUR';
+    return true;
+  });
 
   return (
     <nav className="mobile-nav-bar no-print lg:hidden" role="navigation" aria-label="Ana Menü">

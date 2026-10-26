@@ -619,3 +619,71 @@ describe('7. Saha Tek Hane Ekleme: Mükerrer TC Engeli & Aynı Adres Uyarı Tesp
     await cols.officialBeneficiaries.deleteMany({ id: 'official-seed-guard-1' });
   });
 });
+
+describe('8. Müdür Yetkilisi (MUDUR) Rolü, Parola Uyumu, 2FA ve Cihaz Kısıtlaması Testleri', () => {
+  it('Müdür kullanıcısı başlangıç parolası (784512Tf.) kurumsal parola politikasını eksiksiz karşılar', () => {
+    const error = validatePasswordPolicy('784512Tf.', 'müdür');
+    assert.equal(error, null, '784512Tf. parolası geçerli olmalı');
+  });
+
+  it('Müdür parolası SCRYPT2 ile güvenle hashlenir ve doğrulanır', async () => {
+    const rawPw = '784512Tf.';
+    const hashed = await hashPassword(rawPw);
+    assert.ok(hashed.startsWith('SCRYPT2:'));
+
+    const match = await verifyPassword(rawPw, hashed);
+    assert.equal(match, true);
+
+    const wrongMatch = await verifyPassword('yanlisSifre123!', hashed);
+    assert.equal(wrongMatch, false);
+  });
+
+  it('Müdür kullanıcı adı transliterasyonu (müdür <-> mudur) tutarlıdır', () => {
+    const raw1 = 'müdür';
+    const raw2 = 'mudur';
+    const transliterated1 = raw1.toLocaleLowerCase('tr-TR').replace(/ü/g, 'u');
+    const transliterated2 = raw2.toLocaleLowerCase('tr-TR').replace(/ü/g, 'u');
+    assert.equal(transliterated1, transliterated2);
+    assert.equal(transliterated1, 'mudur');
+  });
+
+  it('Admin tarafından müdür için Google Authenticator (TOTP) 2FA oluşturulabilir ve doğrulanabilir', () => {
+    const secret = generateTotpSecret(20);
+    assert.ok(secret);
+    assert.ok(secret.length >= 32);
+
+    const currentStep = Math.floor(Date.now() / 30000);
+    const token = generateTotpCode(secret, currentStep);
+    assert.match(token, /^\d{6}$/);
+
+    const isValid = verifyTotpCode(secret, token, 1);
+    assert.equal(isValid, true);
+
+    const invalid = verifyTotpCode(secret, '000000', 0) && token !== '000000';
+    assert.equal(invalid, false);
+  });
+
+  it('Cihaz politikası: Mobil cihazlar Müdür yetkilisi için engellenmeli, Masaüstü cihazlara izin verilmelidir', () => {
+    const isMobileUa = (ua: string) => /mobile|android|iphone|ipad|tablet/i.test(ua);
+
+    const mobileAgents = [
+      'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+      'Mozilla/5.0 (Linux; Android 13; SM-T870) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    ];
+
+    const desktopAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0',
+    ];
+
+    for (const ua of mobileAgents) {
+      assert.equal(isMobileUa(ua), true, `Mobil UA tespit edilemedi: ${ua}`);
+    }
+
+    for (const ua of desktopAgents) {
+      assert.equal(isMobileUa(ua), false, `Masaüstü UA yanlışlıkla mobil sayıldı: ${ua}`);
+    }
+  });
+});

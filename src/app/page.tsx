@@ -47,7 +47,7 @@ export default function Home() {
   const [addHouseholdInitialQuery, setAddHouseholdInitialQuery] = useState<string>('');
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [userRole, setUserRole] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
+  const [userRole, setUserRole] = useState<'ADMIN' | 'PERSONEL' | 'MUDUR'>('PERSONEL');
   const [userName, setUserName] = useState<string>('Saha Personeli');
   const [userUsername, setUserUsername] = useState<string>('');
   const [userTeam, setUserTeam] = useState<string>('');
@@ -283,7 +283,7 @@ export default function Home() {
       migrateSensitiveStorageKeys();
       const savedLogin = getSecureItem('komur_logged_in');
       const savedLoginTime = getSecureItem('komur_login_time');
-      const savedRole = getSecureItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | null;
+      const savedRole = getSecureItem('komur_user_role') as 'ADMIN' | 'PERSONEL' | 'MUDUR' | null;
       const savedName = getSecureItem('komur_user_name');
       const savedUsername = getSecureItem('komur_username');
       const savedToken = getSecureItem('komur_session_token');
@@ -355,7 +355,7 @@ export default function Home() {
   }, [isLoggedIn, checkActiveSession]);
 
   const handleLoginSuccess = (user: {
-    role: 'ADMIN' | 'PERSONEL';
+    role: 'ADMIN' | 'PERSONEL' | 'MUDUR';
     name: string;
     username: string;
     session_token?: string;
@@ -513,7 +513,7 @@ export default function Home() {
     eksikHaneler: any[];
   } | null>(null);
 
-  const handleRoleChange = (role: 'ADMIN' | 'PERSONEL', name: string, username?: string, sessionToken?: string) => {
+  const handleRoleChange = (role: 'ADMIN' | 'PERSONEL' | 'MUDUR', name: string, username?: string, sessionToken?: string) => {
     setUserRole(role);
     setUserName(name);
     setSecureItem('komur_user_role', role);
@@ -814,10 +814,15 @@ export default function Home() {
     };
   }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount]);
 
-  // Tab protection: Non-admin can never view 'analytics' or 'import' tabs (Archive is open to all users)
+  // Tab protection: Non-admin can never view 'import' tab; Personel can never view 'analytics' tab; Mudur can never view 'add_household'
   useEffect(() => {
-    const adminOnlyTabs: NavTab[] = ['analytics', 'import'];
-    if (userRole !== 'ADMIN' && adminOnlyTabs.includes(currentTab)) {
+    if (userRole !== 'ADMIN' && currentTab === 'import') {
+      setCurrentTab('search');
+    }
+    if (userRole === 'PERSONEL' && currentTab === 'analytics') {
+      setCurrentTab('search');
+    }
+    if (userRole === 'MUDUR' && currentTab === 'add_household') {
       setCurrentTab('search');
     }
   }, [userRole, currentTab]);
@@ -1016,6 +1021,9 @@ export default function Home() {
             setShowAdminAuthModal(true);
             return;
           }
+          if (tab === 'add_household' && userRole === 'MUDUR') {
+            return;
+          }
           setCurrentTab(tab);
         }}
         incompleteDeliveriesCount={eksikHaneler.length}
@@ -1131,6 +1139,7 @@ export default function Home() {
             <BeneficiaryList
               records={beneficiaries}
               mahalleler={mahalleler}
+              userRole={userRole}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               selectedMahalleler={selectedMahalleler}
@@ -1219,8 +1228,8 @@ export default function Home() {
           />
         )}
 
-        {/* Tab 2: İstatistik & Resmi PDF Raporlama (Sadece Yönetici) */}
-        {currentTab === 'analytics' && userRole === 'ADMIN' && (
+        {/* Tab 2: İstatistik & Resmi PDF Raporlama (Yönetici ve Müdür Yetkilisi) */}
+        {currentTab === 'analytics' && (userRole === 'ADMIN' || userRole === 'MUDUR') && (
           <AnalyticsPage
             userRole={userRole}
             onOpenQuotaModal={() => setShowQuotaModal(true)}
@@ -1235,6 +1244,7 @@ export default function Home() {
             groupedDays={archiveGroupedDays}
             allRecords={archiveAllRecords}
             stats={archiveStats}
+            userRole={userRole}
             onOpenCancel={(record) => setCancelTarget(record)}
           />
         )}
@@ -1301,6 +1311,9 @@ export default function Home() {
         onTabChange={(tab) => {
           if (tab === 'import' && userRole !== 'ADMIN') {
             setShowAdminAuthModal(true);
+            return;
+          }
+          if (tab === 'add_household' && userRole === 'MUDUR') {
             return;
           }
           setCurrentTab(tab);

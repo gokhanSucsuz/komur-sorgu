@@ -12,6 +12,7 @@ interface DeliveryArchiveProps {
   stats: any;
   onOpenCancel: (record: any) => void;
   isLoading?: boolean;
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 export default function DeliveryArchive({
@@ -19,7 +20,8 @@ export default function DeliveryArchive({
   allRecords,
   stats,
   onOpenCancel,
-  isLoading = false
+  isLoading = false,
+  userRole = 'PERSONEL'
 }: DeliveryArchiveProps) {
   const [subTab, setSubTab] = useState<'DELIVERIES' | 'CANCELLATIONS'>('DELIVERIES');
   const [searchQuery, setSearchQuery] = useState('');
@@ -359,14 +361,16 @@ export default function DeliveryArchive({
                                 {item.personel && <span> • Pers: {item.personel}</span>}
                               </div>
 
-                              {/* Teslimat İptal Butonu */}
-                              <button
-                                onClick={() => onOpenCancel(item)}
-                                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-bold shrink-0 flex items-center gap-1 active:scale-95 transition-all shadow-xs"
-                              >
-                                <Undo2 className="w-3 h-3" />
-                                Hatalı Teslimat İptal Et
-                              </button>
+                              {/* Teslimat İptal Butonu (Müdür yetkilisi için gizli) */}
+                              {userRole !== 'MUDUR' && (
+                                <button
+                                  onClick={() => onOpenCancel(item)}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-bold shrink-0 flex items-center gap-1 active:scale-95 transition-all shadow-xs"
+                                >
+                                  <Undo2 className="w-3 h-3" />
+                                  Hatalı Teslimat İptal Et
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}

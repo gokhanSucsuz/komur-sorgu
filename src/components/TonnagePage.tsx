@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
@@ -13,7 +13,7 @@ interface TonnagePageProps {
   stats: any;
   onRefresh: () => void;
   isLoading?: boolean;
-  userRole?: 'ADMIN' | 'PERSONEL';
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 export default function TonnagePage({
@@ -463,17 +463,26 @@ export default function TonnagePage({
               <span>Tonaj Raporunu Yazdır</span>
             </button>
 
-            <button
-              onClick={() => {
-                resetAddForm();
-                setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
-                setShowAddModal(true);
-              }}
-              className="btn-primary text-xs py-2 px-3 shadow-md"
-            >
-              <Plus className="w-4 h-4 text-white" />
-              Yeni Tır Girişi
-            </button>
+            {userRole === 'MUDUR' && (
+              <span className="px-2.5 py-1.5 bg-purple-50 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                <span>İzleme Modu</span>
+              </span>
+            )}
+
+            {userRole === 'ADMIN' && (
+              <button
+                onClick={() => {
+                  resetAddForm();
+                  setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
+                  setShowAddModal(true);
+                }}
+                className="btn-primary text-xs py-2 px-3 shadow-md"
+              >
+                <Plus className="w-4 h-4 text-white" />
+                Yeni Tır Girişi
+              </button>
+            )}
           </div>
         </div>
 
@@ -831,41 +840,43 @@ export default function TonnagePage({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => openEditTruckModal(t)}
-                      title="Bu tır kaydının bilgilerini düzenle"
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
-                    >
-                      <Pencil className="w-3 h-3 text-slate-600" />
-                      <span>Düzenle</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingTruckId(null);
-                        setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
-                        const todayStr = todayDefault();
-                        setTarih(todayStr);
-                        setOcakCikisTarihi(todayStr);
-                        applyTruckTemplate(t);
-                        setShowAddModal(true);
-                      }}
-                      title="Bu tırın bilgilerini şablon olarak kullanarak yeni tır girişi aç"
-                      className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
-                    >
-                      <Copy className="w-3 h-3" />
-                      <span>Şablon Al</span>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTruck(t.id, t.plaka)}
-                      title="Tır Kaydını Sil"
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {userRole === 'ADMIN' && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openEditTruckModal(t)}
+                        title="Bu tır kaydının bilgilerini düzenle"
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
+                      >
+                        <Pencil className="w-3 h-3 text-slate-600" />
+                        <span>Düzenle</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingTruckId(null);
+                          setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
+                          const todayStr = todayDefault();
+                          setTarih(todayStr);
+                          setOcakCikisTarihi(todayStr);
+                          applyTruckTemplate(t);
+                          setShowAddModal(true);
+                        }}
+                        title="Bu tırın bilgilerini şablon olarak kullanarak yeni tır girişi aç"
+                        className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Şablon Al</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTruck(t.id, t.plaka)}
+                        title="Tır Kaydını Sil"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Ocak Çıkış & Sahaya Geliş Tarihleri Satırı */}

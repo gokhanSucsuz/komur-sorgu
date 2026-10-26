@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { 
   Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone, FlaskConical
+  Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone, FlaskConical, Building2
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 import ProfileModal from '@/components/ProfileModal';
 
 interface HeaderProps {
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
   defaultQuota?: number;
   currentTab?: NavTab;
@@ -115,11 +115,16 @@ export default function Header({
     }
   ];
 
-  // Restrict Analytics and Excel tabs strictly to ADMIN (Archive and Tek Hane Ekle are open to all users)
-  const adminOnlyTabs: NavTab[] = ['analytics', 'import'];
-  const visibleNavTabs = allNavTabs.filter(
-    (tab) => !adminOnlyTabs.includes(tab.id) || userRole === 'ADMIN'
-  );
+  // Restrict tabs according to role:
+  // - import (Excel): strictly ADMIN
+  // - analytics: ADMIN and MUDUR
+  // - add_household: ADMIN and PERSONEL (hidden for MUDUR as Müdür cannot add/modify)
+  const visibleNavTabs = allNavTabs.filter((tab) => {
+    if (tab.id === 'import') return userRole === 'ADMIN';
+    if (tab.id === 'analytics') return userRole === 'ADMIN' || userRole === 'MUDUR';
+    if (tab.id === 'add_household') return userRole !== 'MUDUR';
+    return true;
+  });
 
   return (
     <>
@@ -314,6 +319,11 @@ export default function Header({
                   <>
                     <Shield className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span className="text-amber-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Gökhan SUÇSUZ'}</span>
+                  </>
+                ) : userRole === 'MUDUR' ? (
+                  <>
+                    <Building2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span className="text-purple-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Müdür Yetkilisi'}</span>
                   </>
                 ) : (
                   <>

@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone, QrCode, RefreshCw, X, Check } from 'lucide-react';
+import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone, QrCode, RefreshCw, X, Check, Building2 } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: (user: {
-    role: 'ADMIN' | 'PERSONEL';
+    role: 'ADMIN' | 'PERSONEL' | 'MUDUR';
     name: string;
     username: string;
     session_token?: string;
@@ -17,7 +17,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: LoginPageProps) {
-  const [activeTab, setActiveTab] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
+  const [activeTab, setActiveTab] = useState<'ADMIN' | 'PERSONEL' | 'MUDUR'>('PERSONEL');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -172,6 +172,11 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
       let targetUser = username;
       if (activeTab === 'ADMIN') {
         targetUser = username.trim() || 'admin';
+      } else if (activeTab === 'MUDUR') {
+        if (isMobileDevice) {
+          throw new Error('Müdür yetkilisi hesabı yalnızca bilgisayardan erişime açıktır. Mobil cihazlardan giriş yapılamaz.');
+        }
+        targetUser = username.trim() || 'müdür';
       } else if (selectedStaff) {
         targetUser = selectedStaff.username;
       }
@@ -256,7 +261,7 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
       {/* Main Login Card - Constrained on Desktop & Fluid on Mobile */}
       <div className="login-card-container">
         <div className="login-main-card">
-          {/* Tab Toggle: Personel vs Admin */}
+          {/* Tab Toggle: Personel vs Müdür vs Admin */}
           <div className="p-4 pb-2 border-b border-slate-100">
             <div className="p-1 rounded-2xl bg-slate-100 border border-slate-200 flex gap-1.5">
               <button
@@ -268,14 +273,34 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                   setRequires2fa(false);
                   setTotpCode('');
                 }}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+                className={`flex-1 py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
                   activeTab === 'PERSONEL'
                     ? 'bg-white text-sky-900 shadow-md border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <User className="w-4 h-4 text-sky-600" />
-                <span>Saha Personeli</span>
+                <User className="w-3.5 h-3.5 text-sky-600" />
+                <span className="truncate">Saha</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('MUDUR');
+                  setErrorMsg('');
+                  setPassword('');
+                  setUsername('müdür');
+                  setRequires2fa(false);
+                  setTotpCode('');
+                }}
+                className={`flex-1 py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
+                  activeTab === 'MUDUR'
+                    ? 'bg-white text-purple-900 shadow-md border border-purple-200 ring-1 ring-purple-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5 text-purple-600" />
+                <span className="truncate">Müdür</span>
               </button>
 
               <button
@@ -288,17 +313,44 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                   setRequires2fa(false);
                   setTotpCode('');
                 }}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+                className={`flex-1 py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
                   activeTab === 'ADMIN'
                     ? 'bg-white text-amber-900 shadow-md border border-slate-200'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Shield className="w-4 h-4 text-amber-600" />
-                <span>Yönetici (Admin)</span>
+                <Shield className="w-3.5 h-3.5 text-amber-600" />
+                <span className="truncate">Yönetici</span>
               </button>
             </div>
           </div>
+
+          {/* Hardware & Device Enforcement Banners */}
+          {activeTab === 'MUDUR' && (
+            <div className="px-6 pt-3 pb-0">
+              {isMobileDevice ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 text-xs flex items-start gap-2.5 shadow-2xs">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold text-rose-950">Bilgisayar Erişimi Zorunludur</p>
+                    <p className="text-[11px] text-rose-800 font-medium mt-0.5">
+                      Müdür yetkilisi hesabı kurum güvenlik politikası gereğince <b>yalnızca masaüstü veya dizüstü bilgisayarlardan</b> erişime açıktır. Mobil cihazlardan giriş yapılamaz.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-2xl bg-purple-50/90 border border-purple-200 text-purple-950 text-xs flex items-start gap-2.5 shadow-2xs">
+                  <Building2 className="w-4 h-4 shrink-0 text-purple-600 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold text-purple-950">Müdür Yetkilisi İzleme ve Raporlama Girişi</p>
+                    <p className="text-[11px] text-purple-800 font-medium mt-0.5">
+                      Dağıtım yapan personelleri, rotaları, teslimat istatistiklerini ve kantar tonaj durumunu bilgisayarınızdan canlı izleyebilir ve resmi rapor alabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Hardware & Device Enforcement Banners */}
           {activeTab === 'ADMIN' && isMobileDevice && (
@@ -475,6 +527,53 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                   </div>
                 )}
 
+                {/* MUDUR LOGIN VIEW */}
+                {activeTab === 'MUDUR' && (
+                  <div className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                        Müdür Kullanıcı Adı
+                      </label>
+                      <input
+                        type="text"
+                        autoComplete="username"
+                        enterKeyHint="next"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="müdür"
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-purple-500 focus:bg-white shadow-2xs"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                        Müdür Şifresi / Parola
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          autoComplete="current-password"
+                          enterKeyHint="go"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Şifrenizi girin"
+                          className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold focus:outline-none focus:border-purple-500 focus:bg-white pr-10 shadow-2xs"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 transition-colors"
+                          tabIndex={-1}
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* STAFF LOGIN VIEW */}
                 {activeTab === 'PERSONEL' && (
                   <div className="space-y-3.5">
@@ -562,18 +661,32 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
             <div className="pt-3 flex justify-center">
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className={`login-submit-btn ${activeTab === 'ADMIN' ? 'admin-mode bg-amber-500' : 'bg-sky-600'} text-sm font-black shadow-lg transition-all text-white`}
+                disabled={isSubmitting || (activeTab === 'MUDUR' && isMobileDevice)}
+                className={`login-submit-btn ${
+                  activeTab === 'ADMIN'
+                    ? 'admin-mode bg-amber-500'
+                    : activeTab === 'MUDUR'
+                    ? 'bg-purple-600'
+                    : 'bg-sky-600'
+                } text-sm font-black shadow-lg transition-all text-white ${
+                  activeTab === 'MUDUR' && isMobileDevice ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
                 style={{
-                  backgroundColor: activeTab === 'ADMIN' ? '#f59e0b' : '#0284c7',
-                  backgroundImage: activeTab === 'ADMIN'
-                    ? 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)'
-                    : 'linear-gradient(135deg, #0284c7 0%, #4f46e5 100%)',
+                  backgroundColor:
+                    activeTab === 'ADMIN' ? '#f59e0b' : activeTab === 'MUDUR' ? '#7c3aed' : '#0284c7',
+                  backgroundImage:
+                    activeTab === 'ADMIN'
+                      ? 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)'
+                      : activeTab === 'MUDUR'
+                      ? 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)'
+                      : 'linear-gradient(135deg, #0284c7 0%, #4f46e5 100%)',
                   color: '#ffffff'
                 }}
               >
                 {isSubmitting ? (
                   'Giriş Doğrulanıyor...'
+                ) : activeTab === 'MUDUR' && isMobileDevice ? (
+                  'Bilgisayardan Giriş Yapılmalıdır'
                 ) : (
                   <>
                     <LogIn className="w-4 h-4 text-white" />
@@ -582,7 +695,9 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
                         ? '2FA Kodunu Doğrula ve Giriş Yap'
                         : activeTab === 'ADMIN'
                           ? 'Yönetici Olarak Giriş Yap'
-                          : 'Saha Dağıtımına Başla'}
+                          : activeTab === 'MUDUR'
+                            ? 'Müdür Yetkilisi Olarak Giriş Yap'
+                            : 'Saha Dağıtımına Başla'}
                     </span>
                   </>
                 )}

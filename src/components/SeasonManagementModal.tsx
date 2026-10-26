@@ -25,7 +25,7 @@ import { formatTrAuto } from '@/lib/dateUtils';
 interface SeasonManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
   onSeasonChanged?: () => void;
 }

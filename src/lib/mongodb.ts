@@ -758,6 +758,27 @@ async function initializeIndexesAndSeed(db: Db) {
     );
   }
 
+  // 2b. Initial Müdür Yetkilisi User (Masaüstü/Bilgisayar Salt Okunur İzleme ve Raporlama Yetkilisi)
+  const existingMudur = await users.findOne({ username: { $in: ['müdür', 'mudur'] } });
+  if (!existingMudur) {
+    await users.insertOne(encryptUser({
+      id: '2',
+      username: 'müdür',
+      ad_soyad: 'Müdür Yetkilisi',
+      rol: 'MUDUR',
+      sifre_hash: hashPassword('784512Tf.'),
+      telefon: '',
+      aktif: 1,
+      totp_enabled: false,
+      created_at: nowStr,
+    }));
+  } else if (existingMudur.rol !== 'MUDUR') {
+    await users.updateOne(
+      { _id: existingMudur._id },
+      { $set: { rol: 'MUDUR' } }
+    );
+  }
+
   // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler, rotalar ve kişisel verileri AES-256-GCM ile şifrele
   await migrateAndEncryptExistingData(db);
 
@@ -839,7 +860,7 @@ function seedInMemoryStore(store: Record<string, any[]>) {
  */
 export async function recordActivityLog(item: {
   kullanici_adi: string;
-  kullanici_rolu?: 'ADMIN' | 'PERSONEL';
+  kullanici_rolu?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   islem_tipi: string;
   baslik: string;
   detay: string;

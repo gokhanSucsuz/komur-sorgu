@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { Target, CheckCircle2, AlertCircle, X, Truck, Package, Layers, Info } from 'lucide-react';

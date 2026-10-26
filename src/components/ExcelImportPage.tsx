@@ -18,7 +18,7 @@ const isKoySettlement = (name: string, tip?: string) => {
 };
 
 interface ExcelImportPageProps {
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   activeSeasonCode?: string;
   calismaModu?: 'RESMI' | 'DENEME';
   sandboxStats?: {

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Independent Date & Time Utilities for Istanbul / Turkish Timezone
  * Standalone module with zero external dependencies to prevent circular imports.
  */

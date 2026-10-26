@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const trimmedUser = (username || '').trim().toLowerCase();
     const trimmedName = (ad_soyad || '').trim();
     const trimmedPass = (sifre || '').trim();
-    const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : 'PERSONEL';
+    const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : (rol === 'MUDUR' ? 'MUDUR' : 'PERSONEL');
     const trimmedEkip = (ekip_adi || '').trim();
     const cleanPartners = Array.isArray(ekip_arkadaslari)
       ? ekip_arkadaslari.map((p: any) => String(p).trim().toLowerCase()).filter(Boolean)
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
       kullanici_rolu: 'ADMIN',
       islem_tipi: 'PERSONEL_ISLEM',
       baslik: 'Yeni Personel Tanımlandı',
-      detay: `"${trimmedName}" (${trimmedUser}) sisteme ${trimmedRole === 'ADMIN' ? 'Yönetici' : 'Saha Personeli'} olarak eklendi.`,
+      detay: `"${trimmedName}" (${trimmedUser}) sisteme ${trimmedRole === 'ADMIN' ? 'Yönetici' : (trimmedRole === 'MUDUR' ? 'Müdür Yetkilisi' : 'Saha Personeli')} olarak eklendi.`,
       ek_bilgi: { username: trimmedUser, rol: trimmedRole },
     });
 
@@ -145,12 +145,12 @@ export async function PUT(request: NextRequest) {
     const trimmedUser = (username || '').trim().toLowerCase();
     const trimmedName = (ad_soyad || '').trim();
     const trimmedPass = (sifre || '').trim();
-    const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : 'PERSONEL';
+    const trimmedRole = rol === 'ADMIN' ? 'ADMIN' : (rol === 'MUDUR' ? 'MUDUR' : 'PERSONEL');
     const isActive = aktif === 0 ? 0 : 1;
 
     // Prevent demoting OR deactivating the last active Admin account or self
     const targetUser = await usersCol.findOne(buildIdFilter(id));
-    if (targetUser && targetUser.rol === 'ADMIN' && (trimmedRole === 'PERSONEL' || isActive === 0)) {
+    if (targetUser && targetUser.rol === 'ADMIN' && (trimmedRole !== 'ADMIN' || isActive === 0)) {
       if (String(targetUser._id) === String(auth.user._id) || targetUser.username === auth.user.username) {
         return NextResponse.json(
           {

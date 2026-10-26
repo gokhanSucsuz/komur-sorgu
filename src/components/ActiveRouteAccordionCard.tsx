@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   Truck, Users, MapPin, Phone, Printer, Trash2, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, AlertCircle, Download, Navigation, ArrowUp,
-  ArrowDown, XCircle, ArrowRight, UserMinus, Plus
+  ArrowDown, XCircle, ArrowRight, UserMinus, Plus, Building2
 } from 'lucide-react';
 import { formatPhoneDisplay } from '@/lib/normalizer';
 
@@ -22,6 +22,7 @@ interface ActiveRouteAccordionCardProps {
   onStartRouteMode?: () => void;
   onOpenAddToRoute?: () => void;
   availableSignedCount?: number;
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 export default function ActiveRouteAccordionCard({
@@ -38,6 +39,7 @@ export default function ActiveRouteAccordionCard({
   onStartRouteMode,
   onOpenAddToRoute,
   availableSignedCount,
+  userRole = 'PERSONEL',
 }: ActiveRouteAccordionCardProps) {
   const [stopFilter, setStopFilter] = useState<'ALL' | 'PENDING' | 'EKSIK' | 'TAMAMLANDI' | 'TESLIM_EDILEMEDI'>('ALL');
 
@@ -192,7 +194,7 @@ export default function ActiveRouteAccordionCard({
               </button>
             )}
 
-            {onStartRouteMode && (
+            {onStartRouteMode && userRole !== 'MUDUR' && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -219,17 +221,19 @@ export default function ActiveRouteAccordionCard({
               <Printer className="w-4 h-4" />
             </button>
 
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-all active:scale-95"
-              title="Rotayı Sil"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {userRole !== 'MUDUR' && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-all active:scale-95"
+                title="Rotayı Sil"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Aç / Kapat Butonu */}
             <div
@@ -347,7 +351,16 @@ export default function ActiveRouteAccordionCard({
 
                 {/* Rotayı Tamamla & İndir Butonları */}
                 <div className="pt-2 flex flex-col gap-2">
-                  {onStartRouteMode && (
+                  {userRole === 'MUDUR' && (
+                    <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-950 text-xs font-semibold flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-purple-700 shrink-0" />
+                        Müdür Yetkilisi Canlı Takip: Durakları inceleyebilir, resmi tutanak ve Excel dökümü alabilirsiniz.
+                      </span>
+                    </div>
+                  )}
+
+                  {userRole !== 'MUDUR' && onStartRouteMode && (
                     <button
                       type="button"
                       onClick={onStartRouteMode}
@@ -358,7 +371,7 @@ export default function ActiveRouteAccordionCard({
                     </button>
                   )}
 
-                  {canFinalize ? (
+                  {userRole !== 'MUDUR' && (canFinalize ? (
                     thisRouteEksikStops.length > 0 ? (
                       <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-[11px] font-semibold flex items-start gap-2">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -389,45 +402,47 @@ export default function ActiveRouteAccordionCard({
                         </span>
                       </div>
                     </div>
-                  )}
+                  ))}
 
-                  <button
-                    type="button"
-                    onClick={onFinalize}
-                    className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] ${
-                      canFinalize
-                        ? thisRouteEksikStops.length > 0
-                          ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                        : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300'
-                    }`}
-                    title={
-                      canFinalize
-                        ? thisRouteEksikStops.length > 0
-                          ? `Rotayı Tamamla (${thisRouteEksikStops.length} hanede eksik kömür kaldı)`
-                          : 'Rotayı Tamamla ve Arşivle'
-                        : `${noCoalStops.length} hane henüz kömür almadı`
-                    }
-                  >
-                    {canFinalize ? (
-                      thisRouteEksikStops.length > 0 ? (
-                        <>
-                          <AlertTriangle className="w-4 h-4" />
-                          <span>Rotayı Tamamla ({thisRouteEksikStops.length} Eksik Teslimatla)</span>
-                        </>
+                  {userRole !== 'MUDUR' && (
+                    <button
+                      type="button"
+                      onClick={onFinalize}
+                      className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] ${
+                        canFinalize
+                          ? thisRouteEksikStops.length > 0
+                            ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                          : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300'
+                      }`}
+                      title={
+                        canFinalize
+                          ? thisRouteEksikStops.length > 0
+                            ? `Rotayı Tamamla (${thisRouteEksikStops.length} hanede eksik kömür kaldı)`
+                            : 'Rotayı Tamamla ve Arşivle'
+                          : `${noCoalStops.length} hane henüz kömür almadı`
+                      }
+                    >
+                      {canFinalize ? (
+                        thisRouteEksikStops.length > 0 ? (
+                          <>
+                            <AlertTriangle className="w-4 h-4" />
+                            <span>Rotayı Tamamla ({thisRouteEksikStops.length} Eksik Teslimatla)</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Rotayı Tamamla ve Arşivle</span>
+                          </>
+                        )
                       ) : (
                         <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Rotayı Tamamla ve Arşivle</span>
+                          <AlertCircle className="w-4 h-4 text-rose-600" />
+                          <span>Rotayı Tamamla ({noCoalStops.length} Haneye Kömür Verilmedi)</span>
                         </>
-                      )
-                    ) : (
-                      <>
-                        <AlertCircle className="w-4 h-4 text-rose-600" />
-                        <span>Rotayı Tamamla ({noCoalStops.length} Haneye Kömür Verilmedi)</span>
-                      </>
-                    )}
-                  </button>
+                      )}
+                    </button>
+                  )}
 
                   <div className="flex items-center gap-2">
                     <a
@@ -675,26 +690,28 @@ export default function ActiveRouteAccordionCard({
                       </div>
 
                       {/* Sıralama Taşıma Butonları (Reorder) */}
-                      <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => onMoveStop(stop.originalIndex, 'UP')}
-                          disabled={stop.originalIndex === 0 || stopFilter !== 'ALL'}
-                          className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
-                          title={stopFilter !== 'ALL' ? "Sıralama değiştirmek için 'Tümü' filtresini seçiniz" : "Yukarı Taşı"}
-                        >
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onMoveStop(stop.originalIndex, 'DOWN')}
-                          disabled={stop.originalIndex === routeStops.length - 1 || stopFilter !== 'ALL'}
-                          className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
-                          title={stopFilter !== 'ALL' ? "Sıralama değiştirmek için 'Tümü' filtresini seçiniz" : "Aşağı Taşı"}
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {userRole !== 'MUDUR' && (
+                        <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => onMoveStop(stop.originalIndex, 'UP')}
+                            disabled={stop.originalIndex === 0 || stopFilter !== 'ALL'}
+                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
+                            title={stopFilter !== 'ALL' ? "Sıralama değiştirmek için 'Tümü' filtresini seçiniz" : "Yukarı Taşı"}
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onMoveStop(stop.originalIndex, 'DOWN')}
+                            disabled={stop.originalIndex === routeStops.length - 1 || stopFilter !== 'ALL'}
+                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
+                            title={stopFilter !== 'ALL' ? "Sıralama değiştirmek için 'Tümü' filtresini seçiniz" : "Aşağı Taşı"}
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Orta Satır: Adres ve Telefon */}
@@ -715,26 +732,48 @@ export default function ActiveRouteAccordionCard({
 
                     {/* Alt Satır: Durum Kartı / Aksiyon Butonları */}
                     <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2">
-                      {isTamam && (
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-1.5 text-xs text-emerald-900 font-bold">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Teslim Edildi: <strong>{teslimTorba} Torba</strong></span>
-                            {stop.teslim_alan && (
-                              <span className="text-[11px] text-slate-500 font-normal">
-                                ({stop.teslim_alan})
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => onOpenStopModal(stop.originalIndex, stop, 'TAMAMLANDI')}
-                            className="text-[11px] text-emerald-800 hover:text-emerald-950 underline font-semibold"
-                          >
-                            Düzenle
-                          </button>
+                      {userRole === 'MUDUR' ? (
+                        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200">
+                          <span className={`text-xs font-bold ${
+                            isTamam
+                              ? 'text-emerald-800'
+                              : isEksik
+                              ? 'text-amber-800'
+                              : isUndelivered
+                              ? 'text-rose-800'
+                              : 'text-slate-700'
+                          }`}>
+                            {isTamam
+                              ? `✓ Teslim Edildi: ${teslimTorba} Torba ${stop.teslim_alan ? `(${stop.teslim_alan})` : ''}`
+                              : isEksik
+                              ? `⚠️ Eksik Teslimat: ${teslimTorba} / ${hedefTorba} Torba (Kalan: ${kalanTorba})`
+                              : isUndelivered
+                              ? `❌ Teslim Edilemedi ${stop.notlar ? `(${stop.notlar})` : ''}`
+                              : `⏳ Dağıtım Bekliyor (${hedefTorba} Torba)`}
+                          </span>
                         </div>
-                      )}
+                      ) : (
+                        <>
+                          {isTamam && (
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 text-xs text-emerald-900 font-bold">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>Teslim Edildi: <strong>{teslimTorba} Torba</strong></span>
+                                {stop.teslim_alan && (
+                                  <span className="text-[11px] text-slate-500 font-normal">
+                                    ({stop.teslim_alan})
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => onOpenStopModal(stop.originalIndex, stop, 'TAMAMLANDI')}
+                                className="text-[11px] text-emerald-800 hover:text-emerald-950 underline font-semibold"
+                              >
+                                Düzenle
+                              </button>
+                            </div>
+                          )}
 
                       {isEksik && (
                         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -843,6 +882,8 @@ export default function ActiveRouteAccordionCard({
                           </button>
                         </div>
                       )}
+                      </>
+                    )}
                     </div>
                   </div>
                 );

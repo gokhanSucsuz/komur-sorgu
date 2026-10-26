@@ -49,6 +49,7 @@ interface BeneficiaryListProps {
   onOpenAddHousehold?: (initialQuery?: string) => void;
   defaultQuota?: number;
   isLoading?: boolean;
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 export default function BeneficiaryList({
@@ -71,7 +72,8 @@ export default function BeneficiaryList({
   onNavigateToRoute,
   onOpenAddHousehold,
   defaultQuota = 34,
-  isLoading = false
+  isLoading = false,
+  userRole = 'PERSONEL'
 }: BeneficiaryListProps) {
   const [showAllOpenAddresses, setShowAllOpenAddresses] = useState(false);
   const [expandedAddresses, setExpandedAddresses] = useState<Record<number, boolean>>({});
@@ -1815,6 +1817,24 @@ export default function BeneficiaryList({
                                     <span>İncele / Aktif Et</span>
                                   </button>
                                 )
+                              ) : userRole === 'MUDUR' ? (
+                                <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border shrink-0 ${
+                                  isComplete
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : isPartial
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : isSigned
+                                    ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200'
+                                }`}>
+                                  {isComplete
+                                    ? `✓ Teslim Edildi (${person.torba_sayisi || hedef} Torba)`
+                                    : isPartial
+                                    ? `Kısmi (${person.torba_sayisi} / ${hedef})`
+                                    : isSigned
+                                    ? '✍️ İmzalı (Bekliyor)'
+                                    : `Bekliyor (${hedef} Torba)`}
+                                </span>
                               ) : (
                                 <>
                                   {!isComplete && (
@@ -1907,7 +1927,7 @@ export default function BeneficiaryList({
                                   )}
                                 </>
                               )}
-                              {onOpenEdit && (
+                              {onOpenEdit && userRole !== 'MUDUR' && (
                                 <button
                                   type="button"
                                   onClick={() => onOpenEdit(person)}
@@ -1918,7 +1938,7 @@ export default function BeneficiaryList({
                                   <span className="hidden xl:inline">Adres/Tel</span>
                                 </button>
                               )}
-                              <button
+                               <button
                                 type="button"
                                 onClick={() => onOpenHousehold(person)}
                                 className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all"
@@ -2177,7 +2197,7 @@ export default function BeneficiaryList({
                       </div>
                     )}
 
-                    {phones.length === 0 && onOpenEdit && (
+                    {phones.length === 0 && onOpenEdit && userRole !== 'MUDUR' && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -2232,7 +2252,7 @@ export default function BeneficiaryList({
                       </button>
 
                       {/* 3. Adres / Tel Güncelleme Butonu */}
-                      {onOpenEdit && (
+                      {onOpenEdit && userRole !== 'MUDUR' && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2247,7 +2267,7 @@ export default function BeneficiaryList({
                       )}
 
                       {/* 4. Kömür İptal Butonu */}
-                      {onOpenKomurIptal && !person.komur_verilmeyecek && !isComplete && (
+                      {onOpenKomurIptal && !person.komur_verilmeyecek && !isComplete && userRole !== 'MUDUR' && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2328,6 +2348,37 @@ export default function BeneficiaryList({
                               {formatCancelExplanation(person.komur_iptal_aciklama)}
                             </p>
                           )}
+                        </div>
+                      ) : userRole === 'MUDUR' ? (
+                        <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <div className="min-w-0">
+                            <span className="font-extrabold text-slate-900 block text-xs">
+                              {isComplete
+                                ? `✓ ${teslim} Torba Teslim Edildi`
+                                : isPartial
+                                ? `⚠️ Kısmi Teslim Edildi (${teslim} / ${hedef} Torba)`
+                                : isSigned
+                                ? '✍️ Kapıda İmza Alındı (Teslim Bekliyor)'
+                                : `⏳ Dağıtım Bekliyor (${hedef} Torba)`}
+                            </span>
+                            {person.teslim_eden_personel && (
+                              <p className="text-[11px] text-slate-600 mt-0.5">
+                                Dağıtan Personel: <strong className="text-slate-900">{person.teslim_eden_personel}</strong>
+                              </p>
+                            )}
+                            {person.teslimat_tarihi && (
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                Tarih: {formatTrAuto(person.teslimat_tarihi)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onOpenHousehold(person)}
+                            className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold shrink-0 transition-all active:scale-95 shadow-2xs"
+                          >
+                            Hane Detayı
+                          </button>
                         </div>
                       ) : isPartial ? (
                         <div className="space-y-2">

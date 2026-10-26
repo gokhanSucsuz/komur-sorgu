@@ -427,6 +427,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        { success: false, code: 'FORBIDDEN', error: 'Yetki Sınırı: Müdür yetkilisi salt okunur izleme modundadır, hane ekleyemez.' },
+        { status: 403 }
+      );
+    }
+
     const {
       beneficiaries: benCol,
       systemSettings,
@@ -981,6 +988,13 @@ export async function PUT(request: NextRequest) {
     const session = await verifySession(request);
     if (!session.valid) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        { success: false, code: 'FORBIDDEN', error: 'Yetki Sınırı: Müdür yetkilisi salt okunur izleme modundadır, hane bilgilerini güncelleyemez.' },
+        { status: 403 }
+      );
     }
 
     const { beneficiaries: benCol } = await getDbCollections();

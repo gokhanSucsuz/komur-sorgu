@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Edit3, Trash2, Key, Phone, Shield, User, X, Check, Eye, EyeOff, 
-  AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert, QrCode, Copy, ShieldCheck, RefreshCw 
+  AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert, QrCode, Copy, ShieldCheck, RefreshCw, Building2 
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { getSecureItem } from '@/lib/secureStorage';
@@ -25,14 +25,14 @@ export default function PersonnelManagementModal({
   const [isLoading, setIsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingOriginalRole, setEditingOriginalRole] = useState<'ADMIN' | 'PERSONEL' | null>(null);
+  const [editingOriginalRole, setEditingOriginalRole] = useState<'ADMIN' | 'PERSONEL' | 'MUDUR' | null>(null);
 
   // Form states
   const [adSoyad, setAdSoyad] = useState('');
   const [username, setUsername] = useState('');
   const [sifre, setSifre] = useState('');
   const [telefon, setTelefon] = useState('');
-  const [rol, setRol] = useState<'ADMIN' | 'PERSONEL'>('PERSONEL');
+  const [rol, setRol] = useState<'ADMIN' | 'PERSONEL' | 'MUDUR'>('PERSONEL');
   const [ekipAdi, setEkipAdi] = useState('');
   const [ekipArkadaslari, setEkipArkadaslari] = useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
@@ -563,35 +563,51 @@ export default function PersonnelManagementModal({
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   disabled={editingOriginalRole === 'ADMIN'}
                   onClick={() => setRol('PERSONEL')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  className={`py-2 px-2 rounded-xl border text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all ${
                     editingOriginalRole === 'ADMIN'
                       ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
                       : rol === 'PERSONEL'
-                      ? 'bg-sky-50 border-sky-400 text-sky-900 shadow-xs'
+                      ? 'bg-sky-50 border-sky-400 text-sky-900 shadow-xs ring-1 ring-sky-300'
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
                   }`}
                   title={editingOriginalRole === 'ADMIN' ? 'Yönetici hesabı normal personele düşürülemez' : undefined}
                 >
-                  <User className="w-3.5 h-3.5" />
-                  <span>Saha Personeli</span>
+                  <User className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Saha</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={editingOriginalRole === 'ADMIN'}
+                  onClick={() => setRol('MUDUR')}
+                  className={`py-2 px-2 rounded-xl border text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                    editingOriginalRole === 'ADMIN'
+                      ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
+                      : rol === 'MUDUR'
+                      ? 'bg-purple-50 border-purple-400 text-purple-900 shadow-xs ring-1 ring-purple-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Müdür</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setRol('ADMIN')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  className={`py-2 px-2 rounded-xl border text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all ${
                     rol === 'ADMIN'
-                      ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-xs'
+                      ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-xs ring-1 ring-amber-300'
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  <Shield className="w-3.5 h-3.5" />
-                  <span>Yönetici (Admin)</span>
+                  <Shield className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Yönetici</span>
                 </button>
               </div>
             </div>
@@ -688,9 +704,11 @@ export default function PersonnelManagementModal({
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                       person.rol === 'ADMIN'
                         ? 'bg-amber-50 border-amber-300 text-amber-800'
+                        : person.rol === 'MUDUR'
+                        ? 'bg-purple-50 border-purple-300 text-purple-800'
                         : 'bg-sky-50 border-sky-300 text-sky-800'
                     }`}>
-                      {person.rol === 'ADMIN' ? 'Yönetici' : 'Personel'}
+                      {person.rol === 'ADMIN' ? 'Yönetici' : person.rol === 'MUDUR' ? 'Müdür Yetkilisi' : 'Personel'}
                     </span>
                   </div>
 

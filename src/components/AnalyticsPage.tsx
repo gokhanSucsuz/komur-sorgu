@@ -13,7 +13,7 @@ import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
 interface AnalyticsPageProps {
   onRefreshAll?: () => void;
-  userRole?: 'ADMIN' | 'PERSONEL';
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   onOpenQuotaModal?: () => void;
   onOpenSeasonModal?: () => void;
 }

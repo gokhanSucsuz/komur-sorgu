@@ -19,6 +19,7 @@ import {
   Copy,
   ShieldCheck,
   ShieldOff,
+  Building2,
 } from 'lucide-react';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
@@ -26,7 +27,7 @@ import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
   onUserUpdated: (user: { name: string; username: string }) => void;
   onLogout?: () => void;
@@ -364,10 +365,20 @@ export default function ProfileModal({
           <div className="flex items-center gap-2">
             <div
               className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                userRole === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+                userRole === 'ADMIN'
+                  ? 'bg-amber-100 text-amber-700'
+                  : userRole === 'MUDUR'
+                  ? 'bg-purple-100 text-purple-700'
+                  : 'bg-sky-100 text-sky-700'
               }`}
             >
-              {userRole === 'ADMIN' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
+              {userRole === 'ADMIN' ? (
+                <Shield className="w-4 h-4" />
+              ) : userRole === 'MUDUR' ? (
+                <Building2 className="w-4 h-4" />
+              ) : (
+                <User className="w-4 h-4" />
+              )}
             </div>
             <div>
               <h3 className="text-sm font-black text-slate-900 leading-tight">
@@ -376,6 +387,8 @@ export default function ProfileModal({
               <p className="text-[11px] text-slate-500 font-semibold">
                 {userRole === 'ADMIN'
                   ? 'Profil, şifre ve Google Authenticator (2FA) ayarları'
+                  : userRole === 'MUDUR'
+                  ? 'Müdür Yetkilisi profil ve şifre güncelleme'
                   : 'Kullanıcı adı ve şifre güncelleme'}
               </p>
             </div>
@@ -398,10 +411,12 @@ export default function ProfileModal({
               className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                 userRole === 'ADMIN'
                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                  : userRole === 'MUDUR'
+                  ? 'bg-purple-100 text-purple-900 border border-purple-300'
                   : 'bg-sky-100 text-sky-900 border border-sky-300'
               }`}
             >
-              {userRole === 'ADMIN' ? 'Sistem Yöneticisi' : 'Saha Personeli'}
+              {userRole === 'ADMIN' ? 'Sistem Yöneticisi' : userRole === 'MUDUR' ? 'Müdür Yetkilisi' : 'Saha Personeli'}
             </span>
           </div>
 

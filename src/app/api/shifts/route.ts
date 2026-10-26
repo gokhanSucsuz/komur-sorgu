@@ -370,6 +370,13 @@ export async function POST(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        { success: false, code: 'FORBIDDEN', error: 'Yetki Sınırı: Müdür yetkilisi salt okunur modundadır, çalışma saatlerinde değişiklik yapamaz.' },
+        { status: 403 }
+      );
+    }
+
     const { workShifts: shiftsCol, deliveryHistory: histCol } = await getDbCollections();
     const body = await request.json();
     const { action, personel_adi, baslama_saati, bitis_saati, tarih, mahalleler, notlar, shiftId } = body;
@@ -633,6 +640,13 @@ export async function PUT(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        { success: false, code: 'FORBIDDEN', error: 'Yetki Sınırı: Müdür yetkilisi salt okunur modundadır, çalışma saatlerinde değişiklik yapamaz.' },
+        { status: 403 }
+      );
+    }
+
     const { workShifts: shiftsCol } = await getDbCollections();
     const body = await request.json();
     const { id, personel_adi, tarih, baslama_saati, bitis_saati, mahalleler, teslim_edilen_torba, teslim_edilen_hane, notlar, durum } = body;
@@ -727,6 +741,13 @@ export async function DELETE(request: NextRequest) {
     const session = await verifySession(request);
     if (!session.valid) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        { success: false, code: 'FORBIDDEN', error: 'Yetki Sınırı: Müdür yetkilisi salt okunur modundadır, çalışma saatlerinde değişiklik yapamaz.' },
+        { status: 403 }
+      );
     }
 
     const { workShifts: shiftsCol } = await getDbCollections();

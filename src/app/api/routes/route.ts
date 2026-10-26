@@ -367,6 +367,18 @@ export async function POST(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
+    // Security & Role Enforcement: MUDUR role is strictly read-only monitoring and cannot create, modify, or delete routes
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'FORBIDDEN',
+          error: 'Yetki Sınırı: Müdür yetkilisi salt okunur izleme modundadır. Rota oluşturamaz, düzenleyemez veya silemez.',
+        },
+        { status: 403 }
+      );
+    }
+
     const { deliveryRoutes: routeCol, beneficiaries: benCol, deliveryHistory: histCol, users: usersCol } = await getDbCollections();
     const body = await request.json();
     const { action } = body;

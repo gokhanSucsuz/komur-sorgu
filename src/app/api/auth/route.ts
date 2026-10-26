@@ -39,6 +39,15 @@ async function findActiveUserByIdentifier(usersCol: any, identifier: string) {
   });
   if (byUsername) return byUsername;
 
+  // 1b. Transliteration fallback: 'müdür' <-> 'mudur'
+  if (/^m[üu]d[üu]r$/i.test(trimmed)) {
+    const byMudur = await usersCol.findOne({
+      username: { $in: ['müdür', 'mudur', 'Müdür', 'MUDUR'] },
+      aktif: 1,
+    });
+    if (byMudur) return byMudur;
+  }
+
   // 2. Fallback: decrypt active users and match by ad_soyad or username (case-insensitive Turkish)
   const allActiveRaw = await usersCol.find({ aktif: 1 }).toArray();
   const targetLower = trimmed.toLocaleLowerCase('tr-TR');
@@ -155,7 +164,9 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const decAdSoyad = rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : rawUser.username);
+      const decAdSoyad = rawUser.ad_soyad
+        ? decryptField(rawUser.ad_soyad)
+        : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : (rawUser.rol === 'MUDUR' ? 'Müdür Yetkilisi' : rawUser.username));
       return NextResponse.json({
         success: true,
         valid: true,
@@ -338,7 +349,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const decAdSoyad = rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : rawUser.username);
+      const decAdSoyad = rawUser.ad_soyad
+        ? decryptField(rawUser.ad_soyad)
+        : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : (rawUser.rol === 'MUDUR' ? 'Müdür Yetkilisi' : rawUser.username));
       const res = NextResponse.json({
         success: true,
         valid: true,
@@ -434,7 +447,7 @@ export async function POST(request: NextRequest) {
       }
 
       const secret = generateTotpSecret(20); // 160-bit Base32 secret (32 chars)
-      const userRoleLabel = rawUser.rol === 'ADMIN' ? 'Yönetici' : 'Saha Personeli';
+      const userRoleLabel = rawUser.rol === 'ADMIN' ? 'Yönetici' : (rawUser.rol === 'MUDUR' ? 'Müdür Yetkilisi' : 'Saha Personeli');
       const decUser = mapDoc(rawUser);
       const decAd = decUser.ad_soyad || decUser.username;
       const accountLabel = `${decAd} (${userRoleLabel})`;
@@ -805,25 +818,39 @@ export async function POST(request: NextRequest) {
 
     // =========================================================================
     // 4A. DEVICE & HARDWARE RESTRICTION ENFORCEMENT
-    // (Desktop: STRICTLY ADMIN only. Mobile: STRICTLY 4 Whitelisted Phones for Personel)
+    // (Desktop: ADMIN & MUDUR only. Mobile: Strictly 4 Whitelisted Phones for Personel/Admin)
     // =========================================================================
     const isMobileClient = /android|iphone|ipad|ipod|mobile/i.test(userAgent);
 
-    // KURAL 1: Bilgisayardan (Desktop/Laptop) SADECE ADMIN giriş yapabilir. Personel bilgisayardan erişemez.
-    if (!isMobileClient && user.rol !== 'ADMIN') {
+    // KURAL 1: MÜDÜR YETKİLİSİ KISITLAMASI: Yalnızca bilgisayardan (Desktop/Laptop) giriş yapabilir.
+    if (user.rol === 'MUDUR') {
+      if (isMobileClient) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'MOBILE_ACCESS_DENIED',
+            error: 'Yetkisiz Cihaz Türü: Müdür yetkilisi hesabı yalnızca bilgisayardan (Masaüstü/Dizüstü) erişime açıktır. Mobil cihazlardan giriş yapılamaz.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // KURAL 2: SAHA PERSONELİ KISITLAMASI: Bilgisayardan sisteme giriş yapamaz. Bilgisayar erişimi Yönetici ve Müdür yetkililerine aittir.
+    if (user.rol === 'PERSONEL' && !isMobileClient) {
       return NextResponse.json(
         {
           success: false,
           code: 'DESKTOP_ACCESS_DENIED',
-          error: 'Yetkisiz Cihaz Türü: Saha personelleri bilgisayardan sisteme giriş yapamaz. Bilgisayar erişimi yalnızca Sistem Yöneticisine (Admin) aittir. Lütfen kurumca yetkilendirilmiş 4 saha telefonundan giriş yapınız.',
+          error: 'Yetkisiz Cihaz Türü: Saha personelleri bilgisayardan sisteme giriş yapamaz. Bilgisayar erişimi yalnızca Sistem Yöneticisi ve Müdür Yetkilisine aittir. Lütfen kurumca yetkilendirilmiş saha telefonundan giriş yapınız.',
         },
         { status: 403 }
       );
     }
 
-    // KURAL 2: Personel girişi SADECE Admin tarafından eşlenmiş 4 yetkili telefondan yapılabilir.
+    // KURAL 3: Personel girişi SADECE Admin tarafından eşlenmiş 4 yetkili telefondan yapılabilir.
     let matchedDeviceSlot: any = null;
-    if (user.rol !== 'ADMIN') {
+    if (user.rol === 'PERSONEL') {
       const { authorizedDevices: devCol } = await getDbCollections();
       const providedDeviceToken = (
         request.headers.get('x-device-token') ||
@@ -857,7 +884,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // KURAL 3: Slot 1 SADECE Admin'e aittir. Saha personeli Slot 1 üzerinden giriş yapamaz!
+      // KURAL 4: Slot 1 SADECE Admin'e aittir. Saha personeli Slot 1 üzerinden giriş yapamaz!
       if (matchedDeviceSlot.slot_no === 1) {
         return NextResponse.json(
           {

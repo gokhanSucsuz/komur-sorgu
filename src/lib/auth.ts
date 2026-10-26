@@ -24,7 +24,7 @@ export interface AuthSessionResult {
   id?: string;
   username?: string;
   ad_soyad?: string;
-  rol?: 'ADMIN' | 'PERSONEL';
+  rol?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 /**
@@ -64,7 +64,7 @@ export function clearSessionMicroCache(token?: string) {
  */
 export async function verifySession(
   request: NextRequest,
-  options: { requiredRole?: 'ADMIN' | 'PERSONEL' } = {}
+  options: { requiredRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR' | Array<'ADMIN' | 'PERSONEL' | 'MUDUR'> } = {}
 ): Promise<AuthSessionResult> {
   // Enforce Same-Origin (CSRF) protection on state-changing HTTP methods
   const method = (request.method || 'GET').toUpperCase();

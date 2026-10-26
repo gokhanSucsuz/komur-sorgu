@@ -38,7 +38,7 @@ import {
 import { turkishIncludes } from '@/lib/normalizer';
 
 interface GuidePageProps {
-  userRole?: 'ADMIN' | 'PERSONEL';
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   onNavigateTab?: (tab: any) => void;
 }
 

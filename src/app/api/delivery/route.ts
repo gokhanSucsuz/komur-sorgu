@@ -17,6 +17,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Security & Role Enforcement: MUDUR role is strictly read-only monitoring and cannot deliver coal or cancel
+    if (session.rol === 'MUDUR') {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'FORBIDDEN',
+          error: 'Yetki Sınırı: Müdür yetkilisi salt okunur izleme modundadır. Dağıtım veya iptal işlemi yapamaz.',
+        },
+        { status: 403 }
+      );
+    }
+
     const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol, users: usersCol } = await getDbCollections();
     const body = await request.json();
     const { action, beneficiary_id, tc_no, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;

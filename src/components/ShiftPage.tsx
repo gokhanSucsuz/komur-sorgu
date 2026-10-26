@@ -26,7 +26,7 @@ import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
 import { formatTrDate } from '@/lib/dateUtils';
 
 interface ShiftPageProps {
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
   onRefreshAll?: () => void;
 }
@@ -204,7 +204,7 @@ export default function ShiftPage({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': userRole,
+          'x-user-role': userRole || 'PERSONEL',
           'x-user-name': userName,
         },
         body: JSON.stringify({
@@ -263,7 +263,7 @@ export default function ShiftPage({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': userRole,
+          'x-user-role': userRole || 'PERSONEL',
           'x-user-name': userName,
         },
         body: JSON.stringify({
@@ -316,7 +316,7 @@ export default function ShiftPage({
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': userRole,
+          'x-user-role': userRole || 'PERSONEL',
           'x-user-name': userName,
         },
         body: JSON.stringify({
@@ -499,6 +499,7 @@ export default function ShiftPage({
       )}
 
       {/* QUICK ENTRY FORM CARD: Same Day or Retrospective Work Hours Logging */}
+      {userRole !== 'MUDUR' ? (
       <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
@@ -698,6 +699,12 @@ export default function ShiftPage({
           </div>
         </form>
       </div>
+      ) : (
+        <div className="p-4 rounded-2xl bg-purple-50/80 border border-purple-200 text-purple-900 text-xs font-semibold flex items-center gap-2.5">
+          <History className="w-5 h-5 text-purple-600 shrink-0" />
+          <span>Müdür yetkilisi izleme modundadır. Sahadaki tüm dağıtım personelinin günlük çalışma saatleri ve mesai dökümleri aşağıda listelenmektedir.</span>
+        </div>
+      )}
 
       {/* OVERVIEW STATS CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -739,8 +746,8 @@ export default function ShiftPage({
             ))}
           </select>
 
-          {/* Personnel Filter (Admin Only) */}
-          {userRole === 'ADMIN' && (
+          {/* Personnel Filter (Admin & Mudur) */}
+          {(userRole === 'ADMIN' || userRole === 'MUDUR') && (
             <select
               value={selectedPersonnel}
               onChange={(e) => setSelectedPersonnel(e.target.value)}
@@ -895,25 +902,27 @@ export default function ShiftPage({
                     )}
 
                     {/* 4. İşlem Butonları (Mobilde Parmakla Kolay Dokunulabilir Geniş Butonlar) */}
-                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setEditingShift(shift)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                      >
-                        <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Düzenle</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteShift(shift)}
-                        className="py-2 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                        title="Mesai Kaydını Sil"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                        <span>Sil</span>
-                      </button>
-                    </div>
+                    {userRole !== 'MUDUR' && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingShift(shift)}
+                          className="flex-1 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Düzenle</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteShift(shift)}
+                          className="py-2 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                          title="Mesai Kaydını Sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Sil</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1007,25 +1016,29 @@ export default function ShiftPage({
 
                         {/* İşlemler (Düzenle & Sil) */}
                         <td className="p-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setEditingShift(shift)}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors"
-                              title="Çalışma Saatini Düzenle"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
+                          {userRole !== 'MUDUR' ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditingShift(shift)}
+                                className="p-1.5 rounded-lg text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors"
+                                title="Çalışma Saatini Düzenle"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteShift(shift)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
-                              title="Kaydı Sil"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteShift(shift)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                                title="Kaydı Sil"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-medium text-slate-400">İzleme</span>
+                          )}
                         </td>
                       </tr>
                     );

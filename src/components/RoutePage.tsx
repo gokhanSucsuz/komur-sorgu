@@ -35,7 +35,7 @@ function getOrCreateClientId(): string {
 }
 
 interface RoutePageProps {
-  userRole: 'ADMIN' | 'PERSONEL';
+  userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
   userUsername?: string;
   userTeam?: string;
@@ -123,7 +123,7 @@ export default function RoutePage({
   // Check if current user is authorized to deliver / resume / manage this route (Admin, Operator, or Team Partner)
   const isUserTeamAuthorized = useCallback((route: any): boolean => {
     if (!route) return true;
-    if (userRole === 'ADMIN') return true;
+    if (userRole === 'ADMIN' || userRole === 'MUDUR') return true;
 
     const GENERIC_NAMES = ['personel', 'saha personeli', 'dağıtım personeli', 'dagitim personeli', 'dağıtım ekibi', 'dagitim ekibi', 'ekip', 'admin', 'kullanıcı', 'kullanici', 'user'];
     const isGeneric = (str: string) => !str || str.length < 3 || GENERIC_NAMES.includes(str.trim().toLowerCase());
@@ -2138,27 +2138,33 @@ export default function RoutePage({
                 )}
               </div>
 
-              <div className="pt-2 space-y-2">
-                <button
-                  type="button"
-                  onClick={handleOpenCreateModal}
-                  className="w-full max-w-md mx-auto py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 cursor-pointer active:scale-98"
-                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
-                >
-                  <Plus className="w-5 h-5 stroke-[2.5]" />
-                  <span>
-                    {availableSignedBeneficiaries.length > 0
-                      ? `Yeni Dağıtım Rotası Başlat (${availableSignedBeneficiaries.length} İmzalı Hane)`
-                      : '+ Yeni Dağıtım Rotası Başlat'}
-                  </span>
-                </button>
+              {userRole !== 'MUDUR' ? (
+                <div className="pt-2 space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateModal}
+                    className="w-full max-w-md mx-auto py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 cursor-pointer active:scale-98"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
+                  >
+                    <Plus className="w-5 h-5 stroke-[2.5]" />
+                    <span>
+                      {availableSignedBeneficiaries.length > 0
+                        ? `Yeni Dağıtım Rotası Başlat (${availableSignedBeneficiaries.length} İmzalı Hane)`
+                        : '+ Yeni Dağıtım Rotası Başlat'}
+                    </span>
+                  </button>
 
-                {availableSignedBeneficiaries.length === 0 && (
-                  <p className="text-[11px] font-semibold text-rose-700 max-w-md mx-auto">
-                    İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz.
-                  </p>
-                )}
-              </div>
+                  {availableSignedBeneficiaries.length === 0 && (
+                    <p className="text-[11px] font-semibold text-rose-700 max-w-md mx-auto">
+                      İmzası alınmış ve kömürü teslim edilmemiş hane bulunmadığı için yeni dağıtım rotası başlatılamaz.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="pt-2 text-xs font-semibold text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 max-w-md mx-auto">
+                  🛡️ Şu anda aktif dağıtım rotası bulunmamaktadır. Müdür yetkilisi salt okunur (izleme) modundadır.
+                </div>
+              )}
             </div>
           )}
 
@@ -2186,26 +2192,30 @@ export default function RoutePage({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleOpenCreateModal}
-                    className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-white bg-amber-500 hover:bg-amber-600 border border-amber-600/40 shadow-xs active:scale-95 cursor-pointer"
-                    style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>+ Yeni Rota Oluştur</span>
-                  </button>
+                  {userRole !== 'MUDUR' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateModal}
+                        className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-white bg-amber-500 hover:bg-amber-600 border border-amber-600/40 shadow-xs active:scale-95 cursor-pointer"
+                        style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>+ Yeni Rota Oluştur</span>
+                      </button>
 
-                  {activeRoutes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddToExistingModal()}
-                      className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 shadow-xs active:scale-95 cursor-pointer"
-                      style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
-                    >
-                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                      <span>📥 Var Olan Rotaya Ekle</span>
-                    </button>
+                      {activeRoutes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddToExistingModal()}
+                          className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 shadow-xs active:scale-95 cursor-pointer"
+                          style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>📥 Var Olan Rotaya Ekle</span>
+                        </button>
+                      )}
+                    </>
                   )}
 
                   <button
@@ -2247,7 +2257,7 @@ export default function RoutePage({
                             )}
                           </div>
 
-                          {activeRoutes.length > 0 && (
+                          {activeRoutes.length > 0 && userRole !== 'MUDUR' && (
                             <button
                               type="button"
                               onClick={() => {
@@ -2280,7 +2290,7 @@ export default function RoutePage({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  {availableSignedBeneficiaries.length > 0 && (
+                  {userRole !== 'MUDUR' && availableSignedBeneficiaries.length > 0 && (
                     <button
                       type="button"
                       onClick={() => handleOpenAddToExistingModal()}
@@ -2293,20 +2303,22 @@ export default function RoutePage({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={handleOpenCreateModal}
-                    title="Yeni dağıtım rotası / ekibi başlat"
-                    className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 active:scale-95 cursor-pointer"
-                    style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
-                  >
-                    <Plus className="w-4 h-4 stroke-[2.5]" />
-                    <span>
-                      {availableSignedBeneficiaries.length > 0
-                        ? `+ Yeni Ekip / Rota Başlat (${availableSignedBeneficiaries.length} İmzalı Hazır)`
-                        : '+ Yeni Ekip / Rota Başlat'}
-                    </span>
-                  </button>
+                  {userRole !== 'MUDUR' && (
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateModal}
+                      title="Yeni dağıtım rotası / ekibi başlat"
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all bg-amber-500 hover:bg-amber-600 bg-linear-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border border-amber-600/40 shadow-sm shadow-amber-500/20 active:scale-95 cursor-pointer"
+                      style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', color: '#ffffff' }}
+                    >
+                      <Plus className="w-4 h-4 stroke-[2.5]" />
+                      <span>
+                        {availableSignedBeneficiaries.length > 0
+                          ? `+ Yeni Ekip / Rota Başlat (${availableSignedBeneficiaries.length} İmzalı Hazır)`
+                          : '+ Yeni Ekip / Rota Başlat'}
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2323,6 +2335,7 @@ export default function RoutePage({
                     key={routeIdStr || routeIdx}
                     route={route}
                     routeIdx={routeIdx}
+                    userRole={userRole}
                     isExpanded={isExpanded}
                     onToggle={() => {
                       setExpandedActiveRouteId((prev) => (prev === routeIdStr ? null : routeIdStr));
