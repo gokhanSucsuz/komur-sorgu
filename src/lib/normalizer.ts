@@ -1575,6 +1575,7 @@ export function formatTwoWayDiff(diffKg: number): {
   kgStr: string;
   tonStr: string;
   combined: string;
+  slash: string;
 } {
   const diffTon = parseFloat((diffKg / 1000).toFixed(3));
   const prefix = diffKg > 0 ? '+' : '';
@@ -1586,6 +1587,7 @@ export function formatTwoWayDiff(diffKg: number): {
     kgStr: kgFormatted,
     tonStr: tonFormatted,
     combined: `${kgFormatted} (${tonFormatted})`,
+    slash: `${kgFormatted} / ${tonFormatted}`,
   };
 }
 

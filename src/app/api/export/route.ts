@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
 import { formatTrDateWithDay } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString } from '@/lib/security';
@@ -181,7 +181,9 @@ function addStyledWorksheet(
   // 3. Veri Satırları & Zebra Deseni (Rows 7+)
   data.forEach((item, idx) => {
     const isSummaryRow = (item['TC Kimlik No'] && String(item['TC Kimlik No']).startsWith('TOPLAM:')) ||
-                         (item['Sıra'] === '' && item['Teslim Tarihi / Saati'] === 'TOPLAM:');
+                         (item['Sıra'] === '' && item['Teslim Tarihi / Saati'] === 'TOPLAM:') ||
+                         (item['YÜKLEMEYİ YAPAN İŞLETME'] === 'TOPLAM TESLİM ALINAN MİKTAR') ||
+                         (item['PLAKA NO'] === 'GENEL TOPLAM:');
 
     const rowValues = headers.map(h => {
       const raw = item[h] !== undefined && item[h] !== null ? item[h] : '';
@@ -226,13 +228,26 @@ function addStyledWorksheet(
         };
       }
 
-      // Sola yaslı geniş metin alanları
+      // Sola ve sağa yaslı alanlar
       const leftAligned = [
         'Adı Soyadı', 'Açık Adres', 'Cadde / Sokak', 'Mahalle',
         'Açıklama / Not', 'Detay Açıklama', 'Hata / Elenme Nedeni', 'Başlık'
       ];
+      const rightAligned = [
+        'İŞLETMEDEN YÜKLENEN MİKTAR (kg)',
+        'İŞLETMEDEN YÜKLENEN MİKTAR (kg / Ton)',
+        'TESLİM ALINAN MİKTAR(kg)',
+        'TESLİM ALINAN MİKTAR(kg / Ton)',
+        'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.',
+        'SEVK MİKTAR (KG)',
+        'SEVK MİKTAR (KG / TON)',
+        'TESLİM MİKTARI(KG)',
+        'TESLİM MİKTARI(KG / TON)',
+      ];
       if (leftAligned.includes(headerName)) {
         cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else if (rightAligned.includes(headerName)) {
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
       } else {
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       }
@@ -578,32 +593,38 @@ export async function GET(request: NextRequest) {
 
       // Format 1: Günlük Tesellüm İzleme Tablosu (Valilik Formatı)
       const exportDataTesellum = records.map((t: any, idx: number) => {
-        const yuklenenKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
-        const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+        const yuklenenTon = normalizeToTon(t.brut_tonaj);
+        const teslimTon = normalizeToTon(t.net_tonaj);
+        const yuklenenKg = Math.round(yuklenenTon * 1000);
+        const teslimKg = Math.round(teslimTon * 1000);
         const farkKg = teslimKg - yuklenenKg;
 
         totalYuklenenKg += yuklenenKg;
         totalTeslimKg += teslimKg;
         totalFarkKg += farkKg;
 
+        const yuklenenFmt = formatTwoWayTonnage(t.brut_tonaj).slash;
+        const teslimFmt = formatTwoWayTonnage(t.net_tonaj).slash;
+        const farkFmt = formatTwoWayDiff(farkKg).slash;
+
         return {
           'Sıra': t.tir_sirasi || idx + 1,
           'YÜKLEMEYİ YAPAN İŞLETME': t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü',
           'ÇIKIŞ TARİHİ': t.ocak_cikis_tarihi || t.tarih ? formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih) : '-',
           'VAGON Veya PLAKA NO / Şoför Adı': `${t.plaka || '-'}${t.sofor_adi ? ` - ${t.sofor_adi}` : ''}`,
-          'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': yuklenenKg,
+          'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': yuklenenFmt,
           'TESELLÜM TARİHİ': t.tarih ? formatTrDateWithDay(t.tarih) : '-',
           'TESELLÜM FİŞ NO veya ( Kantar tartı no)': t.irsaliye_no || '-',
-          'TESLİM ALINAN MİKTAR(kg)': teslimKg,
-          'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': farkKg,
+          'TESLİM ALINAN MİKTAR(kg)': teslimFmt,
+          'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': farkFmt,
           'TUTANAK NO': t.tutanak_no || '-'
         };
       });
 
       // Format 2: TKİ Resmi Kömür Dağıtım Listesi (Dönemsel / Tutanak Formatı)
       const exportDataTki = records.map((t: any, idx: number) => {
-        const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
-        const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+        const sevkFmt = formatTwoWayTonnage(t.brut_tonaj).slash;
+        const teslimFmt = formatTwoWayTonnage(t.net_tonaj).slash;
 
         return {
           'SIRA NO': t.tir_sirasi || idx + 1,
@@ -611,9 +632,9 @@ export async function GET(request: NextRequest) {
           'İLÇE': t.ilce || 'MERKEZ',
           'PLAKA NO': t.plaka || '-',
           'SEVK TARİHİ': t.ocak_cikis_tarihi || t.tarih ? formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih) : '-',
-          'SEVK MİKTAR (KG)': sevkKg,
+          'SEVK MİKTAR (KG)': sevkFmt,
           'TESLİM TARİHİ': t.tarih ? formatTrDateWithDay(t.tarih) : '-',
-          'TESLİM MİKTARI(KG)': teslimKg,
+          'TESLİM MİKTARI(KG)': teslimFmt,
           'İRSALİYE NO': t.irsaliye_no || '-',
           'TUTANAK NO': t.tutanak_no || '-'
         };
@@ -621,16 +642,20 @@ export async function GET(request: NextRequest) {
 
       // Summary rows at bottom
       if (exportDataTesellum.length > 0) {
+        const totalYuklenenFmt = formatTwoWayTonnage(totalYuklenenKg / 1000).slash;
+        const totalTeslimFmt = formatTwoWayTonnage(totalTeslimKg / 1000).slash;
+        const totalFarkFmt = formatTwoWayDiff(totalFarkKg).slash;
+
         exportDataTesellum.push({
           'Sıra': '' as any,
           'YÜKLEMEYİ YAPAN İŞLETME': 'TOPLAM TESLİM ALINAN MİKTAR',
           'ÇIKIŞ TARİHİ': '',
           'VAGON Veya PLAKA NO / Şoför Adı': `${records.length} Tır`,
-          'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': totalYuklenenKg,
+          'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': totalYuklenenFmt,
           'TESELLÜM TARİHİ': '',
           'TESELLÜM FİŞ NO veya ( Kantar tartı no)': '',
-          'TESLİM ALINAN MİKTAR(kg)': totalTeslimKg,
-          'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': totalFarkKg,
+          'TESLİM ALINAN MİKTAR(kg)': totalTeslimFmt,
+          'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': totalFarkFmt,
           'TUTANAK NO': ''
         });
 
@@ -640,9 +665,9 @@ export async function GET(request: NextRequest) {
           'İLÇE': '',
           'PLAKA NO': 'GENEL TOPLAM:',
           'SEVK TARİHİ': 'Toplam',
-          'SEVK MİKTAR (KG)': totalYuklenenKg,
+          'SEVK MİKTAR (KG)': totalYuklenenFmt,
           'TESLİM TARİHİ': 'Toplam',
-          'TESLİM MİKTARI(KG)': totalTeslimKg,
+          'TESLİM MİKTARI(KG)': totalTeslimFmt,
           'İRSALİYE NO': `${records.length} Tır`,
           'TUTANAK NO': ''
         });
@@ -660,15 +685,15 @@ export async function GET(request: NextRequest) {
           exportDataTesellum,
           [
             { wch: 8 },
-            { wch: 30 },
-            { wch: 14 },
             { wch: 32 },
-            { wch: 18 },
-            { wch: 14 },
-            { wch: 20 },
-            { wch: 18 },
-            { wch: 18 },
-            { wch: 16 }
+            { wch: 24 },
+            { wch: 32 },
+            { wch: 28 },
+            { wch: 24 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 28 },
+            { wch: 18 }
           ]
         );
         // İmza satırları
@@ -688,13 +713,13 @@ export async function GET(request: NextRequest) {
             { wch: 10 },
             { wch: 14 },
             { wch: 14 },
-            { wch: 18 },
-            { wch: 14 },
-            { wch: 18 },
-            { wch: 14 },
-            { wch: 18 },
-            { wch: 18 },
-            { wch: 16 }
+            { wch: 20 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 20 },
+            { wch: 18 }
           ]
         );
         // İmza satırları
@@ -713,15 +738,15 @@ export async function GET(request: NextRequest) {
           exportDataTesellum,
           [
             { wch: 8 },
-            { wch: 30 },
-            { wch: 14 },
             { wch: 32 },
-            { wch: 18 },
-            { wch: 14 },
-            { wch: 20 },
-            { wch: 18 },
-            { wch: 18 },
-            { wch: 16 }
+            { wch: 24 },
+            { wch: 32 },
+            { wch: 28 },
+            { wch: 24 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 28 },
+            { wch: 18 }
           ]
         );
         sheet1.addRow([]);
@@ -740,13 +765,13 @@ export async function GET(request: NextRequest) {
             { wch: 10 },
             { wch: 14 },
             { wch: 14 },
-            { wch: 18 },
-            { wch: 14 },
-            { wch: 18 },
-            { wch: 14 },
-            { wch: 18 },
-            { wch: 18 },
-            { wch: 16 }
+            { wch: 20 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 20 },
+            { wch: 18 }
           ]
         );
         sheet2.addRow([]);
