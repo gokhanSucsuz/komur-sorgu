@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Independent Date & Time Utilities for Istanbul / Turkish Timezone
  * Standalone module with zero external dependencies to prevent circular imports.
  */
@@ -68,6 +68,22 @@ export function parseDateSafely(val: any): Date | null {
 
   const parsed = new Date(str);
   return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Formats date as "25.09.2025 Cumartesi" (DD.MM.YYYY Weekday)
+ */
+export function formatTrDateWithDay(val: any): string {
+  const d = parseDateSafely(val);
+  if (!d) return val ? String(val) : '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const weekday = new Intl.DateTimeFormat('tr-TR', {
+    weekday: 'long',
+    timeZone: 'Europe/Istanbul',
+  }).format(d);
+  return `${day}.${month}.${year} ${weekday}`;
 }
 
 /**

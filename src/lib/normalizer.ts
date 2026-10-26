@@ -1539,6 +1539,57 @@ export function formatTonnage(val: string | number | null | undefined): {
 }
 
 /**
+ * Tonaj miktarını hem kilogram (örn. 26.500 kg) hem de ton (örn. 26,5 Ton / 26,58 Ton)
+ * olarak çift gösterimli ve Türkçe binlik/ondalık ayracıyla biçimlendirir.
+ */
+export function formatTwoWayTonnage(val: string | number | null | undefined): {
+  ton: number;
+  kg: number;
+  tonStr: string;
+  kgStr: string;
+  combined: string;
+  slash: string;
+} {
+  const ton = normalizeToTon(val);
+  const kg = Math.round(ton * 1000);
+  const kgFormatted = `${kg.toLocaleString('tr-TR')} kg`;
+  const tonFormatted = `${ton.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 3 })} Ton`;
+
+  return {
+    ton,
+    kg,
+    tonStr: tonFormatted,
+    kgStr: kgFormatted,
+    combined: `${kgFormatted} (${tonFormatted})`,
+    slash: `${kgFormatted} / ${tonFormatted}`,
+  };
+}
+
+/**
+ * Tartı / Tesellüm farkını hem kilogram (örn. -120 kg) hem de ton (örn. -0,12 Ton)
+ * cinsinden çift gösterimli olarak biçimlendirir.
+ */
+export function formatTwoWayDiff(diffKg: number): {
+  diffKg: number;
+  diffTon: number;
+  kgStr: string;
+  tonStr: string;
+  combined: string;
+} {
+  const diffTon = parseFloat((diffKg / 1000).toFixed(3));
+  const prefix = diffKg > 0 ? '+' : '';
+  const kgFormatted = `${prefix}${diffKg.toLocaleString('tr-TR')} kg`;
+  const tonFormatted = `${prefix}${diffTon.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 3 })} Ton`;
+  return {
+    diffKg,
+    diffTon,
+    kgStr: kgFormatted,
+    tonStr: tonFormatted,
+    combined: `${kgFormatted} (${tonFormatted})`,
+  };
+}
+
+/**
  * Kömür iptal gerekçesini insan tarafından okunabilir şekilde temizler.
  * Şifreli bir dizi (ENC:GCM:v1:...) ekranda asla doğrudan gösterilmez.
  */

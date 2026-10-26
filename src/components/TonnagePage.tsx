@@ -4,8 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
-import { turkishIncludes, formatTonnage, normalizeToTon } from '@/lib/normalizer';
-import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
+import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
+import { formatTrDate, formatTrDateTime, formatTrAuto, formatTrDateWithDay } from '@/lib/dateUtils';
 import InstitutionTonnageModal from './InstitutionTonnageModal';
 
 interface TonnagePageProps {
@@ -903,10 +903,10 @@ export default function TonnagePage({
                   <th className="p-3 text-center w-12">Sıra</th>
                   <th className="p-3">Tır Plakası & Şoför</th>
                   <th className="p-3">Sevk / Çıkış Tarihi</th>
-                  <th className="p-3 text-right">Sevk Miktar (kg)</th>
+                  <th className="p-3 text-right">Sevk Miktar (kg / Ton)</th>
                   <th className="p-3">Teslim Tarihi</th>
-                  <th className="p-3 text-right">Teslim Miktar (kg)</th>
-                  <th className="p-3 text-right">Fark (kg)</th>
+                  <th className="p-3 text-right">Teslim Miktar (kg / Ton)</th>
+                  <th className="p-3 text-right">Fark (kg / Ton)</th>
                   <th className="p-3">İrsaliye No</th>
                   <th className="p-3">Tutanak No</th>
                   {userRole === 'ADMIN' && <th className="p-3 text-center w-28">İşlemler</th>}
@@ -914,9 +914,9 @@ export default function TonnagePage({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredMainTrucks.map((t) => {
-                  const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
-                  const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
-                  const farkKg = teslimKg - sevkKg;
+                  const sevkFmt = formatTwoWayTonnage(t.brut_tonaj);
+                  const teslimFmt = formatTwoWayTonnage(t.net_tonaj);
+                  const diffFmt = formatTwoWayDiff(teslimFmt.kg - sevkFmt.kg);
 
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
@@ -936,26 +936,28 @@ export default function TonnagePage({
                         )}
                       </td>
                       <td className="p-3 text-slate-700 font-semibold whitespace-nowrap">
-                        {formatTrDate(t.ocak_cikis_tarihi || t.tarih)}
+                        {formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih)}
                       </td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
-                        {sevkKg.toLocaleString('tr-TR')} <span className="text-[10px] text-slate-500 font-normal">kg</span>
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="font-mono font-bold text-slate-900">{sevkFmt.kgStr}</div>
+                        <div className="text-[10px] text-slate-500 font-semibold font-mono">({sevkFmt.tonStr})</div>
                       </td>
                       <td className="p-3 text-slate-800 font-bold whitespace-nowrap">
-                        {formatTrDate(t.tarih)}
+                        {formatTrDateWithDay(t.tarih)}
                       </td>
-                      <td className="p-3 text-right font-mono font-black text-amber-900 bg-amber-50/30 whitespace-nowrap">
-                        {teslimKg.toLocaleString('tr-TR')} <span className="text-[10px] text-amber-700 font-bold">kg</span>
+                      <td className="p-3 text-right bg-amber-50/30 whitespace-nowrap">
+                        <div className="font-mono font-black text-amber-900">{teslimFmt.kgStr}</div>
+                        <div className="text-[10px] text-amber-800 font-bold font-mono">({teslimFmt.tonStr})</div>
                       </td>
-                      <td className="p-3 text-right font-mono font-bold whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded-md text-xs inline-block ${
-                          farkKg === 0
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold inline-block ${
+                          diffFmt.diffKg === 0
                             ? 'text-slate-600 bg-slate-100'
-                            : farkKg > 0
+                            : diffFmt.diffKg > 0
                             ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                             : 'text-rose-700 bg-rose-50 border border-rose-200'
                         }`}>
-                          {farkKg > 0 ? `+${farkKg.toLocaleString('tr-TR')}` : farkKg.toLocaleString('tr-TR')} kg
+                          {diffFmt.combined}
                         </span>
                       </td>
                       <td className="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">
@@ -1088,7 +1090,7 @@ export default function TonnagePage({
                 <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
                   <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-slate-500" />
-                    <span>Ocak Çıkış: <strong className="text-slate-900">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</strong></span>
+                    <span>Ocak Çıkış: <strong className="text-slate-900">{formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih)}</strong></span>
                   </span>
                   <span
                     className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 ${
@@ -1098,39 +1100,37 @@ export default function TonnagePage({
                     }`}
                   >
                     <Calendar className="w-3 h-3" />
-                    <span>Sahaya Geliş: <strong>{formatTrDate(t.tarih)}</strong></span>
+                    <span>Sahaya Geliş: <strong>{formatTrDateWithDay(t.tarih)}</strong></span>
                   </span>
                 </div>
 
-                {/* Tonnage Detail Row */}
+                {/* Tonnage Detail Row (İki Gösterimli: kg ve Ton) */}
                 {(() => {
-                  const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
-                  const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
-                  const farkKg = teslimKg - sevkKg;
-                  const brutFmt = formatTonnage(t.brut_tonaj);
-                  const netFmt = formatTonnage(t.net_tonaj);
+                  const sevkFmt = formatTwoWayTonnage(t.brut_tonaj);
+                  const teslimFmt = formatTwoWayTonnage(t.net_tonaj);
+                  const diffFmt = formatTwoWayDiff(teslimFmt.kg - sevkFmt.kg);
 
                   return (
                     <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
                       <div>
                         <span className="text-[10px] uppercase font-bold text-slate-500">Sevk Miktarı</span>
-                        <p className="text-sm font-bold text-slate-900 mt-0.5">{sevkKg.toLocaleString('tr-TR')} kg</p>
-                        <span className="text-[10px] font-medium text-slate-500 block">({brutFmt.tonStr})</span>
+                        <p className="text-sm font-bold text-slate-900 mt-0.5 font-mono">{sevkFmt.kgStr}</p>
+                        <span className="text-[10px] font-semibold text-slate-500 block font-mono">({sevkFmt.tonStr})</span>
                       </div>
                       <div className="border-x border-slate-200 bg-amber-50/60 rounded-lg py-0.5">
                         <span className="text-[10px] uppercase font-extrabold text-amber-900">Teslim Miktarı</span>
-                        <p className="text-sm font-black text-amber-800 mt-0.5">{teslimKg.toLocaleString('tr-TR')} kg</p>
-                        <span className="text-[10px] font-bold text-amber-900 block">({netFmt.tonStr})</span>
+                        <p className="text-sm font-black text-amber-800 mt-0.5 font-mono">{teslimFmt.kgStr}</p>
+                        <span className="text-[10px] font-bold text-amber-900 block font-mono">({teslimFmt.tonStr})</span>
                       </div>
                       <div>
                         <span className="text-[10px] uppercase font-bold text-slate-500">Tartı Farkı</span>
-                        <p className={`text-sm font-black mt-0.5 ${
-                          farkKg === 0 ? 'text-slate-700' : farkKg > 0 ? 'text-emerald-700' : 'text-rose-700'
+                        <p className={`text-sm font-black mt-0.5 font-mono ${
+                          diffFmt.diffKg === 0 ? 'text-slate-700' : diffFmt.diffKg > 0 ? 'text-emerald-700' : 'text-rose-700'
                         }`}>
-                          {farkKg > 0 ? `+${farkKg.toLocaleString('tr-TR')}` : farkKg.toLocaleString('tr-TR')} kg
+                          {diffFmt.kgStr}
                         </p>
-                        <span className="text-[10px] font-medium text-slate-500 block">
-                          {farkKg === 0 ? 'Tam Eşleşme' : farkKg > 0 ? 'Fazla Teslim' : 'Eksik Sevk'}
+                        <span className="text-[10px] font-semibold text-slate-500 block font-mono">
+                          ({diffFmt.tonStr})
                         </span>
                       </div>
                     </div>
@@ -1712,7 +1712,7 @@ export default function TonnagePage({
                         </p>
                         <div className="flex items-center justify-between text-xs font-extrabold text-slate-900 pt-1.5 mt-1 border-t border-slate-200">
                           <span>İLİ / İLÇESİ : EDİRNE / MERKEZ</span>
-                          <span>TARİH : {reportEndDate ? formatTrDate(reportEndDate) : formatTrDate(new Date())}</span>
+                          <span>TARİH : {reportEndDate ? formatTrDateWithDay(reportEndDate) : formatTrDateWithDay(new Date())}</span>
                         </div>
                       </>
                     ) : (
@@ -1728,13 +1728,13 @@ export default function TonnagePage({
                   </div>
                   <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
                     <span className="text-[9px] font-mono text-slate-400 block">KOD: {reportFormat === 'TESELLUM' ? 'TSL-VALILIK' : 'TKI-DAGITIM'}</span>
-                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDate(new Date())}</span>
+                    <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDateWithDay(new Date())}</span>
                   </div>
                 </div>
 
                 <div className="pt-2 flex flex-wrap items-center justify-between text-[11px] text-slate-600 gap-2 font-medium">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span>Rapor Kapsamı: <strong className="text-slate-900">{reportStartDate && reportEndDate ? `${formatTrDate(reportStartDate)} - ${formatTrDate(reportEndDate)}` : 'Tüm Kömür Sevkiyatı Dönemi'}</strong></span>
+                    <span>Rapor Kapsamı: <strong className="text-slate-900">{reportStartDate && reportEndDate ? `${formatTrDateWithDay(reportStartDate)} - ${formatTrDateWithDay(reportEndDate)}` : 'Tüm Kömür Sevkiyatı Dönemi'}</strong></span>
                     {reportSearchQuery && (
                       <>
                         <span>•</span>
@@ -1900,42 +1900,45 @@ export default function TonnagePage({
                         <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
                           <th className="p-2 text-center w-10">Sıra</th>
                           <th className="p-2">YÜKLEMEYİ YAPAN İŞLETME</th>
-                          <th className="p-2 w-24">ÇIKIŞ TARİHİ</th>
+                          <th className="p-2 w-28">ÇIKIŞ TARİHİ</th>
                           <th className="p-2">VAGON Veya PLAKA NO / Şoför Adı</th>
-                          <th className="p-2 text-right w-28">İŞLETMEDEN YÜKLENEN MİKTAR (kg)</th>
-                          <th className="p-2 w-24">TESELLÜM TARİHİ</th>
+                          <th className="p-2 text-right w-32">İŞLETMEDEN YÜKLENEN MİKTAR (kg / Ton)</th>
+                          <th className="p-2 w-28">TESELLÜM TARİHİ</th>
                           <th className="p-2 w-28">TESELLÜM FİŞ NO veya ( Kantar tartı no)</th>
-                          <th className="p-2 text-right w-28">TESLİM ALINAN MİKTAR(kg)</th>
-                          <th className="p-2 text-right w-28">FARK (İşl.Yüklenen) ( Teslim Alınan) kg.</th>
+                          <th className="p-2 text-right w-32">TESLİM ALINAN MİKTAR (kg / Ton)</th>
+                          <th className="p-2 text-right w-32">FARK (İşl.Yüklenen) ( Teslim Alınan) kg.</th>
                           <th className="p-2 w-24">TUTANAK NO</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                         {filteredReportTrucks.map((t: any, index: number) => {
-                          const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
-                          const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
-                          const farkKg = teslimKg - sevkKg;
+                          const sevkFmt = formatTwoWayTonnage(t.brut_tonaj);
+                          const teslimFmt = formatTwoWayTonnage(t.net_tonaj);
+                          const diffFmt = formatTwoWayDiff(teslimFmt.kg - sevkFmt.kg);
 
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
                               <td className="p-2 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
                               <td className="p-2 text-slate-800 font-semibold">{t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü'}</td>
-                              <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</td>
+                              <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih)}</td>
                               <td className="p-2 font-mono font-bold text-slate-900">
                                 {t.plaka}{t.sofor_adi ? ` - ${t.sofor_adi}` : ''}
                               </td>
-                              <td className="p-2 text-right font-mono font-bold text-slate-800">
-                                {sevkKg.toLocaleString('tr-TR')}
+                              <td className="p-2 text-right whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-800">{sevkFmt.kgStr}</div>
+                                <div className="text-[10px] text-slate-500 font-semibold font-mono">({sevkFmt.tonStr})</div>
                               </td>
-                              <td className="p-2 text-slate-800 font-bold whitespace-nowrap">{formatTrDate(t.tarih)}</td>
+                              <td className="p-2 text-slate-800 font-bold whitespace-nowrap">{formatTrDateWithDay(t.tarih)}</td>
                               <td className="p-2 font-mono text-slate-700 font-bold">{t.irsaliye_no}</td>
-                              <td className="p-2 text-right font-mono font-black text-amber-900 bg-amber-50/50">
-                                {teslimKg.toLocaleString('tr-TR')}
+                              <td className="p-2 text-right bg-amber-50/50 whitespace-nowrap">
+                                <div className="font-mono font-black text-amber-900">{teslimFmt.kgStr}</div>
+                                <div className="text-[10px] text-amber-800 font-bold font-mono">({teslimFmt.tonStr})</div>
                               </td>
-                              <td className="p-2 text-right font-mono font-bold">
-                                <span className={farkKg === 0 ? 'text-slate-700' : farkKg > 0 ? 'text-emerald-700' : 'text-rose-700'}>
-                                  {farkKg > 0 ? `+${farkKg.toLocaleString('tr-TR')}` : farkKg.toLocaleString('tr-TR')}
-                                </span>
+                              <td className="p-2 text-right whitespace-nowrap">
+                                <div className={`font-mono font-bold ${diffFmt.diffKg === 0 ? 'text-slate-700' : diffFmt.diffKg > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                  {diffFmt.kgStr}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-semibold font-mono">({diffFmt.tonStr})</div>
                               </td>
                               <td className="p-2 font-mono font-semibold text-indigo-900">
                                 {t.tutanak_no || '-'}
@@ -1949,17 +1952,22 @@ export default function TonnagePage({
                           <td colSpan={4} className="p-2.5 text-right uppercase">
                             TOPLAM TESLİM ALINAN MİKTAR ({filteredReportTrucks.length} Adet):
                           </td>
-                          <td className="p-2.5 text-right font-mono text-slate-900">
-                            {reportTotalYuklenenKg.toLocaleString('tr-TR')}
+                          <td className="p-2.5 text-right font-mono text-slate-900 whitespace-nowrap">
+                            <div className="font-black">{reportTotalYuklenenKg.toLocaleString('tr-TR')} kg</div>
+                            <div className="text-[10px] text-slate-600 font-bold font-mono">({formatTonnage(reportTotalBrut).tonStr})</div>
                           </td>
                           <td colSpan={2} className="p-2.5"></td>
-                          <td className="p-2.5 text-right font-mono text-amber-950 bg-amber-100/60 font-black">
-                            {reportTotalTeslimKg.toLocaleString('tr-TR')}
+                          <td className="p-2.5 text-right font-mono text-amber-950 bg-amber-100/60 font-black whitespace-nowrap">
+                            <div className="font-black">{reportTotalTeslimKg.toLocaleString('tr-TR')} kg</div>
+                            <div className="text-[10px] text-amber-800 font-bold font-mono">({formatTonnage(reportTotalNet).tonStr})</div>
                           </td>
-                          <td className="p-2.5 text-right font-mono font-black">
-                            <span className={reportTotalFarkKg === 0 ? 'text-slate-900' : reportTotalFarkKg > 0 ? 'text-emerald-700' : 'text-rose-700'}>
-                              {reportTotalFarkKg > 0 ? `+${reportTotalFarkKg.toLocaleString('tr-TR')}` : reportTotalFarkKg.toLocaleString('tr-TR')}
-                            </span>
+                          <td className="p-2.5 text-right font-mono font-black whitespace-nowrap">
+                            <div className={reportTotalFarkKg === 0 ? 'text-slate-900' : reportTotalFarkKg > 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                              {reportTotalFarkKg > 0 ? `+${reportTotalFarkKg.toLocaleString('tr-TR')}` : reportTotalFarkKg.toLocaleString('tr-TR')} kg
+                            </div>
+                            <div className="text-[10px] text-slate-600 font-bold font-mono">
+                              ({(reportTotalFarkKg / 1000).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 3 })} Ton)
+                            </div>
                           </td>
                           <td className="p-2.5"></td>
                         </tr>
@@ -1976,18 +1984,18 @@ export default function TonnagePage({
                           <th className="p-2 w-20">İL</th>
                           <th className="p-2 w-24">İLÇE</th>
                           <th className="p-2 w-28">PLAKA NO</th>
-                          <th className="p-2 w-24">SEVK TARİHİ</th>
-                          <th className="p-2 text-right w-28">SEVK MİKTAR (KG)</th>
-                          <th className="p-2 w-24">TESLİM TARİHİ</th>
-                          <th className="p-2 text-right w-28">TESLİM MİKTARI(KG)</th>
+                          <th className="p-2 w-28">SEVK TARİHİ</th>
+                          <th className="p-2 text-right w-32">SEVK MİKTAR (KG / TON)</th>
+                          <th className="p-2 w-28">TESLİM TARİHİ</th>
+                          <th className="p-2 text-right w-32">TESLİM MİKTARI(KG / TON)</th>
                           <th className="p-2 w-28">İRSALİYE NO</th>
                           <th className="p-2 w-24">TUTANAK NO</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                         {filteredReportTrucks.map((t: any, index: number) => {
-                          const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
-                          const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+                          const sevkFmt = formatTwoWayTonnage(t.brut_tonaj);
+                          const teslimFmt = formatTwoWayTonnage(t.net_tonaj);
 
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
@@ -1995,13 +2003,15 @@ export default function TonnagePage({
                               <td className="p-2 font-bold text-slate-800">{t.il || 'EDİRNE'}</td>
                               <td className="p-2 font-bold text-slate-800">{t.ilce || 'MERKEZ'}</td>
                               <td className="p-2 font-mono font-bold text-slate-900">{t.plaka}</td>
-                              <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</td>
-                              <td className="p-2 text-right font-mono font-bold text-slate-800">
-                                {sevkKg.toLocaleString('tr-TR')}
+                              <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih)}</td>
+                              <td className="p-2 text-right whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-800">{sevkFmt.kgStr}</div>
+                                <div className="text-[10px] text-slate-500 font-semibold font-mono">({sevkFmt.tonStr})</div>
                               </td>
-                              <td className="p-2 text-slate-800 font-bold whitespace-nowrap">{formatTrDate(t.tarih)}</td>
-                              <td className="p-2 text-right font-mono font-black text-amber-900 bg-amber-50/50">
-                                {teslimKg.toLocaleString('tr-TR')}
+                              <td className="p-2 text-slate-800 font-bold whitespace-nowrap">{formatTrDateWithDay(t.tarih)}</td>
+                              <td className="p-2 text-right bg-amber-50/50 whitespace-nowrap">
+                                <div className="font-mono font-black text-amber-900">{teslimFmt.kgStr}</div>
+                                <div className="text-[10px] text-amber-800 font-bold font-mono">({teslimFmt.tonStr})</div>
                               </td>
                               <td className="p-2 font-mono text-slate-700 font-bold">{t.irsaliye_no}</td>
                               <td className="p-2 font-mono font-semibold text-indigo-900">
@@ -2016,12 +2026,14 @@ export default function TonnagePage({
                           <td colSpan={5} className="p-2.5 text-right uppercase">
                             Toplam:
                           </td>
-                          <td className="p-2.5 text-right font-mono text-slate-900">
-                            {reportTotalYuklenenKg.toLocaleString('tr-TR')}
+                          <td className="p-2.5 text-right font-mono text-slate-900 whitespace-nowrap">
+                            <div className="font-black">{reportTotalYuklenenKg.toLocaleString('tr-TR')} kg</div>
+                            <div className="text-[10px] text-slate-600 font-bold font-mono">({formatTonnage(reportTotalBrut).tonStr})</div>
                           </td>
                           <td className="p-2.5"></td>
-                          <td className="p-2.5 text-right font-mono text-amber-950 bg-amber-100/60 font-black">
-                            {reportTotalTeslimKg.toLocaleString('tr-TR')}
+                          <td className="p-2.5 text-right font-mono text-amber-950 bg-amber-100/60 font-black whitespace-nowrap">
+                            <div className="font-black">{reportTotalTeslimKg.toLocaleString('tr-TR')} kg</div>
+                            <div className="text-[10px] text-amber-800 font-bold font-mono">({formatTonnage(reportTotalNet).tonStr})</div>
                           </td>
                           <td colSpan={2} className="p-2.5"></td>
                         </tr>
@@ -2066,7 +2078,7 @@ export default function TonnagePage({
                   <div className="flex justify-end max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
                     <div className="w-72 space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
                       <div>
-                        <p className="text-[11px] text-slate-600 mb-1">{reportEndDate ? formatTrDate(reportEndDate) : formatTrDate(new Date())}</p>
+                        <p className="text-[11px] text-slate-600 mb-1">{reportEndDate ? formatTrDateWithDay(reportEndDate) : formatTrDateWithDay(new Date())}</p>
                         <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Tezcan FİDAN</p>
                         <p className="text-[11px] font-bold text-slate-800 mt-0.5">Vakıf Müdürü</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">Edirne SYDV Başkanlığı</p>

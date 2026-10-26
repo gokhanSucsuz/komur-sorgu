@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName } from '@/lib/normalizer';
+import { formatTrDateWithDay } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString } from '@/lib/security';
 
@@ -588,10 +589,10 @@ export async function GET(request: NextRequest) {
         return {
           'Sıra': t.tir_sirasi || idx + 1,
           'YÜKLEMEYİ YAPAN İŞLETME': t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü',
-          'ÇIKIŞ TARİHİ': t.ocak_cikis_tarihi || t.tarih || '-',
+          'ÇIKIŞ TARİHİ': t.ocak_cikis_tarihi || t.tarih ? formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih) : '-',
           'VAGON Veya PLAKA NO / Şoför Adı': `${t.plaka || '-'}${t.sofor_adi ? ` - ${t.sofor_adi}` : ''}`,
           'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': yuklenenKg,
-          'TESELLÜM TARİHİ': t.tarih || '-',
+          'TESELLÜM TARİHİ': t.tarih ? formatTrDateWithDay(t.tarih) : '-',
           'TESELLÜM FİŞ NO veya ( Kantar tartı no)': t.irsaliye_no || '-',
           'TESLİM ALINAN MİKTAR(kg)': teslimKg,
           'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': farkKg,
@@ -609,9 +610,9 @@ export async function GET(request: NextRequest) {
           'İL': t.il || 'EDİRNE',
           'İLÇE': t.ilce || 'MERKEZ',
           'PLAKA NO': t.plaka || '-',
-          'SEVK TARİHİ': t.ocak_cikis_tarihi || t.tarih || '-',
+          'SEVK TARİHİ': t.ocak_cikis_tarihi || t.tarih ? formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih) : '-',
           'SEVK MİKTAR (KG)': sevkKg,
-          'TESLİM TARİHİ': t.tarih || '-',
+          'TESLİM TARİHİ': t.tarih ? formatTrDateWithDay(t.tarih) : '-',
           'TESLİM MİKTARI(KG)': teslimKg,
           'İRSALİYE NO': t.irsaliye_no || '-',
           'TUTANAK NO': t.tutanak_no || '-'

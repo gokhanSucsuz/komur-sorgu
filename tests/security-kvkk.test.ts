@@ -58,7 +58,10 @@ import {
   getRecordStreetInfo,
   getBeneficiaryListTypeInfo,
   calculateCoalStockMetrics,
+  formatTwoWayTonnage,
+  formatTwoWayDiff,
 } from '@/lib/normalizer';
+import { formatTrDateWithDay } from '@/lib/dateUtils';
 
 import { mapDoc, getDbCollections, reconcileArchivedSeasonImports, seedSandboxFakeData } from '@/lib/mongodb';
 import { sanitizeUser, isSessionExpired, SESSION_MAX_AGE_MS } from '@/lib/auth';
@@ -843,6 +846,36 @@ describe('10. Tonaj Rapor Formatları, Tutanak No ve Dorse Plakasız Kayıt Test
     assert.equal(format2ExpectedColumns[3], 'PLAKA NO');
     assert.equal(format2ExpectedColumns[8], 'İRSALİYE NO');
     assert.equal(format2ExpectedColumns[9], 'TUTANAK NO');
+  });
+
+  it('Tarihler "25.09.2025 Cumartesi" (DD.MM.YYYY Gün) formatında eksiksiz biçimlendirilir', () => {
+    // 27 Eylül 2025 Cumartesi günü
+    const satStr = formatTrDateWithDay('2025-09-27');
+    assert.equal(satStr, '27.09.2025 Cumartesi');
+
+    // 25 Eylül 2025 Perşembe günü
+    const thuStr = formatTrDateWithDay('2025-09-25');
+    assert.equal(thuStr, '25.09.2025 Perşembe');
+  });
+
+  it('Sevk ve teslim miktarları "26.500 kg veya 26,5 ton" şeklinde çift gösterimli ve Türkçe ayracıyla biçimlendirilir', () => {
+    const res1 = formatTwoWayTonnage(26.5);
+    assert.equal(res1.kgStr, '26.500 kg');
+    assert.equal(res1.tonStr, '26,5 Ton');
+    assert.equal(res1.combined, '26.500 kg (26,5 Ton)');
+
+    const res2 = formatTwoWayTonnage(26.58);
+    assert.equal(res2.kgStr, '26.580 kg');
+    assert.equal(res2.tonStr, '26,58 Ton');
+
+    const res3 = formatTwoWayTonnage(26.46);
+    assert.equal(res3.kgStr, '26.460 kg');
+    assert.equal(res3.tonStr, '26,46 Ton');
+
+    const diff = formatTwoWayDiff(-120);
+    assert.equal(diff.kgStr, '-120 kg');
+    assert.equal(diff.tonStr, '-0,12 Ton');
+    assert.equal(diff.combined, '-120 kg (-0,12 Ton)');
   });
 });
 
