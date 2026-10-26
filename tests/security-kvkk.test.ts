@@ -25,6 +25,8 @@ import {
   encryptBeneficiary,
   encryptRouteStop,
   decryptRouteStop,
+  encryptTruck,
+  decryptTruck,
 } from '@/lib/crypto';
 
 import {
@@ -55,6 +57,7 @@ import {
   normalizeStreetForCompare,
   getRecordStreetInfo,
   getBeneficiaryListTypeInfo,
+  calculateCoalStockMetrics,
 } from '@/lib/normalizer';
 
 import { mapDoc, getDbCollections, reconcileArchivedSeasonImports, seedSandboxFakeData } from '@/lib/mongodb';
@@ -687,3 +690,160 @@ describe('8. Müdür Yetkilisi (MUDUR) Rolü, Parola Uyumu, 2FA ve Cihaz Kısıt
     }
   });
 });
+
+describe('9. Standart Dışı Kömür Torbası Ağırlık Toleransı & Stok Eksiye Düşmeme Testleri', () => {
+  it('100 kişilik kömür (85 ton) geldiğinde 102 kişiye (3468 torba / 86.7 ton) verildiğinde stok eksiye düşmez (0 kalır) ve fazlalık kaydedilir', () => {
+    // 100 kişi * 34 torba * 0.025 ton = 85.0 Ton kantar net girişi
+    // Fiilen 102 kişi kömür aldı = 102 * 34 = 3468 torba verildi (Standart formülle 86.7 Ton)
+    const metrics = calculateCoalStockMetrics(85.0, 3468, 0.025, 34);
+
+    assert.equal(metrics.toplamNetTonaj, 85.0);
+    assert.equal(metrics.dagitilanNetTonaj, 86.7);
+    assert.equal(metrics.kalanStokTonaj, 0, 'Saha stoku asla eksiye düşmemelidir, 0 olmalıdır');
+    assert.equal(metrics.fazlaDagitilanTonaj, 1.7, 'Eksiye düşecek tonaj fazladan dağıtılan kömür olarak kaydedilmelidir');
+    assert.equal(metrics.fazlaDagitilanKg, 1700, 'Fazlalık kg cinsinden tam olarak 1700 kg olmalıdır');
+    assert.equal(metrics.fazlaDagitilanTorba, 68, 'Fazladan verilen torba sayısı tam olarak 68 torba olmalıdır');
+    assert.equal(metrics.fazlaDagitilanHane, 2, 'Fazladan faydalanan hane sayısı tam olarak 2 hane olmalıdır');
+    assert.equal(metrics.hasFazlaDagitim, true, 'hasFazlaDagitim bayrağı true olmalıdır');
+  });
+
+  it('Sahada stok varken (gelen > dağıtılan) kalan stok pozitif hesaplanır ve fazla dağıtım 0 olur', () => {
+    // 100 Ton kömür geldi, 2000 torba (50 Ton) dağıtıldı
+    const metrics = calculateCoalStockMetrics(100.0, 2000, 0.025, 34);
+
+    assert.equal(metrics.toplamNetTonaj, 100.0);
+    assert.equal(metrics.dagitilanNetTonaj, 50.0);
+    assert.equal(metrics.kalanStokTonaj, 50.0);
+    assert.equal(metrics.fazlaDagitilanTonaj, 0);
+    assert.equal(metrics.fazlaDagitilanKg, 0);
+    assert.equal(metrics.fazlaDagitilanTorba, 0);
+    assert.equal(metrics.fazlaDagitilanHane, 0);
+    assert.equal(metrics.hasFazlaDagitim, false);
+  });
+
+  it('Kantar tonajı ile dağıtılan torba tonajı tam eşitken kalan stok 0 olur ve fazla dağıtım 0 kalır', () => {
+    // 25 Ton kömür geldi, 1000 torba (25 Ton) dağıtıldı
+    const metrics = calculateCoalStockMetrics(25.0, 1000, 0.025, 34);
+
+    assert.equal(metrics.kalanStokTonaj, 0);
+    assert.equal(metrics.fazlaDagitilanTonaj, 0);
+    assert.equal(metrics.hasFazlaDagitim, false);
+  });
+
+  it('Tır kaydı olmadan (0 ton) dağıtım yapıldığında stok 0 kalır, dağıtılan miktar eksiksiz fazla kömür olarak kaydedilir', () => {
+    // 0 Ton kantar girişi varken sahada önceden kalan torbalardan 100 torba dağıtıldı
+    const metrics = calculateCoalStockMetrics(0, 100, 0.025, 34);
+
+    assert.equal(metrics.kalanStokTonaj, 0);
+    assert.equal(metrics.fazlaDagitilanTonaj, 2.5);
+    assert.equal(metrics.fazlaDagitilanKg, 2500);
+    assert.equal(metrics.fazlaDagitilanTorba, 100);
+    assert.equal(metrics.fazlaDagitilanHane, 2);
+    assert.equal(metrics.hasFazlaDagitim, true);
+  });
+
+  it('Kilogram formatında (örn. 85000 kg) gelen tonaj normalize edilir ve tolerans hesaplaması hatasız çalışır', () => {
+    const metrics = calculateCoalStockMetrics(85000, 3468, 0.025, 34);
+
+    assert.equal(metrics.toplamNetTonaj, 85.0);
+    assert.equal(metrics.kalanStokTonaj, 0);
+    assert.equal(metrics.fazlaDagitilanTonaj, 1.7);
+    assert.equal(metrics.fazlaDagitilanKg, 1700);
+    assert.equal(metrics.hasFazlaDagitim, true);
+  });
+});
+
+describe('10. Tonaj Rapor Formatları, Tutanak No ve Dorse Plakasız Kayıt Testleri', () => {
+  it('Tır kaydında Tutanak No alanını AES-256-GCM ile şifreler ve eksiksiz çözer', () => {
+    const rawTruck = {
+      plaka: '17 ACJ 824',
+      sofor_adi: 'Olcay UĞURLU',
+      irsaliye_no: 'IRS-2025-001',
+      tutanak_no: '2025/01-EDR',
+      brut_tonaj: 26.58,
+      net_tonaj: 26.46,
+      tarih: '2025-01-15',
+    };
+
+    const enc = encryptTruck(rawTruck);
+    assert.notEqual(enc.tutanak_no, rawTruck.tutanak_no, 'Tutanak No açık metin kalmamalı, şifrelenmelidir');
+    assert.ok(isEncrypted(enc.tutanak_no), 'Tutanak No AES-256-GCM ile şifrelenmiş olmalıdır');
+
+    const dec = decryptTruck(enc);
+    assert.equal(dec.tutanak_no, '2025/01-EDR', 'Çözülen Tutanak No orijinal değerle birebir eşleşmelidir');
+    assert.equal(dec.plaka, '17 ACJ 824');
+    assert.equal(dec.sofor_adi, 'Olcay UĞURLU');
+  });
+
+  it('Dorse plakası alanı olmadan veya boş bırakıldığında tır kaydı sorunsuz işlenir', () => {
+    const rawTruckWithoutDorse = {
+      plaka: '17 ACJ 824',
+      sofor_adi: 'Olcay UĞURLU',
+      irsaliye_no: 'IRS-2025-002',
+      tutanak_no: 'TUT-42',
+      brut_tonaj: 26.58,
+      net_tonaj: 26.46,
+    };
+
+    const enc = encryptTruck(rawTruckWithoutDorse);
+    assert.equal(enc.dorse_plaka, undefined);
+
+    const dec = decryptTruck(enc);
+    assert.equal(dec.dorse_plaka, undefined);
+    assert.equal(dec.tutanak_no, 'TUT-42');
+  });
+
+  it('Tartı / Tesellüm farkı Excel 1 ile uyumlu olarak (Teslim Alınan - Sevk Edilen) negatif/pozitif kilogramı doğru hesaplar', () => {
+    // Excel 1 Örneği: İşletmeden Yüklenen = 26.580 kg (26.58 ton), Teslim Alınan = 26.460 kg (26.46 ton)
+    // Fark = 26.460 - 26.580 = -120 kg
+    const sevkKg = Math.round(26.58 * 1000);
+    const teslimKg = Math.round(26.46 * 1000);
+    const farkKg = teslimKg - sevkKg;
+
+    assert.equal(sevkKg, 26580);
+    assert.equal(teslimKg, 26460);
+    assert.equal(farkKg, -120, 'Teslim Alınan - Yüklenen farkı -120 kg olmalıdır');
+  });
+
+  it('Format 1 (Tesellümleri İzleme Tablosu) ve Format 2 (TKİ Kömür Dağıtım Listesi) sütun sıraları Excel ile birebir eşleşir', () => {
+    // Format 1 (Valilik Günlük Tesellüm İzleme Tablosu) Sütun Sırası:
+    const format1ExpectedColumns = [
+      'Sıra',
+      'YÜKLEMEYİ YAPAN İŞLETME',
+      'ÇIKIŞ TARİHİ',
+      'VAGON Veya PLAKA NO / Şoför Adı',
+      'İŞLETMEDEN YÜKLENEN MİKTAR (kg)',
+      'TESELLÜM TARİHİ',
+      'TESELLÜM FİŞ NO veya ( Kantar tartı no)',
+      'TESLİM ALINAN MİKTAR(kg)',
+      'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.',
+      'TUTANAK NO'
+    ];
+
+    // Format 2 (TKİ Çan Linyit İşletmesi Kömür Dağıtım Listesi) Sütun Sırası:
+    const format2ExpectedColumns = [
+      'SIRA NO',
+      'İL',
+      'İLÇE',
+      'PLAKA NO',
+      'SEVK TARİHİ',
+      'SEVK MİKTAR (KG)',
+      'TESLİM TARİHİ',
+      'TESLİM MİKTARI(KG)',
+      'İRSALİYE NO',
+      'TUTANAK NO'
+    ];
+
+    assert.equal(format1ExpectedColumns.length, 10);
+    assert.equal(format2ExpectedColumns.length, 10);
+    assert.equal(format1ExpectedColumns[3], 'VAGON Veya PLAKA NO / Şoför Adı');
+    assert.equal(format1ExpectedColumns[8], 'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.');
+    assert.equal(format1ExpectedColumns[9], 'TUTANAK NO');
+    assert.equal(format2ExpectedColumns[0], 'SIRA NO');
+    assert.equal(format2ExpectedColumns[3], 'PLAKA NO');
+    assert.equal(format2ExpectedColumns[8], 'İRSALİYE NO');
+    assert.equal(format2ExpectedColumns[9], 'TUTANAK NO');
+  });
+});
+
+

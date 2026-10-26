@@ -549,10 +549,11 @@ export async function GET(request: NextRequest) {
     }
 
 
-    // 2.6. Kömür Sevkiyatı ve Saha Kantar Tonaj Listesi
+    // 2.6. Kömür Sevkiyatı ve Saha Kantar Tonaj Listesi (Tesellüm & TKİ Formatları)
     if (type === 'trucks') {
       const startDate = searchParams.get('startDate');
       const endDate = searchParams.get('endDate');
+      const formatParam = (searchParams.get('format') || 'all').toLowerCase();
 
       const filter: any = {};
       if (startDate && endDate) {
@@ -570,96 +571,195 @@ export async function GET(request: NextRequest) {
 
       const records = mapDocs(rawTrucks);
 
-      let totalBrut = 0;
-      let totalNet = 0;
-      let totalTara = 0;
+      let totalYuklenenKg = 0;
+      let totalTeslimKg = 0;
+      let totalFarkKg = 0;
 
-      const exportData = records.map((t: any, idx: number) => {
-        const brutFmt = formatTonnage(t.brut_tonaj);
-        const netFmt = formatTonnage(t.net_tonaj);
-        const rawTara = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : Math.max(0, brutFmt.ton - netFmt.ton);
-        const taraFmt = formatTonnage(rawTara);
+      // Format 1: Günlük Tesellüm İzleme Tablosu (Valilik Formatı)
+      const exportDataTesellum = records.map((t: any, idx: number) => {
+        const yuklenenKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
+        const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+        const farkKg = teslimKg - yuklenenKg;
 
-        totalBrut += brutFmt.ton;
-        totalNet += netFmt.ton;
-        totalTara += taraFmt.ton;
+        totalYuklenenKg += yuklenenKg;
+        totalTeslimKg += teslimKg;
+        totalFarkKg += farkKg;
 
         return {
-          'Tır Sırası': t.tir_sirasi || idx + 1,
-          'Ocak Çıkış Tarihi': t.ocak_cikis_tarihi || t.tarih || '-',
-          'Sahaya Geliş Tarihi': t.tarih || '-',
-          'Tır Plakası': t.plaka || '-',
-          'Dorse Plakası': t.dorse_plaka || '-',
-          'İrsaliye / Fiş No': t.irsaliye_no || '-',
-          'Şoför Adı': t.sofor_adi || '-',
-          'Brüt Tonaj (Ton)': Number(brutFmt.ton.toFixed(3)),
-          'Brüt Ağırlık (kg)': brutFmt.kg,
-          'Dara / Tara (Ton)': Number(taraFmt.ton.toFixed(3)),
-          'Dara / Tara (kg)': taraFmt.kg,
-          'Net Tonaj (Ton)': Number(netFmt.ton.toFixed(3)),
-          'Net Kömür (kg)': netFmt.kg,
-          'Açıklama / Menşe': t.notlar || '-'
+          'Sıra': t.tir_sirasi || idx + 1,
+          'YÜKLEMEYİ YAPAN İŞLETME': t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü',
+          'ÇIKIŞ TARİHİ': t.ocak_cikis_tarihi || t.tarih || '-',
+          'VAGON Veya PLAKA NO / Şoför Adı': `${t.plaka || '-'}${t.sofor_adi ? ` - ${t.sofor_adi}` : ''}`,
+          'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': yuklenenKg,
+          'TESELLÜM TARİHİ': t.tarih || '-',
+          'TESELLÜM FİŞ NO veya ( Kantar tartı no)': t.irsaliye_no || '-',
+          'TESLİM ALINAN MİKTAR(kg)': teslimKg,
+          'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': farkKg,
+          'TUTANAK NO': t.tutanak_no || '-'
         };
       });
 
-      const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
-      const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
-      const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? Math.max(0, toplamTahsisTonaj - totalNet) : 0;
+      // Format 2: TKİ Resmi Kömür Dağıtım Listesi (Dönemsel / Tutanak Formatı)
+      const exportDataTki = records.map((t: any, idx: number) => {
+        const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
+        const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
 
-      // Summary row at the bottom
-      if (exportData.length > 0) {
-        exportData.push({
-          'Tır Sırası': '' as any,
-          'Ocak Çıkış Tarihi': 'GENEL TOPLAM:',
-          'Sahaya Geliş Tarihi': `${records.length} Tır`,
-          'Tır Plakası': '',
-          'Dorse Plakası': '',
-          'İrsaliye / Fiş No': '',
-          'Şoför Adı': '',
-          'Brüt Tonaj (Ton)': Number(totalBrut.toFixed(3)),
-          'Brüt Ağırlık (kg)': Math.round(totalBrut * 1000),
-          'Dara / Tara (Ton)': Number(totalTara.toFixed(3)),
-          'Dara / Tara (kg)': Math.round(totalTara * 1000),
-          'Net Tonaj (Ton)': Number(totalNet.toFixed(3)),
-          'Net Kömür (kg)': Math.round(totalNet * 1000),
-          'Açıklama / Menşe': toplamTahsisTonaj > 0 ? `Kurum Tahsisi: ${formatTonnage(toplamTahsisTonaj).tonStr} (Kalan: ${formatTonnage(kalanTahsisTonaj).tonStr})` : '-'
+        return {
+          'SIRA NO': t.tir_sirasi || idx + 1,
+          'İL': t.il || 'EDİRNE',
+          'İLÇE': t.ilce || 'MERKEZ',
+          'PLAKA NO': t.plaka || '-',
+          'SEVK TARİHİ': t.ocak_cikis_tarihi || t.tarih || '-',
+          'SEVK MİKTAR (KG)': sevkKg,
+          'TESLİM TARİHİ': t.tarih || '-',
+          'TESLİM MİKTARI(KG)': teslimKg,
+          'İRSALİYE NO': t.irsaliye_no || '-',
+          'TUTANAK NO': t.tutanak_no || '-'
+        };
+      });
+
+      // Summary rows at bottom
+      if (exportDataTesellum.length > 0) {
+        exportDataTesellum.push({
+          'Sıra': '' as any,
+          'YÜKLEMEYİ YAPAN İŞLETME': 'TOPLAM TESLİM ALINAN MİKTAR',
+          'ÇIKIŞ TARİHİ': '',
+          'VAGON Veya PLAKA NO / Şoför Adı': `${records.length} Tır`,
+          'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': totalYuklenenKg,
+          'TESELLÜM TARİHİ': '',
+          'TESELLÜM FİŞ NO veya ( Kantar tartı no)': '',
+          'TESLİM ALINAN MİKTAR(kg)': totalTeslimKg,
+          'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': totalFarkKg,
+          'TUTANAK NO': ''
+        });
+
+        exportDataTki.push({
+          'SIRA NO': '' as any,
+          'İL': '',
+          'İLÇE': '',
+          'PLAKA NO': 'GENEL TOPLAM:',
+          'SEVK TARİHİ': 'Toplam',
+          'SEVK MİKTAR (KG)': totalYuklenenKg,
+          'TESLİM TARİHİ': 'Toplam',
+          'TESLİM MİKTARI(KG)': totalTeslimKg,
+          'İRSALİYE NO': `${records.length} Tır`,
+          'TUTANAK NO': ''
         });
       }
 
       const dateLabel = startDate && endDate ? `${startDate} - ${endDate}` : (startDate ? `${startDate} Sonrası` : (endDate ? `${endDate} Öncesi` : 'Tüm Dönem'));
 
-      const subtitleText = toplamTahsisTonaj > 0
-        ? `Kapsam: ${dateLabel} | Kurum Tahsisi: ${formatTonnage(toplamTahsisTonaj).combined} | Gelen Net: ${formatTonnage(totalNet).combined} | Sevkiyatı Bekleyen Kalan: ${formatTonnage(kalanTahsisTonaj).combined} | Tır: ${records.length} Adet`
-        : `Kapsam: ${dateLabel} | Toplam Tır: ${records.length} Adet | Gelen Net: ${formatTonnage(totalNet).combined} | Brüt: ${formatTonnage(totalBrut).combined}`;
+      // Sayfa eklemeleri: İstenen formata göre veya ikisi birden
+      if (formatParam === 'tesellum') {
+        const sheet = addStyledWorksheet(
+          workbook,
+          'TESELLÜMLERİ İZLEME TABLOSU',
+          `(GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR) | Kapsam: ${dateLabel}`,
+          'Tesellüm İzleme Tablosu',
+          exportDataTesellum,
+          [
+            { wch: 8 },
+            { wch: 30 },
+            { wch: 14 },
+            { wch: 32 },
+            { wch: 18 },
+            { wch: 14 },
+            { wch: 20 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 16 }
+          ]
+        );
+        // İmza satırları
+        sheet.addRow([]);
+        const sigRow1 = sheet.addRow(['', '', '', 'Cem PAZAR', '', '', '', 'Tezcan FİDAN']);
+        sigRow1.font = { name: 'Segoe UI', size: 10, bold: true };
+        const sigRow2 = sheet.addRow(['', '', '', 'Sos. Yard. ve İnc. Gör.', '', '', '', 'Vakıf Müdürü']);
+        sigRow2.font = { name: 'Segoe UI', size: 9, italic: true };
+      } else if (formatParam === 'tki') {
+        const sheet = addStyledWorksheet(
+          workbook,
+          'TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU',
+          `ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ EDİRNE/MERKEZ İLÇESİ KÖMÜR LİSTESİ | Kapsam: ${dateLabel}`,
+          'TKİ Kömür Listesi',
+          exportDataTki,
+          [
+            { wch: 10 },
+            { wch: 14 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 16 }
+          ]
+        );
+        // İmza satırları
+        sheet.addRow([]);
+        const sigRow1 = sheet.addRow(['', '', '', '', '', '', '', '', 'Tezcan FİDAN']);
+        sigRow1.font = { name: 'Segoe UI', size: 10, bold: true };
+        const sigRow2 = sheet.addRow(['', '', '', '', '', '', '', '', 'Vakıf Müdürü']);
+        sigRow2.font = { name: 'Segoe UI', size: 9, italic: true };
+      } else {
+        // Her iki formatı ayrı sekmelerde sun
+        const sheet1 = addStyledWorksheet(
+          workbook,
+          'TESELLÜMLERİ İZLEME TABLOSU',
+          `(GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR) | Kapsam: ${dateLabel}`,
+          'Tesellüm İzleme Tablosu',
+          exportDataTesellum,
+          [
+            { wch: 8 },
+            { wch: 30 },
+            { wch: 14 },
+            { wch: 32 },
+            { wch: 18 },
+            { wch: 14 },
+            { wch: 20 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 16 }
+          ]
+        );
+        sheet1.addRow([]);
+        const sigRow1 = sheet1.addRow(['', '', '', 'Cem PAZAR', '', '', '', 'Tezcan FİDAN']);
+        sigRow1.font = { name: 'Segoe UI', size: 10, bold: true };
+        const sigRow2 = sheet1.addRow(['', '', '', 'Sos. Yard. ve İnc. Gör.', '', '', '', 'Vakıf Müdürü']);
+        sigRow2.font = { name: 'Segoe UI', size: 9, italic: true };
 
-      addStyledWorksheet(
-        workbook,
-        'KÖMÜR SEVKİYATI VE SAHA KANTAR TARTIM TONAJ LİSTESİ',
-        subtitleText,
-        'Kantar Tonaj',
-        exportData,
-        [
-          { wch: 10 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 20 },
-          { wch: 22 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 16 },
-          { wch: 30 }
-        ]
-      );
+        const sheet2 = addStyledWorksheet(
+          workbook,
+          'TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU',
+          `ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ EDİRNE/MERKEZ İLÇESİ KÖMÜR LİSTESİ | Kapsam: ${dateLabel}`,
+          'TKİ Kömür Listesi',
+          exportDataTki,
+          [
+            { wch: 10 },
+            { wch: 14 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 14 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 16 }
+          ]
+        );
+        sheet2.addRow([]);
+        const sigRow2_1 = sheet2.addRow(['', '', '', '', '', '', '', '', 'Tezcan FİDAN']);
+        sigRow2_1.font = { name: 'Segoe UI', size: 10, bold: true };
+        const sigRow2_2 = sheet2.addRow(['', '', '', '', '', '', '', '', 'Vakıf Müdürü']);
+        sigRow2_2.font = { name: 'Segoe UI', size: 9, italic: true };
+      }
 
       const buf = await workbook.xlsx.writeBuffer();
       const safeStart = (startDate || 'Baslangic').replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeEnd = (endDate || 'Bitis').replace(/[^a-zA-Z0-9_-]/g, '_');
-      return buildExcelResponse(buf, `Edirne_SYDV_Komur_Tonaj_Raporu_${safeStart}_${safeEnd}.xlsx`, session, type);
+      const filePrefix = formatParam === 'tesellum' ? 'Tesellum_Izleme_Tablosu' : (formatParam === 'tki' ? 'TKI_Komur_Listesi' : 'Edirne_SYDV_Komur_Tonaj_Raporu');
+      return buildExcelResponse(buf, `${filePrefix}_${safeStart}_${safeEnd}.xlsx`, session, type);
     }
 
     // 3. Hak Sahipleri Genel Listesi

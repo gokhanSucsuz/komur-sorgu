@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
@@ -32,6 +32,7 @@ export default function TonnagePage({
   const [plaka, setPlaka] = useState('');
   const [dorsePlaka, setDorsePlaka] = useState('');
   const [irsaliyeNo, setIrsaliyeNo] = useState('');
+  const [tutanakNo, setTutanakNo] = useState('');
   const [ocakCikisTarihi, setOcakCikisTarihi] = useState(todayDefault);
   const [tarih, setTarih] = useState(todayDefault);
   const [netTonaj, setNetTonaj] = useState('');
@@ -41,13 +42,15 @@ export default function TonnagePage({
   const [tirSirasi, setTirSirasi] = useState<number>(stats?.sonrakiTirSirasi || (trucks.length + 1));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [mainViewMode, setMainViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
+  const [reportFormat, setReportFormat] = useState<'TESELLUM' | 'TKI'>('TESELLUM');
 
-  // Unique saved truck profiles (deduplicated by plaka + dorse_plaka + sofor_adi for quick 1-click template cards)
+  // Unique saved truck profiles (deduplicated by plaka + sofor_adi for quick 1-click template cards)
   const uniqueTruckTemplates = useMemo(() => {
     const seen = new Set<string>();
     const list: any[] = [];
     for (const t of trucks) {
-      const key = `${(t.plaka || '').trim().toUpperCase()}|${(t.dorse_plaka || '').trim().toUpperCase()}|${(t.sofor_adi || '').trim().toUpperCase()}`;
+      const key = `${(t.plaka || '').trim().toUpperCase()}|${(t.sofor_adi || '').trim().toUpperCase()}`;
       if (!seen.has(key) && t.plaka) {
         seen.add(key);
         list.push(t);
@@ -62,7 +65,8 @@ export default function TonnagePage({
     if (!t) return;
     setSelectedTemplateId(String(t.id || t._id || t.tir_sirasi));
     setPlaka((t.plaka || '').toUpperCase());
-    setDorsePlaka((t.dorse_plaka || '').toUpperCase());
+    setDorsePlaka('');
+    setTutanakNo(t.tutanak_no || '');
     setSoforAdi(t.sofor_adi || '');
     setNotlar(t.notlar || '');
     setBrutTonaj(t.brut_tonaj !== undefined && t.brut_tonaj !== null ? String(t.brut_tonaj) : '');
@@ -83,8 +87,9 @@ export default function TonnagePage({
     setSelectedTemplateId('');
     setTirSirasi(Number(t.tir_sirasi) || 1);
     setPlaka((t.plaka || '').toUpperCase());
-    setDorsePlaka((t.dorse_plaka || '').toUpperCase());
+    setDorsePlaka('');
     setIrsaliyeNo((t.irsaliye_no || '').toLocaleUpperCase('tr-TR'));
+    setTutanakNo(t.tutanak_no || '');
     setOcakCikisTarihi(t.ocak_cikis_tarihi || t.tarih || todayDefault());
     setTarih(t.tarih || todayDefault());
     setBrutTonaj(t.brut_tonaj !== undefined && t.brut_tonaj !== null ? String(t.brut_tonaj) : '');
@@ -123,6 +128,7 @@ export default function TonnagePage({
     setPlaka('');
     setDorsePlaka('');
     setIrsaliyeNo('');
+    setTutanakNo('');
     setOcakCikisTarihi(todayStr);
     setTarih(todayStr);
     setNetTonaj('');
@@ -209,11 +215,11 @@ export default function TonnagePage({
         const cleanOrderQuery = q.replace(/^#/, '');
         const matchSira = String(t.tir_sirasi || '') === cleanOrderQuery;
         const matchPlaka = turkishIncludes(t.plaka || '', q);
-        const matchDorse = turkishIncludes(t.dorse_plaka || '', q);
+        const matchTutanak = turkishIncludes(t.tutanak_no || '', q);
         const matchSofor = turkishIncludes(t.sofor_adi || '', q);
         const matchIrsaliye = turkishIncludes(t.irsaliye_no || '', q);
         const matchNotlar = turkishIncludes(t.notlar || '', q);
-        if (!matchSira && !matchPlaka && !matchDorse && !matchSofor && !matchIrsaliye && !matchNotlar) {
+        if (!matchSira && !matchPlaka && !matchTutanak && !matchSofor && !matchIrsaliye && !matchNotlar) {
           return false;
         }
       }
@@ -292,11 +298,11 @@ export default function TonnagePage({
       if (reportEndDate && t.tarih > reportEndDate) return false;
       if (reportSearchQuery) {
         const matchPlaka = turkishIncludes(t.plaka || '', reportSearchQuery);
-        const matchDorse = turkishIncludes(t.dorse_plaka || '', reportSearchQuery);
+        const matchTutanak = turkishIncludes(t.tutanak_no || '', reportSearchQuery);
         const matchSofor = turkishIncludes(t.sofor_adi || '', reportSearchQuery);
         const matchIrsaliye = turkishIncludes(t.irsaliye_no || '', reportSearchQuery);
         const matchNotlar = turkishIncludes(t.notlar || '', reportSearchQuery);
-        if (!matchPlaka && !matchDorse && !matchSofor && !matchIrsaliye && !matchNotlar) {
+        if (!matchPlaka && !matchTutanak && !matchSofor && !matchIrsaliye && !matchNotlar) {
           return false;
         }
       }
@@ -306,6 +312,9 @@ export default function TonnagePage({
 
   const reportTotalBrut = filteredReportTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.brut_tonaj), 0);
   const reportTotalNet = filteredReportTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0);
+  const reportTotalYuklenenKg = filteredReportTrucks.reduce((acc: number, t: any) => acc + Math.round(normalizeToTon(t.brut_tonaj) * 1000), 0);
+  const reportTotalTeslimKg = filteredReportTrucks.reduce((acc: number, t: any) => acc + Math.round(normalizeToTon(t.net_tonaj) * 1000), 0);
+  const reportTotalFarkKg = reportTotalTeslimKg - reportTotalYuklenenKg;
   const reportTotalTara = filteredReportTrucks.reduce((acc: number, t: any) => {
     const b = normalizeToTon(t.brut_tonaj);
     const n = normalizeToTon(t.net_tonaj);
@@ -321,7 +330,7 @@ export default function TonnagePage({
   const handleAddTruck = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!plaka || !irsaliyeNo || !tarih || !netTonaj || !brutTonaj) {
-      setErrorMsg('Lütfen zorunlu alanları (Tır Plakası, İrsaliye No, Geliş Tarihi, Brüt ve Net Tonaj) doldurunuz');
+      setErrorMsg('Lütfen zorunlu alanları (Tır Plakası, İrsaliye No, Geliş Tarihi, Sevk ve Net Tonaj) doldurunuz');
       return;
     }
 
@@ -338,7 +347,7 @@ export default function TonnagePage({
     }
 
     if (brutVal < netVal) {
-      setErrorMsg('Brüt tonaj, net tonajdan küçük olamaz!');
+      setErrorMsg('Sevk miktarı, teslim alınan net tonajdan küçük olamaz!');
       return;
     }
 
@@ -354,8 +363,8 @@ export default function TonnagePage({
           ...(isEdit ? { id: editingTruckId } : {}),
           tir_sirasi: tirSirasi,
           plaka,
-          dorse_plaka: dorsePlaka,
           irsaliye_no: irsaliyeNo.trim().toLocaleUpperCase('tr-TR'),
+          tutanak_no: tutanakNo.trim(),
           ocak_cikis_tarihi: ocakCikisTarihi || tarih,
           tarih,
           net_tonaj: netVal,
@@ -435,7 +444,7 @@ export default function TonnagePage({
             </div>
             <div>
               <h3 className="text-base font-extrabold text-slate-900">Kömür Stok & Sevkiyat</h3>
-              <p className="text-xs text-slate-500 font-medium">Gelen Tırlar, Dorse Bilgileri ve Net Tonaj Özeti</p>
+              <p className="text-xs text-slate-500 font-medium">Gelen Tırlar, Tesellüm Kayıtları ve Net Tonaj Özeti</p>
             </div>
           </div>
 
@@ -488,123 +497,166 @@ export default function TonnagePage({
 
         {/* 5 Stats Cards & Institutional Progress - Light Mode */}
         <div className="pt-2 border-t border-slate-100 space-y-2.5">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-            {/* Card 1: Kurum Toplam Tahsisi */}
-            <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider flex items-center gap-1">
-                  <Target className="w-3 h-3 text-indigo-600" />
-                  <span>Kurum Tahsisi</span>
-                </span>
-                {Number(stats?.toplamTahsisTonaj || 0) > 0 ? (
-                  <>
-                    <div className="text-lg font-black text-indigo-950 mt-0.5">
-                      {formatTonnage(stats?.toplamTahsisTonaj).tonStr}
+          {(() => {
+            const hasFazla = Number(stats?.fazlaDagitilanTonaj || 0) > 0;
+            return (
+              <>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 ${hasFazla ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-2`}>
+                  {/* Card 1: Kurum Toplam Tahsisi */}
+                  <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider flex items-center gap-1">
+                        <Target className="w-3 h-3 text-indigo-600" />
+                        <span>Kurum Tahsisi</span>
+                      </span>
+                      {Number(stats?.toplamTahsisTonaj || 0) > 0 ? (
+                        <>
+                          <div className="text-lg font-black text-indigo-950 mt-0.5">
+                            {formatTonnage(stats?.toplamTahsisTonaj).tonStr}
+                          </div>
+                          <div className="text-[10px] text-indigo-800 font-bold">
+                            ({formatTonnage(stats?.toplamTahsisTonaj).kgStr})
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sm font-extrabold text-slate-400 mt-1">
+                          Belirlenmedi
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[10px] text-indigo-800 font-bold">
-                      ({formatTonnage(stats?.toplamTahsisTonaj).kgStr})
+                    <div className="mt-1.5 pt-1 border-t border-indigo-100">
+                      {userRole === 'ADMIN' ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowTahsisModal(true)}
+                          className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 transition-colors"
+                        >
+                          <Pencil className="w-2.5 h-2.5" />
+                          <span>{Number(stats?.toplamTahsisTonaj || 0) > 0 ? 'Tahsis Değiştir' : 'Tahsis Belirle'}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-indigo-600 font-medium">Sezonluk Hedef</span>
+                      )}
                     </div>
-                  </>
-                ) : (
-                  <div className="text-sm font-extrabold text-slate-400 mt-1">
-                    Belirlenmedi
+                  </div>
+
+                  {/* Card 2: Gelen Net Kömür */}
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider flex items-center gap-1">
+                        <Truck className="w-3 h-3 text-amber-700" />
+                        <span>Gelen Net Kömür</span>
+                      </span>
+                      <div className="text-lg font-black text-amber-900 mt-0.5">
+                        {formatTonnage(stats?.toplamNetTonaj).tonStr}
+                      </div>
+                      <div className="text-[10px] text-amber-800 font-bold">
+                        ({formatTonnage(stats?.toplamNetTonaj).kgStr})
+                      </div>
+                    </div>
+                    <div className="mt-1.5 pt-1 border-t border-amber-100 text-[10px] text-amber-700 font-semibold">
+                      {stats?.toplamTirSayisi || 0} Tır Sahaya İndi
+                    </div>
+                  </div>
+
+                  {/* Card 3: Sevkiyatı Bekleyen Kalan Kömür (User explicit request) */}
+                  <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-sky-800 tracking-wider flex items-center gap-1">
+                        <Weight className="w-3 h-3 text-sky-600" />
+                        <span>Sevkiyatı Bekleyen Kalan</span>
+                      </span>
+                      <div className="text-lg font-black text-sky-950 mt-0.5">
+                        {formatTonnage(stats?.kalanTahsisTonaj).tonStr}
+                      </div>
+                      <div className="text-[10px] text-sky-800 font-bold">
+                        ({formatTonnage(stats?.kalanTahsisTonaj).kgStr})
+                      </div>
+                    </div>
+                    <div className="mt-1.5 pt-1 border-t border-sky-100 text-[10px] text-sky-700 font-semibold truncate">
+                      {Number(stats?.toplamTahsisTonaj || 0) > 0 ? (
+                        Number(stats?.kalanTahsisTonaj || 0) <= 0 ? (
+                          <span className="text-emerald-700 font-bold">Tüm Tahsis Ulaştı (%100)</span>
+                        ) : (
+                          <span>Tahsisin %{stats?.tahsisTamamlanmaYuzdesi || 0}&apos;i Ulaştı</span>
+                        )
+                      ) : (
+                        <span className="text-slate-400">Tahsis Belirlenmedi</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card 4: Dağıtılan Kömür */}
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür</span>
+                      <div className="text-lg font-black text-emerald-800 mt-0.5">
+                        {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
+                      </div>
+                      <div className="text-[10px] text-emerald-800 font-bold">
+                        ({formatTonnage(stats?.dagitilanNetTonaj).kgStr})
+                      </div>
+                    </div>
+                    <div className="mt-1.5 pt-1 border-t border-emerald-100 text-[10px] text-emerald-700 font-semibold">
+                      {stats?.toplamDagitilanTorba || 0} Torba Teslim Edildi
+                    </div>
+                  </div>
+
+                  {/* Card 5: Sahada Kalan Güncel Stok */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">Kalan Saha Stoku</span>
+                      <div className={`text-lg font-black mt-0.5 ${hasFazla ? 'text-slate-500' : (Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-slate-900')}`}>
+                        {formatTonnage(stats?.kalanStokTonaj || 0).tonStr}
+                      </div>
+                      <div className="text-[10px] text-slate-600 font-bold">
+                        ({formatTonnage(stats?.kalanStokTonaj || 0).kgStr})
+                      </div>
+                    </div>
+                    <div className="mt-1.5 pt-1 border-t border-slate-200 text-[10px] font-medium">
+                      {hasFazla ? (
+                        <span className="text-purple-700 font-bold">Depo Tükendi (Fazla Dağıtım)</span>
+                      ) : (
+                        <span className="text-slate-500">Dağıtıma Hazır Depo Stoku</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card 6: Fazladan Dağıtılan Kömür (Standart Dışı Torba Toleransı) */}
+                  {hasFazla && (
+                    <div className="p-3 rounded-xl bg-purple-50/90 border border-purple-200 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-purple-900 tracking-wider flex items-center gap-1">
+                          <Scale className="w-3 h-3 text-purple-700" />
+                          <span>Fazladan Dağıtılan</span>
+                        </span>
+                        <div className="text-lg font-black text-purple-950 mt-0.5">
+                          +{formatTonnage(stats?.fazlaDagitilanTonaj).tonStr}
+                        </div>
+                        <div className="text-[10px] text-purple-800 font-bold">
+                          (+{formatTonnage(stats?.fazlaDagitilanTonaj).kgStr} • +{stats?.fazlaDagitilanTorba || 0} Torba)
+                        </div>
+                      </div>
+                      <div className="mt-1.5 pt-1 border-t border-purple-100 text-[10px] text-purple-700 font-semibold truncate">
+                        Torba Toleransı (~+{stats?.fazlaDagitilanHane || 0} Hane)
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Torba Toleransı Kaynaklı Bilgilendirme Notu */}
+                {hasFazla && (
+                  <div className="p-3 rounded-xl bg-purple-50/90 border border-purple-200 flex items-start gap-2.5 text-xs text-purple-900 shadow-2xs">
+                    <Scale className="w-4 h-4 text-purple-700 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">
+                      <strong className="font-extrabold text-purple-950">Torba Ağırlık Toleransı Kaydı: </strong>
+                      Bazı kömür torbaları standart ağırlığın (25 kg) altında geldiği için saha kantar tonajı tükenmesine rağmen fiilen toplam <strong className="font-black text-purple-950">+{formatTonnage(stats?.fazlaDagitilanTonaj).combined}</strong> (+{stats?.fazlaDagitilanTorba || 0} Torba) fazladan kömür dağıtılmış ve yaklaşık <strong className="font-black text-purple-950">+{stats?.fazlaDagitilanHane || 0} hak sahibine</strong> ilave teslimat yapılmıştır. Sistem kuralı gereğince saha stoku eksiye düşürülmeyip <strong>0 Ton</strong> olarak korunmuş, aradaki fark resmi kayıtlara &ldquo;Fazladan Dağıtılan Kömür&rdquo; olarak işlenmiştir.
+                    </div>
                   </div>
                 )}
-              </div>
-              <div className="mt-1.5 pt-1 border-t border-indigo-100">
-                {userRole === 'ADMIN' ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowTahsisModal(true)}
-                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 transition-colors"
-                  >
-                    <Pencil className="w-2.5 h-2.5" />
-                    <span>{Number(stats?.toplamTahsisTonaj || 0) > 0 ? 'Tahsis Değiştir' : 'Tahsis Belirle'}</span>
-                  </button>
-                ) : (
-                  <span className="text-[10px] text-indigo-600 font-medium">Sezonluk Hedef</span>
-                )}
-              </div>
-            </div>
-
-            {/* Card 2: Gelen Net Kömür */}
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider flex items-center gap-1">
-                  <Truck className="w-3 h-3 text-amber-700" />
-                  <span>Gelen Net Kömür</span>
-                </span>
-                <div className="text-lg font-black text-amber-900 mt-0.5">
-                  {formatTonnage(stats?.toplamNetTonaj).tonStr}
-                </div>
-                <div className="text-[10px] text-amber-800 font-bold">
-                  ({formatTonnage(stats?.toplamNetTonaj).kgStr})
-                </div>
-              </div>
-              <div className="mt-1.5 pt-1 border-t border-amber-100 text-[10px] text-amber-700 font-semibold">
-                {stats?.toplamTirSayisi || 0} Tır Sahaya İndi
-              </div>
-            </div>
-
-            {/* Card 3: Sevkiyatı Bekleyen Kalan Kömür (User explicit request) */}
-            <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-sky-800 tracking-wider flex items-center gap-1">
-                  <Weight className="w-3 h-3 text-sky-600" />
-                  <span>Sevkiyatı Bekleyen Kalan</span>
-                </span>
-                <div className="text-lg font-black text-sky-950 mt-0.5">
-                  {formatTonnage(stats?.kalanTahsisTonaj).tonStr}
-                </div>
-                <div className="text-[10px] text-sky-800 font-bold">
-                  ({formatTonnage(stats?.kalanTahsisTonaj).kgStr})
-                </div>
-              </div>
-              <div className="mt-1.5 pt-1 border-t border-sky-100 text-[10px] text-sky-700 font-semibold truncate">
-                {Number(stats?.toplamTahsisTonaj || 0) > 0 ? (
-                  Number(stats?.kalanTahsisTonaj || 0) <= 0 ? (
-                    <span className="text-emerald-700 font-bold">Tüm Tahsis Ulaştı (%100)</span>
-                  ) : (
-                    <span>Tahsisin %{stats?.tahsisTamamlanmaYuzdesi || 0}&apos;i Ulaştı</span>
-                  )
-                ) : (
-                  <span className="text-slate-400">Tahsis Belirlenmedi</span>
-                )}
-              </div>
-            </div>
-
-            {/* Card 4: Dağıtılan Kömür */}
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür</span>
-                <div className="text-lg font-black text-emerald-800 mt-0.5">
-                  {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
-                </div>
-                <div className="text-[10px] text-emerald-800 font-bold">
-                  ({formatTonnage(stats?.dagitilanNetTonaj).kgStr})
-                </div>
-              </div>
-              <div className="mt-1.5 pt-1 border-t border-emerald-100 text-[10px] text-emerald-700 font-semibold">
-                {stats?.toplamDagitilanTorba || 0} Torba Teslim Edildi
-              </div>
-            </div>
-
-            {/* Card 5: Sahada Kalan Güncel Stok */}
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between col-span-2 sm:col-span-1">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">Kalan Saha Stoku</span>
-                <div className={`text-lg font-black mt-0.5 ${Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-slate-900'}`}>
-                  {formatTonnage(stats?.kalanStokTonaj).tonStr}
-                </div>
-                <div className="text-[10px] text-slate-600 font-bold">
-                  ({formatTonnage(stats?.kalanStokTonaj).kgStr})
-                </div>
-              </div>
-              <div className="mt-1.5 pt-1 border-t border-slate-200 text-[10px] text-slate-500 font-medium">
-                Dağıtıma Hazır Depo Stoku
-              </div>
-            </div>
-          </div>
+              </>
+            );
+          })()}
 
           {/* Sezonluk Kurum Sevkiyat İlerleme Çubuğu */}
           {Number(stats?.toplamTahsisTonaj || 0) > 0 && (
@@ -675,7 +727,7 @@ export default function TonnagePage({
               type="text"
               value={mainSearchQuery}
               onChange={(e) => setMainSearchQuery(e.target.value)}
-              placeholder="Tır plakası, dorse plakası, irsaliye no, şoför adı veya açıklama ara..."
+              placeholder="Tır plakası, tutanak no, irsaliye no, şoför adı veya açıklama ara..."
               className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
             />
             {mainSearchQuery && (
@@ -775,17 +827,49 @@ export default function TonnagePage({
         </div>
       </div>
 
-      {/* Trucks List Header */}
-      <div className="flex items-center justify-between px-1">
-        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-          Gelen Tır Kayıtları ({filteredMainTrucks.length}{hasActiveMainFilters ? ` / ${trucks.length}` : ''})
-        </h4>
-        <span className="text-[11px] text-slate-500 font-medium">
-          Her tırın ocak çıkış, saha geliş ve kantar tartım detayları
-        </span>
+      {/* Trucks List Header & View Mode Switcher */}
+      <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+            Gelen Tır Kayıtları ({filteredMainTrucks.length}{hasActiveMainFilters ? ` / ${trucks.length}` : ''})
+          </h4>
+          <span className="hidden sm:inline text-[11px] text-slate-500 font-medium">
+            • Ocak çıkış, teslim ve tartım detayları
+          </span>
+        </div>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs">
+          <button
+            type="button"
+            onClick={() => setMainViewMode('TABLE')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition-all ${
+              mainViewMode === 'TABLE'
+                ? 'bg-white text-slate-900 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+            title="Tablo Görünümü (Excel Sütun Sıralı)"
+          >
+            <ListFilter className="w-3.5 h-3.5" />
+            <span>Tablo Görünümü</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMainViewMode('CARDS')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition-all ${
+              mainViewMode === 'CARDS'
+                ? 'bg-white text-slate-900 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+            title="Kart Görünümü"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Kart Görünümü</span>
+          </button>
+        </div>
       </div>
 
-      {/* List of Incoming Trucks - Light Mode */}
+      {/* List of Incoming Trucks - Table or Cards View */}
       {trucks.length === 0 ? (
         <div className="p-10 text-center rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2">
           <Truck className="w-10 h-10 text-slate-400 mx-auto" />
@@ -810,6 +894,127 @@ export default function TonnagePage({
             <span>Filtreleri Temizle</span>
           </button>
         </div>
+      ) : mainViewMode === 'TABLE' ? (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800 border-b border-slate-200 font-bold uppercase text-[11px] tracking-wider">
+                  <th className="p-3 text-center w-12">Sıra</th>
+                  <th className="p-3">Tır Plakası & Şoför</th>
+                  <th className="p-3">Sevk / Çıkış Tarihi</th>
+                  <th className="p-3 text-right">Sevk Miktar (kg)</th>
+                  <th className="p-3">Teslim Tarihi</th>
+                  <th className="p-3 text-right">Teslim Miktar (kg)</th>
+                  <th className="p-3 text-right">Fark (kg)</th>
+                  <th className="p-3">İrsaliye No</th>
+                  <th className="p-3">Tutanak No</th>
+                  {userRole === 'ADMIN' && <th className="p-3 text-center w-28">İşlemler</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredMainTrucks.map((t) => {
+                  const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
+                  const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+                  const farkKg = teslimKg - sevkKg;
+
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3 text-center font-bold text-slate-600">
+                        <span className="w-6 h-6 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center justify-center font-bold text-xs">
+                          #{t.tir_sirasi}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="font-mono font-bold text-slate-900 text-sm tracking-wider">
+                          {t.plaka}
+                        </div>
+                        {t.sofor_adi && (
+                          <div className="text-[11px] text-slate-500 font-medium">
+                            {t.sofor_adi}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3 text-slate-700 font-semibold whitespace-nowrap">
+                        {formatTrDate(t.ocak_cikis_tarihi || t.tarih)}
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        {sevkKg.toLocaleString('tr-TR')} <span className="text-[10px] text-slate-500 font-normal">kg</span>
+                      </td>
+                      <td className="p-3 text-slate-800 font-bold whitespace-nowrap">
+                        {formatTrDate(t.tarih)}
+                      </td>
+                      <td className="p-3 text-right font-mono font-black text-amber-900 bg-amber-50/30 whitespace-nowrap">
+                        {teslimKg.toLocaleString('tr-TR')} <span className="text-[10px] text-amber-700 font-bold">kg</span>
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-md text-xs inline-block ${
+                          farkKg === 0
+                            ? 'text-slate-600 bg-slate-100'
+                            : farkKg > 0
+                            ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                            : 'text-rose-700 bg-rose-50 border border-rose-200'
+                        }`}>
+                          {farkKg > 0 ? `+${farkKg.toLocaleString('tr-TR')}` : farkKg.toLocaleString('tr-TR')} kg
+                        </span>
+                      </td>
+                      <td className="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">
+                        {t.irsaliye_no}
+                      </td>
+                      <td className="p-3 font-mono text-slate-700 whitespace-nowrap">
+                        {t.tutanak_no ? (
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-xs">
+                            {t.tutanak_no}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      {userRole === 'ADMIN' && (
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditTruckModal(t)}
+                              title="Düzenle"
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingTruckId(null);
+                                setTirSirasi(stats?.sonrakiTirSirasi || (trucks.length + 1));
+                                const todayStr = todayDefault();
+                                setTarih(todayStr);
+                                setOcakCikisTarihi(todayStr);
+                                applyTruckTemplate(t);
+                                setShowAddModal(true);
+                              }}
+                              title="Şablon Al"
+                              className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 transition-all"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTruck(t.id, t.plaka)}
+                              title="Sil"
+                              className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           {filteredMainTrucks.map((t) => {
@@ -826,16 +1031,16 @@ export default function TonnagePage({
                     </span>
                     <div
                       className="px-3 py-1 rounded-lg bg-slate-900 text-white font-mono font-bold tracking-wider text-sm shadow-inner"
-                      title="Tır (Çekici) Plakası"
+                      title="Tır Plakası"
                     >
                       {t.plaka}
                     </div>
-                    {t.dorse_plaka && (
+                    {t.tutanak_no && (
                       <div
-                        className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-900 border border-sky-200 font-mono font-bold tracking-wider text-xs"
-                        title="Dorse Plakası"
+                        className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 font-mono font-bold tracking-wider text-xs"
+                        title="Tutanak Numarası"
                       >
-                        Dorse: {t.dorse_plaka}
+                        Tutanak: {t.tutanak_no}
                       </div>
                     )}
                   </div>
@@ -899,27 +1104,34 @@ export default function TonnagePage({
 
                 {/* Tonnage Detail Row */}
                 {(() => {
+                  const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
+                  const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+                  const farkKg = teslimKg - sevkKg;
                   const brutFmt = formatTonnage(t.brut_tonaj);
                   const netFmt = formatTonnage(t.net_tonaj);
-                  const rawTara = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : Math.max(0, brutFmt.ton - netFmt.ton);
-                  const taraFmt = formatTonnage(rawTara);
 
                   return (
                     <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
                       <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500">Brüt Tonaj</span>
-                        <p className="text-sm font-bold text-slate-900 mt-0.5">{brutFmt.tonStr}</p>
-                        <span className="text-[10px] font-medium text-slate-500 block">({brutFmt.kgStr})</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-500">Sevk Miktarı</span>
+                        <p className="text-sm font-bold text-slate-900 mt-0.5">{sevkKg.toLocaleString('tr-TR')} kg</p>
+                        <span className="text-[10px] font-medium text-slate-500 block">({brutFmt.tonStr})</span>
                       </div>
                       <div className="border-x border-slate-200 bg-amber-50/60 rounded-lg py-0.5">
-                        <span className="text-[10px] uppercase font-extrabold text-amber-900">Net Tonaj</span>
-                        <p className="text-sm font-black text-amber-800 mt-0.5">{netFmt.tonStr}</p>
-                        <span className="text-[10px] font-bold text-amber-900 block">({netFmt.kgStr})</span>
+                        <span className="text-[10px] uppercase font-extrabold text-amber-900">Teslim Miktarı</span>
+                        <p className="text-sm font-black text-amber-800 mt-0.5">{teslimKg.toLocaleString('tr-TR')} kg</p>
+                        <span className="text-[10px] font-bold text-amber-900 block">({netFmt.tonStr})</span>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500">Dara (Tara)</span>
-                        <p className="text-sm font-bold text-slate-700 mt-0.5">{taraFmt.tonStr}</p>
-                        <span className="text-[10px] font-medium text-slate-500 block">({taraFmt.kgStr})</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-500">Tartı Farkı</span>
+                        <p className={`text-sm font-black mt-0.5 ${
+                          farkKg === 0 ? 'text-slate-700' : farkKg > 0 ? 'text-emerald-700' : 'text-rose-700'
+                        }`}>
+                          {farkKg > 0 ? `+${farkKg.toLocaleString('tr-TR')}` : farkKg.toLocaleString('tr-TR')} kg
+                        </p>
+                        <span className="text-[10px] font-medium text-slate-500 block">
+                          {farkKg === 0 ? 'Tam Eşleşme' : farkKg > 0 ? 'Fazla Teslim' : 'Eksik Sevk'}
+                        </span>
                       </div>
                     </div>
                   );
@@ -929,7 +1141,7 @@ export default function TonnagePage({
                 <div className="flex items-center justify-between text-xs text-slate-600 pt-1 font-medium flex-wrap gap-1">
                   <span className="flex items-center gap-1">
                     <FileText className="w-3.5 h-3.5 text-slate-400" />
-                    İrsaliye / Teslimat No: <strong className="text-slate-900 font-bold">{t.irsaliye_no}</strong>
+                    İrsaliye / Fiş No: <strong className="text-slate-900 font-bold">{t.irsaliye_no}</strong>
                   </span>
                   {t.sofor_adi && <span>Şoför: <strong className="text-slate-800">{t.sofor_adi}</strong></span>}
                 </div>
@@ -961,7 +1173,7 @@ export default function TonnagePage({
                   <p className="text-xs text-slate-500">
                     {editingTruckId
                       ? 'Mevcut tır sevkiyatı, plaka, tarih ve tonaj bilgilerini güncelleyin'
-                      : 'Kömür sevkiyatı, dorse plakası ve tonaj girişi'}
+                      : 'Kömür sevkiyatı, tutanak no ve tonaj girişi'}
                   </p>
                 </div>
               </div>
@@ -1018,13 +1230,13 @@ export default function TonnagePage({
                       >
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs font-black">{t.plaka}</span>
-                          {t.dorse_plaka && (
+                          {t.tutanak_no && (
                             <span
                               className={`font-mono text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                                isSelected ? 'bg-amber-700 text-white' : 'bg-slate-100 text-slate-700'
+                                isSelected ? 'bg-amber-700 text-white' : 'bg-indigo-50 text-indigo-900 border border-indigo-200'
                               }`}
                             >
-                              {t.dorse_plaka}
+                              Tutanak: {t.tutanak_no}
                             </span>
                           )}
                         </div>
@@ -1061,7 +1273,7 @@ export default function TonnagePage({
                       return (
                         <option key={tid} value={tid}>
                           #{t.tir_sirasi} | {t.plaka}
-                          {t.dorse_plaka ? ` (Dorse: ${t.dorse_plaka})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({t.tarih})
+                          {t.tutanak_no ? ` (Tutanak: ${t.tutanak_no})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({t.tarih})
                         </option>
                       );
                     })}
@@ -1147,17 +1359,17 @@ export default function TonnagePage({
                 </div>
               </div>
 
-              {/* Tır (Çekici) Plakası & Dorse Plakası */}
+              {/* Tır Plakası & Tutanak No */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Tır (Çekici) Plakası
+                    Tır Plakası
                   </label>
                   <input
                     type="text"
                     value={plaka}
                     onChange={(e) => setPlaka(e.target.value.toUpperCase())}
-                    placeholder="Örn: 06 KMR 101"
+                    placeholder="Örn: 17 ACJ 824"
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono uppercase font-black focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
                     required
                   />
@@ -1165,31 +1377,31 @@ export default function TonnagePage({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Dorse Plakası (Opsiyonel)
+                    Tutanak No (Opsiyonel)
                   </label>
                   <input
                     type="text"
-                    value={dorsePlaka}
-                    onChange={(e) => setDorsePlaka(e.target.value.toUpperCase())}
-                    placeholder="Örn: 06 DRS 202"
+                    value={tutanakNo}
+                    onChange={(e) => setTutanakNo(e.target.value.toLocaleUpperCase('tr-TR'))}
+                    placeholder="Örn: 2025/1 veya TUT-01"
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono uppercase font-bold focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
                   />
                 </div>
               </div>
 
-              {/* Tonaj Alanları */}
+              {/* Tonaj Alanları (İşletmeden Yüklenen & Sahada Teslim Alınan) */}
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                      Brüt Tonaj (Ton veya kg)
+                      İşletmeden Yüklenen / Sevk (Ton / kg)
                     </label>
                     <input
                       type="number"
                       step="any"
                       value={brutTonaj}
                       onChange={(e) => setBrutTonaj(e.target.value)}
-                      placeholder="Örn: 42.15 veya 42150"
+                      placeholder="Örn: 26.58 veya 26580"
                       className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 font-bold focus:outline-none focus:border-amber-500 text-sm"
                       required
                     />
@@ -1202,14 +1414,14 @@ export default function TonnagePage({
 
                   <div>
                     <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">
-                      Net Tonaj (Ton veya kg)
+                      Teslim Alınan Net Kömür (Ton / kg)
                     </label>
                     <input
                       type="number"
                       step="any"
                       value={netTonaj}
                       onChange={(e) => setNetTonaj(e.target.value)}
-                      placeholder="Örn: 27.85 veya 27850"
+                      placeholder="Örn: 26.46 veya 26460"
                       className="w-full px-3 py-2 rounded-xl bg-white border border-amber-400 text-amber-900 font-black focus:outline-none focus:border-amber-500 text-sm"
                       required
                     />
@@ -1221,13 +1433,26 @@ export default function TonnagePage({
                   </div>
                 </div>
 
-                {/* Otomatik Dara Gösterimi */}
-                <div className="flex items-center justify-between text-xs text-slate-600 pt-2 border-t border-slate-200 font-medium">
-                  <span>Hesaplanan Dara / Tara Miktarı:</span>
-                  <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                    {formatTonnage(autoTaraVal).combined}
-                  </span>
-                </div>
+                {/* Tesellüm / Tartı Farkı Gösterimi (Teslim - Sevk) */}
+                {(() => {
+                  const sevkTon = normalizeToTon(brutTonaj);
+                  const teslimTon = normalizeToTon(netTonaj);
+                  const diffKg = Math.round((teslimTon - sevkTon) * 1000);
+                  return (
+                    <div className="flex items-center justify-between text-xs text-slate-700 pt-2 border-t border-slate-200 font-medium">
+                      <span>Tartı / Tesellüm Farkı (Teslim - Sevk):</span>
+                      <span className={`font-mono font-bold px-2.5 py-1 rounded-md border ${
+                        diffKg === 0
+                          ? 'bg-white text-slate-700 border-slate-200'
+                          : diffKg > 0
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : 'bg-rose-50 text-rose-800 border-rose-300'
+                      }`}>
+                        {diffKg > 0 ? `+${diffKg.toLocaleString('tr-TR')}` : diffKg.toLocaleString('tr-TR')} kg
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1347,9 +1572,40 @@ export default function TonnagePage({
               id="printableTonnageReport"
               style={{ overscrollBehavior: 'contain' }}
             >
-              {/* Tarih Aralığı ve Arama Filtre Paneli (Baskıda Görünmez) */}
+              {/* Tarih Aralığı, Format Seçimi ve Arama Filtre Paneli (Baskıda Görünmez) */}
               <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 no-print">
-                <div className="flex items-center justify-between">
+                {/* Rapor Formatı Seçim Sekmeleri */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 bg-white rounded-xl border border-slate-300">
+                  <span className="text-[11px] font-black uppercase text-slate-700 px-2 shrink-0">Rapor Şablonu:</span>
+                  <div className="flex items-center gap-1.5 flex-1 w-full">
+                    <button
+                      type="button"
+                      onClick={() => setReportFormat('TESELLUM')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        reportFormat === 'TESELLUM'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Format 1: Tesellümleri İzleme Tablosu (Valilik / Günlük)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportFormat('TKI')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        reportFormat === 'TKI'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Format 2: TKİ Dağıtım Listesi (Resmi / Tutanak)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
                     <Calendar className="w-4 h-4 text-amber-600" />
                     Rapor Tarih Aralığı ve Filtreleme
@@ -1416,7 +1672,7 @@ export default function TonnagePage({
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Plaka / İrsaliye / Şoför Ara
+                      Plaka / İrsaliye / Şoför / Tutanak Ara
                     </label>
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
@@ -1424,7 +1680,7 @@ export default function TonnagePage({
                         type="text"
                         value={reportSearchQuery}
                         onChange={(e) => setReportSearchQuery(e.target.value)}
-                        placeholder="Örn: 06 KMR, Vural, IRS-2026..."
+                        placeholder="Örn: 17 ACJ, Uğurlu, TUT-01..."
                         className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
                       />
                     </div>
@@ -1432,7 +1688,7 @@ export default function TonnagePage({
                 </div>
               </div>
 
-              {/* Institutional Official Header */}
+              {/* Institutional Official Header - Format 1 vs Format 2 */}
               <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
@@ -1446,20 +1702,32 @@ export default function TonnagePage({
                     />
                   </div>
                   <div className="text-center flex-1 px-1 sm:px-3 min-w-0">
-                    <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
-                      T.C. EDİRNE VALİLİĞİ
-                    </p>
-                    <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide mt-0.5">
-                      SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
-                    </h4>
-                    <div className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-300">
-                      <span className="text-[10px] sm:text-xs font-extrabold text-slate-900">
-                        KÖMÜR SEVKİYATI, SAHA KANTAR TARTIM VE TONAJ RAPORU
-                      </span>
-                    </div>
+                    {reportFormat === 'TESELLUM' ? (
+                      <>
+                        <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide">
+                          TESELLÜMLERİ İZLEME TABLOSU
+                        </h4>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-700 uppercase mt-0.5">
+                          (GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR)
+                        </p>
+                        <div className="flex items-center justify-between text-xs font-extrabold text-slate-900 pt-1.5 mt-1 border-t border-slate-200">
+                          <span>İLİ / İLÇESİ : EDİRNE / MERKEZ</span>
+                          <span>TARİH : {reportEndDate ? formatTrDate(reportEndDate) : formatTrDate(new Date())}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                          TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU
+                        </p>
+                        <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide mt-0.5">
+                          ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ {new Date().getFullYear()} YILI EDİRNE/MERKEZ İLÇESİNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKIFLARI ARACILIĞI İLE VERİLEN KÖMÜR LİSTESİ
+                        </h4>
+                      </>
+                    )}
                   </div>
                   <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
-                    <span className="text-[9px] font-mono text-slate-400 block">KOD: SYDV-TNJ</span>
+                    <span className="text-[9px] font-mono text-slate-400 block">KOD: {reportFormat === 'TESELLUM' ? 'TSL-VALILIK' : 'TKI-DAGITIM'}</span>
                     <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDate(new Date())}</span>
                   </div>
                 </div>
@@ -1490,32 +1758,34 @@ export default function TonnagePage({
                 </div>
 
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
-                  <span className="text-[10px] font-bold text-amber-800 uppercase block">Gelen Net Kömür</span>
+                  <span className="text-[10px] font-bold text-amber-800 uppercase block">Teslim Alınan Net Kömür</span>
                   <div className="text-lg font-black text-amber-900 mt-0.5">
-                    {formatTonnage(reportTotalNet).tonStr}
+                    {reportTotalTeslimKg.toLocaleString('tr-TR')} <span className="text-xs font-bold text-amber-800">kg</span>
                   </div>
                   <div className="text-[10px] text-amber-800 font-bold">
-                    ({formatTonnage(reportTotalNet).kgStr})
+                    ({formatTonnage(reportTotalNet).tonStr})
                   </div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Brüt Ağırlık</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">İşletmeden Sevk Edilen</span>
                   <div className="text-lg font-black text-slate-900 mt-0.5">
-                    {formatTonnage(reportTotalBrut).tonStr}
+                    {reportTotalYuklenenKg.toLocaleString('tr-TR')} <span className="text-xs font-bold text-slate-600">kg</span>
                   </div>
                   <div className="text-[10px] text-slate-600 font-bold">
-                    ({formatTonnage(reportTotalBrut).kgStr})
+                    ({formatTonnage(reportTotalBrut).tonStr})
                   </div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Dara / Tara</span>
-                  <div className="text-lg font-black text-slate-700 mt-0.5">
-                    {formatTonnage(reportTotalTara).tonStr}
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Net Tartı / Tesellüm Farkı</span>
+                  <div className={`text-lg font-black mt-0.5 ${
+                    reportTotalFarkKg === 0 ? 'text-slate-900' : reportTotalFarkKg > 0 ? 'text-emerald-700' : 'text-rose-700'
+                  }`}>
+                    {reportTotalFarkKg > 0 ? `+${reportTotalFarkKg.toLocaleString('tr-TR')}` : reportTotalFarkKg.toLocaleString('tr-TR')} <span className="text-xs font-normal text-slate-500">kg</span>
                   </div>
                   <div className="text-[10px] text-slate-500 font-bold">
-                    ({formatTonnage(reportTotalTara).kgStr})
+                    {reportTotalFarkKg === 0 ? 'Eşit Sevk' : reportTotalFarkKg > 0 ? 'Fazla Teslim' : 'Eksik Sevk'}
                   </div>
                 </div>
               </div>
@@ -1534,7 +1804,7 @@ export default function TonnagePage({
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                <div className={`grid grid-cols-2 ${Number(stats?.fazlaDagitilanTonaj || 0) > 0 ? 'sm:grid-cols-3 lg:grid-cols-6' : 'sm:grid-cols-5'} gap-2 text-center`}>
                   <div className="p-2.5 rounded-lg bg-white border border-indigo-200">
                     <span className="text-[9px] font-bold text-indigo-900 uppercase block">Kuruma Tahsis Edilen</span>
                     <div className="text-base font-black text-indigo-950 mt-0.5">
@@ -1584,86 +1854,176 @@ export default function TonnagePage({
                       ({formatTonnage(stats?.kalanStokTonaj).kgStr})
                     </div>
                   </div>
+
+                  {Number(stats?.fazlaDagitilanTonaj || 0) > 0 && (
+                    <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 col-span-2 sm:col-span-1">
+                      <span className="text-[9px] font-bold text-purple-900 uppercase block">Fazladan Dağıtılan</span>
+                      <div className="text-base font-black text-purple-950 mt-0.5">
+                        +{formatTonnage(stats?.fazlaDagitilanTonaj).tonStr}
+                      </div>
+                      <div className="text-[9px] font-bold text-purple-800">
+                        (+{formatTonnage(stats?.fazlaDagitilanTonaj).kgStr} • +{stats?.fazlaDagitilanTorba || 0} Torba)
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                {Number(stats?.fazlaDagitilanTonaj || 0) > 0 && (
+                  <div className="p-2.5 rounded-lg bg-purple-50/80 border border-purple-200 text-[10px] text-purple-900 leading-snug">
+                    <strong>Resmi Torba Toleransı Kaydı:</strong> Bazı kömür torbalarının standart 25 kg ağırlığından düşük gelmesi nedeniyle kantar net tonajına oranla <strong>+{formatTonnage(stats?.fazlaDagitilanTonaj).combined}</strong> (+{stats?.fazlaDagitilanTorba || 0} Torba, yaklaşık +{stats?.fazlaDagitilanHane || 0} hane) fazladan kömür vatandaşa dağıtılmıştır. Depo stoku eksiye düşürülmeyip 0 Ton olarak kayda bağlanmıştır.
+                  </div>
+                )}
               </div>
 
-              {/* Sevkiyat ve Tır Tartım Dökümü Tablosu */}
+              {/* Sevkiyat ve Tır Tartım Dökümü Tablosu (Format 1 vs Format 2) */}
               <div className="space-y-1.5">
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
-                  Sevkiyat ve Kantar Tartım Kayıtları ({filteredReportTrucks.length} Tır)
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                    {reportFormat === 'TESELLUM'
+                      ? 'Tesellüm Tartım ve Sevk Kayıtları'
+                      : 'TKİ Çan Linyit İşletmesi Kömür Sevkiyatı Listesi'} ({filteredReportTrucks.length} Tır)
+                  </h4>
+                  <span className="text-[11px] font-bold text-amber-800">
+                    {reportFormat === 'TESELLUM' ? 'Valilik Tesellüm Tablosu Formatı' : 'TKİ Resmi Dağıtım Listesi Formatı'}
+                  </span>
+                </div>
 
                 {filteredReportTrucks.length === 0 ? (
                   <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-500 text-xs font-medium">
                     Seçilen tarih aralığı veya filtre kriterlerine uygun tır kaydı bulunamadı.
                   </div>
-                ) : (
+                ) : reportFormat === 'TESELLUM' ? (
+                  /* FORMAT 1: TESELLÜMLERİ İZLEME TABLOSU */
                   <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
                           <th className="p-2 text-center w-10">Sıra</th>
-                          <th className="p-2 w-24">Ocak Çıkış</th>
-                          <th className="p-2 w-24">Saha Geliş</th>
-                          <th className="p-2 w-24">Tır Plakası</th>
-                          <th className="p-2 w-24">Dorse Plaka</th>
-                          <th className="p-2 w-24">İrsaliye / Fiş</th>
-                          <th className="p-2">Şoför Adı</th>
-                          <th className="p-2 text-right w-24">Brüt (Ton / kg)</th>
-                          <th className="p-2 text-right w-24">Dara (Ton / kg)</th>
-                          <th className="p-2 text-right w-24">Net (Ton / kg)</th>
-                          <th className="p-2">Açıklama / Menşe</th>
+                          <th className="p-2">YÜKLEMEYİ YAPAN İŞLETME</th>
+                          <th className="p-2 w-24">ÇIKIŞ TARİHİ</th>
+                          <th className="p-2">VAGON Veya PLAKA NO / Şoför Adı</th>
+                          <th className="p-2 text-right w-28">İŞLETMEDEN YÜKLENEN MİKTAR (kg)</th>
+                          <th className="p-2 w-24">TESELLÜM TARİHİ</th>
+                          <th className="p-2 w-28">TESELLÜM FİŞ NO veya ( Kantar tartı no)</th>
+                          <th className="p-2 text-right w-28">TESLİM ALINAN MİKTAR(kg)</th>
+                          <th className="p-2 text-right w-28">FARK (İşl.Yüklenen) ( Teslim Alınan) kg.</th>
+                          <th className="p-2 w-24">TUTANAK NO</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                         {filteredReportTrucks.map((t: any, index: number) => {
-                          const brutFmt = formatTonnage(t.brut_tonaj);
-                          const netFmt = formatTonnage(t.net_tonaj);
-                          const rawTara = t.tara_tonaj ? normalizeToTon(t.tara_tonaj) : Math.max(0, brutFmt.ton - netFmt.ton);
-                          const taraFmt = formatTonnage(rawTara);
+                          const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
+                          const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+                          const farkKg = teslimKg - sevkKg;
 
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
                               <td className="p-2 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
-                              <td className="p-2 text-slate-700 text-xs font-semibold">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</td>
-                              <td className="p-2 text-slate-800 text-xs font-bold">{formatTrDate(t.tarih)}</td>
-                              <td className="p-2 font-mono font-bold text-slate-900">{t.plaka}</td>
-                              <td className="p-2 font-mono font-semibold text-sky-900">{t.dorse_plaka || '-'}</td>
-                              <td className="p-2 font-mono text-slate-600 font-semibold">{t.irsaliye_no}</td>
-                              <td className="p-2 font-bold text-slate-800">{t.sofor_adi || '-'}</td>
-                              <td className="p-2 text-right font-mono text-slate-700">
-                                <div className="font-bold">{brutFmt.tonStr}</div>
-                                <div className="text-[10px] text-slate-500 font-normal">({brutFmt.kgStr})</div>
+                              <td className="p-2 text-slate-800 font-semibold">{t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü'}</td>
+                              <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</td>
+                              <td className="p-2 font-mono font-bold text-slate-900">
+                                {t.plaka}{t.sofor_adi ? ` - ${t.sofor_adi}` : ''}
                               </td>
-                              <td className="p-2 text-right font-mono text-slate-500">
-                                <div className="font-bold">{taraFmt.tonStr}</div>
-                                <div className="text-[10px] text-slate-400 font-normal">({taraFmt.kgStr})</div>
+                              <td className="p-2 text-right font-mono font-bold text-slate-800">
+                                {sevkKg.toLocaleString('tr-TR')}
                               </td>
-                              <td className="p-2 text-right font-mono font-black text-amber-800 bg-amber-50/50">
-                                <div className="font-black text-amber-900">{netFmt.tonStr}</div>
-                                <div className="text-[10px] text-amber-700 font-bold">({netFmt.kgStr})</div>
+                              <td className="p-2 text-slate-800 font-bold whitespace-nowrap">{formatTrDate(t.tarih)}</td>
+                              <td className="p-2 font-mono text-slate-700 font-bold">{t.irsaliye_no}</td>
+                              <td className="p-2 text-right font-mono font-black text-amber-900 bg-amber-50/50">
+                                {teslimKg.toLocaleString('tr-TR')}
                               </td>
-                              <td className="p-2 text-slate-600 text-[11px]">{t.notlar || '-'}</td>
+                              <td className="p-2 text-right font-mono font-bold">
+                                <span className={farkKg === 0 ? 'text-slate-700' : farkKg > 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                                  {farkKg > 0 ? `+${farkKg.toLocaleString('tr-TR')}` : farkKg.toLocaleString('tr-TR')}
+                                </span>
+                              </td>
+                              <td className="p-2 font-mono font-semibold text-indigo-900">
+                                {t.tutanak_no || '-'}
+                              </td>
                             </tr>
                           );
                         })}
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
-                          <td colSpan={7} className="p-2.5 text-right uppercase">GENEL TOPLAM ({filteredReportTrucks.length} TIR):</td>
-                          <td className="p-2.5 text-right font-mono text-slate-800">
-                            <div className="font-black">{formatTonnage(reportTotalBrut).tonStr}</div>
-                            <div className="text-[10px] text-slate-600 font-medium">({formatTonnage(reportTotalBrut).kgStr})</div>
+                          <td colSpan={4} className="p-2.5 text-right uppercase">
+                            TOPLAM TESLİM ALINAN MİKTAR ({filteredReportTrucks.length} Adet):
                           </td>
-                          <td className="p-2.5 text-right font-mono text-slate-600">
-                            <div className="font-black">{formatTonnage(reportTotalTara).tonStr}</div>
-                            <div className="text-[10px] text-slate-500 font-medium">({formatTonnage(reportTotalTara).kgStr})</div>
+                          <td className="p-2.5 text-right font-mono text-slate-900">
+                            {reportTotalYuklenenKg.toLocaleString('tr-TR')}
                           </td>
-                          <td className="p-2.5 text-right font-mono text-amber-900 bg-amber-100/60">
-                            <div className="font-black text-amber-950">{formatTonnage(reportTotalNet).tonStr}</div>
-                            <div className="text-[10px] text-amber-800 font-bold">({formatTonnage(reportTotalNet).kgStr})</div>
+                          <td colSpan={2} className="p-2.5"></td>
+                          <td className="p-2.5 text-right font-mono text-amber-950 bg-amber-100/60 font-black">
+                            {reportTotalTeslimKg.toLocaleString('tr-TR')}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-black">
+                            <span className={reportTotalFarkKg === 0 ? 'text-slate-900' : reportTotalFarkKg > 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                              {reportTotalFarkKg > 0 ? `+${reportTotalFarkKg.toLocaleString('tr-TR')}` : reportTotalFarkKg.toLocaleString('tr-TR')}
+                            </span>
                           </td>
                           <td className="p-2.5"></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  /* FORMAT 2: TKİ RESMİ DAĞITIM LİSTESİ */
+                  <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-900 border-b border-slate-300 font-black">
+                          <th className="p-2 text-center w-12">SIRA NO</th>
+                          <th className="p-2 w-20">İL</th>
+                          <th className="p-2 w-24">İLÇE</th>
+                          <th className="p-2 w-28">PLAKA NO</th>
+                          <th className="p-2 w-24">SEVK TARİHİ</th>
+                          <th className="p-2 text-right w-28">SEVK MİKTAR (KG)</th>
+                          <th className="p-2 w-24">TESLİM TARİHİ</th>
+                          <th className="p-2 text-right w-28">TESLİM MİKTARI(KG)</th>
+                          <th className="p-2 w-28">İRSALİYE NO</th>
+                          <th className="p-2 w-24">TUTANAK NO</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {filteredReportTrucks.map((t: any, index: number) => {
+                          const sevkKg = Math.round(normalizeToTon(t.brut_tonaj) * 1000);
+                          const teslimKg = Math.round(normalizeToTon(t.net_tonaj) * 1000);
+
+                          return (
+                            <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-2 text-center font-bold text-slate-600">{t.tir_sirasi || index + 1}</td>
+                              <td className="p-2 font-bold text-slate-800">{t.il || 'EDİRNE'}</td>
+                              <td className="p-2 font-bold text-slate-800">{t.ilce || 'MERKEZ'}</td>
+                              <td className="p-2 font-mono font-bold text-slate-900">{t.plaka}</td>
+                              <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDate(t.ocak_cikis_tarihi || t.tarih)}</td>
+                              <td className="p-2 text-right font-mono font-bold text-slate-800">
+                                {sevkKg.toLocaleString('tr-TR')}
+                              </td>
+                              <td className="p-2 text-slate-800 font-bold whitespace-nowrap">{formatTrDate(t.tarih)}</td>
+                              <td className="p-2 text-right font-mono font-black text-amber-900 bg-amber-50/50">
+                                {teslimKg.toLocaleString('tr-TR')}
+                              </td>
+                              <td className="p-2 font-mono text-slate-700 font-bold">{t.irsaliye_no}</td>
+                              <td className="p-2 font-mono font-semibold text-indigo-900">
+                                {t.tutanak_no || '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                          <td colSpan={5} className="p-2.5 text-right uppercase">
+                            Toplam:
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-slate-900">
+                            {reportTotalYuklenenKg.toLocaleString('tr-TR')}
+                          </td>
+                          <td className="p-2.5"></td>
+                          <td className="p-2.5 text-right font-mono text-amber-950 bg-amber-100/60 font-black">
+                            {reportTotalTeslimKg.toLocaleString('tr-TR')}
+                          </td>
+                          <td colSpan={2} className="p-2.5"></td>
                         </tr>
                       </tfoot>
                     </table>
@@ -1671,44 +2031,64 @@ export default function TonnagePage({
                 )}
               </div>
 
-              {/* 2-Kolonlu Resmi İmza & Onay Alanı */}
+              {/* Resmi İmza & Onay Alanı (Format 1: Cem Pazar & Tezcan Fidan, Format 2: Tezcan Fidan) */}
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 space-y-4 print-signatures shadow-2xs">
                 <h4 className="text-[10px] sm:text-xs font-bold text-center uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
-                  RESMİ TUTANAK VE İMZA ONAY ALANI
+                  {reportFormat === 'TESELLUM'
+                    ? 'TESELLÜM KONTROL VE RESMİ ONAY ALANI'
+                    : 'TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU RESMİ DAĞITIM TUTANAĞI ONAY ALANI'}
                 </h4>
-                <div className="grid grid-cols-2 gap-4 sm:gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
-                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
-                    <div>
-                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">KANTAR / DEPO KABUL GÖREVLİSİ</p>
-                      <p className="text-[11px] font-bold text-slate-700 mt-0.5">Saha Kabul & Tartım Sorumlusu</p>
+                {reportFormat === 'TESELLUM' ? (
+                  <div className="grid grid-cols-2 gap-4 sm:gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
+                    <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Cem PAZAR</p>
+                        <p className="text-[11px] font-bold text-slate-700 mt-0.5">Sos. Yard. ve İnc. Gör.</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Tesellüm Eden Görevli</p>
+                      </div>
+                      <div className="h-10 flex items-center justify-center">
+                        <span className="text-[10px] text-slate-400 italic">İmza / Tarih</span>
+                      </div>
                     </div>
-                    <div className="h-10 flex items-center justify-center">
-                      <span className="text-[10px] text-slate-400 italic">İmza / Tarih</span>
-                    </div>
-                  </div>
 
-                  <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
-                    <div>
-                      <p className="font-extrabold text-slate-900 text-xs sm:text-sm">VAKIF MÜDÜRÜ / ONAY</p>
-                      <p className="text-[11px] font-bold text-slate-800 mt-1">Edirne SYDV Başkanlığı</p>
-                    </div>
-                    <div className="h-10 flex items-center justify-center">
-                      <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
+                    <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Tezcan FİDAN</p>
+                        <p className="text-[11px] font-bold text-slate-800 mt-0.5">Vakıf Müdürü</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Edirne SYDV Başkanlığı</p>
+                      </div>
+                      <div className="h-10 flex items-center justify-center">
+                        <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex justify-end max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
+                    <div className="w-72 space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                      <div>
+                        <p className="text-[11px] text-slate-600 mb-1">{reportEndDate ? formatTrDate(reportEndDate) : formatTrDate(new Date())}</p>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Tezcan FİDAN</p>
+                        <p className="text-[11px] font-bold text-slate-800 mt-0.5">Vakıf Müdürü</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Edirne SYDV Başkanlığı</p>
+                      </div>
+                      <div className="h-10 flex items-center justify-center">
+                        <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Modal Footer: Butonlar daima sabit kalır */}
             <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print gap-2">
               <a
-                href={`/api/export?type=trucks&startDate=${reportStartDate}&endDate=${reportEndDate}`}
-                download={`Edirne_SYDV_Komur_Tonaj_Raporu_${reportStartDate || 'Baslangic'}_${reportEndDate || 'Bitis'}.xlsx`}
+                href={`/api/export?type=trucks&format=${reportFormat.toLowerCase()}&startDate=${reportStartDate}&endDate=${reportEndDate}`}
+                download={`Edirne_SYDV_${reportFormat === 'TESELLUM' ? 'Tesellum_Izleme_Tablosu' : 'TKI_Komur_Dagitim_Listesi'}_${reportStartDate || 'Baslangic'}_${reportEndDate || 'Bitis'}.xlsx`}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
               >
                 <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Excel İndir</span>
+                <span className="hidden sm:inline">Excel İndir ({reportFormat === 'TESELLUM' ? 'Tesellüm Formatı' : 'TKİ Formatı'})</span>
               </a>
 
               <div className="flex items-center gap-2">

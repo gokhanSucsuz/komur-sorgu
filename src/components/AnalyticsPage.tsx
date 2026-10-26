@@ -532,6 +532,23 @@ export default function AnalyticsPage({
               Genel Dağıtım ve Tonaj İcmali
             </h3>
 
+            {/* Torba Toleransı Kaynaklı Fazladan Dağıtım Bilgilendirmesi */}
+            {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
+              <div className="p-3.5 rounded-xl bg-purple-50/90 border border-purple-200 text-xs text-purple-900 flex items-start sm:items-center justify-between flex-wrap gap-2.5 shadow-2xs">
+                <div className="flex items-start sm:items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-purple-200 text-purple-950 font-black text-[10px] uppercase shrink-0">
+                    Torba Toleransı Kaydı
+                  </span>
+                  <span className="leading-relaxed">
+                    Kömür torbalarının standart 25 kg ağırlığından düşük gelmesi nedeniyle kantar net tonajından <strong>+{formatTonnage(summary?.fazlaDagitilanTonaj).combined}</strong> (+{summary?.fazlaDagitilanTorba || 0} Torba) fazladan dağıtılmış, yaklaşık <strong>+{summary?.fazlaDagitilanHane || 0} hak sahibine</strong> ilave kömür ulaştırılmıştır. Saha stoku eksiye düşürülmemiştir.
+                  </span>
+                </div>
+                <div className="font-black text-purple-950 text-xs sm:text-sm whitespace-nowrap bg-purple-100/80 px-2.5 py-1 rounded-lg border border-purple-200">
+                  +{formatTonnage(summary?.fazlaDagitilanTonaj).tonStr} (+{summary?.fazlaDagitilanTorba || 0} Torba)
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-[11px] text-slate-500 font-bold uppercase block">Toplam Hak Sahibi</span>
@@ -678,7 +695,12 @@ export default function AnalyticsPage({
                     <span>Toplam Net Kömür: <strong className="text-amber-800 font-bold">{formatTonnage(donemStats?.gelenNetTonaj).combined}</strong></span>
                   </div>
                   <p className="text-[11px] text-slate-600 font-medium italic">
-                    Depo / Saha Kalan Güncel Stok: <strong className="text-sky-700">{formatTonnage(summary?.kalanStokTonaj).combined}</strong>
+                    Depo / Saha Kalan Güncel Stok: <strong className="text-sky-700">{formatTonnage(summary?.kalanStokTonaj || 0).combined}</strong>
+                    {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
+                      <span className="text-purple-700 font-bold ml-2">
+                        (Torba Toleransı Kaynaklı +{formatTonnage(summary?.fazlaDagitilanTonaj).combined} / +{summary?.fazlaDagitilanTorba || 0} Torba Fazladan Dağıtıldı)
+                      </span>
+                    )}
                   </p>
                 </div>
               )}
@@ -1438,17 +1460,25 @@ export default function AnalyticsPage({
 
               {/* Depo / Stok Durumu (Varsa) */}
               {donemStats && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 flex flex-wrap items-center justify-between text-xs gap-2">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Depo / Kömür Stok Takibi:</span>
-                    <span className="font-bold text-slate-800">
-                      Gelen Toplam: <strong className="text-amber-800">{donemStats.gelenNetTonaj || 0} Ton</strong> ({donemStats.toplamSevkiyat || 0} Sevkiyat)
-                    </span>
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Depo / Kömür Stok Takibi:</span>
+                      <span className="font-bold text-slate-800">
+                        Gelen Toplam: <strong className="text-amber-800">{donemStats.gelenNetTonaj || 0} Ton</strong> ({donemStats.toplamSevkiyat || 0} Sevkiyat)
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Depoda Kalan Güncel Stok:</span>
+                      <span className="font-black text-sky-700 text-sm">{formatTonnage(summary?.kalanStokTonaj || 0).tonStr}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Depoda Kalan Güncel Stok:</span>
-                    <span className="font-black text-sky-700 text-sm">{summary?.kalanStokTonaj || 0} Ton</span>
-                  </div>
+                  {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
+                    <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between text-[11px] text-purple-900 bg-purple-50/70 p-2 rounded-xl">
+                      <span><strong>Fazladan Dağıtılan Kömür (Torba Toleransı):</strong> Kömür torbalarının standart ağırlıktan (25 kg) hafif gelmesi nedeniyle kantar net tonajından fazla dağıtılmıştır:</span>
+                      <span className="font-black text-purple-950">+{formatTonnage(summary?.fazlaDagitilanTonaj).combined} (+{summary?.fazlaDagitilanTorba || 0} Torba / ~+{summary?.fazlaDagitilanHane || 0} Hane)</span>
+                    </div>
+                  )}
                 </div>
               )}
 

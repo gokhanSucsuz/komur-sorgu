@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Address & Data Normalization Utilities for Turkish Coal Distribution System
  */
 
@@ -1624,6 +1624,71 @@ export function extractUniquePersonnelList(
 
   const list = Array.from(staffMap.values());
   return list.length > 0 ? list : [fallback];
+}
+
+/**
+ * Kömür Saha Stoku ve Tolerans Metrikleri Arayüzü
+ */
+export interface CoalStockMetrics {
+  toplamNetTonaj: number;      // Sahaya gelen net kantar tonajı (Ton)
+  dagitilanNetTonaj: number;   // Standart kabul ile vatandaşa dağıtılan kömür tonajı (Ton)
+  kalanStokTonaj: number;      // Sahada kalan güncel stok tonajı (asla eksiye düşmez, min: 0)
+  fazlaDagitilanTonaj: number; // Standart dışı torba ağırlığı nedeniyle fazladan dağıtılan tonaj (Ton)
+  fazlaDagitilanKg: number;    // Fazladan dağıtılan miktar (kg)
+  fazlaDagitilanTorba: number; // Fazladan dağıtılan eşdeğer torba sayısı (adet)
+  fazlaDagitilanHane: number;  // Yaklaşık fazladan kömür verilen hak sahibi / hane sayısı
+  hasFazlaDagitim: boolean;    // Fazla dağıtım var mı (stok tükendi ve dağıtım devam etti)
+}
+
+/**
+ * Kömür Saha Stoku ve Torba Toleransı Hesaplayıcısı.
+ * 
+ * Bazı kömür torbaları standart ağırlıkta (örneğin 25 kg) olmayıp tolerans farkıyla daha hafif gelebilir.
+ * Bu nedenle örneğin 100 kişilik kömür geldiğinde bu fiilen 102 kişiye verilebilir.
+ * Sistemde standart torba ağırlığı (0.025 ton) kabul edildiğinde, sahada kantar tonajı tükendiğinde
+ * stok eksiye düşürülmez (0 olarak sabitlenir); eksiye düşecek miktar ton, kg, torba sayısı ve 
+ * hane eşdeğeri olarak "Fazladan Kömür Verilmiş" şeklinde kayıtlara işlenir.
+ */
+export function calculateCoalStockMetrics(
+  incomingNetTonaj: number | string | null | undefined,
+  distributedBags: number | string | null | undefined,
+  bagWeightTon: number = 0.025,
+  quotaBagsPerHousehold: number = 34
+): CoalStockMetrics {
+  const normIncoming = parseFloat(normalizeToTon(incomingNetTonaj).toFixed(3));
+  const bags = Math.max(0, parseInt(String(distributedBags || 0), 10) || 0);
+  const dagitilanNetTonaj = parseFloat((bags * bagWeightTon).toFixed(3));
+  const rawDiff = parseFloat((normIncoming - dagitilanNetTonaj).toFixed(3));
+
+  if (rawDiff < 0) {
+    const fazlaTon = parseFloat(Math.abs(rawDiff).toFixed(3));
+    const fazlaKg = Math.round(fazlaTon * 1000);
+    const fazlaTorba = bagWeightTon > 0 ? Math.round(fazlaTon / bagWeightTon) : 0;
+    const householdQuota = quotaBagsPerHousehold > 0 ? quotaBagsPerHousehold : 34;
+    const fazlaHane = Math.floor(fazlaTorba / householdQuota);
+
+    return {
+      toplamNetTonaj: normIncoming,
+      dagitilanNetTonaj,
+      kalanStokTonaj: 0,
+      fazlaDagitilanTonaj: fazlaTon,
+      fazlaDagitilanKg: fazlaKg,
+      fazlaDagitilanTorba: fazlaTorba,
+      fazlaDagitilanHane: fazlaHane,
+      hasFazlaDagitim: true,
+    };
+  }
+
+  return {
+    toplamNetTonaj: normIncoming,
+    dagitilanNetTonaj,
+    kalanStokTonaj: rawDiff,
+    fazlaDagitilanTonaj: 0,
+    fazlaDagitilanKg: 0,
+    fazlaDagitilanTorba: 0,
+    fazlaDagitilanHane: 0,
+    hasFazlaDagitim: false,
+  };
 }
 
 

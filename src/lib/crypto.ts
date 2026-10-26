@@ -539,6 +539,7 @@ export const TRUCK_ENCRYPTED_FIELDS = [
   'plaka',
   'dorse_plaka',
   'irsaliye_no',
+  'tutanak_no',
   'notlar',
 ];
 

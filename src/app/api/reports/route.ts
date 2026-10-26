@@ -1,6 +1,6 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { getRecordStreetInfo, normalizeToTon, normalizeStaffName } from '@/lib/normalizer';
+import { getRecordStreetInfo, normalizeToTon, normalizeStaffName, calculateCoalStockMetrics } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { decryptField, isEncrypted } from '@/lib/crypto';
 
@@ -448,8 +448,17 @@ export async function GET(request: NextRequest) {
     const allAllTrucks = await trucksCol.find({}).toArray();
     const sahadakiToplamGelenTon = allAllTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0);
     const sahadakiToplamDagitilanBags = allBeneficiaries.reduce((acc: number, b: any) => acc + Number(b.torba_sayisi || 0), 0);
-    const sahadakiToplamDagitilanTon = parseFloat((sahadakiToplamDagitilanBags * 0.025).toFixed(3));
-    const kalanStokTonaj = parseFloat((sahadakiToplamGelenTon - sahadakiToplamDagitilanTon).toFixed(3));
+    const stockMetrics = calculateCoalStockMetrics(
+      sahadakiToplamGelenTon,
+      sahadakiToplamDagitilanBags,
+      0.025,
+      varsayilanHedefTorba
+    );
+    const kalanStokTonaj = stockMetrics.kalanStokTonaj;
+    const fazlaDagitilanTonaj = stockMetrics.fazlaDagitilanTonaj;
+    const fazlaDagitilanKg = stockMetrics.fazlaDagitilanKg;
+    const fazlaDagitilanTorba = stockMetrics.fazlaDagitilanTorba;
+    const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
 
     const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
     const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
@@ -523,6 +532,11 @@ export async function GET(request: NextRequest) {
           eksikTonaj,
           tamamlamaYuzdesi,
           kalanStokTonaj,
+          fazlaDagitilanTonaj,
+          fazlaDagitilanKg,
+          fazlaDagitilanTorba,
+          fazlaDagitilanHane,
+          hasFazlaDagitim: stockMetrics.hasFazlaDagitim,
           toplamTahsisTonaj,
           kalanTahsisTonaj,
           tahsisTamamlanmaYuzdesi,

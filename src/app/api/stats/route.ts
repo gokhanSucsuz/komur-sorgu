@@ -1,7 +1,7 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
-import { normalizeToTon } from '@/lib/normalizer';
+import { normalizeToTon, calculateCoalStockMetrics } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -165,11 +165,25 @@ export async function GET(request: NextRequest) {
     }
 
     const eksikKalanTorba = Math.max(0, toplamHedefTorba - toplamDagitilanTorba);
-    const dagitilanTonaj = parseFloat((toplamDagitilanTorba * 0.025).toFixed(3));
     const hedefTonaj = parseFloat((toplamHedefTorba * 0.025).toFixed(3));
     const eksikTonaj = parseFloat((eksikKalanTorba * 0.025).toFixed(3));
     const netTonajFixed = parseFloat(gelenNetTonaj.toFixed(3));
-    const kalanStokTonaj = parseFloat((netTonajFixed - dagitilanTonaj).toFixed(3));
+
+    // Kömür torbaları standart ağırlıkta (25 kg) olmadığında stok eksiye düşürülmez;
+    // eksiye düşecek fark "fazladan kömür verilmiş" olarak kayıtlara işlenir.
+    const stockMetrics = calculateCoalStockMetrics(
+      netTonajFixed,
+      toplamDagitilanTorba,
+      0.025,
+      varsayilanHedefTorba
+    );
+    const dagitilanTonaj = stockMetrics.dagitilanNetTonaj;
+    const kalanStokTonaj = stockMetrics.kalanStokTonaj;
+    const fazlaDagitilanTonaj = stockMetrics.fazlaDagitilanTonaj;
+    const fazlaDagitilanKg = stockMetrics.fazlaDagitilanKg;
+    const fazlaDagitilanTorba = stockMetrics.fazlaDagitilanTorba;
+    const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
+
     const tamamlamaYuzdesi =
       toplamHedefTorba > 0
         ? parseFloat(((toplamDagitilanTorba / toplamHedefTorba) * 100).toFixed(1))
@@ -198,6 +212,11 @@ export async function GET(request: NextRequest) {
         gelenNetTonaj: netTonajFixed,
         gelenBrutTonaj: parseFloat(gelenBrutTonaj.toFixed(3)),
         kalanStokTonaj,
+        fazlaDagitilanTonaj,
+        fazlaDagitilanKg,
+        fazlaDagitilanTorba,
+        fazlaDagitilanHane,
+        hasFazlaDagitim: stockMetrics.hasFazlaDagitim,
         toplamHataSayisi,
       },
     });

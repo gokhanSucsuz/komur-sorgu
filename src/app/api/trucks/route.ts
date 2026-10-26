@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptTruck, normalizeIrsaliyeNo, hashIrsaliye } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
-import { turkishIncludes, normalizeToTon, formatTonnage } from '@/lib/normalizer';
+import { turkishIncludes, normalizeToTon, formatTonnage, calculateCoalStockMetrics } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, isSafeId } from '@/lib/security';
 
@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     if (q) {
       trucks = trucks.filter((t: any) =>
         (t.plaka && turkishIncludes(t.plaka, q)) ||
+        (t.tutanak_no && turkishIncludes(t.tutanak_no, q)) ||
         (t.dorse_plaka && turkishIncludes(t.dorse_plaka, q)) ||
         (t.sofor_adi && turkishIncludes(t.sofor_adi, q)) ||
         (t.irsaliye_no && turkishIncludes(t.irsaliye_no, q)) ||
@@ -60,10 +61,6 @@ export async function GET(request: NextRequest) {
       toplamDagitilanTorba += Number(b.torba_sayisi || 0);
     }
 
-    const dagitilanNetTonaj = parseFloat((toplamDagitilanTorba * 0.025).toFixed(3));
-    const kalanStokTonaj = parseFloat((toplamNetTonaj - dagitilanNetTonaj).toFixed(3));
-    const sonrakiTirSirasi = maxSira + 1;
-
     // Kuruma Gelecek Toplam Kömür Tahsisi ve Geriye Kalan Sevkiyat Miktarı
     const sandboxTahsisDoc = isSandboxMode
       ? await settingsCol.findOne({ key: 'sandbox_toplam_tahsis_tonaj' })
@@ -72,6 +69,28 @@ export async function GET(request: NextRequest) {
     const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
     const kalanTahsisTonaj = toplamTahsisTonaj > 0 ? parseFloat(Math.max(0, toplamTahsisTonaj - toplamNetTonaj).toFixed(3)) : 0;
     const tahsisTamamlanmaYuzdesi = toplamTahsisTonaj > 0 ? parseFloat(((toplamNetTonaj / toplamTahsisTonaj) * 100).toFixed(1)) : 0;
+
+    const sandboxQuotaDoc = isSandboxMode
+      ? await settingsCol.findOne({ key: 'sandbox_varsayilan_hedef_torba' })
+      : null;
+    const quotaDoc = sandboxQuotaDoc || (await settingsCol.findOne({ key: 'varsayilan_hedef_torba' }));
+    const varsayilanHedefTorba = quotaDoc ? parseInt(quotaDoc.value, 10) : 34;
+
+    // Kömür torbaları standart ağırlıkta (25 kg) olmadığında stok eksiye düşürülmez;
+    // eksiye düşecek fark "fazladan kömür verilmiş" olarak kayıtlara işlenir.
+    const stockMetrics = calculateCoalStockMetrics(
+      toplamNetTonaj,
+      toplamDagitilanTorba,
+      0.025,
+      varsayilanHedefTorba
+    );
+    const dagitilanNetTonaj = stockMetrics.dagitilanNetTonaj;
+    const kalanStokTonaj = stockMetrics.kalanStokTonaj;
+    const fazlaDagitilanTonaj = stockMetrics.fazlaDagitilanTonaj;
+    const fazlaDagitilanKg = stockMetrics.fazlaDagitilanKg;
+    const fazlaDagitilanTorba = stockMetrics.fazlaDagitilanTorba;
+    const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
+    const sonrakiTirSirasi = maxSira + 1;
 
     return NextResponse.json({
       success: true,
@@ -84,6 +103,11 @@ export async function GET(request: NextRequest) {
         toplamDagitilanTorba,
         dagitilanNetTonaj,
         kalanStokTonaj,
+        fazlaDagitilanTonaj,
+        fazlaDagitilanKg,
+        fazlaDagitilanTorba,
+        fazlaDagitilanHane,
+        hasFazlaDagitim: stockMetrics.hasFazlaDagitim,
         sonrakiTirSirasi,
         toplamTahsisTonaj,
         kalanTahsisTonaj,
@@ -112,12 +136,16 @@ export async function POST(request: NextRequest) {
       plaka,
       dorse_plaka,
       irsaliye_no,
+      tutanak_no,
       ocak_cikis_tarihi,
       tarih,
       net_tonaj,
       brut_tonaj,
       sofor_adi,
       notlar,
+      isletme_adi,
+      il,
+      ilce,
     } = body;
 
     if (!plaka || !irsaliye_no || !tarih) {
@@ -188,12 +216,16 @@ export async function POST(request: NextRequest) {
       plaka: plaka.toUpperCase().trim(),
       dorse_plaka: dorse_plaka ? dorse_plaka.toUpperCase().trim() : null,
       irsaliye_no: cleanIrsaliye,
+      tutanak_no: tutanak_no ? String(tutanak_no).trim() : null,
       ocak_cikis_tarihi: ocak_cikis_tarihi ? ocak_cikis_tarihi.trim() : tarih,
       tarih,
       net_tonaj: netVal,
       brut_tonaj: brutVal,
       tara_tonaj: taraVal,
       sofor_adi: sofor_adi ? sofor_adi.trim() : null,
+      isletme_adi: isletme_adi ? String(isletme_adi).trim() : 'Çan Linyit İşletmesi Müdürlüğü',
+      il: il ? String(il).trim().toLocaleUpperCase('tr-TR') : 'EDİRNE',
+      ilce: ilce ? String(ilce).trim().toLocaleUpperCase('tr-TR') : 'MERKEZ',
       notlar: notlar ? notlar.trim() : null,
       created_at: nowLocaleTr,
     };
@@ -256,12 +288,16 @@ export async function PUT(request: NextRequest) {
       plaka,
       dorse_plaka,
       irsaliye_no,
+      tutanak_no,
       ocak_cikis_tarihi,
       tarih,
       net_tonaj,
       brut_tonaj,
       sofor_adi,
       notlar,
+      isletme_adi,
+      il,
+      ilce,
     } = body;
 
     if (!id) {
@@ -334,12 +370,16 @@ export async function PUT(request: NextRequest) {
       plaka: plaka.toUpperCase().trim(),
       dorse_plaka: dorse_plaka ? dorse_plaka.toUpperCase().trim() : null,
       irsaliye_no: cleanIrsaliye,
+      tutanak_no: tutanak_no !== undefined ? (tutanak_no ? String(tutanak_no).trim() : null) : (existingTarget.tutanak_no || null),
       ocak_cikis_tarihi: ocak_cikis_tarihi ? ocak_cikis_tarihi.trim() : tarih,
       tarih,
       net_tonaj: netVal,
       brut_tonaj: brutVal,
       tara_tonaj: taraVal,
       sofor_adi: sofor_adi ? sofor_adi.trim() : null,
+      isletme_adi: isletme_adi ? String(isletme_adi).trim() : (existingTarget.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü'),
+      il: il ? String(il).trim().toLocaleUpperCase('tr-TR') : (existingTarget.il || 'EDİRNE'),
+      ilce: ilce ? String(ilce).trim().toLocaleUpperCase('tr-TR') : (existingTarget.ilce || 'MERKEZ'),
       notlar: notlar ? notlar.trim() : null,
       updated_at: nowLocaleTr,
     };
