@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
         toplamTahsisTonaj,
         kalanTahsisTonaj,
         tahsisTamamlanmaYuzdesi,
+        varsayilanHedefTorba,
       },
     });
   } catch (error: any) {

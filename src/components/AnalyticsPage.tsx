@@ -8,7 +8,7 @@ import {
   Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, 
   Layers, ArrowUpDown, ChevronDown, Archive, X, FileText, Download
 } from 'lucide-react';
-import { formatTonnage } from '@/lib/normalizer';
+import { formatTonnage, normalizeToTon } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
 interface AnalyticsPageProps {
@@ -187,6 +187,30 @@ export default function AnalyticsPage({
       return matchName || matchMahalle;
     });
   }, [batchStats, batchSearch]);
+
+  // Uploaded Excel Batches Accordion state
+  const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(new Set());
+
+  const toggleBatchAccordion = (batchId: string) => {
+    setExpandedBatchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(batchId)) {
+        next.delete(batchId);
+      } else {
+        next.add(batchId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllBatches = (expand: boolean) => {
+    if (expand) {
+      const allIds = filteredBatchStats.map((b, idx) => String(b.batchId || b.dosyaAdi || idx));
+      setExpandedBatchIds(new Set(allIds));
+    } else {
+      setExpandedBatchIds(new Set());
+    }
+  };
 
   // Extract distinct mahalle names for dropdowns
   const distinctMahalleNames = useMemo(() => {
@@ -694,6 +718,15 @@ export default function AnalyticsPage({
                     <span>Gelen Tır Sayısı: <strong className="text-slate-900">{donemStats?.toplamTirSayisi} Adet</strong></span>
                     <span>Toplam Net Kömür: <strong className="text-amber-800 font-bold">{formatTonnage(donemStats?.gelenNetTonaj).combined}</strong></span>
                   </div>
+                  <div className="p-2.5 rounded-xl bg-teal-50 border border-teal-200 text-xs flex items-center justify-between text-teal-900">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-teal-700" />
+                      <span>34 Torbalık Hane Kapasitesi:</span>
+                    </span>
+                    <span className="font-black text-teal-950 font-mono">
+                      ~{Math.floor(normalizeToTon(donemStats?.gelenNetTonaj || 0) / 0.85).toLocaleString('tr-TR')} Hane Kapasitesi
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-600 font-medium italic">
                     Depo / Saha Kalan Güncel Stok: <strong className="text-sky-700">{formatTonnage(summary?.kalanStokTonaj || 0).combined}</strong>
                     {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
@@ -1009,8 +1042,8 @@ export default function AnalyticsPage({
             </div>
           </div>
 
-          {/* Search Box */}
-          <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between">
+          {/* Search Box & Accordion Controls */}
+          <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="relative w-full sm:w-96">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -1018,10 +1051,11 @@ export default function AnalyticsPage({
                 value={batchSearch}
                 onChange={(e) => setBatchSearch(e.target.value)}
                 placeholder="Dosya adı veya mahalle adı ile ara..."
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-medium"
+                className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-medium"
               />
               {batchSearch && (
                 <button
+                  type="button"
                   onClick={() => setBatchSearch('')}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
                 >
@@ -1029,103 +1063,177 @@ export default function AnalyticsPage({
                 </button>
               )}
             </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => toggleAllBatches(true)}
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors shadow-2xs active:scale-95"
+                title="Tüm yüklenen Excel listelerini aşağı doğru aç"
+              >
+                Tümünü Aç
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleAllBatches(false)}
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors shadow-2xs active:scale-95"
+                title="Tüm açık Excel listelerini kapat"
+              >
+                Tümünü Kapat
+              </button>
+            </div>
           </div>
 
-          {/* List of Batches with Neighborhood Details */}
+          {/* List of Batches with Neighborhood Details (Accordion) */}
           {filteredBatchStats.length === 0 ? (
             <div className="p-10 text-center rounded-2xl bg-white border border-slate-200 shadow-xs text-slate-500 text-xs font-semibold">
               Kayıtlı Excel yükleme işlemi bulunamadı.
             </div>
           ) : (
-            filteredBatchStats.map((batch: any, index: number) => (
-              <div
-                key={batch.batchId || index}
-                className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3"
-              >
-                {/* Batch Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                      <FileSpreadsheet className="w-5 h-5" />
+            filteredBatchStats.map((batch: any, index: number) => {
+              const batchId = String(batch.batchId || batch.dosyaAdi || index);
+              const isExpanded = expandedBatchIds.has(batchId);
+              const mahalleSayisi = batch.mahalleler?.length || 0;
+
+              return (
+                <div
+                  key={batchId}
+                  className={`rounded-2xl border transition-all duration-200 overflow-hidden bg-white ${
+                    isExpanded ? 'border-amber-300 shadow-md ring-1 ring-amber-100' : 'border-slate-200 shadow-xs hover:border-slate-300'
+                  }`}
+                >
+                  {/* Clickable Accordion Header */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleBatchAccordion(batchId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleBatchAccordion(batchId);
+                      }
+                    }}
+                    className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none transition-colors ${
+                      isExpanded ? 'bg-amber-50/40 border-b border-amber-200/80' : 'hover:bg-slate-50/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        isExpanded ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        <FileSpreadsheet className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-black text-slate-900 truncate">
+                            {batch.dosyaAdi}
+                          </h4>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                            {mahalleSayisi} Yerleşim / Mahalle
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{batch.yuklemeTarihi}</span>
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono text-slate-800 font-bold">{batch.eklenenKisi} Hak Sahibi</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-black text-slate-900 truncate">
-                        {batch.dosyaAdi}
-                      </h4>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{batch.yuklemeTarihi}</span>
-                        <span>•</span>
-                        <span className="font-mono text-slate-700 font-bold">{batch.eklenenKisi} Hak Sahibi</span>
+
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto flex-wrap sm:flex-nowrap">
+                      <span className="badge badge-success text-xs font-bold py-1 px-2.5">
+                        ✓ {batch.teslimEdilen} Teslim Edildi
+                      </span>
+                      <span className="badge badge-pending text-xs font-bold py-1 px-2.5">
+                        {batch.bekleyen} Bekliyor
+                      </span>
+                      <span className="font-mono text-xs font-black text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                        %{batch.yuzde || 0}
+                      </span>
+
+                      {/* Accordion Toggle Indicator */}
+                      <div className={`p-1.5 px-2 rounded-xl border transition-all flex items-center gap-1.5 text-xs font-bold ${
+                        isExpanded 
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs' 
+                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                      }`}>
+                        <span className="text-[11px] font-bold hidden md:inline">{isExpanded ? 'Gizle' : 'Aç'}</span>
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
-                    <span className="badge badge-success text-xs font-bold py-1 px-2.5">
-                      ✓ {batch.teslimEdilen} Teslim Edildi
-                    </span>
-                    <span className="badge badge-pending text-xs font-bold py-1 px-2.5">
-                      {batch.bekleyen} Bekliyor
-                    </span>
-                    <span className="font-mono text-xs font-black text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
-                      %{batch.yuzde || 0}
-                    </span>
-                  </div>
-                </div>
+                  {/* Accordion Expanded Content */}
+                  {isExpanded && (
+                    <div className="p-4 sm:p-5 space-y-3 bg-white">
+                      <div className="flex items-center justify-between text-xs text-slate-600 pb-2 border-b border-slate-100 flex-wrap gap-2">
+                        <span className="font-bold flex items-center gap-1.5 text-slate-700">
+                          <Building2 className="w-4 h-4 text-amber-600" />
+                          <span>Bu Dosyadaki Mahalle ve Liste Dağılımı ({mahalleSayisi} Yerleşim)</span>
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          Toplam: <strong className="text-slate-800">{batch.eklenenKisi} Kişi</strong> • Teslim: <strong className="text-emerald-700">{batch.teslimEdilen}</strong> • Bekleyen: <strong className="text-amber-700">{batch.bekleyen}</strong>
+                        </span>
+                      </div>
 
-                {/* Mahalle Breakdown Table inside Batch */}
-                <div className="overflow-x-auto">
-                  <table className="desktop-compact-table">
-                    <thead>
-                      <tr>
-                        <th>Mahalle Adı</th>
-                        <th>Liste Türü</th>
-                        <th>Sıra No Aralığı (İmza Listesi)</th>
-                        <th className="text-center">Kayıt Sayısı</th>
-                        <th className="text-center text-emerald-800">Teslim Edilen</th>
-                        <th className="text-center text-amber-800">Bekleyen</th>
-                        <th className="text-right">Başarı Oranı</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(batch.mahalleler || []).map((m: any, mIdx: number) => (
-                        <tr key={`${m.mahalle}_${mIdx}`}>
-                          <td className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <span>{m.mahalle}</span>
-                          </td>
-                          <td>
-                            <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded border ${
-                              m.ekListeNo === 0
-                                ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                : 'bg-amber-50 text-amber-900 border-amber-300'
-                            }`}>
-                              {m.ekListeAdi || (m.ekListeNo === 0 ? 'Ana Liste' : `Ek ${m.ekListeNo}`)}
-                            </span>
-                          </td>
-                          <td className="font-mono text-xs font-bold text-emerald-900">
-                            {m.siraAraligi || '-'}
-                          </td>
-                          <td className="text-center font-bold text-slate-900">
-                            {m.toplamKayit} Kişi
-                          </td>
-                          <td className="text-center font-black text-emerald-700 bg-emerald-50/50">
-                            {m.teslimEdilen} Kişi
-                          </td>
-                          <td className="text-center font-black text-amber-800 bg-amber-50/50">
-                            {m.bekleyen} Kişi
-                          </td>
-                          <td className="text-right font-extrabold text-amber-800 font-mono text-xs">
-                            %{m.yuzde || 0}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="desktop-compact-table w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                              <th className="py-2.5 px-3 text-left">Mahalle Adı</th>
+                              <th className="py-2.5 px-3 text-left">Liste Türü</th>
+                              <th className="py-2.5 px-3 text-left">Sıra No Aralığı (İmza Listesi)</th>
+                              <th className="py-2.5 px-3 text-center">Kayıt Sayısı</th>
+                              <th className="py-2.5 px-3 text-center text-emerald-800">Teslim Edilen</th>
+                              <th className="py-2.5 px-3 text-center text-amber-800">Bekleyen</th>
+                              <th className="py-2.5 px-3 text-right">Başarı Oranı</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-800">
+                            {(batch.mahalleler || []).map((m: any, mIdx: number) => (
+                              <tr key={`${m.mahalle}_${mIdx}`} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-2 px-3 font-extrabold text-slate-900 flex items-center gap-1.5">
+                                  <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>{m.mahalle}</span>
+                                </td>
+                                <td className="py-2 px-3">
+                                  <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded border ${
+                                    m.ekListeNo === 0
+                                      ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                      : 'bg-amber-50 text-amber-900 border-amber-300'
+                                  }`}>
+                                    {m.ekListeAdi || (m.ekListeNo === 0 ? 'Ana Liste' : `Ek ${m.ekListeNo}`)}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 font-mono text-xs font-bold text-emerald-900">
+                                  {m.siraAraligi || '-'}
+                                </td>
+                                <td className="py-2 px-3 text-center font-bold text-slate-900">
+                                  {m.toplamKayit} Kişi
+                                </td>
+                                <td className="py-2 px-3 text-center font-black text-emerald-700 bg-emerald-50/50">
+                                  {m.teslimEdilen} Kişi
+                                </td>
+                                <td className="py-2 px-3 text-center font-black text-amber-800 bg-amber-50/50">
+                                  {m.bekleyen} Kişi
+                                </td>
+                                <td className="py-2 px-3 text-right font-extrabold text-amber-800 font-mono text-xs">
+                                  %{m.yuzde || 0}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -1472,6 +1580,12 @@ export default function AnalyticsPage({
                       <span className="text-[10px] uppercase font-bold text-slate-500 block">Depoda Kalan Güncel Stok:</span>
                       <span className="font-black text-sky-700 text-sm">{formatTonnage(summary?.kalanStokTonaj || 0).tonStr}</span>
                     </div>
+                  </div>
+                  <div className="pt-1.5 border-t border-slate-200 text-[11px] text-teal-900 flex items-center justify-between">
+                    <span className="font-bold">34 Torbalık Hane Kapasitesi:</span>
+                    <strong className="text-teal-950 font-mono">
+                      ~{Math.floor(normalizeToTon(donemStats.gelenNetTonaj || 0) / 0.85).toLocaleString('tr-TR')} Hane (Kalan Stok: ~{Math.floor(normalizeToTon(summary?.kalanStokTonaj || 0) / 0.85).toLocaleString('tr-TR')} Hane)
+                    </strong>
                   </div>
                   {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
                     <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between text-[11px] text-purple-900 bg-purple-50/70 p-2 rounded-xl">

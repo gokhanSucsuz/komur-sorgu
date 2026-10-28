@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto, formatTrDateWithDay } from '@/lib/dateUtils';
@@ -499,9 +499,16 @@ export default function TonnagePage({
         <div className="pt-2 border-t border-slate-100 space-y-2.5">
           {(() => {
             const hasFazla = Number(stats?.fazlaDagitilanTonaj || 0) > 0;
+            const quotaTorba = Number(stats?.varsayilanHedefTorba) || 34;
+            const quotaTon = (quotaTorba * 25) / 1000;
+            const haneKapasitesiGelen = Math.floor(normalizeToTon(stats?.toplamNetTonaj) / quotaTon);
+            const haneKapasitesiKalanStok = Math.floor(normalizeToTon(stats?.kalanStokTonaj || 0) / quotaTon);
+            const haneKapasitesiTahsis = Number(stats?.toplamTahsisTonaj || 0) > 0
+              ? Math.floor(normalizeToTon(stats?.toplamTahsisTonaj) / quotaTon)
+              : null;
             return (
               <>
-                <div className={`grid grid-cols-2 sm:grid-cols-3 ${hasFazla ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-2`}>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 ${hasFazla ? 'lg:grid-cols-4 xl:grid-cols-7' : 'lg:grid-cols-3 xl:grid-cols-6'} gap-2`}>
                   {/* Card 1: Kurum Toplam Tahsisi */}
                   <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 flex flex-col justify-between">
                     <div>
@@ -556,6 +563,30 @@ export default function TonnagePage({
                     </div>
                     <div className="mt-1.5 pt-1 border-t border-amber-100 text-[10px] text-amber-700 font-semibold">
                       {stats?.toplamTirSayisi || 0} Tır Sahaya İndi
+                    </div>
+                  </div>
+
+                  {/* Card 3: 34 Torbalık Hane Kapasitesi */}
+                  <div className="p-3 rounded-xl bg-teal-50/80 border border-teal-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-teal-900 tracking-wider flex items-center gap-1">
+                        <Users className="w-3 h-3 text-teal-700" />
+                        <span>34 Torbalık Hane Kapasitesi</span>
+                      </span>
+                      <div className="text-lg font-black text-teal-950 mt-0.5">
+                        {haneKapasitesiGelen.toLocaleString('tr-TR')} Hane
+                      </div>
+                      <div className="text-[10px] text-teal-800 font-bold">
+                        (1 Hane = {quotaTorba} Torba / {Math.round(quotaTon * 1000)} kg)
+                      </div>
+                    </div>
+                    <div className="mt-1.5 pt-1 border-t border-teal-100 text-[10px] text-teal-700 font-semibold truncate flex items-center justify-between">
+                      <span>Kalan Stok: <strong className="text-teal-900">{haneKapasitesiKalanStok.toLocaleString('tr-TR')} Hane</strong></span>
+                      {haneKapasitesiTahsis !== null && (
+                        <span className="text-[9px] text-teal-600 hidden xl:inline" title="Kurum tahsisinin toplam hane kapasitesi">
+                          Tahsis: {haneKapasitesiTahsis.toLocaleString('tr-TR')}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -705,6 +736,9 @@ export default function TonnagePage({
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-bold">
               Filtre Net Tonaj: <strong className="font-mono">{formatTonnage(filteredMainNetTonaj).combined}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-900 font-bold" title="Filtrelenen tonajın 34 torbalık hane kapasitesi eşdeğeri">
+              34 Torbalık Kapasite: <strong className="font-mono">{Math.floor(normalizeToTon(filteredMainNetTonaj) / 0.85).toLocaleString('tr-TR')} Hane</strong>
             </span>
             {hasActiveMainFilters && (
               <button
@@ -1804,7 +1838,7 @@ export default function TonnagePage({
                   )}
                 </div>
 
-                <div className={`grid grid-cols-2 ${Number(stats?.fazlaDagitilanTonaj || 0) > 0 ? 'sm:grid-cols-3 lg:grid-cols-6' : 'sm:grid-cols-5'} gap-2 text-center`}>
+                <div className={`grid grid-cols-2 ${Number(stats?.fazlaDagitilanTonaj || 0) > 0 ? 'sm:grid-cols-3 lg:grid-cols-7' : 'sm:grid-cols-3 lg:grid-cols-6'} gap-2 text-center`}>
                   <div className="p-2.5 rounded-lg bg-white border border-indigo-200">
                     <span className="text-[9px] font-bold text-indigo-900 uppercase block">Kuruma Tahsis Edilen</span>
                     <div className="text-base font-black text-indigo-950 mt-0.5">
@@ -1822,6 +1856,16 @@ export default function TonnagePage({
                     </div>
                     <div className="text-[9px] font-bold text-amber-700">
                       ({formatTonnage(stats?.toplamNetTonaj).kgStr})
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-teal-50/70 border border-teal-200">
+                    <span className="text-[9px] font-bold text-teal-900 uppercase block">34 Torbalık Hane Kapasitesi</span>
+                    <div className="text-base font-black text-teal-950 mt-0.5">
+                      {Math.floor(normalizeToTon(stats?.toplamNetTonaj) / 0.85).toLocaleString('tr-TR')} Hane
+                    </div>
+                    <div className="text-[9px] font-bold text-teal-700">
+                      (Kalan Stok: ~{Math.floor(normalizeToTon(stats?.kalanStokTonaj || 0) / 0.85)} Hane)
                     </div>
                   </div>
 
