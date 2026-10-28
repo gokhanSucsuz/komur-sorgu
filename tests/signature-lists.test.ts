@@ -38,7 +38,8 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
 
   it('2. Excel çalışma sayfası A4 yatay, dar kenar boşlukları, tekrarlayan başlık ve 38pt ıslak imza satır yüksekliğine sahiptir', async () => {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('1. FATIH MAH.', {
+    // İlk sayfa dışında her mahalle sayfasında sadece tek satır çizelge başlığı ve tablo başlıkları yinelenir (1:2)
+    const sheet = workbook.addWorksheet('1. ÇAVUŞBEY MAH.', {
       pageSetup: {
         paperSize: 9, // A4
         orientation: 'landscape',
@@ -47,14 +48,14 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
         fitToPage: true,
         horizontalCentered: true,
         margins: { left: 0.35, right: 0.35, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.2 },
-        printTitlesRow: '1:5',
+        printTitlesRow: '1:2',
       },
     });
 
-    sheet.addRow(['T.C. EDİRNE VALİLİĞİ']);
-    sheet.addRow(['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI']);
-    sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA LİSTESİ - FATİH MAH.']);
-    sheet.addRow(['Liste: 1. Dağıtım Islak İmza Listesi | Toplam: 1 Hane']);
+    const titleRow = sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ÇAVUŞBEY MAH.']);
+    sheet.mergeCells(1, 1, 1, 6);
+    titleRow.height = 28;
+
     sheet.addRow(['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Alan Islak İmza']);
 
     const dataRow = sheet.addRow([1, 'Ahmet Yılmaz', '12345678901', '0555 111 22 33', 'Atatürk Cad. No: 1', '']);
@@ -63,7 +64,7 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(sheet.pageSetup.paperSize, 9);
     assert.equal(sheet.pageSetup.orientation, 'landscape');
     assert.equal(sheet.pageSetup.fitToWidth, 1);
-    assert.equal(sheet.pageSetup.printTitlesRow, '1:5');
+    assert.equal(sheet.pageSetup.printTitlesRow, '1:2');
     assert.equal(dataRow.height, 38);
     // İmza alanı kesinlikle boştur
     assert.equal(dataRow.getCell(6).value, '');

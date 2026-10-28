@@ -302,7 +302,7 @@ function addOfficialSignatureSheet(
 
   const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
   const sheet = workbook.addWorksheet(safeSheetName, {
-    views: [{ state: 'frozen', ySplit: 5, showGridLines: true }],
+    views: [{ state: 'frozen', ySplit: 2, showGridLines: true }],
     pageSetup: {
       paperSize: 9, // A4
       orientation: 'landscape',
@@ -319,7 +319,7 @@ function addOfficialSignatureSheet(
         header: 0.2,
         footer: 0.2,
       },
-      printTitlesRow: '1:5',
+      printTitlesRow: '1:2',
     },
     headerFooter: {
       oddHeader: `&L&B&9T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9RESMİ ISLAK İMZA LİSTESİ - ${mahName.toUpperCase()}`,
@@ -327,46 +327,19 @@ function addOfficialSignatureSheet(
     },
   });
 
-  const nowStr = new Date().toLocaleString('tr-TR');
+  // 1. Mahalle Çizelge Başlığı (İlk sayfa [Özet İcmal] dışındaki tüm sayfalarda sadece bu başlık yer alır)
+  const titleRow = sheet.addRow([`KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`]);
+  sheet.mergeCells(1, 1, 1, 6);
+  titleRow.height = 28;
+  titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
+  titleRow.font = { name: 'Segoe UI', size: 12.5, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1E293B' },
+  };
 
-  // Kurumsal Başlık Satırları (1 - 4)
-  sheet.addRow(['T.C. EDİRNE VALİLİĞİ']);
-  sheet.addRow(['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI']);
-  sheet.addRow([`KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`]);
-  sheet.addRow([
-    `Liste: ${listTitle} | Mahalle/Köy: ${mahName} | Toplam: ${group.length} Hane | Sıralama: Adres (A'dan Z'ye) Sıralı | Tanzim: ${nowStr}`
-  ]);
-
-  for (let r = 1; r <= 4; r++) {
-    sheet.mergeCells(r, 1, r, 6);
-    const row = sheet.getRow(r);
-    row.alignment = { vertical: 'middle', horizontal: 'center' };
-    if (r === 1) {
-      row.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF475569' } };
-      row.height = 18;
-    } else if (r === 2) {
-      row.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF0F172A' } };
-      row.height = 22;
-    } else if (r === 3) {
-      row.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
-      row.height = 26;
-      row.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF1E293B' },
-      };
-    } else if (r === 4) {
-      row.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF475569' } };
-      row.height = 18;
-      row.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF1F5F9' },
-      };
-    }
-  }
-
-  // 2. Tablo Kolon Başlıkları (Row 5)
+  // 2. Tablo Kolon Başlıkları (Row 2)
   const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Alan Islak İmza'];
   const headerRow = sheet.addRow(headers);
   headerRow.height = 28;
