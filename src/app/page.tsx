@@ -1,13 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import Header from '@/components/Header';
 import BottomNav, { NavTab } from '@/components/BottomNav';
 import BeneficiaryList from '@/components/BeneficiaryList';
-import DeliveryArchive from '@/components/DeliveryArchive';
-import TonnagePage from '@/components/TonnagePage';
-import ExcelImportPage from '@/components/ExcelImportPage';
-import AnalyticsPage from '@/components/AnalyticsPage';
 import MorningAlertBanner from '@/components/MorningAlertBanner';
 import DeliveryModal from '@/components/DeliveryModal';
 import CancelModal from '@/components/CancelModal';
@@ -17,20 +14,57 @@ import LoginPage from '@/components/LoginPage';
 import PersonnelManagementModal from '@/components/PersonnelManagementModal';
 import DeviceManagementModal from '@/components/DeviceManagementModal';
 import AuditLogsModal from '@/components/AuditLogsModal';
-import ShiftPage from '@/components/ShiftPage';
-import RoutePage from '@/components/RoutePage';
 import AdminAuthModal from '@/components/AdminAuthModal';
 import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
 import KomurIptalModal from '@/components/KomurIptalModal';
 import SeasonManagementModal from '@/components/SeasonManagementModal';
-import GuidePage from '@/components/GuidePage';
-import SingleHouseholdAddPage from '@/components/SingleHouseholdAddPage';
 import { FlaskConical, Play, RotateCcw, Shield, Sparkles } from 'lucide-react';
 import { showToast, showAlert, showConfirm } from '@/components/GlobalAlertManager';
 import { setOfflineQueueActiveMode, clearSandboxOfflineQueue } from '@/lib/offlineSync';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 import { signatureQueue } from '@/lib/signatureQueue';
 import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
+
+// Modern Skeleton loader for dynamically loaded sub-tabs
+function TabLoadingSkeleton({ text = 'Yükleniyor...' }: { text?: string }) {
+  return (
+    <div className="p-8 sm:p-12 rounded-3xl bg-white border border-slate-200 shadow-sm text-center space-y-3 animate-pulse my-4">
+      <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+        <Sparkles className="w-5 h-5 animate-spin" />
+      </div>
+      <p className="text-xs sm:text-sm font-bold text-slate-700">{text}</p>
+      <div className="w-48 h-1.5 bg-slate-100 rounded-full mx-auto overflow-hidden">
+        <div className="w-2/3 h-full bg-amber-500 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
+// Next.js High-Performance Code-Splitting for Heavy Sub-Tabs
+const SingleHouseholdAddPage = dynamic(() => import('@/components/SingleHouseholdAddPage'), {
+  loading: () => <TabLoadingSkeleton text="Tekil Hane Kayıt Paneli Hazırlanıyor..." />,
+});
+const RoutePage = dynamic(() => import('@/components/RoutePage'), {
+  loading: () => <TabLoadingSkeleton text="Dağıtım Rotası ve İmza Listeleri Yükleniyor..." />,
+});
+const ShiftPage = dynamic(() => import('@/components/ShiftPage'), {
+  loading: () => <TabLoadingSkeleton text="Çalışma Saatleri ve Vardiya Paneli Yükleniyor..." />,
+});
+const AnalyticsPage = dynamic(() => import('@/components/AnalyticsPage'), {
+  loading: () => <TabLoadingSkeleton text="İstatistik ve Resmi Raporlama Paneli Yükleniyor..." />,
+});
+const DeliveryArchive = dynamic(() => import('@/components/DeliveryArchive'), {
+  loading: () => <TabLoadingSkeleton text="Teslimat Arşivi Yükleniyor..." />,
+});
+const TonnagePage = dynamic(() => import('@/components/TonnagePage'), {
+  loading: () => <TabLoadingSkeleton text="Kömür Stok ve Tonaj Paneli Yükleniyor..." />,
+});
+const ExcelImportPage = dynamic(() => import('@/components/ExcelImportPage'), {
+  loading: () => <TabLoadingSkeleton text="Excel İçe Aktarma ve Liste Yönetimi Yükleniyor..." />,
+});
+const GuidePage = dynamic(() => import('@/components/GuidePage'), {
+  loading: () => <TabLoadingSkeleton text="Resmi Kullanım Kılavuzu Yükleniyor..." />,
+});
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {

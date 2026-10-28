@@ -27,13 +27,20 @@ import {
 } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
-import { serverError, asString, clampInt, isSafeId } from '@/lib/security';
+import { serverError, asString, clampInt, isSafeId, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
     const session = await verifySession(request);
     if (!session.valid) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
+    // Rate limit: 180 requests per minute per user/IP
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(`beneficiaries:${session.id || clientIp}`, 180, 60);
+    if (!rateLimit.allowed) {
+      return rateLimitExceededResponse(rateLimit, 'Çok fazla hak sahibi sorgulama isteği gönderildi. Lütfen birkaç saniye bekleyiniz.');
     }
 
     const {
@@ -990,6 +997,13 @@ export async function PUT(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
+    // Rate limit: 180 requests per minute per user/IP
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(`beneficiaries:${session.id || clientIp}`, 180, 60);
+    if (!rateLimit.allowed) {
+      return rateLimitExceededResponse(rateLimit, 'Çok fazla hak sahibi sorgulama isteği gönderildi. Lütfen birkaç saniye bekleyiniz.');
+    }
+
     if (session.rol === 'MUDUR') {
       return NextResponse.json(
         { success: false, code: 'FORBIDDEN', error: 'Yetki Sınırı: Müdür yetkilisi salt okunur izleme modundadır, hane bilgilerini güncelleyemez.' },
@@ -1252,6 +1266,13 @@ export async function PATCH(request: NextRequest) {
     const session = await verifySession(request);
     if (!session.valid) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+    }
+
+    // Rate limit: 180 requests per minute per user/IP
+    const clientIp = getClientIp(request);
+    const rateLimit = checkRateLimit(`beneficiaries:${session.id || clientIp}`, 180, 60);
+    if (!rateLimit.allowed) {
+      return rateLimitExceededResponse(rateLimit, 'Çok fazla hak sahibi sorgulama isteği gönderildi. Lütfen birkaç saniye bekleyiniz.');
     }
 
     const { beneficiaries: benCol, deliveryRoutes: routeCol } = await getDbCollections();

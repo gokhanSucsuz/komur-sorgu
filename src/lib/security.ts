@@ -203,3 +203,107 @@ export function stripBlindHashes<T>(input: T): T {
   }
   return cloned as T;
 }
+
+// ============================================================================
+// Kayan Pencereli İstek Sınırlayıcı (Sliding-Window Rate Limiter)
+// ============================================================================
+
+interface RateLimitEntry {
+  timestamps: number[];
+}
+
+const rateLimitStore = new Map<string, RateLimitEntry>();
+let lastPurgeTime = Date.now();
+
+/**
+ * 60 saniyede bir eskiyen kayıtları temizleyerek bellek sızıntısını önler.
+ */
+function purgeExpiredRateLimits(windowMs: number) {
+  const now = Date.now();
+  if (now - lastPurgeTime < 60000) return;
+  lastPurgeTime = now;
+  for (const [key, entry] of rateLimitStore.entries()) {
+    const valid = entry.timestamps.filter((t) => now - t < windowMs);
+    if (valid.length === 0) {
+      rateLimitStore.delete(key);
+    } else {
+      entry.timestamps = valid;
+    }
+  }
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  resetSeconds: number;
+  clientKey: string;
+}
+
+/**
+ * IP veya anahtar bazlı kayan pencere (sliding-window) hız sınırlaması.
+ * @param key İstemci IP'si veya özel anahtar (örn: `auth:ip`, `export:ip`)
+ * @param limit İzin verilen maksimum istek sayısı
+ * @param windowSeconds Pencere süresi (saniye cinsinden)
+ */
+export function checkRateLimit(key: string, limit: number = 60, windowSeconds: number = 60): RateLimitResult {
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+  purgeExpiredRateLimits(windowMs);
+
+  let entry = rateLimitStore.get(key);
+  if (!entry) {
+    entry = { timestamps: [] };
+    rateLimitStore.set(key, entry);
+  }
+
+  // Pencere dışındaki eski zaman damgalarını filtrele
+  entry.timestamps = entry.timestamps.filter((t) => now - t < windowMs);
+
+  const resetSeconds = entry.timestamps.length > 0
+    ? Math.max(1, Math.ceil((entry.timestamps[0] + windowMs - now) / 1000))
+    : windowSeconds;
+
+  if (entry.timestamps.length >= limit) {
+    return {
+      allowed: false,
+      limit,
+      remaining: 0,
+      resetSeconds,
+      clientKey: key,
+    };
+  }
+
+  entry.timestamps.push(now);
+  return {
+    allowed: true,
+    limit,
+    remaining: Math.max(0, limit - entry.timestamps.length),
+    resetSeconds,
+    clientKey: key,
+  };
+}
+
+/**
+ * Rate limit aşıldığında standart 429 Too Many Requests yanıtı döndürür.
+ */
+export function rateLimitExceededResponse(result: RateLimitResult, customMessage?: string): NextResponse {
+  const message = customMessage || `Çok fazla istek gönderildi. Lütfen ${result.resetSeconds} saniye sonra tekrar deneyiniz.`;
+  return NextResponse.json(
+    {
+      success: false,
+      code: 'RATE_LIMIT_EXCEEDED',
+      error: message,
+      retryAfter: result.resetSeconds,
+    },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(result.resetSeconds),
+        'X-RateLimit-Limit': String(result.limit),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(result.resetSeconds),
+      },
+    }
+  );
+}

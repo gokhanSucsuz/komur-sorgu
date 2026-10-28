@@ -38,6 +38,8 @@ import {
   validatePasswordPolicy,
   isSameOriginRequest,
   stripBlindHashes,
+  checkRateLimit,
+  rateLimitExceededResponse,
 } from '@/lib/security';
 
 import {
@@ -272,6 +274,31 @@ describe('3. NoSQL Enjeksiyon Koruması, Parola Politikası, CSRF ve Kör İndek
     assert.equal('hane_hash' in cleaned, false);
     assert.equal('adres_hash' in cleaned, false);
     assert.equal('tc_hash' in cleaned.duraklar[0], false);
+  });
+
+  it('Kayan pencereli istek sınırlayıcı (checkRateLimit) limit aşımında 429 yanıtı verir', () => {
+    const testKey = `test_ip_${Date.now()}`;
+    // Limit 3 requests in 10 seconds
+    const r1 = checkRateLimit(testKey, 3, 10);
+    assert.equal(r1.allowed, true);
+    assert.equal(r1.remaining, 2);
+
+    const r2 = checkRateLimit(testKey, 3, 10);
+    assert.equal(r2.allowed, true);
+    assert.equal(r2.remaining, 1);
+
+    const r3 = checkRateLimit(testKey, 3, 10);
+    assert.equal(r3.allowed, true);
+    assert.equal(r3.remaining, 0);
+
+    // 4th request must be rejected
+    const r4 = checkRateLimit(testKey, 3, 10);
+    assert.equal(r4.allowed, false);
+    assert.equal(r4.remaining, 0);
+
+    const res = rateLimitExceededResponse(r4);
+    assert.equal(res.status, 429);
+    assert.equal(res.headers.get('Retry-After'), String(r4.resetSeconds));
   });
 });
 

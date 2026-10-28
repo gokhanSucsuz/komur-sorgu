@@ -4,7 +4,7 @@ import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
 import { formatTrDateWithDay } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
-import { serverError, asString } from '@/lib/security';
+import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 
 /**
  * Neutralizes Excel formula injection (CSV/XLSX DDE attacks).
@@ -687,6 +687,14 @@ export async function GET(request: NextRequest) {
     if (type !== 'template') {
       if (!session.valid) {
         return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+      }
+
+      // Rate limit bulk exports: max 15 export requests per minute per user/IP
+      const clientIp = getClientIp(request);
+      const rateLimitKey = `export:${session.id || clientIp}`;
+      const rateLimit = checkRateLimit(rateLimitKey, 15, 60);
+      if (!rateLimit.allowed) {
+        return rateLimitExceededResponse(rateLimit, 'Kısa süre içinde çok fazla Excel indirme isteği gönderildi. Lütfen bir süre bekleyiniz.');
       }
 
       // Restrict bulk PII and sensitive system exports to ADMIN
