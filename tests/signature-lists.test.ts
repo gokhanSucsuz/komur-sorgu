@@ -274,4 +274,32 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     const pendingAfter = await benCol.find(unassignedFilter).toArray();
     assert.equal(pendingAfter.length, 0, 'Kilitleme sonrası bekleyen kayıt 0 kalmalıdır');
   });
+
+  it('7. Islak imza listesi tutanağında sol tarafta Dağıtımı Yapan Vakıf Görevlisi/Personeli, sağ tarafta Vakıf Müdürü yer alır; Muhtar ve Şoför alanı bulunmaz', () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('1. FATIH MAH.');
+
+    // Simüle edilen resmi tutanak ve imza satırı
+    const signTitleRow = sheet.addRow([
+      'Dağıtımı Yapan Vakıf Görevlisi veya Personeli\n(Ad Soyad / İmza)',
+      '',
+      '',
+      'Vakıf Müdürü\n(Ad Soyad / İmza / Mühür)',
+      '',
+      '',
+    ]);
+    sheet.mergeCells(signTitleRow.number, 1, signTitleRow.number, 3);
+    sheet.mergeCells(signTitleRow.number, 4, signTitleRow.number, 6);
+
+    const leftBoxText = String(signTitleRow.getCell(1).value);
+    const rightBoxText = String(signTitleRow.getCell(4).value);
+
+    // Doğrulamalar:
+    assert.ok(leftBoxText.includes('Dağıtımı Yapan Vakıf Görevlisi veya Personeli'), 'Sol kutuda Vakıf Görevlisi / Personeli yer almalıdır');
+    assert.ok(rightBoxText.includes('Vakıf Müdürü'), 'Sağ kutuda Vakıf Müdürü yer almalıdır');
+
+    // Muhtar ve Şoför olmamalıdır:
+    assert.ok(!leftBoxText.includes('Muhtar') && !rightBoxText.includes('Muhtar'), 'İmza bloğunda Muhtar yer almamalıdır');
+    assert.ok(!leftBoxText.includes('Şoför') && !rightBoxText.includes('Şoför'), 'İmza bloğunda Şoför yer almamalıdır');
+  });
 });

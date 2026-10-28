@@ -490,28 +490,31 @@ function addOfficialSignatureSheet(
   sheet.addRow([]); // boşluk
 
   const signTitleRow = sheet.addRow([
-    'Teslim Eden Vakıf Görevlisi\n(Ad Soyad / İmza)',
+    'Dağıtımı Yapan Vakıf Görevlisi veya Personeli\n(Ad Soyad / İmza)',
     '',
-    'Dağıtım Şoförü / Personel\n(Ad Soyad / İmza)',
     '',
-    'Mahalle Muhtarı\n(Ad Soyad / İmza / Mühür)',
+    'Vakıf Müdürü\n(Ad Soyad / İmza / Mühür)',
+    '',
     '',
   ]);
-  signTitleRow.height = 45;
-  sheet.mergeCells(signTitleRow.number, 1, signTitleRow.number, 2);
-  sheet.mergeCells(signTitleRow.number, 3, signTitleRow.number, 4);
-  sheet.mergeCells(signTitleRow.number, 5, signTitleRow.number, 6);
+  signTitleRow.height = 55;
+  sheet.mergeCells(signTitleRow.number, 1, signTitleRow.number, 3);
+  sheet.mergeCells(signTitleRow.number, 4, signTitleRow.number, 6);
 
-  [1, 3, 5].forEach((col) => {
+  for (let col = 1; col <= 6; col++) {
     const c = signTitleRow.getCell(col);
-    c.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
-    c.alignment = { vertical: 'top', horizontal: 'center', wrapText: true };
     c.border = {
       top: { style: 'thin', color: { argb: 'FF94A3B8' } },
       bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
-      left: { style: 'thin', color: { argb: 'FF94A3B8' } },
-      right: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      left: col === 1 || col === 4 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
+      right: col === 3 || col === 6 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
     };
+  }
+
+  [1, 4].forEach((col) => {
+    const c = signTitleRow.getCell(col);
+    c.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    c.alignment = { vertical: 'top', horizontal: 'center', wrapText: true };
   });
 
   // Kolon Genişlikleri (A4 Yatay Sayfa Baskısına Tam Uyumlu)
@@ -666,6 +669,37 @@ function addOfficialSignatureSummarySheet(
     { width: 22 }, // Kömür Torba
     { width: 20 }, // Kömür Ton
   ];
+
+  sheet.addRow([]); // boşluk
+
+  // Özet İcmal Resmi Yetkili İmzaları
+  const summarySignRow = sheet.addRow([
+    'Dağıtımı Yapan Vakıf Görevlisi veya Personeli\n(Ad Soyad / İmza)',
+    '',
+    '',
+    'Vakıf Müdürü\n(Ad Soyad / İmza / Mühür)',
+    '',
+    '',
+  ]);
+  summarySignRow.height = 55;
+  sheet.mergeCells(summarySignRow.number, 1, summarySignRow.number, 3);
+  sheet.mergeCells(summarySignRow.number, 4, summarySignRow.number, 6);
+
+  for (let col = 1; col <= 6; col++) {
+    const c = summarySignRow.getCell(col);
+    c.border = {
+      top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      left: col === 1 || col === 4 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
+      right: col === 3 || col === 6 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
+    };
+  }
+
+  [1, 4].forEach((col) => {
+    const c = summarySignRow.getCell(col);
+    c.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    c.alignment = { vertical: 'top', horizontal: 'center', wrapText: true };
+  });
 
   return sheet;
 }
