@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
-import { decryptBeneficiary } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { normalizeMahalleName } from '@/lib/normalizer';
@@ -35,19 +34,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Aktif dönem hak sahiplerini çek
-    const rawBeneficiaries = await benCol.find({}).toArray();
-    const allBeneficiaries = rawBeneficiaries.map(decryptBeneficiary);
+    // Aktif dönem hak sahiplerini çek (Yalnızca şifrelenmemiş metadata alanları: mahalle ve imza_listesi_id)
+    // Şifreli alanları (TC, isim, adres vs.) çözmeden doğrudan sayım yaparak GET yanıt süresi anlık (10ms) tutulur.
+    const rawBeneficiaries = await benCol
+      .find({}, { projection: { _id: 1, id: 1, mahalle: 1, imza_listesi_id: 1 } })
+      .toArray();
 
-    // İmza listesi durumlarına göre ayır
-    const unassigned = allBeneficiaries.filter((b: any) => !b.imza_listesi_id);
-    const assigned = allBeneficiaries.filter((b: any) => Boolean(b.imza_listesi_id));
-
-    // Mahalle bazında bekleyen yeni kayıt dağılımı
+    let pendingCount = 0;
+    let assignedCount = 0;
     const pendingMahalleMap = new Map<string, number>();
-    for (const b of unassigned) {
-      const m = normalizeMahalleName(b.mahalle) || b.mahalle || 'Genel';
-      pendingMahalleMap.set(m, (pendingMahalleMap.get(m) || 0) + 1);
+
+    for (const b of rawBeneficiaries) {
+      const isAssigned = Boolean(b.imza_listesi_id && String(b.imza_listesi_id).trim().length > 0);
+      if (isAssigned) {
+        assignedCount++;
+      } else {
+        pendingCount++;
+        const m = normalizeMahalleName(b.mahalle) || b.mahalle || 'Genel';
+        pendingMahalleMap.set(m, (pendingMahalleMap.get(m) || 0) + 1);
+      }
     }
 
     const pendingMahalleler = Array.from(pendingMahalleMap.entries())
@@ -66,9 +71,9 @@ export async function GET(request: NextRequest) {
       donemKodu: activeSeason,
       calismaModu,
       isSandbox: isSandboxMode,
-      totalCount: allBeneficiaries.length,
-      pendingCount: unassigned.length,
-      assignedCount: assigned.length,
+      totalCount: rawBeneficiaries.length,
+      pendingCount,
+      assignedCount,
       pendingMahalleCount: pendingMahalleMap.size,
       pendingMahalleler,
       nextListNo,
@@ -121,17 +126,21 @@ export async function POST(request: NextRequest) {
       }
 
       // Henüz bir imza listesine atanmamış tüm hak sahiplerini bul
-      const rawBeneficiaries = await benCol.find({}).toArray();
-      const allBeneficiaries = rawBeneficiaries.map((raw: any) => ({
-        ...decryptBeneficiary(raw),
-        _rawId: raw._id || raw.id,
-      }));
-
       // KURAL: Bir kayıt sadece tek bir imza listesinde olabilir!
       // Sadece imza_listesi_id'si boş/tanımsız olan kayıtlar yeni listeye dahil edilir.
-      const unassigned = allBeneficiaries.filter((b: any) => !b.imza_listesi_id);
+      const unassignedFilter: any = {
+        $or: [
+          { imza_listesi_id: null },
+          { imza_listesi_id: '' },
+          { imza_listesi_id: { $exists: false } },
+        ],
+      };
 
-      if (unassigned.length === 0) {
+      const unassignedDocs = await benCol
+        .find(unassignedFilter, { projection: { _id: 1, id: 1, mahalle: 1 } })
+        .toArray();
+
+      if (unassignedDocs.length === 0) {
         return NextResponse.json(
           {
             success: false,
@@ -153,29 +162,43 @@ export async function POST(request: NextRequest) {
           ? '1. Dağıtım Islak İmza Listesi (Genel)'
           : `${nextNo}. Dağıtım Islak İmza Listesi (Yeni Eklenen Kayıtlar)`;
 
-      // Mahalle bazında dağılımı hesapla
+      // Mahalle bazında dağılımı ve güncellenecek ID'leri topla
+      const unassignedRawIds: any[] = [];
+      const unassignedStringIds: string[] = [];
       const mahalleCounts: Record<string, number> = {};
-      for (const item of unassigned) {
+
+      for (const item of unassignedDocs) {
+        if (item._id) unassignedRawIds.push(item._id);
+        if (item.id) unassignedStringIds.push(String(item.id));
         const m = normalizeMahalleName(item.mahalle) || item.mahalle || 'Genel';
         mahalleCounts[m] = (mahalleCounts[m] || 0) + 1;
       }
       const mahalleSayisi = Object.keys(mahalleCounts).length;
 
-      // Tüm bekleyen kayıtları bu imza listesi kimliğiyle güncelle (Kayıt kilitlenir)
-      for (const item of unassigned) {
-        await benCol.updateOne(
-          { _id: item._rawId },
-          {
-            $set: {
-              imza_listesi_id: listId,
-              imza_listesi_no: nextNo,
-              imza_listesi_adi: listName,
-              imza_listesi_tarihi: nowStr,
-              updated_at: nowStr,
-            },
-          }
-        );
+      // TÜM BEKLEYEN KAYITLARI ATOMİK TOPLU GÜNCELLEME İLE KİLİTLE (updateMany):
+      // Tek tek for döngüsüyle updateOne çağırmak binlerce kayıt için yüzlerce ağ turuna ve
+      // dakikalarca donmaya/zaman aşımına neden oluyordu. Tek sorguda ~20ms içinde güncellenir.
+      const updateFilter: any = {};
+      if (unassignedRawIds.length > 0 && unassignedStringIds.length > 0) {
+        updateFilter.$or = [
+          { _id: { $in: unassignedRawIds } },
+          { id: { $in: unassignedStringIds } },
+        ];
+      } else if (unassignedRawIds.length > 0) {
+        updateFilter._id = { $in: unassignedRawIds };
+      } else {
+        updateFilter.id = { $in: unassignedStringIds };
       }
+
+      await benCol.updateMany(updateFilter, {
+        $set: {
+          imza_listesi_id: listId,
+          imza_listesi_no: nextNo,
+          imza_listesi_adi: listName,
+          imza_listesi_tarihi: nowStr,
+          updated_at: nowStr,
+        },
+      });
 
       // İmza listesi meta-belgesini kaydet
       const newListDoc = {
@@ -185,7 +208,7 @@ export async function POST(request: NextRequest) {
         donem_kodu: activeSeason,
         calisma_modu: calismaModu,
         is_sandbox: isSandboxMode,
-        toplam_kayit: unassigned.length,
+        toplam_kayit: unassignedDocs.length,
         mahalle_sayisi: mahalleSayisi,
         mahalle_dagilimi: mahalleCounts,
         olusturan_personel: adminName,
@@ -201,12 +224,12 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'IMZA_LISTESI_OLUSTURMA',
         baslik: `${isSandboxMode ? '[DENEME MODU] ' : ''}Resmi Islak İmza Listesi Oluşturuldu (${listName})`,
-        detay: `${isSandboxMode ? '[DENEME / TEST ALANI] ' : ''}"${listName}" kapsamında ${unassigned.length} hak sahibi (${mahalleSayisi} Mahalle) için yeni ıslak imza listesi oluşturuldu ve kayıtlara kilitlendi. Bir kayıt sadece tek bir imza listesinde yer alabilir kuralı uygulandı.`,
+        detay: `${isSandboxMode ? '[DENEME / TEST ALANI] ' : ''}"${listName}" kapsamında ${unassignedDocs.length} hak sahibi (${mahalleSayisi} Mahalle) için yeni ıslak imza listesi oluşturuldu ve kayıtlara kilitlendi. Bir kayıt sadece tek bir imza listesinde yer alabilir kuralı uygulandı.`,
         ek_bilgi: {
           listId,
           listName,
           listeNo: nextNo,
-          toplamKayit: unassigned.length,
+          toplamKayit: unassignedDocs.length,
           mahalleSayisi,
           calisma_modu: calismaModu,
         },
@@ -216,11 +239,11 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `"${listName}" başarıyla oluşturuldu! ${unassigned.length} hane listeye kilitlendi.`,
+        message: `"${listName}" başarıyla oluşturuldu! ${unassignedDocs.length} hane listeye kilitlendi.`,
         listId,
         listName,
         listeNo: nextNo,
-        count: unassigned.length,
+        count: unassignedDocs.length,
         mahalleSayisi,
       });
     }

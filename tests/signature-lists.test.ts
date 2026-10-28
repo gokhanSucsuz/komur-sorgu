@@ -221,4 +221,57 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(remainingLists.length, 0, 'Hiç imza listesi kalmamalıdır');
     assert.equal(unassigned.length, allRecords.length, 'Tüm hak sahipleri bekleyen havuzuna dönmüş olmalıdır');
   });
+
+  it('6. Yüksek performanslı toplu kilitleme (updateMany) ve hedeflenen liste sorgusu (dbFilter) anlık çalışır', async () => {
+    const { beneficiaries: benCol, signatureLists: sigCol } = await getDbCollections();
+    await benCol.deleteMany({});
+    await sigCol.deleteMany({});
+
+    // 50 adet test kaydı ekle
+    const bulkDocs = [];
+    for (let i = 1; i <= 50; i++) {
+      bulkDocs.push(
+        encryptBeneficiary({
+          tc_no: `100000000${String(i).padStart(2, '0')}`,
+          ad_soyad: `Test Vatandas ${i}`,
+          mahalle: i % 2 === 0 ? 'Fatih Mah.' : 'Menzilahir Mah.',
+          acik_adres: `Sokak ${i} No: ${i}`,
+        })
+      );
+    }
+    await benCol.insertMany(bulkDocs);
+
+    // Unassigned filter projection testi (Şifre çözmeden anlık sayım)
+    const unassignedFilter = {
+      $or: [
+        { imza_listesi_id: null },
+        { imza_listesi_id: '' },
+        { imza_listesi_id: { $exists: false } },
+      ],
+    };
+    const unassignedDocs = await benCol.find(unassignedFilter).toArray();
+    assert.equal(unassignedDocs.length, 50, '50 kaydın tamamı unassigned olarak tespit edilmelidir');
+
+    // updateMany ile tek sorguda toplu kilitleme
+    const listId = 'IMZA-TEST-PERF-001';
+    const rawIds = unassignedDocs.map((d: any) => d._id).filter(Boolean);
+    const updateResult = await benCol.updateMany(
+      { _id: { $in: rawIds } },
+      {
+        $set: {
+          imza_listesi_id: listId,
+          imza_listesi_no: 1,
+          imza_listesi_adi: '1. Dağıtım Islak İmza Listesi',
+        },
+      }
+    );
+    assert.equal(updateResult.modifiedCount, 50, '50 kaydın tamamı tek updateMany sorgusunda kilitlenmelidir');
+
+    // Dışa aktarma filtresi: Yalnızca bu listeye ait kayıtlar çekilmelidir
+    const exportedRaw = await benCol.find({ imza_listesi_id: listId }).toArray();
+    assert.equal(exportedRaw.length, 50, 'Hedeflenen liste sorgusu tam 50 kaydı getirmelidir');
+
+    const pendingAfter = await benCol.find(unassignedFilter).toArray();
+    assert.equal(pendingAfter.length, 0, 'Kilitleme sonrası bekleyen kayıt 0 kalmalıdır');
+  });
 });

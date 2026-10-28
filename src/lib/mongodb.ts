@@ -648,6 +648,7 @@ async function initializeIndexesAndSeed(db: Db) {
       beneficiaries.createIndex({ mahalle: 1 }),
       beneficiaries.createIndex({ teslimat_durumu: 1 }),
       beneficiaries.createIndex({ imza_durumu: 1, teslimat_durumu: 1 }),
+      beneficiaries.createIndex({ imza_listesi_id: 1 }),
 
       users.createIndex({ username: 1 }, { unique: true }),
       users.createIndex({ rol: 1 }),
@@ -704,8 +705,15 @@ async function initializeIndexesAndSeed(db: Db) {
       db.collection('sandbox_beneficiaries').createIndex({ adres_hash: 1 }, { sparse: true }),
       db.collection('sandbox_beneficiaries').createIndex({ mahalle: 1 }),
       db.collection('sandbox_beneficiaries').createIndex({ teslimat_durumu: 1 }),
+      db.collection('sandbox_beneficiaries').createIndex({ imza_listesi_id: 1 }),
       db.collection('sandbox_import_logs').createIndex({ batch_id: 1 }),
       db.collection('sandbox_delivery_history').createIndex({ gun_tarihi: -1 }),
+
+      // Islak İmza Listeleri İndeksleri
+      db.collection('signature_lists').createIndex({ liste_no: -1 }),
+      db.collection('signature_lists').createIndex({ id: 1 }, { unique: true }),
+      db.collection('sandbox_signature_lists').createIndex({ liste_no: -1 }),
+      db.collection('sandbox_signature_lists').createIndex({ id: 1 }, { unique: true }),
     ]);
   } catch (err) {
     console.warn('[MongoDB] Index initialization notice:', err);

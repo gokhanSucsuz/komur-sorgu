@@ -345,6 +345,9 @@ export default function ExcelImportPage({
     if (!confirmed) return;
 
     setIsGeneratingSignatureList(true);
+    const abortCtrl = new AbortController();
+    const timeoutTimer = setTimeout(() => abortCtrl.abort(), 25000);
+
     try {
       const res = await fetch('/api/signature-lists', {
         method: 'POST',
@@ -353,7 +356,9 @@ export default function ExcelImportPage({
           action: 'GENERATE_NEW_LIST',
           donem_kodu: selectedSeasonView,
         }),
+        signal: abortCtrl.signal,
       });
+      clearTimeout(timeoutTimer);
 
       const data = await res.json();
       if (!data.success) {
