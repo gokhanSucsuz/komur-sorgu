@@ -285,6 +285,8 @@ function getInMemoryStore() {
       archived_delivery_history: [],
       security_rate_limits: [],
       authorized_devices: [],
+      signature_lists: [],
+      sandbox_signature_lists: [],
     };
     seedInMemoryStore(global._inMemoryMongoStore);
   }
@@ -319,6 +321,10 @@ function matchDoc(doc: any, filter: any): boolean {
     if (cond && typeof cond === 'object' && !(cond instanceof ObjectId) && !(cond instanceof RegExp)) {
       if ('$in' in cond) {
         if (!Array.isArray(cond.$in) || !cond.$in.some((item: any) => String(item) === String(val))) return false;
+      }
+      if ('$exists' in cond) {
+        const exists = val !== undefined && val !== null && val !== '';
+        if (Boolean(cond.$exists) !== exists) return false;
       }
       if ('$gte' in cond) {
         if (val === undefined || val === null || val < cond.$gte) return false;
@@ -541,6 +547,9 @@ export async function getDbCollections(options?: { forceMode?: 'RESMI' | 'DENEME
         officialBeneficiaries: db.collection<any>('beneficiaries'),
         officialImportBatches: db.collection<any>('import_batches'),
         officialActivityLogs: db.collection<any>('activity_logs'),
+        signatureLists: db.collection<any>(isSandboxMode ? 'sandbox_signature_lists' : 'signature_lists'),
+        officialSignatureLists: db.collection<any>('signature_lists'),
+        sandboxSignatureLists: db.collection<any>('sandbox_signature_lists'),
         sandboxBeneficiaries: db.collection<any>('sandbox_beneficiaries'),
         sandboxDeliveryHistory: db.collection<any>('sandbox_delivery_history'),
         sandboxTruckDeliveries: db.collection<any>('sandbox_truck_deliveries'),
@@ -602,6 +611,9 @@ export async function getDbCollections(options?: { forceMode?: 'RESMI' | 'DENEME
     officialBeneficiaries: new InMemoryCollection('beneficiaries') as any,
     officialImportBatches: new InMemoryCollection('import_batches') as any,
     officialActivityLogs: new InMemoryCollection('activity_logs') as any,
+    signatureLists: new InMemoryCollection(isSandboxMode ? 'sandbox_signature_lists' : 'signature_lists') as any,
+    officialSignatureLists: new InMemoryCollection('signature_lists') as any,
+    sandboxSignatureLists: new InMemoryCollection('sandbox_signature_lists') as any,
     sandboxBeneficiaries: new InMemoryCollection('sandbox_beneficiaries') as any,
     sandboxDeliveryHistory: new InMemoryCollection('sandbox_delivery_history') as any,
     sandboxTruckDeliveries: new InMemoryCollection('sandbox_truck_deliveries') as any,

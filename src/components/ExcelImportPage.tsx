@@ -5,7 +5,8 @@ import {
   FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
   Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
   Eye, Phone, MapPin, Copy, Check, Users, Info, Hash, Building2, Trees,
-  ChevronDown, ChevronUp, ChevronRight, FlaskConical, Play, RotateCcw, Loader2
+  ChevronDown, ChevronUp, ChevronRight, FlaskConical, Play, RotateCcw, Loader2,
+  Printer, PenLine, FileCheck, Layers, Sparkles
 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
@@ -111,6 +112,7 @@ export default function ExcelImportPage({
       await Promise.all([
         fetchLogs('AKTIF'),
         fetchUploadedBatches('AKTIF'),
+        fetchSignatureData('AKTIF'),
         fetchModeStats(),
       ]);
       onRefreshAll();
@@ -158,6 +160,7 @@ export default function ExcelImportPage({
       await Promise.all([
         fetchLogs('AKTIF'),
         fetchUploadedBatches('AKTIF'),
+        fetchSignatureData('AKTIF'),
         fetchModeStats(),
       ]);
       onRefreshAll();
@@ -201,6 +204,7 @@ export default function ExcelImportPage({
       await Promise.all([
         fetchLogs('AKTIF'),
         fetchUploadedBatches('AKTIF'),
+        fetchSignatureData('AKTIF'),
         fetchModeStats(),
       ]);
       onRefreshAll();
@@ -255,6 +259,162 @@ export default function ExcelImportPage({
   const [batchDeleteTarget, setBatchDeleteTarget] = useState<any | null>(null);
   const [deleteDeliveredChoice, setDeleteDeliveredChoice] = useState<boolean>(false);
   const [isDeletingBatch, setIsDeletingBatch] = useState<boolean>(false);
+
+  // Islak İmza Listesi Yönetim Durumu
+  const [signatureData, setSignatureData] = useState<{
+    pendingCount: number;
+    pendingMahalleCount: number;
+    pendingMahalleler: { mahalle: string; count: number }[];
+    totalCount: number;
+    assignedCount: number;
+    nextListNo: number;
+    lists: any[];
+  }>({
+    pendingCount: 0,
+    pendingMahalleCount: 0,
+    pendingMahalleler: [],
+    totalCount: 0,
+    assignedCount: 0,
+    nextListNo: 1,
+    lists: [],
+  });
+  const [isLoadingSignatureData, setIsLoadingSignatureData] = useState<boolean>(false);
+  const [isGeneratingSignatureList, setIsGeneratingSignatureList] = useState<boolean>(false);
+  const [isRollingBackListId, setIsRollingBackListId] = useState<string | null>(null);
+
+  const fetchSignatureData = async (donemOverride?: string) => {
+    const targetDonem = typeof donemOverride === 'string' ? donemOverride : selectedSeasonView;
+    setIsLoadingSignatureData(true);
+    try {
+      const query = targetDonem && targetDonem !== 'AKTIF' ? `?donem_kodu=${encodeURIComponent(targetDonem)}` : '';
+      const res = await fetch(`/api/signature-lists${query}`);
+      const data = await res.json();
+      if (data.success) {
+        setSignatureData({
+          pendingCount: data.pendingCount || 0,
+          pendingMahalleCount: data.pendingMahalleCount || 0,
+          pendingMahalleler: data.pendingMahalleler || [],
+          totalCount: data.totalCount || 0,
+          assignedCount: data.assignedCount || 0,
+          nextListNo: data.nextListNo || 1,
+          lists: data.lists || [],
+        });
+      }
+    } catch (err) {
+      console.error('Signature lists fetch error:', err);
+    } finally {
+      setIsLoadingSignatureData(false);
+    }
+  };
+
+  const handleGenerateSignatureList = async () => {
+    if (signatureData.pendingCount === 0 || isGeneratingSignatureList) return;
+
+    const isFirstList = signatureData.lists.length === 0;
+    const confirmTitle = isFirstList
+      ? 'Toplu Islak İmza Listesi Oluşturulsun mu?'
+      : `${signatureData.nextListNo}. Islak İmza Listesi (Yeni Eklenenler) Oluşturulsun mu?`;
+
+    const confirmMessage = isFirstList
+      ? `Sistemde kayıtlı henüz imza listesi çıkarılmamış ${signatureData.pendingCount} hak sahibi (${signatureData.pendingMahalleCount} mahalle) için resmi A4 yatay baskı formatında, adres A'dan Z'ye sıralı ve boş ıslak imza kutucuklu "1. Dağıtım Islak İmza Listesi" oluşturulacaktır.\n\nKURAL: Bir kayıt sadece tek bir imza listesinde yer alabilir; bu ${signatureData.pendingCount} hane oluşturulan listeye kilitlenecektir. Onaylıyor musunuz?`
+      : `Daha önce imza listesi çıkarıldıktan sonra sisteme sonradan eklenen ${signatureData.pendingCount} YENİ hak sahibi (${signatureData.pendingMahalleCount} mahalle) için "${signatureData.nextListNo}. Dağıtım Islak İmza Listesi (Yeni Eklenen Kayıtlar)" oluşturulacaktır.\n\nÖnceki listelerde yer alan kayıtlar bu listeye dahil edilmez. Onaylıyor musunuz?`;
+
+    const confirmed = await showConfirm({
+      title: confirmTitle,
+      message: confirmMessage,
+      type: 'info',
+      confirmText: 'Evet, Listeyi Oluştur ve İndir',
+      cancelText: 'Vazgeç',
+    });
+
+    if (!confirmed) return;
+
+    setIsGeneratingSignatureList(true);
+    try {
+      const res = await fetch('/api/signature-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'GENERATE_NEW_LIST',
+          donem_kodu: selectedSeasonView,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'İmza listesi oluşturulamadı');
+      }
+
+      showToast({
+        type: 'success',
+        title: 'İmza Listesi Hazırlandı',
+        message: data.message || `İmza listesi (${data.listName}) başarıyla oluşturuldu ve indiriliyor.`,
+      });
+
+      // Otomatik İndirme
+      const downloadUrl = `/api/export?type=signature_list&listId=${encodeURIComponent(data.listId)}&donem_kodu=${encodeURIComponent(selectedSeasonView)}`;
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Edirne_SYDV_${(data.listName || 'Imza_Listesi').replace(/[^a-zA-Z0-9ÇŞĞÜÖİçşğüöı_-]/g, '_')}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      await fetchSignatureData();
+      onRefreshAll();
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'İmza Listesi Hatası',
+        message: err.message || 'İmza listesi oluşturulurken hata oluştu.',
+      });
+    } finally {
+      setIsGeneratingSignatureList(false);
+    }
+  };
+
+  const handleRollbackSignatureList = async (listId: string, listName: string) => {
+    const confirmed = await showConfirm({
+      title: 'İmza Listesini İptal Et / Geri Al',
+      message: `"${listName}" başlıklı imza listesini iptal etmek istediğinize emin misiniz?\n\nBu listede yer alan tüm hak sahipleri tekrar "İmza Listesi Bekleyen Yeni Kayıtlar" havuzuna aktarılacaktır.`,
+      type: 'warning',
+      confirmText: 'Evet, Listeyi Geri Al',
+      cancelText: 'Vazgeç',
+    });
+
+    if (!confirmed) return;
+
+    setIsRollingBackListId(listId);
+    try {
+      const res = await fetch('/api/signature-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ROLLBACK_LIST',
+          listId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'İmza listesi geri alınamadı');
+
+      showToast({
+        type: 'info',
+        title: 'İmza Listesi Geri Alındı',
+        message: data.message,
+      });
+
+      await fetchSignatureData();
+      onRefreshAll();
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Geri Alma Hatası',
+        message: err.message || 'İmza listesi geri alınırken hata oluştu.',
+      });
+    } finally {
+      setIsRollingBackListId(null);
+    }
+  };
 
   // Eliminated / Duplicate Records Detail Modal State
   const [eliminatedModalBatch, setEliminatedModalBatch] = useState<{
@@ -377,6 +537,7 @@ export default function ExcelImportPage({
     if (userRole === 'ADMIN') {
       fetchLogs(selectedSeasonView);
       fetchUploadedBatches(selectedSeasonView);
+      fetchSignatureData(selectedSeasonView);
       fetchModeStats();
     }
   }, [userRole, selectedSeasonView, localCalismaModu]);
@@ -535,6 +696,7 @@ export default function ExcelImportPage({
       
       fetchLogs();
       fetchUploadedBatches();
+      fetchSignatureData();
       onRefreshAll();
 
       // If there are eliminated / duplicate records, open modal immediately to inspect them in detail!
@@ -1396,8 +1558,303 @@ export default function ExcelImportPage({
               <Download className="w-3.5 h-3.5" />
               <span>Tek Liste İndir</span>
             </a>
+            <span className="text-slate-300">•</span>
+            <a
+              href={`/api/export?type=signature_list&listId=ALL&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+              download="Edirne_SYDV_Tum_Mahalleler_Toplu_Islak_Imza_Listesi.xlsx"
+              className="flex items-center gap-1 text-indigo-800 hover:text-indigo-900 font-extrabold underline"
+              title="Tüm mahallelerin ıslak imza listelerini A4 yatay formatta indirin"
+            >
+              <PenLine className="w-3.5 h-3.5 text-indigo-700" />
+              <span>Toplu Islak İmza Listesi İndir</span>
+            </a>
           </div>
         </div>
+      </div>
+
+      {/* 2. ISLAK İMZA LİSTESİ YÖNETİM ALANI (HER MAHALLE AYRI LİSTE, ADRES A-Z SIRALI, BOŞ İMZA ALANI, A4 YATAY BASKI) */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-700 to-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <PenLine className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black text-slate-900">
+                  Resmi Islak İmza Listeleri & Mahalle Dağıtım Çizelgesi
+                </h3>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase tracking-wider border border-indigo-200">
+                  A4 Yatay Baskı Formatı
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">
+                Her mahalle için adres A'dan Z'ye sıralı, boş ıslak imza kutucuklu, üstten/yandan tam hizalı ve toplu yazdırmaya hazır resmi liste yönetimi.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <button
+              type="button"
+              onClick={() => fetchSignatureData(selectedSeasonView)}
+              disabled={isLoadingSignatureData}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+              title="İmza listesi durumunu yenile"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSignatureData ? 'animate-spin text-indigo-600' : 'text-slate-600'}`} />
+              <span>Yenile</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3'lü İstatistik Özeti */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Toplam Hak Sahibi</span>
+              <p className="text-xl font-black text-slate-900">{signatureData.totalCount}</p>
+            </div>
+            <Users className="w-7 h-7 text-slate-400" />
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-emerald-700 uppercase">İmza Listesi Çıkarılmış</span>
+              <p className="text-xl font-black text-emerald-800">{signatureData.assignedCount}</p>
+            </div>
+            <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+          </div>
+
+          <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+            signatureData.pendingCount > 0
+              ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-400/20'
+              : 'bg-slate-50 border-slate-200'
+          }`}>
+            <div>
+              <span className={`text-[11px] font-bold uppercase ${
+                signatureData.pendingCount > 0 ? 'text-amber-800' : 'text-slate-500'
+              }`}>
+                {signatureData.lists.length === 0 ? 'İmza Listesi Bekleyenler' : 'Yeni Eklenen Kayıtlar'}
+              </span>
+              <p className={`text-xl font-black ${
+                signatureData.pendingCount > 0 ? 'text-amber-900' : 'text-slate-700'
+              }`}>
+                {signatureData.pendingCount}
+                <span className="text-xs font-semibold ml-1.5 opacity-80">
+                  ({signatureData.pendingMahalleCount} Mahalle)
+                </span>
+              </p>
+            </div>
+            <Sparkles className={`w-7 h-7 ${signatureData.pendingCount > 0 ? 'text-amber-600 animate-pulse' : 'text-slate-400'}`} />
+          </div>
+        </div>
+
+        {/* Dinamik Eylem ve Bilgilendirme Alanı */}
+        {signatureData.pendingCount > 0 ? (
+          <div className={`p-4 rounded-xl border-2 space-y-3.5 transition-all ${
+            signatureData.lists.length === 0
+              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-950'
+              : 'bg-amber-500/10 border-amber-400 text-amber-950'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${
+                    signatureData.lists.length === 0 ? 'bg-emerald-600 animate-ping' : 'bg-amber-600 animate-ping'
+                  }`} />
+                  <h4 className="text-sm font-black">
+                    {signatureData.lists.length === 0
+                      ? 'Tüm Mahallelerin 1. Dağıtım Islak İmza Listesi Hazır'
+                      : `⚠️ Sisteme Sonradan Eklenen ${signatureData.pendingCount} Yeni Kayıt Tespit Edildi!`}
+                  </h4>
+                </div>
+                <p className="text-xs leading-relaxed opacity-90 max-w-3xl">
+                  {signatureData.lists.length === 0
+                    ? `Sistemde henüz imza listesi çıkarılmamış toplam ${signatureData.pendingCount} hak sahibi bulunmaktadır. Tek tıkla tüm mahalleleri kendi sekmelerinde adresleri A'dan Z'ye sıralı ve boş imza kutucuklu resmi A4 yatay formatta indirebilirsiniz.`
+                    : `Daha önce imza listesi çıkarıldıktan sonra sisteme ${signatureData.pendingCount} yeni kayıt eklendi. "Bir kayıt sadece tek bir imza listesinde yer alabilir" kuralı gereğince, bu yeni kayıtlar için özel ${signatureData.nextListNo}. Dağıtım Islak İmza Listesi oluşturulabilir.`}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGenerateSignatureList}
+                disabled={isGeneratingSignatureList}
+                className={`px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm text-white flex items-center justify-center gap-2 shadow-sm transition-all shrink-0 active:scale-95 disabled:opacity-50 ${
+                  signatureData.lists.length === 0
+                    ? 'bg-emerald-700 hover:bg-emerald-800'
+                    : 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-500/30'
+                }`}
+              >
+                {isGeneratingSignatureList ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>İmza Listesi Hazırlanıyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    <span>
+                      {signatureData.lists.length === 0
+                        ? `Toplu Islak İmza Listesi Oluştur ve İndir (${signatureData.pendingCount} Hane)`
+                        : `Yeni Kayıtlar İçin İmza Listesi Oluştur ve İndir (Liste #${signatureData.nextListNo})`}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Yeni Eklenen Mahallelerin Dağılım Çipleri */}
+            {signatureData.pendingMahalleler.length > 0 && (
+              <div className="pt-2 border-t border-amber-200/60 flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-extrabold text-slate-700">İmza Listesi Bekleyen Mahalleler:</span>
+                {signatureData.pendingMahalleler.slice(0, 10).map((pm, idx) => (
+                  <span
+                    key={`pm_${idx}`}
+                    className="px-2 py-0.5 rounded-md bg-white border border-slate-300 text-[10px] font-bold text-slate-800 shadow-2xs"
+                  >
+                    {pm.mahalle}: <strong className="text-amber-700 font-extrabold">{pm.count}</strong>
+                  </span>
+                ))}
+                {signatureData.pendingMahalleler.length > 10 && (
+                  <span className="text-[10px] font-bold text-slate-500">
+                    +{signatureData.pendingMahalleler.length - 10} mahalle daha
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 text-xs text-emerald-900 font-medium">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                <strong>Tüm Kayıtların İmza Listesi Tamamlandı:</strong> Sistemde bekleyen yeni kayıt bulunmamaktadır. Sisteme yeni bir Excel yüklendiğinde veya tekil hane eklendiğinde, sadece yeni eklenen kayıtlara özel ek imza listesi oluşturma seçeneği burada otomatik açılacaktır.
+              </span>
+            </div>
+            {signatureData.lists.length > 0 && (
+              <span className="shrink-0 text-[11px] font-extrabold text-emerald-800 bg-white px-2.5 py-1 rounded-lg border border-emerald-200">
+                {signatureData.lists.length} İmza Listesi Aktif
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Kurumsal Format Güvenceleri Bilgi Kutusu */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2">
+            <Building2 className="w-4 h-4 text-indigo-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block text-slate-900 font-bold">Her Mahalle Ayrı Sekme</strong>
+              <span className="text-[11px] text-slate-500">Tüm mahalleler alfabetik sırayla ayrı çalışma sayfası olarak tek dosyada indirilir.</span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2">
+            <Filter className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block text-slate-900 font-bold">Adres A'dan Z'ye Sıralı</strong>
+              <span className="text-[11px] text-slate-500">Saha dağıtımında kolaylık için her mahalledeki haneler cadde/sokak/kapı sırasına göre dizilir.</span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2">
+            <PenLine className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block text-slate-900 font-bold">Boş Islak İmza Alanı</strong>
+              <span className="text-[11px] text-slate-500">Vatandaşın ıslak imzasını rahatça atabilmesi için 38pt ferah satır yüksekliğinde boş kutu bırakılmıştır.</span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2">
+            <Printer className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block text-slate-900 font-bold">A4 Yatay Baskı & Sıfır Fire</strong>
+              <span className="text-[11px] text-slate-500">Sayfa başlıkları her sayfada yinelenir (printTitlesRow). Kenar boşlukları taşma yapmadan sığar.</span>
+            </div>
+          </div>
+        </div>
+
+        {/* GEÇMİŞTE OLUŞTURULAN İMZA LİSTELERİ ARŞİVİ */}
+        {signatureData.lists.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <FileCheck className="w-4 h-4 text-indigo-700" />
+                <span>Oluşturulan Islak İmza Listeleri ({signatureData.lists.length})</span>
+              </h4>
+              <a
+                href={`/api/export?type=signature_list&listId=ALL&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+                download="Edirne_SYDV_Tum_Hak_Sahipleri_Arsiv_Islak_Imza_Listesi.xlsx"
+                className="text-[11px] font-extrabold text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1"
+                title="Tüm listeleri birleştirilmiş tek dosya olarak indir"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Tüm Listeleri Tek Dosyada İndir (Genel Arşiv)</span>
+              </a>
+            </div>
+
+            <div className="space-y-2">
+              {signatureData.lists.map((item: any) => {
+                const isRollingBack = isRollingBackListId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded bg-indigo-700 text-white text-[10px] font-black">
+                          Liste #{item.liste_no}
+                        </span>
+                        <strong className="text-xs sm:text-sm font-extrabold text-slate-900">
+                          {item.liste_adi}
+                        </strong>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          • {item.created_at || 'Tarih yok'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-600 font-medium">
+                        <span>👥 <strong>{item.toplam_kayit}</strong> Hane</span>
+                        <span>🏘️ <strong>{item.mahalle_sayisi}</strong> Mahalle</span>
+                        {item.olusturan_personel && (
+                          <span className="text-slate-400">• Hazırlayan: {item.olusturan_personel}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <a
+                        href={`/api/export?type=signature_list&listId=${encodeURIComponent(item.id)}&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+                        download={`Edirne_SYDV_${(item.liste_adi || 'Imza_Listesi').replace(/[^a-zA-Z0-9ÇŞĞÜÖİçşğüöı_-]/g, '_')}.xlsx`}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all"
+                        title="Bu imza listesini tüm mahalleleriyle toplu Excel indir"
+                      >
+                        <Download className="w-3.5 h-3.5 text-white" />
+                        <span>Toplu İndir (Excel)</span>
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRollbackSignatureList(item.id, item.liste_adi)}
+                        disabled={isRollingBack}
+                        className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-slate-200 hover:border-rose-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+                        title="Bu imza listesini geri al ve kayıtları tekrar bekleyen durumuna aktar"
+                      >
+                        {isRollingBack ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Undo2 className="w-3.5 h-3.5 text-rose-600" />
+                        )}
+                        <span className="hidden sm:inline">Geri Al</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* GEÇMİŞ DÖNEM ARŞİVLENEN EXCEL LİSTELERİ VE HATA KAYITLARI SEÇİCİSİ */}

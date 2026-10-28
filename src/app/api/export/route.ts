@@ -279,6 +279,397 @@ function addStyledWorksheet(
   return sheet;
 }
 
+/**
+ * Resmi Islak İmza Listesi İçin Özel Mahalle Sekmesi Oluşturucu.
+ * Kural Gereksinimleri:
+ * - Adres A'dan Z'ye sıralı (localeCompare tr numeric)
+ * - Kolonlar: Sıra No, Adı Soyadı, T.C. Kimlik No, Telefon, Adres, Teslim Alan Islak İmza
+ * - İmza alanı tamamen boş ve ıslak imza atılacak yükseklikte (38pt)
+ * - Her sayfa üstten/yandan hizalı ve kenar boşluksuz (0.35in A4 yatay)
+ * - Her sayfada kurumsal başlıkların yinelenmesi (printTitlesRow: '1:5')
+ */
+function addOfficialSignatureSheet(
+  workbook: ExcelJS.Workbook,
+  mahName: string,
+  listTitle: string,
+  group: any[],
+  seenSheetNames: Set<string>
+) {
+  // 1. ADRES A'DAN Z'YE SIRALAMA
+  group.sort((a, b) =>
+    (a.acik_adres || '').localeCompare((b.acik_adres || ''), 'tr', { sensitivity: 'base', numeric: true })
+  );
+
+  const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
+  const sheet = workbook.addWorksheet(safeSheetName, {
+    views: [{ state: 'frozen', ySplit: 5, showGridLines: true }],
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation: 'landscape',
+      fitToWidth: 1,
+      fitToHeight: 0,
+      fitToPage: true,
+      horizontalCentered: true,
+      verticalCentered: false,
+      margins: {
+        left: 0.35,
+        right: 0.35,
+        top: 0.45,
+        bottom: 0.45,
+        header: 0.2,
+        footer: 0.2,
+      },
+      printTitlesRow: '1:5',
+    },
+    headerFooter: {
+      oddHeader: `&L&B&9T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9RESMİ ISLAK İMZA LİSTESİ - ${mahName.toUpperCase()}`,
+      oddFooter: '&L&8T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8Sayfa &P / &N&R&8Tarih: &D',
+    },
+  });
+
+  const nowStr = new Date().toLocaleString('tr-TR');
+
+  // Kurumsal Başlık Satırları (1 - 4)
+  sheet.addRow(['T.C. EDİRNE VALİLİĞİ']);
+  sheet.addRow(['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI']);
+  sheet.addRow([`KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`]);
+  sheet.addRow([
+    `Liste: ${listTitle} | Mahalle/Köy: ${mahName} | Toplam: ${group.length} Hane | Sıralama: Adres (A'dan Z'ye) Sıralı | Tanzim: ${nowStr}`
+  ]);
+
+  for (let r = 1; r <= 4; r++) {
+    sheet.mergeCells(r, 1, r, 6);
+    const row = sheet.getRow(r);
+    row.alignment = { vertical: 'middle', horizontal: 'center' };
+    if (r === 1) {
+      row.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF475569' } };
+      row.height = 18;
+    } else if (r === 2) {
+      row.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF0F172A' } };
+      row.height = 22;
+    } else if (r === 3) {
+      row.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      row.height = 26;
+      row.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E293B' },
+      };
+    } else if (r === 4) {
+      row.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF475569' } };
+      row.height = 18;
+      row.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' },
+      };
+    }
+  }
+
+  // 2. Tablo Kolon Başlıkları (Row 5)
+  const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Alan Islak İmza'];
+  const headerRow = sheet.addRow(headers);
+  headerRow.height = 28;
+  headerRow.eachCell((cell, colNum) => {
+    cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF0F172A' },
+    };
+    cell.alignment = {
+      vertical: 'middle',
+      horizontal: colNum === 2 || colNum === 5 ? 'left' : 'center',
+      wrapText: true,
+    };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF000000' } },
+      bottom: { style: 'medium', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF475569' } },
+      right: { style: 'thin', color: { argb: 'FF475569' } },
+    };
+  });
+
+  // 3. Veri Satırları (Row 6+)
+  let totalBags = 0;
+  group.forEach((r: any, idx: number) => {
+    const phones = extractPhoneNumbers(r.telefon, r.telefon2);
+    const phoneStr = phones.length > 0 ? phones.join(' / ') : (r.telefon || '-');
+    const target = Number(r.hedef_torba || 34);
+    totalBags += target;
+
+    const rowData = [
+      idx + 1,
+      r.ad_soyad || '-',
+      r.tc_no || '-',
+      phoneStr,
+      r.acik_adres || r.sokak || '-',
+      '', // Islak İmza alanı kural gereği BOŞTUR
+    ];
+
+    const dataRow = sheet.addRow(rowData);
+    // Islak imza için ferah satır yüksekliği (38pt = ~13.5mm)
+    dataRow.height = 38;
+
+    const isEven = idx % 2 === 1;
+    const zebraBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const isSignatureCol = colNumber === 6;
+
+      cell.font = {
+        name: 'Segoe UI',
+        size: colNumber === 2 ? 10.5 : 10,
+        bold: colNumber === 2,
+        color: { argb: 'FF0F172A' },
+      };
+
+      // İmza alanı her zaman temiz beyaz, diğer alanlar hafif zebra
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isSignatureCol ? 'FFFFFFFF' : zebraBg },
+      };
+
+      // Belirgin imza çerçevesi
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        left: { style: isSignatureCol ? 'medium' : 'thin', color: { argb: isSignatureCol ? 'FF475569' : 'FFE2E8F0' } },
+        right: { style: isSignatureCol ? 'medium' : 'thin', color: { argb: isSignatureCol ? 'FF475569' : 'FFE2E8F0' } },
+      };
+
+      if (colNumber === 2) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else if (colNumber === 5) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      } else {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+    });
+  });
+
+  // 4. Mahalle Alt Toplam Satırı
+  const summaryRow = sheet.addRow([
+    '',
+    `TOPLAM: ${group.length} HANE`,
+    '',
+    '',
+    `Tahsis Kömür Miktarı: ${totalBags} Torba (${(totalBags * 0.025).toFixed(2)} Ton)`,
+    '',
+  ]);
+  summaryRow.height = 26;
+  summaryRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' },
+    };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF475569' } },
+      bottom: { style: 'medium', color: { argb: 'FF475569' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center' };
+  });
+
+  // Boşluk satırı
+  sheet.addRow([]);
+
+  // Resmi Teslim Tutanağı ve Yetkili İmzaları Alanı
+  const certRow1 = sheet.addRow([
+    'TUTANAKTIR: Yukarıda adı soyadı, TC kimlik numarası ve adresi belirtilen hak sahiplerine yardım kömürleri tutanak ve ıslak imza karşılığında eksiksiz olarak teslim edilmiştir.',
+  ]);
+  sheet.mergeCells(certRow1.number, 1, certRow1.number, 6);
+  certRow1.height = 22;
+  certRow1.getCell(1).font = { name: 'Segoe UI', size: 9, italic: true, bold: true, color: { argb: 'FF334155' } };
+  certRow1.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
+
+  sheet.addRow([]); // boşluk
+
+  const signTitleRow = sheet.addRow([
+    'Teslim Eden Vakıf Görevlisi\n(Ad Soyad / İmza)',
+    '',
+    'Dağıtım Şoförü / Personel\n(Ad Soyad / İmza)',
+    '',
+    'Mahalle Muhtarı\n(Ad Soyad / İmza / Mühür)',
+    '',
+  ]);
+  signTitleRow.height = 45;
+  sheet.mergeCells(signTitleRow.number, 1, signTitleRow.number, 2);
+  sheet.mergeCells(signTitleRow.number, 3, signTitleRow.number, 4);
+  sheet.mergeCells(signTitleRow.number, 5, signTitleRow.number, 6);
+
+  [1, 3, 5].forEach((col) => {
+    const c = signTitleRow.getCell(col);
+    c.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    c.alignment = { vertical: 'top', horizontal: 'center', wrapText: true };
+    c.border = {
+      top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      left: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      right: { style: 'thin', color: { argb: 'FF94A3B8' } },
+    };
+  });
+
+  // Kolon Genişlikleri (A4 Yatay Sayfa Baskısına Tam Uyumlu)
+  sheet.columns = [
+    { width: 7 },  // Sıra No
+    { width: 26 }, // Adı Soyadı
+    { width: 16 }, // TC Kimlik No
+    { width: 16 }, // Telefon
+    { width: 46 }, // Açık Adres
+    { width: 24 }, // Teslim Alan Islak İmza
+  ];
+
+  return sheet;
+}
+
+/**
+ * Resmi Islak İmza Listesi İçin Genel Özet İcmal Sekmesi Oluşturucu.
+ */
+function addOfficialSignatureSummarySheet(
+  workbook: ExcelJS.Workbook,
+  listTitle: string,
+  subtitle: string,
+  sortedMahalles: string[],
+  mahalleGroups: Map<string, any[]>,
+  seenSheetNames: Set<string>
+) {
+  const safeSheetName = sanitizeSheetName('Özet İcmal', seenSheetNames);
+  const sheet = workbook.addWorksheet(safeSheetName, {
+    views: [{ state: 'frozen', ySplit: 5, showGridLines: true }],
+    pageSetup: {
+      paperSize: 9,
+      orientation: 'landscape',
+      fitToWidth: 1,
+      fitToHeight: 0,
+      fitToPage: true,
+      horizontalCentered: true,
+      margins: { left: 0.35, right: 0.35, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.2 },
+      printTitlesRow: '1:5',
+    },
+    headerFooter: {
+      oddHeader: `&L&B&9T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9${listTitle.toUpperCase()}`,
+      oddFooter: '&L&8T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8Sayfa &P / &N&R&8Tarih: &D',
+    },
+  });
+
+  const nowStr = new Date().toLocaleString('tr-TR');
+
+  sheet.addRow(['T.C. EDİRNE VALİLİĞİ']);
+  sheet.addRow(['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI']);
+  sheet.addRow([listTitle.toUpperCase()]);
+  sheet.addRow([`Rapor Kapsamı: ${subtitle} | Düzenleme Tarihi: ${nowStr} | Resmi Kömür Dağıtım Sistemi`]);
+
+  for (let r = 1; r <= 4; r++) {
+    sheet.mergeCells(r, 1, r, 6);
+    const row = sheet.getRow(r);
+    row.alignment = { vertical: 'middle', horizontal: 'center' };
+    if (r === 1) {
+      row.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF475569' } };
+      row.height = 18;
+    } else if (r === 2) {
+      row.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF0F172A' } };
+      row.height = 22;
+    } else if (r === 3) {
+      row.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      row.height = 26;
+      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    } else if (r === 4) {
+      row.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF475569' } };
+      row.height = 18;
+      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    }
+  }
+
+  const headers = ['Sıra', 'Mahalle / Köy Adı', 'Yerleşim Tipi', 'Hane Sayısı (İmza Çıkartılan)', 'Tahsis Kömür (Torba)', 'Tahsis Kömür (Ton)'];
+  const headerRow = sheet.addRow(headers);
+  headerRow.height = 28;
+  headerRow.eachCell((cell, colNum) => {
+    cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle', horizontal: colNum === 2 ? 'left' : 'center' };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF000000' } },
+      bottom: { style: 'medium', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF475569' } },
+      right: { style: 'thin', color: { argb: 'FF475569' } },
+    };
+  });
+
+  let grandTotalHanes = 0;
+  let grandTotalBags = 0;
+
+  sortedMahalles.forEach((mName, idx) => {
+    const group = mahalleGroups.get(mName) || [];
+    let mBags = 0;
+    for (const b of group) {
+      mBags += Number(b.hedef_torba || 34);
+    }
+    grandTotalHanes += group.length;
+    grandTotalBags += mBags;
+
+    const tip = /(?:Köyü|Koy|Koyu)$/i.test(mName) ? 'KÖY' : 'MAHALLE';
+    const row = sheet.addRow([
+      idx + 1,
+      mName,
+      tip,
+      group.length,
+      mBags,
+      `${(mBags * 0.025).toFixed(2)} Ton`,
+    ]);
+    row.height = 22;
+    const isEven = idx % 2 === 1;
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF0F172A' }, bold: colNumber === 2 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isEven ? 'FFF8FAFC' : 'FFFFFFFF' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+      cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center' };
+    });
+  });
+
+  // Genel Toplam Satırı
+  const grandRow = sheet.addRow([
+    '',
+    'GENEL TOPLAM:',
+    `${sortedMahalles.length} Yerleşim`,
+    grandTotalHanes,
+    grandTotalBags,
+    `${(grandTotalBags * 0.025).toFixed(2)} Ton`,
+  ]);
+  grandRow.height = 26;
+  grandRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF94A3B8' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+      left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center' };
+  });
+
+  sheet.columns = [
+    { width: 8 },  // Sıra
+    { width: 28 }, // Mahalle Adı
+    { width: 16 }, // Tip
+    { width: 24 }, // Hane Sayısı
+    { width: 22 }, // Kömür Torba
+    { width: 20 }, // Kömür Ton
+  ];
+
+  return sheet;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -296,6 +687,7 @@ export async function GET(request: NextRequest) {
         'beneficiaries',
         'batch_by_mahalle',
         'beneficiaries_by_mahalle',
+        'signature_list',
         'errors',
         'season_archive',
         'activity_logs',
@@ -377,7 +769,8 @@ export async function GET(request: NextRequest) {
       archivedBeneficiaries: archBenCol,
       workShifts: shiftsCol,
       truckDeliveries: trucksCol,
-      systemSettings: settingsCol
+      systemSettings: settingsCol,
+      signatureLists: sigCol
     } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
@@ -1129,6 +1522,113 @@ export async function GET(request: NextRequest) {
 
       const buf = await workbook.xlsx.writeBuffer();
       const downloadFilename = `Edirne_SYDV_${cleanFileBase}_Mahalle_Sekmeli.xlsx`;
+      return buildExcelResponse(buf, downloadFilename, session, type);
+    }
+
+    // 3B. Resmi Islak İmza Listesi (Mahalle Mahalle Sekmeli, Adres A-Z Sıralı, Islak İmza Kutucuklu, A4 Baskıya Hazır)
+    if (type === 'signature_list') {
+      const listId = (searchParams.get('listId') || '').trim();
+      const donemKodu = (searchParams.get('donem_kodu') || '').trim();
+
+      let targetListDoc: any = null;
+      if (listId && listId !== 'ALL' && listId !== 'PENDING') {
+        targetListDoc = await sigCol.findOne({
+          $or: [{ id: listId }, { _id: listId }],
+        });
+      }
+
+      const rawRecords =
+        donemKodu && donemKodu !== 'AKTIF'
+          ? await archBenCol.find({ donem_kodu: donemKodu }).toArray()
+          : await benCol.find({}).toArray();
+
+      const allDecrypted = mapDocs(rawRecords);
+
+      // KURAL: Bir kayıt sadece tek bir imza listesinde olabilir.
+      // listId verilmişse sadece o listeye kilitli kayıtları getirir.
+      // listId=PENDING ise henüz imza listesi çıkarılmamış YENİ kayıtları getirir.
+      // listId=ALL ise tüm kayıtları getirir.
+      let records: any[] = [];
+      let listTitle = targetListDoc?.liste_adi || 'Toplu Islak İmza Dağıtım Listesi';
+
+      if (listId && listId !== 'ALL' && listId !== 'PENDING') {
+        records = allDecrypted.filter((r) => r.imza_listesi_id === listId);
+        if (targetListDoc?.liste_adi) {
+          listTitle = targetListDoc.liste_adi;
+        } else {
+          listTitle = `Islak İmza Listesi (${listId})`;
+        }
+      } else if (listId === 'PENDING') {
+        records = allDecrypted.filter((r) => !r.imza_listesi_id);
+        listTitle = 'Yeni Eklenen Kayıtlar Islak İmza Listesi (Taslak / Bekleyenler)';
+      } else {
+        records = allDecrypted;
+        listTitle = 'Tüm Mahalleler Genel Islak İmza Listesi (Tüm Kayıtlar)';
+      }
+
+      if (records.length === 0) {
+        const emptySheet = workbook.addWorksheet('Bilgi', {
+          pageSetup: { paperSize: 9, orientation: 'landscape' },
+        });
+        emptySheet.addRow(['T.C. EDİRNE VALİLİĞİ']);
+        emptySheet.addRow(['EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI']);
+        emptySheet.addRow([listTitle.toUpperCase()]);
+        emptySheet.addRow(['Bu filtreleme kriterine veya imza listesine ait hak sahibi kaydı bulunamadı.']);
+        for (let r = 1; r <= 4; r++) {
+          emptySheet.mergeCells(r, 1, r, 6);
+          emptySheet.getRow(r).alignment = { vertical: 'middle', horizontal: 'center' };
+        }
+        const buf = await workbook.xlsx.writeBuffer();
+        return buildExcelResponse(buf, `Edirne_SYDV_Islak_Imza_Listesi_Bos.xlsx`, session, type);
+      }
+
+      // Group records by Mahalle
+      const mahalleGroups = new Map<string, any[]>();
+      for (const r of records) {
+        const m = normalizeMahalleName(r.mahalle) || r.mahalle || 'Genel';
+        if (!mahalleGroups.has(m)) {
+          mahalleGroups.set(m, []);
+        }
+        mahalleGroups.get(m)!.push(r);
+      }
+
+      // Sort mahalle names: Mahalles A-Z first, then Köys A-Z
+      const allMahalleKeys = Array.from(mahalleGroups.keys());
+      const onlyMahalles = allMahalleKeys
+        .filter((m) => !/(?:Köyü|Koy|Koyu)$/i.test(m))
+        .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+      const onlyKoys = allMahalleKeys
+        .filter((m) => /(?:Köyü|Koy|Koyu)$/i.test(m))
+        .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+      const sortedMahalles = [...onlyMahalles, ...onlyKoys];
+
+      const seenSheetNames = new Set<string>();
+
+      // 1. SEKME: ÖZET İCMAL
+      addOfficialSignatureSummarySheet(
+        workbook,
+        listTitle,
+        `Toplam Yerleşim: ${sortedMahalles.length} | Toplam Hane: ${records.length}`,
+        sortedMahalles,
+        mahalleGroups,
+        seenSheetNames
+      );
+
+      // 2..N. SEKMELER: HER MAHALLE İÇİN AYRI SEKME
+      for (const mahName of sortedMahalles) {
+        const group = mahalleGroups.get(mahName)!;
+        addOfficialSignatureSheet(
+          workbook,
+          mahName,
+          listTitle,
+          group,
+          seenSheetNames
+        );
+      }
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const cleanTitle = listTitle.replace(/[^a-zA-Z0-9ÇŞĞÜÖİçşğüöı_-]/g, '_');
+      const downloadFilename = `Edirne_SYDV_${cleanTitle}.xlsx`;
       return buildExcelResponse(buf, downloadFilename, session, type);
     }
 

@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
       sandboxTruckDeliveries,
       sandboxWorkShifts,
       sandboxActivityLogs,
+      sandboxSignatureLists,
     } = await getDbCollections();
     const body = await request.json();
     const { action, calisma_modu, varsayilan_hedef_torba, updateExisting, toplam_tahsis_tonaj } = body;
@@ -184,9 +185,10 @@ export async function POST(request: NextRequest) {
       const switchToOfficial = Boolean(body.switch_to_official);
       const reseedFake = action === 'SEED_SANDBOX_FAKE_DATA' || Boolean(body.seed_fake_data);
 
-      const [delBen, delBatch, delLog, delHist, delRoute, delTruck, delShift] = await Promise.all([
+      const [delBen, delBatch, delLog, delHist, delRoute, delTruck, delShift, delSig] = await Promise.all([
         sandboxBeneficiaries.deleteMany({}),
         sandboxImportBatches.deleteMany({}),
+        sandboxSignatureLists.deleteMany({}),
         sandboxImportLogs.deleteMany({}),
         sandboxDeliveryHistory.deleteMany({}),
         sandboxDeliveryRoutes.deleteMany({}),
