@@ -36,7 +36,7 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     ]);
   });
 
-  it('2. Excel çalışma sayfası A4 yatay, dar kenar boşlukları, tekrarlayan başlık ve 38pt ıslak imza satır yüksekliğine sahiptir', async () => {
+  it('2. Excel çalışma sayfası A4 yatay, dar kenar boşlukları, tekrarlayan başlık ve 45pt ıslak imza satır yüksekliğine sahiptir', async () => {
     const workbook = new ExcelJS.Workbook();
     // İlk sayfa dışında her mahalle sayfasında sadece tek satır çizelge başlığı ve tablo başlıkları yinelenir (1:2)
     const sheet = workbook.addWorksheet('1. ÇAVUŞBEY MAH.', {
@@ -59,13 +59,13 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     sheet.addRow(['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Alan Islak İmza']);
 
     const dataRow = sheet.addRow([1, 'Ahmet Yılmaz', '12345678901', '0555 111 22 33', 'Atatürk Cad. No: 1', '']);
-    dataRow.height = 38;
+    dataRow.height = 45;
 
     assert.equal(sheet.pageSetup.paperSize, 9);
     assert.equal(sheet.pageSetup.orientation, 'landscape');
     assert.equal(sheet.pageSetup.fitToWidth, 1);
     assert.equal(sheet.pageSetup.printTitlesRow, '1:2');
-    assert.equal(dataRow.height, 38);
+    assert.equal(dataRow.height, 45);
     // İmza alanı kesinlikle boştur
     assert.equal(dataRow.getCell(6).value, '');
 

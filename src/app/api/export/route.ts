@@ -284,9 +284,9 @@ function addStyledWorksheet(
  * Kural Gereksinimleri:
  * - Adres A'dan Z'ye sıralı (localeCompare tr numeric)
  * - Kolonlar: Sıra No, Adı Soyadı, T.C. Kimlik No, Telefon, Adres, Teslim Alan Islak İmza
- * - İmza alanı tamamen boş ve ıslak imza atılacak yükseklikte (38pt)
+ * - İmza alanı tamamen boş ve ıslak imza atılacak yükseklikte (45pt)
  * - Her sayfa üstten/yandan hizalı ve kenar boşluksuz (0.35in A4 yatay)
- * - Her sayfada kurumsal başlıkların yinelenmesi (printTitlesRow: '1:5')
+ * - Her sayfada kurumsal başlıkların yinelenmesi (printTitlesRow: '1:2')
  */
 function addOfficialSignatureSheet(
   workbook: ExcelJS.Workbook,
@@ -381,8 +381,8 @@ function addOfficialSignatureSheet(
     ];
 
     const dataRow = sheet.addRow(rowData);
-    // Islak imza için ferah satır yüksekliği (38pt = ~13.5mm)
-    dataRow.height = 38;
+    // Islak imza için ferah satır yüksekliği (45pt = ~16mm)
+    dataRow.height = 45;
 
     const isEven = idx % 2 === 1;
     const zebraBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';

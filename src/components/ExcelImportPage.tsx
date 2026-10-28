@@ -1842,7 +1842,7 @@ export default function ExcelImportPage({
             <PenLine className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
             <div>
               <strong className="block text-slate-900 font-bold">Boş Islak İmza Alanı</strong>
-              <span className="text-[11px] text-slate-500">Vatandaşın ıslak imzasını rahatça atabilmesi için 38pt ferah satır yüksekliğinde boş kutu bırakılmıştır.</span>
+              <span className="text-[11px] text-slate-500">Vatandaşın ıslak imzasını rahatça atabilmesi için 45pt ferah satır yüksekliğinde boş kutu bırakılmıştır.</span>
             </div>
           </div>
 
