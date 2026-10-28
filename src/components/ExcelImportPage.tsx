@@ -281,6 +281,21 @@ export default function ExcelImportPage({
   const [isLoadingSignatureData, setIsLoadingSignatureData] = useState<boolean>(false);
   const [isGeneratingSignatureList, setIsGeneratingSignatureList] = useState<boolean>(false);
   const [isRollingBackListId, setIsRollingBackListId] = useState<string | null>(null);
+  const [recentlyCreatedList, setRecentlyCreatedList] = useState<{
+    id: string;
+    name: string;
+    no: number;
+    count: number;
+    timestamp: number;
+  } | null>(null);
+  const [rollbackModalTarget, setRollbackModalTarget] = useState<{
+    id: string;
+    name: string;
+    listeNo?: number;
+    count?: number;
+    mahalleSayisi?: number;
+    isAll?: boolean;
+  } | null>(null);
 
   const fetchSignatureData = async (donemOverride?: string) => {
     const targetDonem = typeof donemOverride === 'string' ? donemOverride : selectedSeasonView;
@@ -351,6 +366,14 @@ export default function ExcelImportPage({
         message: data.message || `İmza listesi (${data.listName}) başarıyla oluşturuldu ve indiriliyor.`,
       });
 
+      setRecentlyCreatedList({
+        id: data.listId,
+        name: data.listName,
+        no: data.listeNo,
+        count: data.count,
+        timestamp: Date.now(),
+      });
+
       // Otomatik İndirme
       const downloadUrl = `/api/export?type=signature_list&listId=${encodeURIComponent(data.listId)}&donem_kodu=${encodeURIComponent(selectedSeasonView)}`;
       const link = document.createElement('a');
@@ -373,47 +396,50 @@ export default function ExcelImportPage({
     }
   };
 
-  const handleRollbackSignatureList = async (listId: string, listName: string) => {
-    const confirmed = await showConfirm({
-      title: 'İmza Listesini İptal Et / Geri Al',
-      message: `"${listName}" başlıklı imza listesini iptal etmek istediğinize emin misiniz?\n\nBu listede yer alan tüm hak sahipleri tekrar "İmza Listesi Bekleyen Yeni Kayıtlar" havuzuna aktarılacaktır.`,
-      type: 'warning',
-      confirmText: 'Evet, Listeyi Geri Al',
-      cancelText: 'Vazgeç',
-    });
-
-    if (!confirmed) return;
-
-    setIsRollingBackListId(listId);
+  const executeRollback = async (target: { id: string; name: string; isAll?: boolean }) => {
+    setIsRollingBackListId(target.id);
     try {
       const res = await fetch('/api/signature-lists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'ROLLBACK_LIST',
-          listId,
+          action: target.isAll ? 'RESET_ALL_LISTS' : 'ROLLBACK_LIST',
+          listId: target.id,
         }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'İmza listesi geri alınamadı');
+      if (!data.success) throw new Error(data.error || 'İmza listesi iptal edilemedi');
 
       showToast({
         type: 'info',
-        title: 'İmza Listesi Geri Alındı',
+        title: 'İmza Listesi İptal Edildi',
         message: data.message,
       });
+
+      if (recentlyCreatedList && (target.isAll || recentlyCreatedList.id === target.id)) {
+        setRecentlyCreatedList(null);
+      }
+      setRollbackModalTarget(null);
 
       await fetchSignatureData();
       onRefreshAll();
     } catch (err: any) {
       showAlert({
         type: 'error',
-        title: 'Geri Alma Hatası',
+        title: 'İptal / Geri Alma Hatası',
         message: err.message || 'İmza listesi geri alınırken hata oluştu.',
       });
     } finally {
       setIsRollingBackListId(null);
     }
+  };
+
+  const handleRollbackSignatureList = async (listId: string, listName: string, count?: number) => {
+    setRollbackModalTarget({
+      id: listId,
+      name: listName,
+      count: count,
+    });
   };
 
   // Eliminated / Duplicate Records Detail Modal State
@@ -1650,6 +1676,55 @@ export default function ExcelImportPage({
           </div>
         </div>
 
+        {/* YANLIŞLIKLA ÇIKTI ALINDIĞINDA ANINDA GERİ ALMA BİLDİRİMİ (UNDO BANNER) */}
+        {recentlyCreatedList && (
+          <div className="p-4 rounded-xl bg-amber-500/10 border-2 border-amber-400 text-amber-950 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-200 text-amber-800 flex items-center justify-center shrink-0 border border-amber-300">
+                <AlertTriangle className="w-5 h-5 text-amber-700" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <strong className="text-xs sm:text-sm font-black text-amber-950">
+                    Az Önce Çıktı Alındı: {recentlyCreatedList.name} ({recentlyCreatedList.count} Hane)
+                  </strong>
+                  <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-extrabold uppercase tracking-wide">
+                    Hatalara Karşı Geri Alınabilir
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-tight">
+                  Çıktıyı yanlışlıkla mı aldınız veya listeye henüz eklenmemiş kayıtlar mı vardı? Bu çıktıyı tek tıkla iptal edip tüm hak sahiplerini bekleyenler listesine iade edebilirsiniz.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRollbackModalTarget({
+                  id: recentlyCreatedList.id,
+                  name: recentlyCreatedList.name,
+                  listeNo: recentlyCreatedList.no,
+                  count: recentlyCreatedList.count
+                })}
+                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs transition-all"
+                title="Bu hatalı çıktıyı derhal iptal edin ve kayıtları bekleyene döndürün"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span>Yanlış Çıktıyı İptal Et / Geri Al</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecentlyCreatedList(null)}
+                className="p-1.5 rounded-lg text-amber-800 hover:bg-amber-200/50 transition-all"
+                title="Bildirimi Gizle"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Dinamik Eylem ve Bilgilendirme Alanı */}
         {signatureData.pendingCount > 0 ? (
           <div className={`p-4 rounded-xl border-2 space-y-3.5 transition-all ${
@@ -1783,15 +1858,33 @@ export default function ExcelImportPage({
                 <FileCheck className="w-4 h-4 text-indigo-700" />
                 <span>Oluşturulan Islak İmza Listeleri ({signatureData.lists.length})</span>
               </h4>
-              <a
-                href={`/api/export?type=signature_list&listId=ALL&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
-                download="Edirne_SYDV_Tum_Hak_Sahipleri_Arsiv_Islak_Imza_Listesi.xlsx"
-                className="text-[11px] font-extrabold text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1"
-                title="Tüm listeleri birleştirilmiş tek dosya olarak indir"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Tüm Listeleri Tek Dosyada İndir (Genel Arşiv)</span>
-              </a>
+              <div className="flex items-center gap-3">
+                <a
+                  href={`/api/export?type=signature_list&listId=ALL&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+                  download="Edirne_SYDV_Tum_Hak_Sahipleri_Arsiv_Islak_Imza_Listesi.xlsx"
+                  className="text-[11px] font-extrabold text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1"
+                  title="Tüm listeleri birleştirilmiş tek dosya olarak indir"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Tüm Listeleri Tek Dosyada İndir (Genel Arşiv)</span>
+                </a>
+                {signatureData.lists.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setRollbackModalTarget({
+                      id: 'ALL',
+                      name: 'Tüm Islak İmza Listeleri',
+                      count: signatureData.assignedCount,
+                      isAll: true,
+                    })}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1"
+                    title="Tüm imza listelerini sıfırlayarak tüm kayıtları bekleyen havuzuna iade edin"
+                  >
+                    <RotateCcw className="w-3 h-3 text-rose-600" />
+                    <span>Tümünü Sıfırla</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1836,17 +1929,23 @@ export default function ExcelImportPage({
 
                       <button
                         type="button"
-                        onClick={() => handleRollbackSignatureList(item.id, item.liste_adi)}
+                        onClick={() => setRollbackModalTarget({
+                          id: item.id,
+                          name: item.liste_adi,
+                          listeNo: item.liste_no,
+                          count: item.toplam_kayit,
+                          mahalleSayisi: item.mahalle_sayisi
+                        })}
                         disabled={isRollingBack}
-                        className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-slate-200 hover:border-rose-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
-                        title="Bu imza listesini geri al ve kayıtları tekrar bekleyen durumuna aktar"
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-slate-200 hover:border-rose-300 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 shadow-2xs"
+                        title="Bu imza listesini iptal et ve kayıtları tekrar bekleyen durumuna aktar"
                       >
                         {isRollingBack ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
                         ) : (
                           <Undo2 className="w-3.5 h-3.5 text-rose-600" />
                         )}
-                        <span className="hidden sm:inline">Geri Al</span>
+                        <span>İptal Et / Geri Al</span>
                       </button>
                     </div>
                   </div>
@@ -2653,6 +2752,114 @@ export default function ExcelImportPage({
           </div>
         )}
       </div>
+
+      {/* ISLAK İMZA LİSTESİ İPTAL & GERİ ALMA GÜVENLİK MODALI */}
+      {rollbackModalTarget && (
+        <div
+          className="modal-overlay"
+          onClick={() => !isRollingBackListId && setRollbackModalTarget(null)}
+        >
+          <div className="modal-sheet max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center border border-rose-200 shrink-0">
+                  <Undo2 className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                    {rollbackModalTarget.isAll
+                      ? 'Tüm Islak İmza Listelerini Sıfırla'
+                      : 'Islak İmza Listesini İptal Et / Geri Al'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">Hatalı veya erken çıktı alma önlemi</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isRollingBackListId && setRollbackModalTarget(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"
+                title="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 space-y-2">
+                <div className="flex items-center gap-2 font-black text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    {rollbackModalTarget.isAll
+                      ? 'Tüm listeler iptal edilecek'
+                      : `"${rollbackModalTarget.name}" iptal edilecek`}
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed text-amber-900">
+                  Bu işlem, imza listesi çıktısı yanlışlıkla alındığında veya sisteme henüz eklenmesi gereken başka kayıtlar varken erken liste çıkarıldığında hataları önlemek için tasarlanmıştır.
+                </p>
+              </div>
+
+              {/* İptal Edilecek Kapsam Detayı */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">İptal Edilecek Liste Kapsamı</span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded-lg bg-white border border-slate-200">
+                    <span className="text-slate-400 block text-[10px]">Liste Adı / No:</span>
+                    <strong className="text-slate-900 font-bold">{rollbackModalTarget.name}</strong>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white border border-slate-200">
+                    <span className="text-slate-400 block text-[10px]">Etkilenecek Hane:</span>
+                    <strong className="text-indigo-700 font-black">{rollbackModalTarget.count || 0} Hane</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Güvenlik Güvenceleri */}
+              <div className="space-y-2 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 text-emerald-950">
+                <span className="font-extrabold text-[11px] text-emerald-900 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Veri Güvenliği ve Süreç Güvencesi:</span>
+                </span>
+                <ul className="space-y-1 text-[11px] text-emerald-900 list-disc list-inside">
+                  <li><strong>Kayıt Kaybı Olmaz:</strong> Vatandaş ve hane bilgileri sistemden kesinlikle silinmez.</li>
+                  <li><strong>Bekleyen Havuzuna İade:</strong> İlgili {rollbackModalTarget.count || 0} hane tekrar <em>"İmza Listesi Bekleyenler"</em> havuzuna aktarılır.</li>
+                  <li><strong>Yeniden Çıkarılabilir:</strong> Yeni Excel yüklemelerinizi yaptıktan sonra dilediğiniz an tek tıkla yeniden güncel imza listesi oluşturabilirsiniz.</li>
+                </ul>
+              </div>
+
+              {/* Eylem Butonları */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setRollbackModalTarget(null)}
+                  disabled={Boolean(isRollingBackListId)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold transition-all disabled:opacity-50"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeRollback(rollbackModalTarget)}
+                  disabled={Boolean(isRollingBackListId)}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-black flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
+                >
+                  {isRollingBackListId ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>İptal Ediliyor...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Undo2 className="w-4 h-4 text-white" />
+                      <span>{rollbackModalTarget.isAll ? 'Tümünü Sıfırla ve Geri Al' : 'Evet, Bu Listeyi İptal Et ve Geri Al'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EXCEL DOSYASI VE KAYITLARI SİLME (ROLLBACK) ONAY MODALI */}
       {batchDeleteTarget && (

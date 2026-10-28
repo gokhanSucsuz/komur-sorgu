@@ -272,7 +272,57 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `"${targetList.liste_adi}" başarıyla geri alındı. İlgili kayıtlar tekrar bekleyen durumuna alındı.`,
+        message: `"${targetList.liste_adi}" başarıyla iptal edildi / geri alındı. ${updateResult.modifiedCount || targetList.toplam_kayit || 0} hane tekrar bekleyen listesine aktarıldı.`,
+        count: updateResult.modifiedCount || targetList.toplam_kayit || 0,
+        listName: targetList.liste_adi,
+      });
+    }
+
+    // 3. TÜM İMZA LİSTELERİNİ TOPLU SIFIRLAMA / GERİ ALMA
+    if (action === 'RESET_ALL_LISTS') {
+      const allLists = await signatureLists.find({}).toArray();
+      if (allLists.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Sıfırlanacak aktif bir imza listesi bulunamadı.' },
+          { status: 400 }
+        );
+      }
+
+      const updateResult = await benCol.updateMany(
+        {
+          $or: [
+            { imza_listesi_id: { $ne: null } },
+            { imza_listesi_id: { $exists: true } },
+          ],
+        },
+        {
+          $set: {
+            imza_listesi_id: null,
+            imza_listesi_no: null,
+            imza_listesi_adi: null,
+            imza_listesi_tarihi: null,
+            updated_at: nowStr,
+          },
+        }
+      );
+
+      await signatureLists.deleteMany({});
+
+      await recordActivityLog({
+        kullanici_adi: adminName,
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'IMZA_LISTESI_TOPLU_SIFIRLAMA',
+        baslik: `${isSandboxMode ? '[DENEME MODU] ' : ''}Tüm İmza Listeleri İptal Edildi ve Sıfırlandı`,
+        detay: `${allLists.length} adet imza listesi iptal edildi. Toplam ${updateResult.modifiedCount || 0} hane tekrar imza listesi bekleyen havuzuna aktarıldı.`,
+        ek_bilgi: { listCount: allLists.length, modifiedCount: updateResult.modifiedCount },
+      });
+
+      await touchSyncPulse(adminName);
+
+      return NextResponse.json({
+        success: true,
+        message: `Toplam ${allLists.length} imza listesi başarıyla iptal edildi. ${updateResult.modifiedCount || 0} hane bekleyen listeye geri alındı.`,
+        count: updateResult.modifiedCount || 0,
       });
     }
 

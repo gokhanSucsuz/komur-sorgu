@@ -191,4 +191,34 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     const unassigned = allRecords.filter((b: any) => !b.imza_listesi_id);
     assert.equal(unassigned.length, 2, 'Geri alınan 2 kayıt tekrar imza listesi bekleyen havuzuna dönmelidir');
   });
+
+  it('5. Tüm imza listeleri toplu sıfırlandığında (RESET_ALL_LISTS) tüm hak sahipleri bekleyen durumuna döner', async () => {
+    const { beneficiaries: benCol, signatureLists: sigCol } = await getDbCollections();
+
+    // Toplu sıfırlama işlemi
+    await benCol.updateMany(
+      {
+        $or: [
+          { imza_listesi_id: { $ne: null } },
+          { imza_listesi_id: { $exists: true } },
+        ],
+      },
+      {
+        $set: {
+          imza_listesi_id: null,
+          imza_listesi_no: null,
+          imza_listesi_adi: null,
+          imza_listesi_tarihi: null,
+        },
+      }
+    );
+    await sigCol.deleteMany({});
+
+    const allRecords = (await benCol.find({}).toArray()).map(decryptBeneficiary);
+    const unassigned = allRecords.filter((b: any) => !b.imza_listesi_id);
+    const remainingLists = await sigCol.find({}).toArray();
+
+    assert.equal(remainingLists.length, 0, 'Hiç imza listesi kalmamalıdır');
+    assert.equal(unassigned.length, allRecords.length, 'Tüm hak sahipleri bekleyen havuzuna dönmüş olmalıdır');
+  });
 });
