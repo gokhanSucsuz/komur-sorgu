@@ -253,6 +253,10 @@ const BENEFICIARY_ENCRYPTED_FIELDS = [
   'adres_guncelleme_notu',
   'komur_iptal_nedeni',
   'komur_iptal_aciklama',
+  'onceki_acik_adres',
+  'onceki_sokak',
+  'imza_listesi_acik_adres',
+  'imza_listesi_sokak',
 ];
 
 /**

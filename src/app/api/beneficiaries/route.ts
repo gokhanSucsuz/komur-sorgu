@@ -1148,6 +1148,26 @@ export async function PUT(request: NextRequest) {
 
     const updaterName = session.ad_soyad || session.username || updated_by || 'Sistem Kullanıcısı';
 
+    const hasSignatureList = Boolean(
+      existing.imza_listesi_id && String(existing.imza_listesi_id).trim().length > 0
+    );
+
+    const origListMahalle = existing.imza_listesi_mahalle || existing.mahalle;
+    const origListAdres = existing.imza_listesi_acik_adres || existing.acik_adres;
+    const origListSokak = existing.imza_listesi_sokak || existing.sokak;
+    const origListKapiNo = existing.imza_listesi_kapi_no !== undefined ? existing.imza_listesi_kapi_no : existing.kapi_no;
+    const origListDaireNo = existing.imza_listesi_daire_no !== undefined ? existing.imza_listesi_daire_no : existing.daire_no;
+
+    const isDifferentFromList =
+      hasSignatureList &&
+      (settlement.name !== origListMahalle || newAcikAdres !== origListAdres);
+
+    if (hasSignatureList && isDifferentFromList) {
+      changeSummaryParts.push(
+        `İmza Listesi Çıktısı Sonrası Adres Değiştirildi [Basılı Liste: ${origListMahalle} - ${origListAdres}] -> [Yeni: ${settlement.name} - ${newAcikAdres}]`
+      );
+    }
+
     const updateSet: any = {
       mahalle: settlement.name,
       yerlesim_tipi: settlement.type,
@@ -1167,6 +1187,24 @@ export async function PUT(request: NextRequest) {
       uyarilar: updatedWarnings.map((u: any) => (u !== undefined && u !== null ? encryptField(String(u)) : u)),
       updated_at: nowStr,
     };
+
+    if (hasSignatureList) {
+      if (isDifferentFromList) {
+        updateSet.imza_sonrasi_adres_degisti = true;
+        updateSet.imza_listesi_mahalle = origListMahalle;
+        updateSet.imza_listesi_acik_adres = encryptField(origListAdres || '');
+        updateSet.imza_listesi_sokak = encryptField(origListSokak || '');
+        updateSet.imza_listesi_kapi_no = origListKapiNo;
+        updateSet.imza_listesi_daire_no = origListDaireNo;
+        updateSet.onceki_mahalle = existing.mahalle;
+        updateSet.onceki_acik_adres = encryptField(existing.acik_adres || '');
+        updateSet.onceki_sokak = encryptField(existing.sokak || '');
+        updateSet.onceki_kapi_no = existing.kapi_no;
+        updateSet.onceki_daire_no = existing.daire_no;
+      } else {
+        updateSet.imza_sonrasi_adres_degisti = false;
+      }
+    }
 
     if (guncelleme_notu) {
       updateSet.adres_guncelleme_notu = encryptField(guncelleme_notu);
@@ -1200,6 +1238,9 @@ export async function PUT(request: NextRequest) {
         yeni_telefon2: newPhone2,
         degisen_alanlar: changeSummaryParts,
         guncelleme_notu: guncelleme_notu || null,
+        imza_sonrasi_adres_degisti: Boolean(hasSignatureList && isDifferentFromList),
+        imza_listesi_mahalle: hasSignatureList && isDifferentFromList ? origListMahalle : undefined,
+        imza_listesi_acik_adres: hasSignatureList && isDifferentFromList ? origListAdres : undefined,
       },
     });
 

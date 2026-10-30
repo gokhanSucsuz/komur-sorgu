@@ -207,6 +207,21 @@ export default function EditBeneficiaryModal({
             </div>
           </div>
 
+          {beneficiary.imza_listesi_id && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 flex items-start gap-2.5 text-xs text-amber-950 leading-relaxed shadow-2xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-black block text-amber-900">
+                  Resmi Islak İmza Listesi Çıktısı Alınmış Kayıt:
+                </span>
+                <span>
+                  Bu hane için daha önce ıslak imza listesi çıkarılmıştır ({beneficiary.imza_listesi_adi || `${beneficiary.imza_listesi_no || 1}. Dağıtım Listesi`}).
+                  Adres değişikliği yapıldığında; basılı evrak ve mahalle listelerinin karışmaması için kayıt basılı listelerde <strong>eski adresine göre ({beneficiary.imza_listesi_mahalle || beneficiary.mahalle})</strong> yer almaya devam edecek ve adres alanında parantez içinde yeni adresi gösterilecektir. Ara Bul ekranında ise yeni adresi görüntülenecektir.
+                </span>
+              </div>
+            </div>
+          )}
+
           {errorMessage && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-900 font-semibold animate-in fade-in">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />

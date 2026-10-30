@@ -179,6 +179,10 @@ export function mapDoc<T = any>(doc: any): T {
     'totp_pending_secret',
     'komur_iptal_nedeni',
     'komur_iptal_aciklama',
+    'onceki_acik_adres',
+    'onceki_sokak',
+    'imza_listesi_acik_adres',
+    'imza_listesi_sokak',
   ];
 
   for (const field of piiFields) {
@@ -223,6 +227,10 @@ export function mapDoc<T = any>(doc: any): T {
     mapped.sira_no = String(mapped.mahalle_sira || mapped.id || '1');
     mapped.ek_liste_no = typeof mapped.ek_liste_no === 'number' ? mapped.ek_liste_no : 0;
     mapped.ek_liste_adi = mapped.ek_liste_adi || 'Ana Liste';
+  }
+
+  if (mapped.imza_sonrasi_adres_degisti !== undefined) {
+    mapped.imza_sonrasi_adres_degisti = Boolean(mapped.imza_sonrasi_adres_degisti);
   }
 
   // KVKK: Hide deterministic HMAC blind-index hashes from JSON.stringify / NextResponse.json

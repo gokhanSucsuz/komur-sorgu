@@ -8,7 +8,7 @@ process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { encryptBeneficiary, decryptBeneficiary } from '@/lib/crypto';
-import { normalizeMahalleName } from '@/lib/normalizer';
+import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle } from '@/lib/normalizer';
 
 describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', () => {
   it('1. Adres A\'dan Z\'ye sıralama mantığı Türkçe karakterleri ve kapı numaralarını doğru sıralar', () => {
@@ -460,5 +460,141 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(shortHeight, 45, 'Kısa adreste standart 45pt korunmalıdır');
     assert.ok(longHeight > 45, `Uzun adreste satır yüksekliği standardın üzerine çıkmalıdır (Hesaplanan: ${longHeight}pt)`);
     assert.ok(longHeight >= 68, '4+ satırlı uzun adreste en az 68pt yükseklik sağlanmalıdır');
+  });
+
+  it('11. formatSignatureListAddress ve getBeneficiaryEffectiveListMahalle imza listesi çıktısı sonrası adres değişikliğini korur', () => {
+    // Senaryo A: İmza listesi çıktısı alındıktan sonra adres değişti (Farklı mahalleye taşındı)
+    const movedRecord = {
+      mahalle: 'Şükrüpaşa Mah.',
+      acik_adres: 'Atatürk Bulvarı No: 14 Daire: 2',
+      imza_listesi_id: 'IMZA-TEST-001',
+      imza_sonrasi_adres_degisti: true,
+      imza_listesi_mahalle: 'Menzilahır Mah.',
+      imza_listesi_acik_adres: 'Gül Sokak No: 5',
+      onceki_mahalle: 'Menzilahır Mah.',
+      onceki_acik_adres: 'Gül Sokak No: 5',
+    };
+
+    // Basılı imza listesinde hangi mahallede yer almalı? -> Menzilahır Mah. (Eski basılı liste mahallesi)
+    const effectiveMahalle = getBeneficiaryEffectiveListMahalle(movedRecord);
+    assert.equal(effectiveMahalle, 'Menzilahır Mah.', 'Kayıt basılı listedeki eski mahallesinde yer almaya devam etmelidir');
+
+    // Basılı imza listesi çizelgesindeki Adres sütunu nasıl görünmeli?
+    // Eski adres başta olmalı ve parantez içinde yeni adresi gösterilmelidir
+    const formattedAddr = formatSignatureListAddress(movedRecord);
+    assert.equal(
+      formattedAddr,
+      'Gül Sokak No: 5 (Yeni Adres: Şükrüpaşa Mah., Atatürk Bulvarı No: 14 Daire: 2)',
+      'Adres alanında eski adres gösterilmeli ve parantez içinde yeni adres yer almalıdır'
+    );
+
+    // Senaryo B: Aynı mahalle içinde sokak/kapı no değişti
+    const sameMahalleMovedRecord = {
+      mahalle: 'Menzilahır Mah.',
+      acik_adres: 'Lale Sokak No: 20',
+      imza_listesi_id: 'IMZA-TEST-001',
+      imza_sonrasi_adres_degisti: true,
+      imza_listesi_mahalle: 'Menzilahır Mah.',
+      imza_listesi_acik_adres: 'Gül Sokak No: 5',
+      onceki_mahalle: 'Menzilahır Mah.',
+      onceki_acik_adres: 'Gül Sokak No: 5',
+    };
+    assert.equal(getBeneficiaryEffectiveListMahalle(sameMahalleMovedRecord), 'Menzilahır Mah.');
+    assert.equal(
+      formatSignatureListAddress(sameMahalleMovedRecord),
+      'Gül Sokak No: 5 (Yeni Adres: Lale Sokak No: 20)'
+    );
+
+    // Senaryo C: İmza listesi çıktısı sonrası adres değişikliği OLMAMIŞ normal kayıt
+    const normalRecord = {
+      mahalle: 'Fatih Mah.',
+      acik_adres: 'Menekşe Sok. No: 12',
+      imza_listesi_id: 'IMZA-TEST-001',
+      imza_sonrasi_adres_degisti: false,
+    };
+    assert.equal(getBeneficiaryEffectiveListMahalle(normalRecord), 'Fatih Mah.');
+    assert.equal(formatSignatureListAddress(normalRecord), 'Menekşe Sok. No: 12');
+  });
+
+  it('12. İmza listesi Excel oluşturulduğunda adres değişikliği olan hane eski mahalle sekmesinde ve parantez içinde yeni adresiyle listelenir', async () => {
+    const workbook = new ExcelJS.Workbook();
+
+    const beneficiaries = [
+      {
+        tc_no: '11111111111',
+        ad_soyad: 'Fatma Şen',
+        telefon: '0555 111 22 33',
+        mahalle: 'Şükrüpaşa Mah.',
+        acik_adres: 'Atatürk Bulvarı No: 14 Daire: 2',
+        imza_listesi_id: 'IMZA-TEST-001',
+        imza_sonrasi_adres_degisti: true,
+        imza_listesi_mahalle: 'Menzilahır Mah.',
+        imza_listesi_acik_adres: 'Gül Sokak No: 5',
+        onceki_mahalle: 'Menzilahır Mah.',
+        onceki_acik_adres: 'Gül Sokak No: 5',
+      },
+      {
+        tc_no: '22222222222',
+        ad_soyad: 'Ali Kaya',
+        telefon: '0542 222 33 44',
+        mahalle: 'Menzilahır Mah.',
+        acik_adres: 'Akasya Sokak No: 3',
+        imza_listesi_id: 'IMZA-TEST-001',
+        imza_sonrasi_adres_degisti: false,
+      },
+    ];
+
+    // Mahallelere göre gruplama mantığı:
+    const mahalleGroups = new Map<string, any[]>();
+    for (const r of beneficiaries) {
+      const listMah = getBeneficiaryEffectiveListMahalle(r);
+      const m = normalizeMahalleName(listMah) || listMah;
+      if (!mahalleGroups.has(m)) {
+        mahalleGroups.set(m, []);
+      }
+      mahalleGroups.get(m)!.push(r);
+    }
+
+    // Fatma Şen yeni adresi Şükrüpaşa olmasına rağmen, imza listesi çıktısı daha önce alındığı için Menzilahır grubunda kalmalıdır
+    assert.ok(mahalleGroups.has('Menzilahır Mah.'), 'Menzilahır Mah. grubu oluşmalıdır');
+    const menzilahirGroup = mahalleGroups.get('Menzilahır Mah.')!;
+    assert.equal(menzilahirGroup.length, 2, 'Her iki hane de Menzilahır grubunda yer almalıdır');
+
+    // Menzilahır çalışma sayfası oluşturulması
+    const sheet = workbook.addWorksheet('Menzilahır Mah.');
+    sheet.addRow(['Sıra', 'Adı Soyadı', 'TC', 'Telefon', 'Adres', 'Miktar', 'İmza Eden', 'Tarih', 'İmza Alan']);
+
+    // Adres A-Z sıralaması basılı listelerdeki eski adreslerine göre yapılır
+    menzilahirGroup.sort((a, b) => {
+      const addrA = a.imza_sonrasi_adres_degisti ? (a.imza_listesi_acik_adres || a.onceki_acik_adres || a.acik_adres || '') : (a.acik_adres || '');
+      const addrB = b.imza_sonrasi_adres_degisti ? (b.imza_listesi_acik_adres || b.onceki_acik_adres || b.acik_adres || '') : (b.acik_adres || '');
+      return addrA.localeCompare(addrB, 'tr', { sensitivity: 'base', numeric: true });
+    });
+
+    for (let i = 0; i < menzilahirGroup.length; i++) {
+      const r = menzilahirGroup[i];
+      sheet.addRow([
+        i + 1,
+        r.ad_soyad,
+        r.tc_no,
+        r.telefon,
+        formatSignatureListAddress(r),
+        '34 Torba',
+        '',
+        '',
+        '',
+      ]);
+    }
+
+    // 1. Satır: Akasya Sokak No: 3 (Ali Kaya)
+    assert.equal(sheet.getRow(2).getCell(2).value, 'Ali Kaya');
+    assert.equal(sheet.getRow(2).getCell(5).value, 'Akasya Sokak No: 3');
+
+    // 2. Satır: Gül Sokak No: 5 (Fatma Şen - Yeni Adres: Şükrüpaşa Mah., Atatürk Bulvarı No: 14 Daire: 2)
+    assert.equal(sheet.getRow(3).getCell(2).value, 'Fatma Şen');
+    assert.equal(
+      sheet.getRow(3).getCell(5).value,
+      'Gül Sokak No: 5 (Yeni Adres: Şükrüpaşa Mah., Atatürk Bulvarı No: 14 Daire: 2)'
+    );
   });
 });

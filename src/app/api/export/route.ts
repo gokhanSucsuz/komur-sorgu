@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress } from '@/lib/normalizer';
 import { formatTrDateWithDay } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
@@ -347,9 +347,12 @@ function addOfficialSignatureSheet(
   seenSheetNames: Set<string>
 ) {
   // 1. ADRES A'DAN Z'YE SIRALAMA
-  group.sort((a, b) =>
-    (a.acik_adres || '').localeCompare((b.acik_adres || ''), 'tr', { sensitivity: 'base', numeric: true })
-  );
+  // Listelerin çıktısı alındıktan sonra adresi değişen kayıtlar, basılı listelerdeki eski adreslerine göre sıralanır
+  group.sort((a, b) => {
+    const addrA = a.imza_sonrasi_adres_degisti ? (a.imza_listesi_acik_adres || a.onceki_acik_adres || a.acik_adres || '') : (a.acik_adres || '');
+    const addrB = b.imza_sonrasi_adres_degisti ? (b.imza_listesi_acik_adres || b.onceki_acik_adres || b.acik_adres || '') : (b.acik_adres || '');
+    return addrA.localeCompare(addrB, 'tr', { sensitivity: 'base', numeric: true });
+  });
 
   const safeSheetName = sanitizeSheetName(mahName, seenSheetNames);
   const sheet = workbook.addWorksheet(safeSheetName, {
@@ -438,7 +441,7 @@ function addOfficialSignatureSheet(
       ? formatTrDateWithDay(r.teslimat_tarihi) || r.teslimat_tarihi
       : '';
 
-    const fullAddress = r.acik_adres || r.sokak || '-';
+    const fullAddress = formatSignatureListAddress(r);
 
     const rowData = [
       idx + 1,
@@ -1257,8 +1260,10 @@ export async function GET(request: NextRequest) {
           'Adı Soyadı': r.ad_soyad,
           'Telefon': phones[0] || r.telefon || '-',
           'Telefon 2': phones[1] || r.telefon2 || '-',
-          'Mahalle': r.mahalle,
-          'Açık Adres': r.acik_adres,
+          'Mahalle': r.imza_sonrasi_adres_degisti && (r.imza_listesi_mahalle || r.onceki_mahalle)
+            ? `${r.mahalle} (İmza Listesi: ${r.imza_listesi_mahalle || r.onceki_mahalle})`
+            : r.mahalle,
+          'Açık Adres': formatSignatureListAddress(r),
           'Hane No': r.hane_no || '-',
           'Durum': r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI' 
             ? 'Teslim Edildi' 
@@ -1351,10 +1356,11 @@ export async function GET(request: NextRequest) {
       const dosyaAdi = batchDoc?.dosya_adi || (batchId && batchId !== 'ALL' ? `Dosya_${batchId}` : 'Tum_Hak_Sahipleri');
       const cleanFileBase = dosyaAdi.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9ÇŞĞÜÖİçşğüöı_-]/g, '_');
 
-      // Group records by Mahalle
+      // Group records by Mahalle (Listesi çıkarılanlar basılı mahalle listesinde yer alır)
       const mahalleGroups = new Map<string, any[]>();
       for (const r of records) {
-        const m = normalizeMahalleName(r.mahalle) || r.mahalle || 'Genel';
+        const listMah = getBeneficiaryEffectiveListMahalle(r);
+        const m = normalizeMahalleName(listMah) || listMah || 'Genel';
         if (!mahalleGroups.has(m)) {
           mahalleGroups.set(m, []);
         }
@@ -1526,7 +1532,7 @@ export async function GET(request: NextRequest) {
             'TC Kimlik No': r.tc_no,
             'Adı Soyadı': r.ad_soyad,
             'Telefon': phoneStr,
-            'Açık Adres': r.acik_adres || '-',
+            'Açık Adres': formatSignatureListAddress(r),
             'Hedef (Torba)': target,
             'Teslim (Torba)': delivered,
             'Durum': durumText,
@@ -1645,10 +1651,11 @@ export async function GET(request: NextRequest) {
         return buildExcelResponse(buf, `Edirne_SYDV_Islak_Imza_Listesi_Bos.xlsx`, session, type);
       }
 
-      // Group records by Mahalle
+      // Group records by Mahalle (Listesi çıkarılanlar basılı mahalle listesinde yer alır)
       const mahalleGroups = new Map<string, any[]>();
       for (const r of records) {
-        const m = normalizeMahalleName(r.mahalle) || r.mahalle || 'Genel';
+        const listMah = getBeneficiaryEffectiveListMahalle(r);
+        const m = normalizeMahalleName(listMah) || listMah || 'Genel';
         if (!mahalleGroups.has(m)) {
           mahalleGroups.set(m, []);
         }

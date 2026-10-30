@@ -119,6 +119,9 @@ Sistemde iki ana rol tanımlanmıştır:
 ### 3.4. İkametgah Adresi ve Telefon Güncelleme
 - Sahaya ulaşıldığında vatandaşın taşındığı veya telefonunun değiştiği tespit edilirse, kart üzerindeki **"Düzenle"** butonuna basılır.
 - Yeni mahalle, güncel cadde/sokak/kapı no ve yeni telefon numarası girilerek anında kaydedilir.
+- **İmza Listesi Çıktısı Alınmış Kayıtların Adres Değişikliği Güvencesi:** Islak imza listeleri çıktısı alındıktan sonra adres değişikliği yapıldığında fiziksel klasörlerdeki mahalle listelerinin karışmaması için:
+  1. **Ara & Bul (Sorgu & Dağıtım) Ekranı:** Vatandaşın yeni güncel adresi gösterilirken, basılı listedeki önceki adres kaydı da belirgin bir uyarı rozetiyle gösterilir.
+  2. **Resmi Listeler ve Dökümler:** Listelerin çıktısı önceden alındığı için adres değişikliği yapılan kayıtlar basılı listelerde eski adresine göre yer almaya devam eder ve adres alanında parantez içinde yeni adresi (`[Eski Adres] (Yeni Adresi: [Yeni Adres])`) gösterilir. Bütün mahalle filtrelemelerinde hem eski hem yeni adresine göre erişilebilir.
 
 ### 3.5. Pratik Mobil Saha Hane Ekleme ("Ek Liste", Zorunlu TC & Ad Soyad, İsteğe Bağlı Adres/Telefon)
 - Sahada görevli personel cep telefonundan yeni bir ek hane kaydederken uzun açık adres veya gereksiz ayrıntı yazmak zorunda değildir:

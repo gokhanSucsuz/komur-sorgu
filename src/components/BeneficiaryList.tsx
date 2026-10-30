@@ -345,10 +345,24 @@ export default function BeneficiaryList({
       selectedMahalleler.map((m) => normalizeMahalleName(m) || m.trim().toLowerCase())
     );
     return activeDisplayList.filter((r) => {
+      // 1. Güncel mahalle kontrolü
       if (exactSet.has(r.mahalle)) return true;
       const rawM = r.mahalle ? String(r.mahalle).trim() : '';
       const normM = normalizeMahalleName(rawM) || rawM.toLowerCase();
-      return normalizedSet.has(normM);
+      if (normalizedSet.has(normM)) return true;
+
+      // 2. Islak imza listesi çıktısı alındıktan sonra adresi değiştiyse, basılı listedeki eski mahallesiyle de eşleşir
+      if (r.imza_sonrasi_adres_degisti) {
+        const oldM = r.imza_listesi_mahalle || r.onceki_mahalle;
+        if (oldM) {
+          if (exactSet.has(oldM)) return true;
+          const rawOldM = String(oldM).trim();
+          const normOldM = normalizeMahalleName(rawOldM) || rawOldM.toLowerCase();
+          if (normalizedSet.has(normOldM)) return true;
+        }
+      }
+
+      return false;
     });
   }, [activeDisplayList, selectedMahalleler]);
 
@@ -441,7 +455,22 @@ export default function BeneficiaryList({
   const groupedByMahalle = useMemo(() => {
     const groups: Record<string, any[]> = {};
     for (const r of pagedList) {
-      const m = r.mahalle || 'Belirtilmemiş';
+      let m = r.mahalle || 'Belirtilmemiş';
+      // Kullanıcı basılı imza listesindeki eski mahalleye filtre uyguladıysa, o grubun altında göster
+      if (
+        r.imza_sonrasi_adres_degisti &&
+        (r.imza_listesi_mahalle || r.onceki_mahalle) &&
+        selectedMahalleler &&
+        selectedMahalleler.length > 0
+      ) {
+        const oldM = r.imza_listesi_mahalle || r.onceki_mahalle;
+        const normOldM = normalizeMahalleName(oldM) || oldM.toLowerCase();
+        const normSelected = new Set(selectedMahalleler.map((sm) => normalizeMahalleName(sm) || sm.toLowerCase()));
+        const normCur = normalizeMahalleName(m) || m.toLowerCase();
+        if (normSelected.has(normOldM) && !normSelected.has(normCur)) {
+          m = oldM;
+        }
+      }
       if (!groups[m]) {
         groups[m] = [];
       }
@@ -1742,6 +1771,22 @@ export default function BeneficiaryList({
                                   {person.acik_adres}
                                 </span>
                               )}
+                              {person.imza_sonrasi_adres_degisti && (
+                                <div className="mt-1.5 p-2 rounded-lg bg-amber-50 border border-amber-300 text-[11px] text-amber-950 space-y-0.5 shadow-2xs">
+                                  <div className="flex items-center gap-1 font-black text-amber-900 text-[10px] uppercase tracking-wide">
+                                    <FileText className="w-3 h-3 text-amber-700 shrink-0" />
+                                    <span>İmza Listesi / Önceki Adres:</span>
+                                  </div>
+                                  <div className="font-semibold text-slate-800 leading-snug">
+                                    <strong className="text-amber-950">{person.imza_listesi_mahalle || person.onceki_mahalle}</strong>
+                                    {' — '}
+                                    <span>{person.imza_listesi_acik_adres || person.onceki_acik_adres}</span>
+                                  </div>
+                                  <span className="text-[9.5px] text-amber-800 font-semibold block">
+                                    (Çıktı alındıktan sonra güncellendi — Liste bu adreste yer alır)
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </td>
 
@@ -2036,6 +2081,15 @@ export default function BeneficiaryList({
                           {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
                           <span>{listInfo.label}</span>
                         </span>
+                        {person.imza_sonrasi_adres_degisti && (
+                          <span
+                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                            title={`İmza listesi basıldıktan sonra adres güncellendi. Basılı listede "${person.imza_listesi_mahalle || person.onceki_mahalle}" altında yer alır.`}
+                          >
+                            <FileText className="w-3 h-3 text-amber-700" />
+                            <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
+                          </span>
+                        )}
                       </div>
 
                       {/* Sağ Taraf: Durum Rozeti & İmza Rozeti */}
@@ -2139,6 +2193,29 @@ export default function BeneficiaryList({
                           <MapPin className="w-3 h-3 text-blue-600 shrink-0" />
                           <span>Fiili İkamet</span>
                         </span>
+                      )}
+
+                      {/* Islak İmza Listesi Çıktısı Sonrası Önceki Adres Bilgisi */}
+                      {person.imza_sonrasi_adres_degisti && (
+                        <div className="w-full mt-1 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider flex items-center gap-1">
+                              <FileText className="w-3.5 h-3.5 text-amber-700" />
+                              Önceki Adres Kaydı (İmza Listesi Çıktısı)
+                            </span>
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
+                              Listede Bu Adreste
+                            </span>
+                          </div>
+                          <div className="text-xs font-bold text-slate-900 leading-snug">
+                            <strong className="text-amber-950">{person.imza_listesi_mahalle || person.onceki_mahalle}</strong>
+                            {' — '}
+                            <span>{person.imza_listesi_acik_adres || person.onceki_acik_adres}</span>
+                          </div>
+                          <p className="text-[10px] text-amber-800 leading-tight">
+                            İmza listeleri basıldıktan sonra adres değişikliği yapıldığı için bu kayıt basılı klasörde önceki adresine göre yer almaktadır.
+                          </p>
+                        </div>
                       )}
                     </div>
 
@@ -2306,6 +2383,22 @@ export default function BeneficiaryList({
                           <div className="text-[11px] font-bold text-sky-800 flex items-center gap-1 bg-sky-50 p-2 rounded-lg border border-sky-200">
                             <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
                             <span>Fiili İkametgah Adresi Güncellenmiştir {person.son_adres_guncelleme_tarihi && `(${formatTrAuto(person.son_adres_guncelleme_tarihi)})`}</span>
+                          </div>
+                        )}
+                        {person.imza_sonrasi_adres_degisti && (
+                          <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 space-y-1">
+                            <div className="flex items-center gap-1 font-bold text-amber-900 text-[11px]">
+                              <FileText className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                              <span>Basılı Islak İmza Listesindeki Önceki Adres:</span>
+                            </div>
+                            <p className="text-xs font-semibold text-slate-800">
+                              <span className="font-bold text-amber-950">{person.imza_listesi_mahalle || person.onceki_mahalle}</span>
+                              {' — '}
+                              <span>{person.imza_listesi_acik_adres || person.onceki_acik_adres}</span>
+                            </p>
+                            <span className="text-[10px] text-amber-800 italic block">
+                              (Resmi liste çıktısı alındıktan sonra adres güncellendiği için kayıt basılı klasörde bu adrestedir)
+                            </span>
                           </div>
                         )}
                         {person.adres_guncelleme_notu && (

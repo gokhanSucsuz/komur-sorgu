@@ -1411,6 +1411,49 @@ export function compareByAddressAsc(a: any, b: any): number {
 }
 
 /**
+ * Hak sahibinin resmi basılı ıslak imza listelerinde hangi mahalle altında yer alması gerektiğini belirler.
+ * İmza listesi çıktısı alındıktan sonra adres değişikliği yapıldıysa, basılı klasörlerle ve mahalle
+ * listeleriyle karışıklık yaşanmaması için kayıt eski/basılı mahallesinde yer almaya devam eder.
+ */
+export function getBeneficiaryEffectiveListMahalle(record: any): string {
+  if (!record) return 'Genel';
+  if (record.imza_sonrasi_adres_degisti && (record.imza_listesi_mahalle || record.onceki_mahalle)) {
+    return record.imza_listesi_mahalle || record.onceki_mahalle;
+  }
+  return record.mahalle || 'Genel';
+}
+
+/**
+ * Resmi ıslak imza listesi ve mahalle dökümlerinde adres alanını biçimlendirir.
+ * Listelerin çıktısı alındıktan sonra adres değişikliği yapıldıysa, kayıt eski adresine göre
+ * listelerde yer almaya devam eder ve parantez içinde yeni adresi gösterilir:
+ * Örn: "Gül Sokak No: 5 (Yeni Adres: Şükrüpaşa Mah., Atatürk Bulvarı No: 14 Daire: 2)"
+ */
+export function formatSignatureListAddress(record: any): string {
+  if (!record) return '-';
+
+  if (record.imza_sonrasi_adres_degisti) {
+    const oldAddr = (record.imza_listesi_acik_adres || record.onceki_acik_adres || record.acik_adres || '').trim();
+    const newAddr = (record.acik_adres || '').trim();
+    const oldMah = record.imza_listesi_mahalle || record.onceki_mahalle || '';
+    const newMah = record.mahalle || '';
+
+    if (newAddr && oldAddr && newAddr !== oldAddr) {
+      let newDisplay = newAddr;
+      if (newMah && oldMah && normalizeMahalleName(newMah) !== normalizeMahalleName(oldMah)) {
+        if (!newDisplay.toLocaleLowerCase('tr-TR').includes(newMah.toLocaleLowerCase('tr-TR'))) {
+          newDisplay = `${newMah}, ${newDisplay}`;
+        }
+      }
+      return `${oldAddr} (Yeni Adres: ${newDisplay})`;
+    }
+    return oldAddr || record.acik_adres || record.sokak || '-';
+  }
+
+  return record.acik_adres || record.sokak || '-';
+}
+
+/**
  * Natural comparison by Order Number (Sıra No / İmza Listesi Sırası):
  * Ana Liste (0) first: 1, 2, 3...
  * Then Ek 1: Ek1 - 1, Ek1 - 2...
