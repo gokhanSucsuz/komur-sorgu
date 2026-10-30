@@ -283,7 +283,7 @@ function addStyledWorksheet(
  * Resmi Islak İmza Listesi İçin Özel Mahalle Sekmesi Oluşturucu.
  * Kural Gereksinimleri:
  * - Adres A'dan Z'ye sıralı (localeCompare tr numeric)
- * - Kolonlar: Sıra No, Adı Soyadı, T.C. Kimlik No, Telefon, Adres, Teslim Alan Islak İmza
+ * - Kolonlar: Sıra No, Adı Soyadı, T.C. Kimlik No, Telefon, Adres, Teslim Edilen Kömür Miktarı, Teslim Eden Islak İmza, Teslim Tarihi, Teslim Alan Islak İmza
  * - İmza alanı tamamen boş ve ıslak imza atılacak yükseklikte (45pt)
  * - Her sayfa üstten/yandan hizalı ve kenar boşluksuz (0.35in A4 yatay)
  * - Her sayfada kurumsal başlıkların yinelenmesi (printTitlesRow: '1:2')
@@ -329,7 +329,7 @@ function addOfficialSignatureSheet(
 
   // 1. Mahalle Çizelge Başlığı (İlk sayfa [Özet İcmal] dışındaki tüm sayfalarda sadece bu başlık yer alır)
   const titleRow = sheet.addRow([`KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`]);
-  sheet.mergeCells(1, 1, 1, 7);
+  sheet.mergeCells(1, 1, 1, 9);
   titleRow.height = 28;
   titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
   titleRow.font = { name: 'Segoe UI', size: 12.5, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -340,7 +340,17 @@ function addOfficialSignatureSheet(
   };
 
   // 2. Tablo Kolon Başlıkları (Row 2)
-  const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Tarihi', 'Teslim Alan Islak İmza'];
+  const headers = [
+    'Sıra No',
+    'Adı Soyadı',
+    'T.C. Kimlik No',
+    'Telefon',
+    "Adres (A'dan Z'ye Sıralı)",
+    'Teslim Edilen Kömür Miktarı',
+    'Teslim Eden Islak İmza',
+    'Teslim Tarihi',
+    'Teslim Alan Islak İmza',
+  ];
   const headerRow = sheet.addRow(headers);
   headerRow.height = 28;
   headerRow.eachCell((cell, colNum) => {
@@ -381,8 +391,10 @@ function addOfficialSignatureSheet(
       r.tc_no || '-',
       phoneStr,
       r.acik_adres || r.sokak || '-',
+      '34 Torba (Takribi 850kg)',
+      '', // Teslim Eden Islak İmza alanı kural gereği BOŞTUR
       teslimTarihiStr,
-      '', // Islak İmza alanı kural gereği BOŞTUR
+      '', // Teslim Alan Islak İmza alanı kural gereği BOŞTUR
     ];
 
     const dataRow = sheet.addRow(rowData);
@@ -393,7 +405,7 @@ function addOfficialSignatureSheet(
     const zebraBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
 
     dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const isSignatureCol = colNumber === 7;
+      const isSignatureCol = colNumber === 7 || colNumber === 9;
 
       cell.font = {
         name: 'Segoe UI',
@@ -436,6 +448,8 @@ function addOfficialSignatureSheet(
     `Tahsis Kömür Miktarı: ${totalBags} Torba (${(totalBags * 0.025).toFixed(2)} Ton)`,
     '',
     '',
+    '',
+    '',
   ]);
   summaryRow.height = 26;
   summaryRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
@@ -457,12 +471,14 @@ function addOfficialSignatureSheet(
   // Kolon Genişlikleri (A4 Yatay Sayfa Baskısına Tam Uyumlu)
   sheet.columns = [
     { width: 6.5 }, // Sıra No
-    { width: 25 },   // Adı Soyadı
-    { width: 15 },   // TC Kimlik No
-    { width: 16 },   // Telefon
-    { width: 42 },   // Açık Adres
-    { width: 14 },   // Teslim Tarihi
-    { width: 22 },   // Teslim Alan Islak İmza
+    { width: 22 },   // Adı Soyadı
+    { width: 14.5 }, // TC Kimlik No
+    { width: 15 },   // Telefon
+    { width: 34 },   // Açık Adres
+    { width: 18 },   // Teslim Edilen Kömür Miktarı
+    { width: 17 },   // Teslim Eden Islak İmza
+    { width: 13.5 }, // Teslim Tarihi
+    { width: 18 },   // Teslim Alan Islak İmza
   ];
 
   return sheet;
@@ -1558,7 +1574,7 @@ export async function GET(request: NextRequest) {
         emptySheet.addRow([listTitle.toUpperCase()]);
         emptySheet.addRow(['Bu filtreleme kriterine veya imza listesine ait hak sahibi kaydı bulunamadı.']);
         for (let r = 1; r <= 4; r++) {
-          emptySheet.mergeCells(r, 1, r, 6);
+          emptySheet.mergeCells(r, 1, r, 9);
           emptySheet.getRow(r).alignment = { vertical: 'middle', horizontal: 'center' };
         }
         const buf = await workbook.xlsx.writeBuffer();

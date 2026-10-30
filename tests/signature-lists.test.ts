@@ -53,13 +53,33 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     });
 
         const titleRow = sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ÇAVUŞBEY MAH.']);
-    sheet.mergeCells(1, 1, 1, 7);
+    sheet.mergeCells(1, 1, 1, 9);
     titleRow.height = 28;
 
-    const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Tarihi', 'Teslim Alan Islak İmza'];
+    const headers = [
+      'Sıra No',
+      'Adı Soyadı',
+      'T.C. Kimlik No',
+      'Telefon',
+      "Adres (A'dan Z'ye Sıralı)",
+      'Teslim Edilen Kömür Miktarı',
+      'Teslim Eden Islak İmza',
+      'Teslim Tarihi',
+      'Teslim Alan Islak İmza',
+    ];
     sheet.addRow(headers);
 
-    const dataRow = sheet.addRow([1, 'Ahmet Yılmaz', '12345678901', '0555 111 22 33', 'Atatürk Cad. No: 1', '', '']);
+    const dataRow = sheet.addRow([
+      1,
+      'Ahmet Yılmaz',
+      '12345678901',
+      '0555 111 22 33',
+      'Atatürk Cad. No: 1',
+      '34 Torba (Takribi 850kg)',
+      '',
+      '',
+      '',
+    ]);
     dataRow.height = 45;
 
     assert.equal(sheet.pageSetup.paperSize, 9);
@@ -67,10 +87,14 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(sheet.pageSetup.fitToWidth, 1);
     assert.equal(sheet.pageSetup.printTitlesRow, '1:2');
     assert.equal(dataRow.height, 45);
-    // Teslim Tarihi ve İmza alanları
-    assert.equal(headers[5], 'Teslim Tarihi', '6. kolon Teslim Tarihi olmalıdır');
-    assert.equal(headers[6], 'Teslim Alan Islak İmza', '7. kolon Teslim Alan Islak İmza olmalıdır');
-    assert.equal(dataRow.getCell(7).value, '', 'İmza alanı boş olmalıdır');
+    // Kolon kontrolleri
+    assert.equal(headers[5], 'Teslim Edilen Kömür Miktarı', '6. kolon Teslim Edilen Kömür Miktarı olmalıdır');
+    assert.equal(headers[6], 'Teslim Eden Islak İmza', '7. kolon Teslim Eden Islak İmza olmalıdır');
+    assert.equal(headers[7], 'Teslim Tarihi', '8. kolon Teslim Tarihi olmalıdır');
+    assert.equal(headers[8], 'Teslim Alan Islak İmza', '9. kolon Teslim Alan Islak İmza olmalıdır');
+    assert.equal(dataRow.getCell(6).value, '34 Torba (Takribi 850kg)', 'Kömür miktarı 34 Torba (Takribi 850kg) olmalıdır');
+    assert.equal(dataRow.getCell(7).value, '', 'Teslim Eden Islak İmza alanı boş olmalıdır');
+    assert.equal(dataRow.getCell(9).value, '', 'Teslim Alan Islak İmza alanı boş olmalıdır');
 
     const buffer = await workbook.xlsx.writeBuffer();
     assert.ok(buffer.byteLength > 0);
@@ -279,18 +303,30 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(pendingAfter.length, 0, 'Kilitleme sonrası bekleyen kayıt 0 kalmalıdır');
   });
 
-  it('7. Islak imza listesinde imza sütununun öncesinde Teslim Tarihi sütunu yer alır; mahalle/köy listelerinin sonunda dağıtım sorumlusu ve vakıf müdürü imza alanları yer almaz', () => {
+  it('7. Islak imza listesinde teslim tarihi öncesinde Teslim Edilen Kömür Miktarı (34 Torba (Takribi 850kg)), sonrasında Teslim Eden Islak İmza sütunu yer alır', () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('1. FATIH MAH.');
 
-    const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Tarihi', 'Teslim Alan Islak İmza'];
+    const headers = [
+      'Sıra No',
+      'Adı Soyadı',
+      'T.C. Kimlik No',
+      'Telefon',
+      "Adres (A'dan Z'ye Sıralı)",
+      'Teslim Edilen Kömür Miktarı',
+      'Teslim Eden Islak İmza',
+      'Teslim Tarihi',
+      'Teslim Alan Islak İmza',
+    ];
     sheet.addRow(headers);
-    assert.equal(headers[5], 'Teslim Tarihi', 'İmza sütunundan önce Teslim Tarihi sütunu bulunmalıdır');
-    assert.equal(headers[6], 'Teslim Alan Islak İmza');
+    assert.equal(headers[5], 'Teslim Edilen Kömür Miktarı', 'Teslim Tarihi öncesinde kömür miktarı yer almalıdır');
+    assert.equal(headers[6], 'Teslim Eden Islak İmza', 'Kömür miktarı sonrasında Teslim Eden Islak İmza yer almalıdır');
+    assert.equal(headers[7], 'Teslim Tarihi', 'Teslim Tarihi sütunu yer almalıdır');
+    assert.equal(headers[8], 'Teslim Alan Islak İmza', 'Son sütunda Teslim Alan Islak İmza yer almalıdır');
 
-    // Mahalle alt toplam satırı eklenir
-    const summaryRow = sheet.addRow(['', 'TOPLAM: 5 HANE', '', '', 'Tahsis Kömür Miktarı: 170 Torba (4.25 Ton)', '', '']);
-    assert.equal(summaryRow.values.length, 8); // index 0 boşluk + 7 kolon
+    // Mahalle alt toplam satırı eklenir (9 kolon)
+    const summaryRow = sheet.addRow(['', 'TOPLAM: 5 HANE', '', '', 'Tahsis Kömür Miktarı: 170 Torba (4.25 Ton)', '', '', '', '']);
+    assert.equal(summaryRow.values.length, 10); // index 0 boşluk + 9 kolon
 
     // Mahalle/köy sonunda dağıtım sorumlusu veya vakıf müdürü imza bloğu BULUNMAZ
     let foundSignatureBlock = false;
