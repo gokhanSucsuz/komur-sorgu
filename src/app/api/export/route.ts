@@ -322,8 +322,8 @@ function addOfficialSignatureSheet(
       printTitlesRow: '1:2',
     },
     headerFooter: {
-      oddHeader: `&L&B&9T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9RESMİ ISLAK İMZA LİSTESİ - ${mahName.toUpperCase()}`,
-      oddFooter: '&L&8T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8Sayfa &P / &N&R&8Tarih: &D',
+      oddHeader: `&L&B&9 T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9 RESMİ ISLAK İMZA LİSTESİ - ${mahName.toUpperCase()}`,
+      oddFooter: '&L&8 T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8 Sayfa &P / &N&R&8 Tarih: &D',
     },
   });
 
@@ -528,8 +528,7 @@ function addOfficialSignatureSummarySheet(
       printTitlesRow: '1:5',
     },
     headerFooter: {
-      oddHeader: `&L&B&9T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9${listTitle.toUpperCase()}`,
-      oddFooter: '&L&8T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8Sayfa &P / &N&R&8Tarih: &D',
+      oddFooter: '&L&8 T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8 Sayfa &P / &N&R&8 Tarih: &D',
     },
   });
 
