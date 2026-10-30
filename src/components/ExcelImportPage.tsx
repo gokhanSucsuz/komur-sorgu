@@ -331,19 +331,15 @@ export default function ExcelImportPage({
   const handleGenerateSignatureList = async () => {
     if (signatureData.pendingCount === 0 || isGeneratingSignatureList) return;
 
-    // Islak imza listesi çıktısı almadan önce adresi eksik kayıt kontrolü ve uyarısı
+    // Islak imza listesi çıktısı almadan önce adresi eksik kayıt kontrolü - ZORUNLU GÜNCELLEME
     if (signatureData.missingAddressCount && signatureData.missingAddressCount > 0) {
-      const confirmed = await showConfirm({
-        title: `⚠️ Adresi Eksik ${signatureData.missingAddressCount} Hane Bulundu!`,
-        message: `İmza listesi çıkarılacak kayıtlar arasında adresi veya mahallesi belirtilmemiş ${signatureData.missingAddressCount} hane bulunmaktadır.\n\n• Eğer bu hanelerin mahallelerini şimdi girmek isterseniz "Vazgeç" deyip "Adresleri Düzenle" butonuna tıklayabilirsiniz.\n• "Yine de Oluştur" seçeneğiyle devam ederseniz, bu kayıtlar mahalle listelerini bozmamak için imza listesinde "ADRESİ OLMAYANLAR" sekmesinde toplanacaktır.\n\nNasıl devam etmek istersiniz?`,
+      await showAlert({
+        title: '⚠️ Islak İmza Listesi Oluşturulamaz!',
+        message: `Sistemde mahallesi veya açık adresi eksik olan ${signatureData.missingAddressCount} hane bulunmaktadır.\n\nIslak imza listelerinde hiçbir kaydın adresi eksik kalamaz ve liste çıkarılmadan önce tüm adreslerin tamamlanması ZORUNLUDUR.\n\nLütfen açılan pencereden bu ${signatureData.missingAddressCount} hanenin mahalle ve adres bilgilerini güncelleyiniz.`,
         type: 'warning',
-        confirmText: 'Yine de Listeyi Oluştur (Adresi Olmayanlar Sekmesinde Topla)',
-        cancelText: 'Vazgeç (Adresleri Düzenleyeceğim)',
       });
-      if (!confirmed) {
-        setShowMissingAddressModal(true);
-        return;
-      }
+      setShowMissingAddressModal(true);
+      return;
     }
 
     const isFirstList = signatureData.lists.length === 0;
@@ -383,6 +379,15 @@ export default function ExcelImportPage({
 
       const data = await res.json();
       if (!data.success) {
+        if (data.code === 'MISSING_ADDRESSES_MANDATORY_UPDATE' || data.missingAddressCount > 0) {
+          await showAlert({
+            title: '⚠️ Adres Güncellemesi Zorunludur!',
+            message: data.error || 'Sistemde adresi eksik kayıtlar bulunmaktadır. Lütfen önce bu adresleri tamamlayınız.',
+            type: 'warning',
+          });
+          setShowMissingAddressModal(true);
+          return;
+        }
         throw new Error(data.error || 'İmza listesi oluşturulamadı');
       }
 
@@ -1751,6 +1756,39 @@ export default function ExcelImportPage({
           </div>
         )}
 
+        {/* ADRESİ EKSİK KAYITLAR İÇİN ZORUNLU GÜNCELLEME UYARI BANDI */}
+        {signatureData.missingAddressCount && signatureData.missingAddressCount > 0 ? (
+          <div className="p-4 rounded-2xl bg-rose-500/10 border-2 border-rose-500/60 text-rose-950 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <AlertTriangle className="w-5 h-5 text-white" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <strong className="text-sm font-black text-rose-900">
+                    ⚠️ DİKKAT: Mahallesi veya Açık Adresi Eksik {signatureData.missingAddressCount} Hane Bulundu!
+                  </strong>
+                  <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-800 text-[10px] font-black uppercase tracking-wider">
+                    Zorunlu Güncelleme
+                  </span>
+                </div>
+                <p className="text-xs text-rose-800 font-medium leading-tight">
+                  Islak imza listesi çıktısı alınmadan önce bu hanelerin adreslerinin tamamlanması <strong>zorunludur</strong>. Eksik kayıt kalmayıncaya kadar imza listesi oluşturulamaz.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowMissingAddressModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-2 shadow-sm transition-all shrink-0"
+            >
+              <MapPin className="w-4 h-4" />
+              <span>Eksik Adresleri Şimdi Güncelle ({signatureData.missingAddressCount} Hane)</span>
+            </button>
+          </div>
+        ) : null}
+
         {/* Dinamik Eylem ve Bilgilendirme Alanı */}
         {signatureData.pendingCount > 0 ? (
           <div className={`p-4 rounded-xl border-2 space-y-3.5 transition-all ${
@@ -1796,7 +1834,9 @@ export default function ExcelImportPage({
                   <>
                     <Download className="w-4 h-4" />
                     <span>
-                      {signatureData.lists.length === 0
+                      {signatureData.missingAddressCount && signatureData.missingAddressCount > 0
+                        ? `⚠️ Önce Eksik Adresleri Tamamlayınız (${signatureData.missingAddressCount} Hane)`
+                        : signatureData.lists.length === 0
                         ? `Toplu Islak İmza Listesi Oluştur ve İndir (${signatureData.pendingCount} Hane)`
                         : `Yeni Kayıtlar İçin İmza Listesi Oluştur ve İndir (Liste #${signatureData.nextListNo})`}
                     </span>
@@ -3265,6 +3305,21 @@ export default function ExcelImportPage({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ADRESİ EKSİK HAK SAHİPLERİ HIZLI ADRES GÜNCELLEME MODALI */}
+      {showMissingAddressModal && (
+        <MissingAddressModal
+          isOpen={showMissingAddressModal}
+          onClose={() => {
+            setShowMissingAddressModal(false);
+            fetchSignatureData();
+          }}
+          missingBeneficiaries={signatureData.missingAddressBeneficiaries || []}
+          onUpdated={() => {
+            fetchSignatureData();
+          }}
+        />
       )}
     </div>
   );

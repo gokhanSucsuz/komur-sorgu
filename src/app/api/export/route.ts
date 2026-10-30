@@ -382,20 +382,15 @@ function addOfficialSignatureSheet(
   });
 
   // 1. Mahalle Çizelge Başlığı (İlk sayfa [Özet İcmal] dışındaki tüm sayfalarda sadece bu başlık yer alır)
-  const isMissingAddressSheet = mahName === 'ADRESİ OLMAYANLAR';
-  const displayTitle = isMissingAddressSheet
-    ? 'KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ADRESİ BELİRTİLMEYENLER (GÜNCELLEME GEREKLİ)'
-    : `KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`;
-
-  const titleRow = sheet.addRow([displayTitle]);
+  const titleRow = sheet.addRow([`KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`]);
   sheet.mergeCells(1, 1, 1, 9);
   titleRow.height = 28;
   titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
-  titleRow.font = { name: 'Segoe UI', size: isMissingAddressSheet ? 11 : 12.5, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleRow.font = { name: 'Segoe UI', size: 12.5, bold: true, color: { argb: 'FFFFFFFF' } };
   titleRow.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: isMissingAddressSheet ? 'FFB45309' : 'FF1E293B' },
+    fgColor: { argb: 'FF1E293B' },
   };
 
   // 2. Tablo Kolon Başlıkları (Row 2)
@@ -1372,20 +1367,15 @@ export async function GET(request: NextRequest) {
         mahalleGroups.get(m)!.push(r);
       }
 
-      // Sort mahalle names: Mahalleler A-Z first, then Köyler A-Z, and 'ADRESİ OLMAYANLAR' at the end
+      // Sort mahalle names: Mahalleler A-Z first, then Köyler A-Z
       const allMahalleKeys = Array.from(mahalleGroups.keys());
       const onlyMahalles = allMahalleKeys
-        .filter((m) => m !== 'ADRESİ OLMAYANLAR' && !/(?:Köyü|Koy|Koyu)$/i.test(m))
+        .filter((m) => !/(?:Köyü|Koy|Koyu)$/i.test(m))
         .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
       const onlyKoys = allMahalleKeys
-        .filter((m) => m !== 'ADRESİ OLMAYANLAR' && /(?:Köyü|Koy|Koyu)$/i.test(m))
+        .filter((m) => /(?:Köyü|Koy|Koyu)$/i.test(m))
         .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
-      const hasMissingBatchGroup = mahalleGroups.has('ADRESİ OLMAYANLAR');
-      const sortedMahalles = [
-        ...onlyMahalles,
-        ...onlyKoys,
-        ...(hasMissingBatchGroup ? ['ADRESİ OLMAYANLAR'] : [])
-      ];
+      const sortedMahalles = [...onlyMahalles, ...onlyKoys];
 
       const seenSheetNames = new Set<string>();
 
@@ -1672,20 +1662,15 @@ export async function GET(request: NextRequest) {
         mahalleGroups.get(m)!.push(r);
       }
 
-      // Sort mahalle names: Mahalles A-Z first, then Köys A-Z, and 'ADRESİ OLMAYANLAR' at the end
+      // Sort mahalle names: Mahalles A-Z first, then Köys A-Z
       const allMahalleKeys = Array.from(mahalleGroups.keys());
       const onlyMahalles = allMahalleKeys
-        .filter((m) => m !== 'ADRESİ OLMAYANLAR' && !/(?:Köyü|Koy|Koyu)$/i.test(m))
+        .filter((m) => !/(?:Köyü|Koy|Koyu)$/i.test(m))
         .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
       const onlyKoys = allMahalleKeys
-        .filter((m) => m !== 'ADRESİ OLMAYANLAR' && /(?:Köyü|Koy|Koyu)$/i.test(m))
+        .filter((m) => /(?:Köyü|Koy|Koyu)$/i.test(m))
         .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
-      const hasMissingGroup = mahalleGroups.has('ADRESİ OLMAYANLAR');
-      const sortedMahalles = [
-        ...onlyMahalles,
-        ...onlyKoys,
-        ...(hasMissingGroup ? ['ADRESİ OLMAYANLAR'] : [])
-      ];
+      const sortedMahalles = [...onlyMahalles, ...onlyKoys];
 
       const seenSheetNames = new Set<string>();
 

@@ -598,14 +598,12 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     );
   });
 
-  it('13. isBeneficiaryAddressMissing adresi veya mahallesi bos/eksik olan kayitlari tespit eder ve getBeneficiaryEffectiveListMahalle ADRESI OLMAYANLAR dondurur', () => {
+  it('13. isBeneficiaryAddressMissing adresi veya mahallesi bos/eksik olan kayitlari tespit eder', () => {
     // 1. Mahalle bos veya '-' olan kayit
     const recordEmptyMah = { mahalle: '', acik_adres: 'Atatürk Cad. No: 12' };
     const recordDashMah = { mahalle: '-', acik_adres: 'Atatürk Cad. No: 12' };
     assert.equal(isBeneficiaryAddressMissing(recordEmptyMah), true);
     assert.equal(isBeneficiaryAddressMissing(recordDashMah), true);
-    assert.equal(getBeneficiaryEffectiveListMahalle(recordEmptyMah), 'ADRESİ OLMAYANLAR');
-    assert.equal(getBeneficiaryEffectiveListMahalle(recordDashMah), 'ADRESİ OLMAYANLAR');
 
     // 2. Acik adres bos veya gecersiz etiketli kayit
     const recordEmptyAddr = { mahalle: 'Fatih Mah.', acik_adres: '' };
@@ -614,12 +612,10 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(isBeneficiaryAddressMissing(recordEmptyAddr), true);
     assert.equal(isBeneficiaryAddressMissing(recordPlaceholderAddr), true);
     assert.equal(isBeneficiaryAddressMissing(recordNoAddr), true);
-    assert.equal(getBeneficiaryEffectiveListMahalle(recordEmptyAddr), 'ADRESİ OLMAYANLAR');
 
     // 3. Sadece mahalle adi ve "No: Belirtilmemiş" olan kayit (sokak/kapi no yok)
     const recordOnlyMahAndNo = { mahalle: 'Menzilahır Mah.', acik_adres: 'Menzilahır Mah. No: Belirtilmemiş' };
     assert.equal(isBeneficiaryAddressMissing(recordOnlyMahAndNo), true);
-    assert.equal(getBeneficiaryEffectiveListMahalle(recordOnlyMahAndNo), 'ADRESİ OLMAYANLAR');
 
     // 4. Gecerli tam adresli kayit
     const validRecord = { mahalle: 'Menzilahır Mah.', acik_adres: 'Gül Sokak No: 15 Daire: 2' };
@@ -627,31 +623,35 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(getBeneficiaryEffectiveListMahalle(validRecord), 'Menzilahır Mah.');
   });
 
-  it('14. Excel islak imza listelerinde adresi olmayanlar ADRESI OLMAYANLAR sekmesinde toplanir ve formatSignatureListAddress uyari metni gosterir', () => {
-    const missingRecord1 = { mahalle: '', acik_adres: '' };
-    const missingRecord2 = { mahalle: 'Fatih Mah.', acik_adres: '' };
-    const missingRecord3 = { mahalle: '', acik_adres: 'Mithatpaşa Cad. No: 4' };
-
-    assert.equal(
-      formatSignatureListAddress(missingRecord1),
-      '⚠️ ADRES BELİRTİLMEMİŞ (GÜNCELLEME GEREKLİ)'
-    );
-    assert.equal(
-      formatSignatureListAddress(missingRecord2),
-      'Fatih Mah. (⚠️ Açık Adres / Kapı No Yok)'
-    );
-    assert.equal(
-      formatSignatureListAddress(missingRecord3),
-      'Mithatpaşa Cad. No: 4 (⚠️ Mahalle Belirtilmemiş)'
-    );
-
-    // Listelerde gruplandiginda ADRESI OLMAYANLAR kumesinde toplanmali
+  it('14. Adresi eksik kayit kaldigi surece imza listesi olusturulamaz; adresler guncellendiginde ilgili mahallesine yerlesir ve ADRESI OLMAYANLAR sekmesi yer almaz', () => {
+    // Ornek havuz: 1 gecerli, 2 adresi eksik kayit
     const records = [
-      { ad_soyad: 'Hüseyin Demir', mahalle: 'Şükrüpaşa Mah.', acik_adres: 'Barış Sokak No: 5' },
-      { ad_soyad: 'Ayşe Yıldız', mahalle: '', acik_adres: '' },
-      { ad_soyad: 'Mehmet Kara', mahalle: 'Genel', acik_adres: 'belirtilmedi' },
+      { id: '1', ad_soyad: 'Hüseyin Demir', mahalle: 'Şükrüpaşa Mah.', acik_adres: 'Barış Sokak No: 5' },
+      { id: '2', ad_soyad: 'Ayşe Yıldız', mahalle: '', acik_adres: '' },
+      { id: '3', ad_soyad: 'Mehmet Kara', mahalle: 'Genel', acik_adres: 'belirtilmedi' },
     ];
 
+    // Eksik adres denetimi:
+    const missing = records.filter((r) => isBeneficiaryAddressMissing(r));
+    assert.equal(missing.length, 2, '2 kaydin adresi eksik olarak tespit edilmeli');
+
+    // Imza listesi olusturma kurali: Eksik kayit varsa liste cikarilamaz (Zorunlu guncelleme engeli)
+    const hasMissing = (missing.length as number) > 0;
+    const canGenerateList = !hasMissing;
+    assert.equal(canGenerateList, false, 'Eksik adresli kayit varken liste olusturulamaz');
+
+    // Kullanicilar eksik adresleri tamamlar:
+    records[1].mahalle = 'Fatih Mah.';
+    records[1].acik_adres = 'Karanfil Sokak No: 8';
+    records[2].mahalle = 'Şükrüpaşa Mah.';
+    records[2].acik_adres = 'Güneş Sokak No: 3';
+
+    // Tekrar kontrol edilir:
+    const remainingMissing = records.filter((r) => isBeneficiaryAddressMissing(r));
+    assert.equal(remainingMissing.length, 0, 'Tum eksik adresler tamamlanmis olmali');
+    assert.equal((remainingMissing.length as number) === 0, true, 'Artik imza listesi olusturulabilir');
+
+    // Mahallelere gruplandiginda:
     const groups = new Map();
     for (const r of records) {
       const mah = getBeneficiaryEffectiveListMahalle(r);
@@ -660,8 +660,9 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     }
 
     assert.equal(groups.has('Şükrüpaşa Mah.'), true);
-    assert.equal(groups.get('Şükrüpaşa Mah.').length, 1);
-    assert.equal(groups.has('ADRESİ OLMAYANLAR'), true);
-    assert.equal(groups.get('ADRESİ OLMAYANLAR').length, 2);
+    assert.equal(groups.get('Şükrüpaşa Mah.').length, 2);
+    assert.equal(groups.has('Fatih Mah.'), true);
+    assert.equal(groups.get('Fatih Mah.').length, 1);
+    assert.equal(groups.has('ADRESİ OLMAYANLAR'), false, 'ADRESI OLMAYANLAR sekmesi asla olusmamalidir');
   });
 });

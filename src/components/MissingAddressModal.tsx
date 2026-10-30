@@ -168,7 +168,7 @@ export default function MissingAddressModal({
         <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 flex items-start gap-2.5 shrink-0">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed font-medium">
-            Aşağıdaki kayıtların adres bilgisi Excel dosyasında boş bırakılmış veya eksik girilmiştir. Buradan vatandaşların hangi mahallede ikamet ettiğini ve açık adresini seçip kaydederseniz, kayıtlar <strong>kendi mahallesinin ıslak imza listesine</strong> dahil edilir. Güncellenmeyen kayıtlar ise imza listesi Excel dosyasında <strong>&quot;ADRESİ OLMAYANLAR&quot;</strong> sekmesinde toplanacaktır.
+            Aşağıdaki kayıtların adres bilgisi Excel dosyasında boş bırakılmış veya eksik girilmiştir. <strong>Islak imza listesi oluşturulabilmesi için bu hanelerin mahalle ve açık adreslerinin sisteme girilmesi ZORUNLUDUR.</strong> Eksik adresli kayıt kaldığı sürece ıslak imza listesi oluşturulamaz. Lütfen her hanenin mahalle/köy ve açık adres bilgilerini seçip &quot;Kaydet&quot; butonuna basınız.
           </p>
         </div>
 

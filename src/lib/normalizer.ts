@@ -1478,15 +1478,12 @@ export function isBeneficiaryAddressMissing(record: any): boolean {
 }
 
 export function getBeneficiaryEffectiveListMahalle(record: any): string {
-  if (!record) return 'ADRESİ OLMAYANLAR';
-  if (isBeneficiaryAddressMissing(record)) {
-    return 'ADRESİ OLMAYANLAR';
-  }
+  if (!record) return 'Genel';
   if (record.imza_sonrasi_adres_degisti && (record.imza_listesi_mahalle || record.onceki_mahalle)) {
     const effectiveOld = record.imza_listesi_mahalle || record.onceki_mahalle;
-    return effectiveOld || 'ADRESİ OLMAYANLAR';
+    return effectiveOld || record.mahalle || 'Genel';
   }
-  return record.mahalle || 'ADRESİ OLMAYANLAR';
+  return record.mahalle || 'Genel';
 }
 
 /**
@@ -1497,18 +1494,6 @@ export function getBeneficiaryEffectiveListMahalle(record: any): string {
  */
 export function formatSignatureListAddress(record: any): string {
   if (!record) return '-';
-
-  if (isBeneficiaryAddressMissing(record)) {
-    const rawAddr = (record.acik_adres || '').trim();
-    const rawMah = (record.mahalle || '').trim();
-    if (rawAddr && rawAddr !== '-' && !rawAddr.toLowerCase().includes('belirtilme') && !rawAddr.toLowerCase().includes('eksik')) {
-      return `${rawAddr} (⚠️ Mahalle Belirtilmemiş)`;
-    }
-    if (rawMah && rawMah !== '-' && !rawMah.toLowerCase().includes('genel') && !rawMah.toLowerCase().includes('belirtilme')) {
-      return `${rawMah} (⚠️ Açık Adres / Kapı No Yok)`;
-    }
-    return '⚠️ ADRES BELİRTİLMEMİŞ (GÜNCELLEME GEREKLİ)';
-  }
 
   if (record.imza_sonrasi_adres_degisti) {
     const oldAddr = (record.imza_listesi_acik_adres || record.onceki_acik_adres || record.acik_adres || '').trim();

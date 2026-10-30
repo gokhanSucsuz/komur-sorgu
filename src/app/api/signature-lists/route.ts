@@ -165,7 +165,16 @@ export async function POST(request: NextRequest) {
       };
 
       const unassignedDocs = await benCol
-        .find(unassignedFilter, { projection: { _id: 1, id: 1, mahalle: 1 } })
+        .find(unassignedFilter)
+        .project({
+          _id: 1,
+          id: 1,
+          mahalle: 1,
+          acik_adres: 1,
+          ad_soyad: 1,
+          tc_no: 1,
+          telefon: 1,
+        })
         .toArray();
 
       if (unassignedDocs.length === 0) {
@@ -173,6 +182,36 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             error: 'İmza listesi çıkarılacak bekleyen YENİ kayıt bulunamadı. Tüm hak sahipleri zaten mevcut bir imza listesine atanmış durumda.',
+          },
+          { status: 400 }
+        );
+      }
+
+      // KURAL: Islak imza listesi çıkarılmadan önce TÜM bekleyen kayıtların adresi ve mahallesi tam olmalıdır!
+      // Adresi olmayanlar listesi oluşturulmaz; adresi eksik kayıtların adreslerinin güncellenmesi ZORUNLUDUR.
+      const missingRecords: any[] = [];
+      for (const doc of unassignedDocs) {
+        const decrypted = decryptBeneficiary(doc);
+        if (isBeneficiaryAddressMissing(decrypted)) {
+          missingRecords.push({
+            id: decrypted.id || decrypted._id.toString(),
+            tc_no: decrypted.tc_no || '',
+            ad_soyad: decrypted.ad_soyad || '',
+            mahalle: decrypted.mahalle || '',
+            acik_adres: decrypted.acik_adres || '',
+            telefon: decrypted.telefon || '',
+          });
+        }
+      }
+
+      if (missingRecords.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Islak imza listesi oluşturulamaz! Mahallesi veya açık adresi eksik olan ${missingRecords.length} hane bulunmaktadır. Islak imza listesi çıkarılmadan önce tüm kayıtların mahalle ve adres bilgilerinin sisteme girilmesi ZORUNLUDUR.`,
+            code: 'MISSING_ADDRESSES_MANDATORY_UPDATE',
+            missingAddressCount: missingRecords.length,
+            missingAddressBeneficiaries: missingRecords,
           },
           { status: 400 }
         );
