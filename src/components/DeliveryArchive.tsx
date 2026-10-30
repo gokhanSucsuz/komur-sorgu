@@ -522,8 +522,8 @@ export default function DeliveryArchive({
 
               <button
                 type="button"
-                onClick={() => setPrintCancelGroup({ items: filteredCancelled })}
-                disabled={filteredCancelled.length === 0}
+                onClick={() => setPrintCancelGroup({ items: filteredCancelled.length > 0 ? filteredCancelled : cancelledItems })}
+                disabled={cancelledItems.length === 0}
                 className="px-3.5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs disabled:opacity-50 cursor-pointer"
                 title="İptal edilen teslimatların resmi toplu tutanağını yazdır veya PDF olarak kaydet"
               >
@@ -673,8 +673,7 @@ export default function DeliveryArchive({
                     <span>TUTANAK</span>
                   </div>
                 </div>
-                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
-                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">Bu tutanak, {printDayGroup.isBulk ? <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihine kadar</span> : <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde</span>} Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri{deliveryStaffList.length > 0 ? ` (${deliveryStaffList.join(', ')})` : ''} tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.</p>
+                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">Bu tutanak, {printDayGroup.isBulk ? <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihine kadar</span> : <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde</span>} Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri{deliveryStaffList.length > 0 ? ` (${deliveryStaffList.join(', ')})` : ''} tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
                 </p>
               </div>
 
@@ -790,6 +789,205 @@ export default function DeliveryArchive({
                   type="button"
                   onClick={() => window.print()}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                  title="Yazıcıdan çıktı al veya PDF olarak kaydet"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Yazdır / PDF Kaydet</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* İPTAL EDİLEN TESLİMATLAR TOPLU TUTANAĞI MODALI */}
+      {printCancelGroup && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="report-modal-overlay fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setPrintCancelGroup(null);
+            }
+          }}
+        >
+          <div className="report-modal-card relative bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] max-h-[92vh] flex flex-col shadow-2xl border border-rose-300 overflow-hidden z-10">
+            {/* Modal Header */}
+            <div className="report-modal-header shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-rose-200 flex items-center justify-between bg-rose-50 z-20 no-print">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="truncate">
+                  <h3 className="text-xs sm:text-sm md:text-base font-black text-rose-950 truncate">
+                    İptal Edilen Kömür Teslimatları Toplu Tutanağı
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-rose-800 font-semibold flex items-center gap-1.5 flex-wrap">
+                    <span>Toplam İptal: <strong className="text-rose-900 font-black">{printCancelGroup.items.length} Hane</strong></span>
+                    <span>•</span>
+                    <span>Toplam Torba: <strong className="text-rose-900 font-black">{printCancelGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 34), 0)} Torba</strong></span>
+                    <span>•</span>
+                    <span><strong className="text-rose-950">{(printCancelGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 34), 0) * 0.025).toFixed(2)} Ton</strong></span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintCancelGroup(null)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-200 hover:bg-rose-300 text-rose-900 text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                  title="Pencereyi Kapat (ESC)"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">Kapat (ESC)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable Content */}
+            <div 
+              className="report-modal-body flex-1 min-h-0 overflow-y-auto overflow-x-auto p-3.5 sm:p-6 pb-14 space-y-4 text-xs text-slate-800 bg-white" 
+              id="printableCancelReport"
+              style={{ overscrollBehavior: 'contain' }}
+            >
+              {/* Official Institutional Header */}
+              <div className="p-3 sm:p-4 rounded-2xl bg-white border border-rose-300 text-center space-y-1 shadow-2xs">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-rose-900 gap-2">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
+                    <img
+                      src="/edirne-sydv-logo.png"
+                      alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
+                      width={48}
+                      height={48}
+                      className="print-logo-img"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  </div>
+                  <div className="text-center flex-1 px-1 sm:px-3 min-w-0">
+                    <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
+                      T.C. EDİRNE VALİLİĞİ
+                    </p>
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900 uppercase">
+                      EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI
+                    </h2>
+                    <h3 className="text-[11px] sm:text-xs font-bold text-rose-800 uppercase mt-0.5">
+                      İPTAL EDİLEN KÖMÜR TESLİMATLARI RESMİ TUTANAĞI
+                    </h3>
+                  </div>
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex flex-col items-center justify-center border-2 border-rose-600 rounded-lg text-[7px] sm:text-[8px] font-black text-rose-800 leading-tight">
+                    <span>İPTAL</span>
+                    <span>TUTANAĞI</span>
+                  </div>
+                </div>
+                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
+                  Bu tutanak, hata, adres uyuşmazlığı, mükerrer kayıt veya tutanak gereği iptal edilen toplam <strong>{printCancelGroup.items.length} hane</strong> ve <strong>{printCancelGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 34), 0)} torba</strong> kömür teslimat kaydını içermektedir.
+                </p>
+              </div>
+
+              {/* Table of cancelled items */}
+              <div className="overflow-x-auto rounded-xl sm:rounded-2xl border border-rose-200">
+                <table className="w-full text-left text-xs border-collapse table-auto">
+                  <thead>
+                    <tr className="bg-rose-100/70 text-rose-950 font-extrabold border-b border-rose-200">
+                      <th className="py-2 px-2 text-center w-8">#</th>
+                      <th className="py-2 px-2 w-28">TC Kimlik</th>
+                      <th className="py-2 px-2 w-36">Adı Soyadı</th>
+                      <th className="py-2 px-2">Mahalle / Açık Adres</th>
+                      <th className="py-2 px-2 text-center w-14">İptal Torba</th>
+                      <th className="py-2 px-2 text-center w-24">İptal Tarihi</th>
+                      <th className="py-2 px-2 w-28">İşlemi Yapan</th>
+                      <th className="py-2 px-2">İptal Gerekçesi / Tutanak</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-100">
+                    {printCancelGroup.items.map((item: any, idx: number) => {
+                      const dateOnlyStr = formatTrDate(item.gun_tarihi || (item.tarih ? item.tarih.split(' ')[0] : '')) || (item.gun_tarihi || '-');
+                      return (
+                        <tr key={item.id} className="hover:bg-rose-50/50">
+                          <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
+                          <td className="py-2 px-2 font-mono font-bold text-rose-900 truncate">{item.tc_no}</td>
+                          <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
+                          <td className="py-2 px-2 text-slate-600 break-words">
+                            <strong className="text-slate-800 block">{item.mahalle}</strong>
+                            {item.acik_adres && <span className="block text-[11px] text-slate-500 line-clamp-2">{item.acik_adres}</span>}
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className="font-black text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded text-[11px]">
+                              {item.torba_sayisi || 34}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-center font-semibold text-slate-800">{dateOnlyStr}</td>
+                          <td className="py-2 px-2 font-medium text-slate-700 break-words">{item.personel || '-'}</td>
+                          <td className="py-2 px-2 text-rose-900 font-medium italic break-words">{item.iptal_nedeni || item.notlar || 'Gerekçe belirtilmedi'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Sign-off area */}
+              <div className="pt-4 border-t border-slate-200 print-signatures-container">
+                <div className="text-center mb-2.5">
+                  <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-500">
+                    RESMİ İPTAL TUTANAĞI VE ONAY ALANI
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 print-signatures">
+                  <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-300 flex flex-col justify-between text-center min-h-[110px] shadow-2xs">
+                    <div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">İptal İşlemini Yapan Personel</span>
+                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1.5">Saha Dağıtım Ekibi</p>
+                    </div>
+                    <div className="mt-4 pt-2.5 border-t border-dashed border-slate-300">
+                      <span className="text-[10px] sm:text-[11px] text-slate-400 font-bold italic">İmza</span>
+                    </div>
+                  </div>
+                  <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-300 flex flex-col justify-between text-center min-h-[110px] shadow-2xs">
+                    <div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Kontrol Eden / İnceleme Görevlisi</span>
+                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1.5">Sosyal İnceleme Servisi</p>
+                    </div>
+                    <div className="mt-4 pt-2.5 border-t border-dashed border-slate-300">
+                      <span className="text-[10px] sm:text-[11px] text-slate-400 font-bold italic">İmza</span>
+                    </div>
+                  </div>
+                  <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-300 flex flex-col justify-between text-center min-h-[110px] shadow-2xs">
+                    <div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Vakıf Müdürü / Onay</span>
+                      <p className="text-xs sm:text-sm font-black text-slate-900 mt-1.5">Edirne SYDV Başkanlığı</p>
+                    </div>
+                    <div className="mt-4 pt-2.5 border-t border-dashed border-slate-300">
+                      <span className="text-[10px] sm:text-[11px] text-slate-400 font-bold italic">İmza / Mühür</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="report-modal-footer shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-t border-rose-200 bg-rose-50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-20 shadow-sm">
+              <a
+                href="/api/export?type=cancellations"
+                download="Edirne_SYDV_Iptal_Edilen_Teslimatlar_Listesi.xlsx"
+                className="px-3.5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+              >
+                <Download className="w-4 h-4" />
+                <span>İptal Listesi İndir (Excel)</span>
+              </a>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintCancelGroup(null)}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs font-bold transition-all active:scale-95 shadow-2xs cursor-pointer"
+                >
+                  Kapat (ESC)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
                   title="Yazıcıdan çıktı al veya PDF olarak kaydet"
                 >
                   <Printer className="w-4 h-4" />
