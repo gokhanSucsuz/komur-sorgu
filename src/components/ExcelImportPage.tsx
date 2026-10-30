@@ -273,6 +273,9 @@ export default function ExcelImportPage({
     lists: any[];
     missingAddressCount?: number;
     missingAddressBeneficiaries?: MissingAddressBeneficiary[];
+    ekKomurVerilenCount?: number;
+    ekKomurVerilenTorba?: number;
+    ekKomurVerilenBeneficiaries?: any[];
   }>({
     pendingCount: 0,
     pendingMahalleCount: 0,
@@ -283,6 +286,9 @@ export default function ExcelImportPage({
     lists: [],
     missingAddressCount: 0,
     missingAddressBeneficiaries: [],
+    ekKomurVerilenCount: 0,
+    ekKomurVerilenTorba: 0,
+    ekKomurVerilenBeneficiaries: [],
   });
   const [isLoadingSignatureData, setIsLoadingSignatureData] = useState<boolean>(false);
   const [isGeneratingSignatureList, setIsGeneratingSignatureList] = useState<boolean>(false);
@@ -321,6 +327,9 @@ export default function ExcelImportPage({
           lists: data.lists || [],
           missingAddressCount: data.missingAddressCount || (data.missingAddressBeneficiaries?.length ?? 0),
           missingAddressBeneficiaries: data.missingAddressBeneficiaries || [],
+          ekKomurVerilenCount: data.ekKomurVerilenCount || 0,
+          ekKomurVerilenTorba: data.ekKomurVerilenTorba || 0,
+          ekKomurVerilenBeneficiaries: data.ekKomurVerilenBeneficiaries || [],
         });
       }
     } catch (err) {
@@ -1674,8 +1683,8 @@ export default function ExcelImportPage({
           </div>
         </div>
 
-        {/* 3'lü İstatistik Özeti */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* 4'lü İstatistik Özeti */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-slate-500 uppercase">Toplam Hak Sahibi</span>
@@ -1713,6 +1722,19 @@ export default function ExcelImportPage({
               </p>
             </div>
             <Sparkles className={`w-7 h-7 ${signatureData.pendingCount > 0 ? 'text-amber-600 animate-pulse' : 'text-slate-400'}`} />
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-indigo-50/90 border border-indigo-200 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-indigo-700 uppercase">Ek Kömür (Manuel İmza)</span>
+              <p className="text-xl font-black text-indigo-900">
+                {signatureData.ekKomurVerilenCount || 0}
+                <span className="text-xs font-semibold text-indigo-700 ml-1.5 opacity-80">
+                  ({signatureData.ekKomurVerilenTorba || 0} Torba)
+                </span>
+              </p>
+            </div>
+            <PenLine className="w-7 h-7 text-indigo-600" />
           </div>
         </div>
 
@@ -1925,6 +1947,40 @@ export default function ExcelImportPage({
           </div>
         </div>
 
+        {/* EK KÖMÜR VERİLENLER (MANUEL EK LİSTE İMZALI) BİLGİ VE İNDİRME ALANI */}
+        {(signatureData.ekKomurVerilenCount || 0) > 0 && (
+          <div className="p-4 rounded-xl bg-indigo-50/80 border-2 border-indigo-200 text-indigo-950 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center shrink-0 border border-indigo-300">
+                <PenLine className="w-5 h-5 text-indigo-700" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <strong className="text-xs sm:text-sm font-black text-indigo-950">
+                    Ek Kömür Verilenler (Manuel Islak İmza Listesi): {signatureData.ekKomurVerilenCount} Hane
+                  </strong>
+                  <span className="px-2 py-0.5 rounded bg-indigo-200 text-indigo-900 text-[10px] font-extrabold uppercase">
+                    {signatureData.ekKomurVerilenTorba || 0} Torba Teslim
+                  </span>
+                </div>
+                <p className="text-[11px] text-indigo-800 leading-tight">
+                  Islak imza listeleri çıkarıldıktan sonra eklenen ve teslimatı yapılan bu hanelerin ıslak imzaları elden manuel ek listeye alınmıştır.
+                </p>
+              </div>
+            </div>
+
+            <a
+              href={`/api/export?type=ek_komur_verilenler&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+              download="Edirne_SYDV_Ek_Komur_Verilenler_Listesi.xlsx"
+              className="px-3.5 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-800 active:scale-95 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition-all shrink-0"
+              title="Ek kömür verilenler resmi listesini Excel olarak indir"
+            >
+              <Download className="w-4 h-4 text-white" />
+              <span>Ek Kömür İmza Listesi İndir (Excel)</span>
+            </a>
+          </div>
+        )}
+
         {/* GEÇMİŞTE OLUŞTURULAN İMZA LİSTELERİ ARŞİVİ */}
         {signatureData.lists.length > 0 && (
           <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -1943,6 +1999,17 @@ export default function ExcelImportPage({
                   <Download className="w-3.5 h-3.5" />
                   <span>Tüm Listeleri Tek Dosyada İndir (Genel Arşiv)</span>
                 </a>
+                {(signatureData.ekKomurVerilenCount || 0) > 0 && (
+                  <a
+                    href={`/api/export?type=ek_komur_verilenler&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+                    download="Edirne_SYDV_Ek_Komur_Verilenler_Listesi.xlsx"
+                    className="text-[11px] font-extrabold text-amber-700 hover:text-amber-900 hover:underline flex items-center gap-1"
+                    title="Ek kömür teslim edilenler resmi ıslak imza tutanağını Excel olarak indir"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Ek Kömür Listesi İndir ({signatureData.ekKomurVerilenCount} Hane)</span>
+                  </a>
+                )}
                 {signatureData.lists.length > 1 && (
                   <button
                     type="button"

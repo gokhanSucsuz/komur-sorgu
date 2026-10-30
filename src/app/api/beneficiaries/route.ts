@@ -446,6 +446,7 @@ export async function POST(request: NextRequest) {
       systemSettings,
       importBatches: batchesCol,
       archivedImportBatches,
+      signatureLists,
     } = await getDbCollections();
     const body = await request.json();
     const {
@@ -876,7 +877,13 @@ export async function POST(request: NextRequest) {
       uyarilarList.push(`Saha Ekleme Notu: ${String(ekleme_notu).trim()}`);
     }
 
+    const existingSigListCount = signatureLists ? await signatureLists.countDocuments({}) : 0;
+    const isAddedAfterSignatureLists = existingSigListCount > 0;
     const isSignedAtDoor = Boolean(imza_alindi);
+    const dateFormatted = nowStr.split(' ')[0] || '';
+    const ekListeImzaNotuAtAdd = (isSignedAtDoor && isAddedAfterSignatureLists)
+      ? `${dateFormatted} tarihinde ek listeye imzası alındı`
+      : null;
     const resolvedBatchId = attachedBatch
       ? attachedBatch.batch_id || attachedBatch.id || String(attachedBatch._id)
       : batch_id
@@ -908,6 +915,12 @@ export async function POST(request: NextRequest) {
       imza_durumu: isSignedAtDoor ? 'IMZALANDI' : 'BEKLIYOR',
       imza_tarihi: isSignedAtDoor ? nowStr : null,
       imza_alan_personel: isSignedAtDoor ? creatorName : null,
+      tekil_hane_ekleme: true,
+      sonradan_eklenen_hane: isAddedAfterSignatureLists,
+      manuel_ek_liste_imzasi: isSignedAtDoor && isAddedAfterSignatureLists,
+      ek_komur_verildi: false,
+      ek_liste_imza_tarihi: isSignedAtDoor ? nowStr : null,
+      ek_liste_imza_notu: ekListeImzaNotuAtAdd,
       sira_no: siraNo,
       mahalle_sira: mahalleSira,
       liste_turu: selectedListType,

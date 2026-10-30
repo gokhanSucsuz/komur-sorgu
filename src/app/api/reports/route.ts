@@ -42,13 +42,26 @@ export async function GET(request: NextRequest) {
     let bekleyenHane = 0;
     let dagitilanTorba = 0;
     let hedefTorba = 0;
+    let ekKomurVerilenHane = 0;
+    let ekKomurVerilenTorba = 0;
 
     for (const b of filteredBeneficiaries) {
       const d = b.teslimat_durumu;
-      if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
+      const isDelivered = d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI';
+      const isEkKomur = Boolean(b.ek_komur_verildi || b.manuel_ek_liste_imzasi);
+
+      if (isDelivered) {
         tamHane += 1;
+        if (isEkKomur) {
+          ekKomurVerilenHane += 1;
+          ekKomurVerilenTorba += Number(b.torba_sayisi || 0);
+        }
       } else if (d === 'EKSIK') {
         eksikHane += 1;
+        if (isEkKomur) {
+          ekKomurVerilenHane += 1;
+          ekKomurVerilenTorba += Number(b.torba_sayisi || 0);
+        }
       } else {
         bekleyenHane += 1;
       }
@@ -56,6 +69,8 @@ export async function GET(request: NextRequest) {
       dagitilanTorba += Number(b.torba_sayisi || 0);
       hedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
     }
+
+    const ekKomurVerilenTonaj = parseFloat((ekKomurVerilenTorba * 0.025).toFixed(3));
 
     const eksikTorba = Math.max(0, hedefTorba - dagitilanTorba);
     const dagitilanTonaj = parseFloat((dagitilanTorba * 0.025).toFixed(3));
@@ -514,6 +529,22 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.toplamTorba - a.toplamTorba);
 
+    const ekKomurListesi = filteredBeneficiaries
+      .filter((b) => (b.ek_komur_verildi || b.manuel_ek_liste_imzasi) && (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI' || b.teslimat_durumu === 'EKSIK'))
+      .map((b) => ({
+        id: b.id || b._id,
+        tc_no: b.tc_no,
+        ad_soyad: b.ad_soyad,
+        mahalle: b.mahalle,
+        adres: b.adres,
+        torba_sayisi: b.torba_sayisi,
+        teslimat_durumu: b.teslimat_durumu,
+        teslimat_tarihi: b.teslimat_tarihi,
+        teslim_eden_personel: b.teslim_eden_personel,
+        ek_liste_imza_notu: b.ek_liste_imza_notu,
+        ek_liste_imza_tarihi: b.ek_liste_imza_tarihi,
+      }));
+
     return NextResponse.json({
       success: true,
       reportData: {
@@ -531,6 +562,9 @@ export async function GET(request: NextRequest) {
           hedefTonaj,
           eksikTonaj,
           tamamlamaYuzdesi,
+          ekKomurVerilenHane,
+          ekKomurVerilenTorba,
+          ekKomurVerilenTonaj,
           kalanStokTonaj,
           fazlaDagitilanTonaj,
           fazlaDagitilanKg,
@@ -552,6 +586,7 @@ export async function GET(request: NextRequest) {
         },
         dailyBreakdown,
         eksikHaneler,
+        ekKomurListesi,
         mahalleStats,
         sokakStats,
         batchStats,

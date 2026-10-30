@@ -28,15 +28,19 @@ export default function DeliveryArchive({
   const [selectedDay, setSelectedDay] = useState<string>('ALL');
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [printDayGroup, setPrintDayGroup] = useState<any | null>(null);
+  const [printCancelGroup, setPrintCancelGroup] = useState<any | null>(null);
+  const [deliveryViewMode, setDeliveryViewMode] = useState<'GUNLUK' | 'TOPLU'>('GUNLUK');
+  const [cumulativeDate, setCumulativeDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
 
   // ESC tuşu ve overlay ile yazdırma modalını güvenli kapatma (ekran kilitlenmesini önler)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setPrintCancelGroup(null);
         setPrintDayGroup(null);
       }
     };
-    if (printDayGroup) {
+    if (printDayGroup || printCancelGroup) {
       window.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
     } else {
@@ -46,7 +50,7 @@ export default function DeliveryArchive({
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [printDayGroup]);
+  }, [printDayGroup, printCancelGroup]);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
   const todayRecords = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT' && r.gun_tarihi === todayStr);
@@ -68,6 +72,7 @@ export default function DeliveryArchive({
   // Filter cancelled items
   const cancelledItems = allRecords.filter((r) => r.islem_tipi === 'IPTAL');
 
+
   // Filter delivered items
   const deliveredItems = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT');
 
@@ -83,6 +88,23 @@ export default function DeliveryArchive({
     if (!searchQuery) return true;
     return isBirebirBeneficiaryMatch(r, searchQuery);
   });
+
+  // Cumulative (O tarihe kadar olan) teslimatlar
+  const cumulativeItems = useMemo(() => {
+    return deliveredItems.filter((item) => {
+      if (cumulativeDate && item.gun_tarihi > cumulativeDate) return false;
+      if (!searchQuery) return true;
+      return isBirebirBeneficiaryMatch(item, searchQuery);
+    });
+  }, [deliveredItems, cumulativeDate, searchQuery]);
+
+  const cumulativeTorba = useMemo(() => {
+    return cumulativeItems.reduce((acc, curr) => acc + (curr.torba_sayisi || 0), 0);
+  }, [cumulativeItems]);
+
+  const cancelledTotalBags = useMemo(() => {
+    return filteredCancelled.reduce((acc, curr) => acc + (curr.torba_sayisi || 34), 0);
+  }, [filteredCancelled]);
 
   // Re-group filtered deliveries by date
   const filteredGroupedDays = groupedDays.map((group) => ({
@@ -160,6 +182,90 @@ export default function DeliveryArchive({
           <span>İptal Edilenler ({cancelledItems.length})</span>
         </button>
       </div>
+
+      {/* TOPLU TESLİMAT & O TARİHE KADAR LİSTE ALMA SEÇENEĞİ */}
+      {subTab === 'DELIVERIES' && (
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 shadow-md space-y-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-xs shrink-0">
+                <PackageCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">
+                    Toplu Teslimat ve Arşiv
+                  </span>
+                  <h4 className="text-sm font-black text-white">
+                    O Tarihe Kadar Yapılan Teslimatlar
+                  </h4>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5 font-medium">
+                  Seçtiğiniz tarihe kadar kömür teslim edilen tüm hanelerin toplu teslimat tutanağını ve Excel listesini alın.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 px-2.5 py-1.5 rounded-xl">
+                <span className="text-[11px] font-bold text-slate-300">Tarih:</span>
+                <input
+                  type="date"
+                  value={cumulativeDate}
+                  onChange={(e) => setCumulativeDate(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 text-white rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintDayGroup({
+                    isBulk: true,
+                    title: `${formatTrDate(cumulativeDate)} Tarihine Kadar Toplu Kömür Teslimat Tutanağı`,
+                    gun_tarihi: cumulativeDate,
+                    items: cumulativeItems,
+                  });
+                }}
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
+                title="Seçili tarihe kadar olan tüm teslimatların resmi tutanağını yazdır veya PDF olarak kaydet"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>Toplu Tutanağı Yazdır ({cumulativeItems.length} Hane)</span>
+              </button>
+
+              <a
+                href={`/api/export?type=daily_deliveries&endDate=${cumulativeDate}`}
+                download={`Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${cumulativeDate}.xlsx`}
+                className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
+                title="Seçili tarihe kadar teslim edilenleri Excel olarak indir"
+              >
+                <Download className="w-4 h-4 shrink-0" />
+                <span>Toplu Liste (Excel)</span>
+              </a>
+
+              <a
+                href="/api/export?type=daily_deliveries&date=ALL"
+                download="Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_Tum_Gunler.xlsx"
+                className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                title="Sistemdeki tüm teslimatları tek Excel dosyasında indir"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Tüm Günler Arşivi</span>
+              </a>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between flex-wrap gap-2">
+            <span>
+              <strong>{formatTrDate(cumulativeDate)}</strong> tarihine kadar: <strong className="text-amber-400 font-black">{cumulativeItems.length} Hane</strong> kömürünü teslim aldı.
+            </span>
+            <span>
+              Toplam Dağıtılan: <strong className="text-emerald-400 font-bold">{cumulativeTorba} Torba</strong> ({(cumulativeTorba * 0.025).toFixed(2)} Ton)
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Today's Delivery Fast Actions Banner */}
       {subTab === 'DELIVERIES' && todayRecords.length > 0 && (
@@ -354,6 +460,13 @@ export default function DeliveryArchive({
                               </div>
                             </div>
 
+                            {(item.manuel_ek_liste_imzasi || item.ek_komur_verildi || item.ek_liste_imza_notu) && (
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                                <span>📝</span>
+                                <span>{item.ek_liste_imza_notu || (item.tarih ? `${item.tarih} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}</span>
+                              </div>
+                            )}
+
                             {/* Details row & Cancel Button */}
                             <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-slate-600">
                               <div className="truncate">
@@ -387,11 +500,47 @@ export default function DeliveryArchive({
       {/* VIEW 2: İptal Edilen Teslimatlar Sayfası - Light Mode */}
       {subTab === 'CANCELLATIONS' && (
         <div className="space-y-3">
-          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2 font-medium">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>
-              Bu sayfada daha önce yapılan fakat hata veya tutanak nedeniyle iptal edilen tüm teslimatlar arşivlenmektedir.
-            </span>
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-50 border-2 border-rose-200 text-rose-950 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-rose-950">
+                  İptal Edilen Teslimatlar Arşivi ({filteredCancelled.length} Kayıt)
+                </h4>
+                <p className="text-[11px] text-rose-800 font-medium mt-0.5">
+                  Hata veya tutanak nedeniyle iptal edilen teslimatları görüntüleyin, toplu tutanak çıktısı alın veya Excel olarak indirin.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <span className="text-xs font-bold text-rose-800 bg-rose-100/80 px-2.5 py-1.5 rounded-xl border border-rose-300">
+                Toplam {cancelledTotalBags} Torba İptal
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setPrintCancelGroup({ items: filteredCancelled })}
+                disabled={filteredCancelled.length === 0}
+                className="px-3.5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 shadow-xs disabled:opacity-50 cursor-pointer"
+                title="İptal edilen teslimatların resmi toplu tutanağını yazdır veya PDF olarak kaydet"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>İptal Tutanağını Yazdır</span>
+              </button>
+
+              <a
+                href="/api/export?type=cancellations"
+                download="Edirne_SYDV_Iptal_Edilen_Teslimatlar_Listesi.xlsx"
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+                title="İptal edilen teslimatların listesini Excel olarak indir"
+              >
+                <Download className="w-4 h-4 shrink-0" />
+                <span>İptal Listesi (Excel)</span>
+              </a>
+            </div>
           </div>
 
           {filteredCancelled.length === 0 ? (
@@ -458,7 +607,7 @@ export default function DeliveryArchive({
                 </div>
                 <div className="truncate">
                   <h3 className="text-xs sm:text-sm md:text-base font-black text-slate-900 truncate">
-                    Günlük Kömür Dağıtım ve Teslimat Tutanağı
+                    {printDayGroup.isBulk ? (printDayGroup.title || 'Toplu Kömür Dağıtım ve Teslimat Tutanağı') : 'Günlük Kömür Dağıtım ve Teslimat Tutanağı'}
                   </h3>
                   <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
                     <span>Tarih: <strong className="text-slate-800">{formatTrDate(printDayGroup.gun_tarihi)}</strong></span>
@@ -525,7 +674,7 @@ export default function DeliveryArchive({
                   </div>
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
-                  Bu tutanak, <strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri ({deliveryStaffList.join(', ')}) tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
+                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">Bu tutanak, {printDayGroup.isBulk ? <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihine kadar</span> : <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde</span>} Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri{deliveryStaffList.length > 0 ? ` (${deliveryStaffList.join(', ')})` : ''} tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.</p>
                 </p>
               </div>
 
@@ -540,8 +689,7 @@ export default function DeliveryArchive({
                       <th className="py-2 px-2">Mahalle / Açık Adres</th>
                       <th className="py-2 px-2 text-center w-14">Torba</th>
                       <th className="py-2 px-2 w-32">Teslim Alan</th>
-                      <th className="py-2 px-2 text-center w-16">Saat</th>
-                      <th className="py-2 px-2 text-center w-20">İmza / Teyit</th>
+                      <th className="py-2 px-2 text-center w-24">Teslim Tarihi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -553,6 +701,11 @@ export default function DeliveryArchive({
                         <td className="py-2 px-2 text-slate-600 break-words" title={item.acik_adres}>
                           <span className="font-semibold text-slate-800 block">{item.mahalle}</span>
                           {item.acik_adres && <span className="block text-[11px] text-slate-500 line-clamp-2">{item.acik_adres}</span>}
+                          {(item.manuel_ek_liste_imzasi || item.ek_komur_verildi || item.ek_liste_imza_notu) && (
+                            <span className="inline-block mt-0.5 text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1 py-0.2 rounded leading-tight">
+                              {item.ek_liste_imza_notu || (item.tarih ? `${formatTrDate(item.gun_tarihi || item.tarih)} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 px-2 text-center">
                           <span className="font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded text-[11px]">
@@ -560,10 +713,7 @@ export default function DeliveryArchive({
                           </span>
                         </td>
                         <td className="py-2 px-2 font-medium text-slate-700 break-words">{item.teslim_alan || item.ad_soyad}</td>
-                        <td className="py-2 px-2 font-mono text-[11px] text-slate-500 text-center">{item.tarih ? item.tarih.split(' ')[1] || item.tarih : '-'}</td>
-                        <td className="py-2 px-2 text-center">
-                          <div className="w-14 h-5 border-b border-dashed border-slate-400 mx-auto"></div>
-                        </td>
+                        <td className="py-2 px-2 text-center font-semibold text-slate-800">{formatTrDate(item.gun_tarihi || (item.tarih ? item.tarih.split(' ')[0] : '')) || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -619,7 +769,7 @@ export default function DeliveryArchive({
             {/* Modal Footer: Daima alt kısımda sabit kalır */}
             <div className="report-modal-footer shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-t border-slate-200 bg-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-20 shadow-sm">
               <a
-                href={`/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}`}
+                href={printDayGroup.isBulk ? `/api/export?type=daily_deliveries&endDate=${printDayGroup.gun_tarihi}` : `/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}`}
                 download={`Edirne_SYDV_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
               >

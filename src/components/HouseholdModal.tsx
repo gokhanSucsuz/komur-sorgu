@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
@@ -106,6 +106,19 @@ export default function HouseholdModal({
                   İptal Tarihi: {formatTrAuto(person.komur_iptal_tarihi)} {person.komur_iptal_eden ? `(${person.komur_iptal_eden})` : ''}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Manuel Ek Liste İmzası & Ek Kömür Verilenler Bildirimi */}
+          {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi || person.ek_liste_imza_notu) && (
+            <div className="p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 text-amber-950 text-xs shadow-2xs space-y-1">
+              <div className="flex items-center gap-1.5 font-black text-amber-900">
+                <span className="text-sm">📝</span>
+                <span>Ek Kömür Verilenler (Manuel Ek Liste İmzalı)</span>
+              </div>
+              <p className="text-[11px] text-amber-800 font-semibold leading-relaxed">
+                {person.ek_liste_imza_notu || (person.teslimat_tarihi ? `${person.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Saha manuel ek listesine elden ıslak imza alınmıştır.')}
+              </p>
             </div>
           )}
 
@@ -331,7 +344,7 @@ export default function HouseholdModal({
               }`}>
                 <div className="flex items-center gap-2">
                   <PenTool className={`w-4 h-4 ${isSigned ? 'text-emerald-700' : 'text-amber-700'}`} />
-                  <span>{isSigned ? '✓ Kapıda Islak İmza Alındı' : '⚠️ Islak İmza Henüz Alınmadı'}</span>
+                  <span>{isSigned ? ((person.manuel_ek_liste_imzasi || person.ek_komur_verildi) ? '✓ Manuel Ek Listeye İmzalandı' : '✓ Kapıda Islak İmza Alındı') : '⚠️ Islak İmza Henüz Alınmadı'}</span>
                 </div>
                 {onToggleSignature && (
                   <button

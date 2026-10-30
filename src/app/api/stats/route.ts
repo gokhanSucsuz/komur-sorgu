@@ -42,6 +42,8 @@ export async function GET(request: NextRequest) {
     let gelenNetTonaj = 0;
     let gelenBrutTonaj = 0;
     let toplamHataSayisi = 0;
+    let ekKomurVerilenHane = 0;
+    let ekKomurVerilenTorba = 0;
 
     if (!isFallback && typeof benCol.aggregate === 'function') {
       // High-performance MongoDB Atlas native aggregation pipelines
@@ -79,6 +81,34 @@ export async function GET(request: NextRequest) {
               },
               toplamDagitilanTorba: { $sum: { $ifNull: ['$torba_sayisi', 0] } },
               toplamHedefTorba: { $sum: { $ifNull: ['$hedef_torba', varsayilanHedefTorba] } },
+              ekKomurVerilenHane: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $or: [{ $eq: ['$ek_komur_verildi', true] }, { $eq: ['$manuel_ek_liste_imzasi', true] }] },
+                        { $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              },
+              ekKomurVerilenTorba: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $or: [{ $eq: ['$ek_komur_verildi', true] }, { $eq: ['$manuel_ek_liste_imzasi', true] }] },
+                        { $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }
+                      ]
+                    },
+                    { $ifNull: ['$torba_sayisi', 0] },
+                    0
+                  ]
+                }
+              },
             }
           }
         ]).toArray(),
@@ -121,6 +151,8 @@ export async function GET(request: NextRequest) {
         bekleyenHane = b.bekleyenHane || 0;
         toplamDagitilanTorba = b.toplamDagitilanTorba || 0;
         toplamHedefTorba = b.toplamHedefTorba || 0;
+        ekKomurVerilenHane = b.ekKomurVerilenHane || 0;
+        ekKomurVerilenTorba = b.ekKomurVerilenTorba || 0;
       }
 
       if (truckAggResult.length > 0) {
@@ -149,6 +181,13 @@ export async function GET(request: NextRequest) {
         }
         toplamDagitilanTorba += Number(b.torba_sayisi || 0);
         toplamHedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
+        if (
+          (b.ek_komur_verildi || b.manuel_ek_liste_imzasi) &&
+          (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI' || d === 'EKSIK')
+        ) {
+          ekKomurVerilenHane += 1;
+          ekKomurVerilenTorba += Number(b.torba_sayisi || 0);
+        }
       }
       toplamVatandas = allBeneficiaries.length;
 
@@ -184,6 +223,8 @@ export async function GET(request: NextRequest) {
     const fazlaDagitilanTorba = stockMetrics.fazlaDagitilanTorba;
     const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
 
+    const ekKomurVerilenTonaj = parseFloat((ekKomurVerilenTorba * 0.025).toFixed(3));
+
     const tamamlamaYuzdesi =
       toplamHedefTorba > 0
         ? parseFloat(((toplamDagitilanTorba / toplamHedefTorba) * 100).toFixed(1))
@@ -218,6 +259,9 @@ export async function GET(request: NextRequest) {
         fazlaDagitilanHane,
         hasFazlaDagitim: stockMetrics.hasFazlaDagitim,
         toplamHataSayisi,
+        ekKomurVerilenHane,
+        ekKomurVerilenTorba,
+        ekKomurVerilenTonaj,
       },
     });
   } catch (error: any) {

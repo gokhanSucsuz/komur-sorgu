@@ -784,7 +784,7 @@ export default function SingleHouseholdAddPage({
                 )}
               </div>
               <p className="text-xs text-emerald-50 font-medium mt-0.5 leading-relaxed">
-                <strong>T.C. Kimlik No</strong> ve <strong>Ad Soyad</strong> girilmesi zorunludur; <strong>adres ve telefon girişi isteğe bağlıdır</strong>. Eklenen kayıtlar <strong>Ek Liste</strong> adı altında tutulur ve <strong>Ara Bul</strong>, istatistikler ve tüm işlemlerde yer alır.
+                <strong>T.C. Kimlik No</strong> ve <strong>Ad Soyad</strong> girilmesi zorunludur; <strong>adres ve telefon girişi isteğe bağlıdır</strong>. Resmi ıslak imza listeleri çıktıktan sonra eklenip kömür teslimatı yapılırsa, liste çıkmadığı halde kömür verilmiş olacağından manuel ek listeye imza alınmış kabul edilir ve sisteme <strong>Ek Kömür Verilenler Listesi</strong> olarak işlenir.
               </p>
             </div>
           </div>
@@ -830,7 +830,9 @@ export default function SingleHouseholdAddPage({
                   <strong>{lastAddedRecord.hedef_torba} Torba</strong> • İmza Durumu:{' '}
                   <strong>
                     {lastAddedRecord.imza_durumu === 'IMZALANDI'
-                      ? '✅ Kapıda İmzalandı'
+                      ? (lastAddedRecord.manuel_ek_liste_imzasi || lastAddedRecord.ek_komur_verildi
+                          ? '📝 Manuel Ek Listeye İmzalandı'
+                          : '✅ Kapıda İmzalandı')
                       : '⏳ İmza Bekliyor'}
                   </strong>
                 </p>
@@ -1535,7 +1537,7 @@ export default function SingleHouseholdAddPage({
                 <span>Kapıda Islak İmza Alındı Olarak İşaretle</span>
               </div>
               <p className="text-[11px] text-slate-600 font-medium mt-0.5 leading-relaxed">
-                Vatandaştan saha tutanağına/listeye ıslak imza alındıysa işaretleyin; kömür teslimat kilidi anında açılır.
+                Vatandaştan saha tutanağına/listeye ıslak imza alındıysa işaretleyin; kömür teslimat kilidi anında açılır. Sistemde basılı liste çıktıktan sonra eklendiyse, teslimat yapıldığında manuel ek listeye imza alınmış sayılır ve sisteme Ek Kömür Verilenler olarak işlenir.
               </p>
             </div>
           </label>

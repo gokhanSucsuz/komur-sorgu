@@ -1530,6 +1530,9 @@ export interface ListTypeInfo {
   badgeLabel: string;
   badgeClass: string;
   folderLabel: string;
+  isManuelEkListe?: boolean;
+  ekKomurVerildi?: boolean;
+  ekListeImzaNotu?: string;
 }
 
 /**
@@ -1540,12 +1543,18 @@ export function getBeneficiaryListTypeInfo(item: any): ListTypeInfo {
   if (!item) {
     return {
       type: 'ANA_LISTE',
+      isManuelEkListe: false,
+      ekKomurVerildi: false,
+      ekListeImzaNotu: '',
       label: 'Ana Liste',
       badgeLabel: 'Ana Liste',
       badgeClass: 'bg-sky-50 text-sky-900 border-sky-200 font-bold',
       folderLabel: 'Ana Liste Klasörü',
     };
   }
+
+  const isManuelEkListe = Boolean(item.manuel_ek_liste_imzasi || item.ek_komur_verildi);
+  const ekListeImzaNotu = item.ek_liste_imza_notu || (isManuelEkListe && item.teslimat_tarihi ? `${item.teslimat_tarihi} tarihinde ek listeye imzası alındı` : '');
 
   const isSigortali =
     item.liste_turu === 'SIGORTALI' ||
@@ -1562,6 +1571,9 @@ export function getBeneficiaryListTypeInfo(item: any): ListTypeInfo {
       badgeLabel: 'Sigortalı',
       badgeClass: 'bg-purple-100 text-purple-950 border-purple-300 font-bold',
       folderLabel: 'Sigortalılar Listesi Klasörü',
+      isManuelEkListe,
+      ekKomurVerildi: isManuelEkListe,
+      ekListeImzaNotu,
     };
   }
 
@@ -1586,11 +1598,17 @@ export function getBeneficiaryListTypeInfo(item: any): ListTypeInfo {
       badgeLabel: ekLabel,
       badgeClass: 'bg-amber-100 text-amber-950 border-amber-300 font-bold',
       folderLabel: `${ekLabel} Klasörü`,
+      isManuelEkListe,
+      ekKomurVerildi: isManuelEkListe,
+      ekListeImzaNotu,
     };
   }
 
   return {
     type: 'ANA_LISTE',
+    isManuelEkListe,
+    ekKomurVerildi: isManuelEkListe,
+    ekListeImzaNotu,
     label: 'Ana Liste',
     badgeLabel: 'Ana Liste',
     badgeClass: 'bg-sky-50 text-sky-900 border-sky-200 font-bold',
@@ -1671,11 +1689,15 @@ export function formatDeliveryStatusSummary(record: {
   const hedef = Number(record.hedef_torba || 34);
   const tarih = record.teslimat_tarihi ? ` [Tarih: ${record.teslimat_tarihi}]` : '';
 
+  const ekImzaNot = (record as any)?.manuel_ek_liste_imzasi || (record as any)?.ek_komur_verildi
+    ? ` • ${(record as any)?.ek_liste_imza_notu || 'Ek listeye imzası alındı'}`
+    : '';
+
   if (durum === 'TAMAMLANDI') {
-    return `TAMAMLANDI - ${torba} Torba Teslim Edildi${tarih}`;
+    return `TAMAMLANDI - ${torba} Torba Teslim Edildi${tarih}${ekImzaNot}`;
   } else if (durum === 'EKSIK') {
     const kalan = Math.max(0, hedef - torba);
-    return `EKSİK TESLİMAT - ${torba}/${hedef} Torba Verildi, ${kalan} Torba Kalan${tarih}`;
+    return `EKSİK TESLİMAT - ${torba}/${hedef} Torba Verildi, ${kalan} Torba Kalan${tarih}${ekImzaNot}`;
   } else if (durum === 'IPTAL') {
     return `İPTAL EDİLDİ - Teslimat Yapılamadı${tarih}`;
   } else {

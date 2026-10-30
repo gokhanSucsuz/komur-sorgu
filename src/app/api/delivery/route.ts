@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol, users: usersCol } = await getDbCollections();
+    const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol, users: usersCol, signatureLists: sigCol } = await getDbCollections();
     const body = await request.json();
     const { action, beneficiary_id, tc_no, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;
 
@@ -177,6 +177,17 @@ export async function POST(request: NextRequest) {
       const staff = normalizeStaffName(rawStaff) || rawStaff || 'Saha Personeli';
       const note = (notlar || '').trim();
 
+      // Islak imza listeleri çıktıktan sonra tek hane kaydı eklenip kömür teslimatı yapılırsa:
+      // Listesi çıkmadığı halde kömür verilmiş olacağından manuel ek listeye imza alınmış kabul edilir.
+      // Ek kömür verilenler listesi olarak sistemde tutulur ve istatistiklere/teslimatlara eklenir.
+      const hasSignatureLists = sigCol ? (await sigCol.countDocuments({})) > 0 : false;
+      const isWithoutSignatureList = !beneficiary.imza_listesi_id || String(beneficiary.imza_listesi_id).trim() === '';
+      const isSingleOrEkRecord = Boolean(beneficiary.tekil_hane_ekleme || beneficiary.sonradan_eklenen_hane || beneficiary.liste_turu === 'EK_LISTE');
+      const isManuelEkListeImza = (hasSignatureLists && isWithoutSignatureList) || isSingleOrEkRecord || Boolean(beneficiary.manuel_ek_liste_imzasi);
+
+      const datePart = (localTimeStr ? localTimeStr.split(' ')[0] : '') || localToday.split('-').reverse().join('.');
+      const ekListeImzaNotu = beneficiary.ek_liste_imza_notu || (isManuelEkListeImza ? `${datePart} tarihinde ek listeye imzası alındı` : null);
+
       // Determine status: TAMAMLANDI vs EKSIK
       let newStatus = 'TAMAMLANDI';
       if (newTotalBags < hedef) {
@@ -200,6 +211,10 @@ export async function POST(request: NextRequest) {
             imza_durumu: 'IMZALANDI',
             imza_tarihi: localTimeStr,
             imza_alan_personel: staff,
+            manuel_ek_liste_imzasi: isManuelEkListeImza,
+            ek_komur_verildi: isManuelEkListeImza,
+            ek_liste_imza_tarihi: isManuelEkListeImza ? (beneficiary.ek_liste_imza_tarihi || localTimeStr) : null,
+            ek_liste_imza_notu: isManuelEkListeImza ? ekListeImzaNotu : null,
             updated_at: localTimeStr,
           },
         }
@@ -242,6 +257,9 @@ export async function POST(request: NextRequest) {
             s.teslim_alan = recipient;
             s.teslimat_notu = note;
             s.imza_durumu = 'IMZALANDI';
+            s.manuel_ek_liste_imzasi = isManuelEkListeImza;
+            s.ek_komur_verildi = isManuelEkListeImza;
+            s.ek_liste_imza_notu = isManuelEkListeImza ? ekListeImzaNotu : null;
             s.daha_sonra_tamamlanacak = false;
             modified = true;
           }
@@ -328,6 +346,9 @@ export async function POST(request: NextRequest) {
         personel: staff,
         notlar: note,
         iptal_nedeni: null,
+        manuel_ek_liste_imzasi: isManuelEkListeImza,
+        ek_komur_verildi: isManuelEkListeImza,
+        ek_liste_imza_notu: isManuelEkListeImza ? ekListeImzaNotu : null,
         tarih: localTimeStr,
         gun_tarihi: localToday,
       }));
@@ -360,6 +381,10 @@ export async function POST(request: NextRequest) {
           hedef_torba: hedef,
           kalan_torba: eksikKalan,
           teslim_alan: recipient,
+          imza_durumu: 'IMZALANDI',
+          manuel_ek_liste_imzasi: isManuelEkListeImza,
+          ek_komur_verildi: isManuelEkListeImza,
+          ek_liste_imza_notu: isManuelEkListeImza ? ekListeImzaNotu : null,
         },
       });
     } else if (action === 'IPTAL') {
@@ -376,6 +401,10 @@ export async function POST(request: NextRequest) {
           teslim_alan: null,
           teslim_eden_personel: null,
           teslimat_notu: null,
+          manuel_ek_liste_imzasi: false,
+          ek_komur_verildi: false,
+          ek_liste_imza_tarihi: null,
+          ek_liste_imza_notu: null,
           updated_at: localTimeStr,
         },
       });
@@ -400,6 +429,9 @@ export async function POST(request: NextRequest) {
             s.teslim_eden_personel = null;
             s.teslim_alan = '';
             s.teslimat_notu = '';
+            s.manuel_ek_liste_imzasi = false;
+            s.ek_komur_verildi = false;
+            s.ek_liste_imza_notu = null;
             s.daha_sonra_tamamlanacak = false;
             modified = true;
           }

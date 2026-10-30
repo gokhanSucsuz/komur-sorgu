@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import ./tests/ts-loader.mjs --test tests/security-kvkk.test.ts tests/signature-lists.test.ts tests/cache-manager.test.ts tests/fullscreen.test.ts"
+    "test": "node --import ./tests/ts-loader.mjs --test tests/security-kvkk.test.ts tests/signature-lists.test.ts tests/ek-komur.test.ts tests/cache-manager.test.ts tests/fullscreen.test.ts"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

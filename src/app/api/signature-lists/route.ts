@@ -49,7 +49,13 @@ export async function GET(request: NextRequest) {
         imza_listesi_id: 1,
         imza_sonrasi_adres_degisti: 1,
         imza_listesi_mahalle: 1,
-        onceki_mahalle: 1
+        onceki_mahalle: 1,
+        ek_komur_verildi: 1,
+        manuel_ek_liste_imzasi: 1,
+        ek_liste_imza_notu: 1,
+        teslimat_durumu: 1,
+        torba_sayisi: 1,
+        teslimat_tarihi: 1,
       })
       .toArray();
 
@@ -57,8 +63,33 @@ export async function GET(request: NextRequest) {
     let assignedCount = 0;
     const pendingMahalleMap = new Map<string, number>();
     const missingAddressBeneficiaries: any[] = [];
+    let ekKomurVerilenCount = 0;
+    let ekKomurVerilenTorba = 0;
+    const ekKomurVerilenBeneficiaries: any[] = [];
 
     for (const rawB of rawBeneficiaries) {
+      const isEkKomur = Boolean(
+        rawB.ek_komur_verildi ||
+        rawB.manuel_ek_liste_imzasi ||
+        (rawB.ek_liste_imza_notu && String(rawB.ek_liste_imza_notu).trim().length > 0)
+      );
+      if (isEkKomur) {
+        ekKomurVerilenCount++;
+        ekKomurVerilenTorba += Number(rawB.torba_sayisi || 0);
+        const decEk = decryptBeneficiary(rawB);
+        ekKomurVerilenBeneficiaries.push({
+          id: decEk.id || decEk._id.toString(),
+          tc_no: decEk.tc_no || '',
+          ad_soyad: decEk.ad_soyad || '',
+          mahalle: decEk.mahalle || '',
+          acik_adres: decEk.acik_adres || '',
+          torba_sayisi: Number(decEk.torba_sayisi || 0),
+          teslimat_durumu: decEk.teslimat_durumu || 'TAMAMLANDI',
+          teslimat_tarihi: decEk.teslimat_tarihi || decEk.ek_liste_imza_tarihi || '',
+          ek_liste_imza_notu: decEk.ek_liste_imza_notu || (decEk.teslimat_tarihi ? `${decEk.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı'),
+        });
+      }
+
       const isAssigned = Boolean(rawB.imza_listesi_id && String(rawB.imza_listesi_id).trim().length > 0);
       if (isAssigned) {
         assignedCount++;
@@ -100,6 +131,9 @@ export async function GET(request: NextRequest) {
       totalCount: rawBeneficiaries.length,
       pendingCount,
       assignedCount,
+      ekKomurVerilenCount,
+      ekKomurVerilenTorba,
+      ekKomurVerilenBeneficiaries,
       pendingMahalleCount: pendingMahalleMap.size,
       pendingMahalleler,
       missingAddressCount: missingAddressBeneficiaries.length,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress } from '@/lib/normalizer';
-import { formatTrDateWithDay } from '@/lib/dateUtils';
+import { formatTrDateWithDay, formatTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 
@@ -443,16 +443,23 @@ function addOfficialSignatureSheet(
 
     const fullAddress = formatSignatureListAddress(r);
 
+    const isEkListeSigned = Boolean(
+      r.manuel_ek_liste_imzasi ||
+      r.ek_komur_verildi ||
+      (r.ek_liste_imza_notu && String(r.ek_liste_imza_notu).trim().length > 0)
+    );
+    const ekListeNot = r.ek_liste_imza_notu || (teslimTarihiStr ? `${teslimTarihiStr} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı');
+
     const rowData = [
       idx + 1,
       r.ad_soyad || '-',
       r.tc_no || '-',
       phoneStr,
       fullAddress,
-      '34 Torba (Takribi 850kg)',
-      '', // Teslim Eden Islak İmza alanı kural gereği BOŞTUR
+      isEkListeSigned ? `${r.torba_sayisi || target} Torba (Teslim Edildi)` : '34 Torba (Takribi 850kg)',
+      isEkListeSigned ? (r.teslim_eden_personel || 'Saha Personeli') : '',
       teslimTarihiStr,
-      '', // Teslim Alan Islak İmza alanı kural gereği BOŞTUR
+      isEkListeSigned ? sanitizeCellValue(ekListeNot) : '',
     ];
 
     const dataRow = sheet.addRow(rowData);
@@ -481,6 +488,28 @@ function addOfficialSignatureSheet(
         pattern: 'solid',
         fgColor: { argb: isSignatureCol ? 'FFFFFFFF' : zebraBg },
       };
+
+      if (isEkListeSigned && colNumber === 9) {
+        cell.font = {
+          name: 'Segoe UI',
+          size: 9.5,
+          bold: true,
+          italic: true,
+          color: { argb: 'FF92400E' },
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFEF3C7' },
+        };
+      } else if (isEkListeSigned && colNumber === 6) {
+        cell.font = {
+          name: 'Segoe UI',
+          size: 9.5,
+          bold: true,
+          color: { argb: 'FF065F46' },
+        };
+      }
 
       // Belirgin imza çerçevesi
       cell.border = {
@@ -724,6 +753,234 @@ function addOfficialSignatureSummarySheet(
   return sheet;
 }
 
+/**
+ * Resmi Islak İmza Listesi İçin Ek / Manuel İmza Listesi Sekmesi Oluşturucu.
+ * Islak imza listesi çıktıktan sonra sahada elden teslim edilen veya ilave eklenen hanelerin
+ * manuel ıslak imzalarının alınabilmesi için A4 yatay formatta hazır çizelge sekmesi ekler.
+ */
+function addEkImzaListesiSheet(
+  workbook: ExcelJS.Workbook,
+  listTitle: string,
+  existingEkBeneficiaries: any[],
+  seenSheetNames: Set<string>
+) {
+  const safeSheetName = sanitizeSheetName('Ek İmza Listesi', seenSheetNames);
+  const sheet = workbook.addWorksheet(safeSheetName, {
+    views: [{ state: 'frozen', ySplit: 2, showGridLines: true }],
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation: 'landscape',
+      fitToWidth: 1,
+      fitToHeight: 0,
+      fitToPage: true,
+      horizontalCentered: true,
+      verticalCentered: false,
+      margins: {
+        left: 0.35,
+        right: 0.35,
+        top: 0.45,
+        bottom: 0.45,
+        header: 0.2,
+        footer: 0.2,
+      },
+      printTitlesRow: '1:2',
+    },
+    headerFooter: {
+      oddHeader: '&L&B&9 T.C. EDİRNE VALİLİĞİ - SYDV&R&B&9 SAHA EK / MANUEL ISLAK İMZA LİSTESİ',
+      oddFooter: '&L&8 T.C. Edirne SYDV Kömür Dağıtım Sistemi&C&8 Sayfa &P / &N&R&8 Tarih: &D',
+    },
+  });
+
+  sheet.properties.tabColor = { argb: 'FFD97706' };
+
+  // 1. Çizelge Başlığı
+  const titleRow = sheet.addRow(['KÖMÜR YARDIMI EK / MANUEL ISLAK İMZA ÇİZELGESİ (LİSTE SONRASI İLAVE DAĞITIM VE TUTANAK LİSTESİ)']);
+  sheet.mergeCells(1, 1, 1, 9);
+  titleRow.height = 28;
+  titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
+  titleRow.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF92400E' },
+  };
+
+  // 2. Tablo Kolon Başlıkları (Row 2)
+  const headers = [
+    'Sıra No',
+    'Hak Sahibi Adı Soyadı',
+    'T.C. Kimlik No',
+    'İletişim / Tel',
+    'İkametgah Adresi (Mahalle / Sokak / Kapı No)',
+    'Teslim Edilen Kömür Miktarı',
+    'Teslim Eden Görevli',
+    'Teslim Tarihi',
+    'Teslim Alan Islak İmza',
+  ];
+  const headerRow = sheet.addRow(headers);
+  headerRow.height = 28;
+  headerRow.eachCell((cell, colNum) => {
+    cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFB45309' },
+    };
+    cell.alignment = {
+      vertical: 'middle',
+      horizontal: colNum === 2 || colNum === 5 ? 'left' : 'center',
+      wrapText: true,
+    };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF000000' } },
+      bottom: { style: 'medium', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF475569' } },
+      right: { style: 'thin', color: { argb: 'FF475569' } },
+    };
+  });
+
+  let rowIndex = 0;
+
+  // 3. Sistemde kayıtlı mevcut ek liste teslimatları (Varsa)
+  existingEkBeneficiaries.forEach((r: any) => {
+    rowIndex++;
+    const phones = extractPhoneNumbers(r.telefon, r.telefon2);
+    const phoneStr = phones.length > 0 ? phones.join('\n') : (r.telefon || '-');
+    const fullAddress = formatSignatureListAddress(r);
+    const teslimTarihiStr = r.teslimat_tarihi ? (formatTrDateWithDay(r.teslimat_tarihi) || r.teslimat_tarihi) : '';
+    const ekListeNot = r.ek_liste_imza_notu || (teslimTarihiStr ? `${teslimTarihiStr} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı');
+
+    const rowData = [
+      rowIndex,
+      r.ad_soyad || '-',
+      r.tc_no || '-',
+      phoneStr,
+      fullAddress,
+      `${r.torba_sayisi || 34} Torba (Teslim Edildi)`,
+      r.teslim_eden_personel || 'Saha Personeli',
+      teslimTarihiStr,
+      sanitizeCellValue(ekListeNot),
+    ];
+
+    const dataRow = sheet.addRow(rowData);
+    dataRow.height = 45;
+    dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: 'Segoe UI', size: colNumber === 2 ? 10.5 : 10, bold: colNumber === 2, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center',
+        wrapText: true,
+      };
+      if (colNumber === 9) {
+        cell.font = { name: 'Segoe UI', size: 9, bold: true, italic: true, color: { argb: 'FF78350F' } };
+      }
+    });
+  });
+
+  // 4. Sahada elden ıslak imza alınabilmesi için boş satırlar (En az 25 satır)
+  const blankRowsCount = Math.max(25, 30 - existingEkBeneficiaries.length);
+  for (let i = 1; i <= blankRowsCount; i++) {
+    rowIndex++;
+    const blankRowData = [
+      rowIndex,
+      '', // Adı Soyadı
+      '', // TC
+      '', // Tel
+      '', // Adres
+      '34 Torba (Takribi 850kg)',
+      '', // Teslim Eden Görevli
+      '', // Teslim Tarihi
+      '', // Teslim Alan Islak İmza (Elden İmza Kutusu)
+    ];
+
+    const dataRow = sheet.addRow(blankRowData);
+    dataRow.height = 45;
+
+    const isEven = rowIndex % 2 === 1;
+    const zebraBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = {
+        name: 'Segoe UI',
+        size: 10,
+        color: { argb: 'FF0F172A' },
+      };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: colNumber === 9 || colNumber === 7 ? 'FFFFFFFF' : zebraBg },
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        left: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        right: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center',
+        wrapText: true,
+      };
+      if (colNumber === 6) {
+        cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF475569' } };
+      }
+    });
+  }
+
+  // Kolon Genişlikleri
+  sheet.columns = [
+    { width: 7 },   // Sıra No
+    { width: 26 },  // Adı Soyadı
+    { width: 16 },  // T.C. Kimlik No
+    { width: 16 },  // Telefon
+    { width: 42 },  // Adres
+    { width: 22 },  // Kömür Miktarı
+    { width: 22 },  // Teslim Eden
+    { width: 16 },  // Teslim Tarihi
+    { width: 26 },  // Teslim Alan Islak İmza
+  ];
+
+  sheet.addRow([]); // boşluk
+
+  // Resmi İmza Onay Satırı
+  const signRow = sheet.addRow([
+    'Dağıtımı Yapan Görevli Personel\n(Ad Soyad / İmza)',
+    '',
+    '',
+    '',
+    'Kontrol Eden Yetkili\n(Ad Soyad / İmza)',
+    '',
+    '',
+    'Vakıf Müdürü\n(İmza / Mühür)',
+    '',
+  ]);
+  signRow.height = 55;
+  sheet.mergeCells(signRow.number, 1, signRow.number, 3);
+  sheet.mergeCells(signRow.number, 5, signRow.number, 6);
+  sheet.mergeCells(signRow.number, 8, signRow.number, 9);
+
+  for (let c = 1; c <= 9; c++) {
+    const cell = signRow.getCell(c);
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      left: c === 1 || c === 5 || c === 8 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
+      right: c === 3 || c === 6 || c === 9 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
+    };
+    cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'top', horizontal: 'center', wrapText: true };
+  }
+
+  return sheet;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -836,11 +1093,20 @@ export async function GET(request: NextRequest) {
     } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
-    if (type === 'daily_deliveries') {
-      const targetDate = searchParams.get('date') || new Date().toLocaleDateString('en-CA');
+    // 2. Günlük / Tarih Bazlı / Toplu Teslimat Listesi
+    if (type === 'daily_deliveries' || type === 'bulk_deliveries') {
+      const targetDate = searchParams.get('date');
+      const endDate = searchParams.get('endDate');
+      const startDate = searchParams.get('startDate');
       
       const filter: any = { islem_tipi: 'TESLIMAT' };
-      if (targetDate && targetDate !== 'ALL') {
+      if (endDate) {
+        filter.gun_tarihi = { ...(filter.gun_tarihi || {}), $lte: endDate };
+      }
+      if (startDate) {
+        filter.gun_tarihi = { ...(filter.gun_tarihi || {}), $gte: startDate };
+      }
+      if (targetDate && targetDate !== 'ALL' && !endDate && !startDate) {
         filter.gun_tarihi = targetDate;
       }
 
@@ -855,9 +1121,11 @@ export async function GET(request: NextRequest) {
       const exportData = records.map((r: any, idx: number) => {
         const bag = r.torba_sayisi || 0;
         totalBags += bag;
+        const rawDate = r.gun_tarihi || (r.tarih ? String(r.tarih).split(' ')[0].split('T')[0] : '');
+        const dateOnlyStr = formatTrDate(rawDate) || rawDate || '-';
         return {
           'Sıra': idx + 1,
-          'Teslim Tarihi / Saati': r.tarih || '-',
+          'Teslim Tarihi': dateOnlyStr,
           'TC Kimlik No': r.tc_no,
           'Adı Soyadı': r.ad_soyad,
           'Mahalle': r.mahalle,
@@ -865,7 +1133,9 @@ export async function GET(request: NextRequest) {
           'Teslim Edilen Torba': bag,
           'Teslim Alan': r.teslim_alan || r.ad_soyad,
           'Teslim Eden Personel': r.personel || '-',
-          'Açıklama / Not': r.notlar || '-',
+          'Açıklama / Not': (r.manuel_ek_liste_imzasi || r.ek_komur_verildi)
+            ? [r.ek_liste_imza_notu || (dateOnlyStr ? `${dateOnlyStr} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı'), r.notlar].filter(Boolean).join(' | ')
+            : (r.notlar || '-'),
         };
       });
 
@@ -873,7 +1143,7 @@ export async function GET(request: NextRequest) {
       if (exportData.length > 0) {
         exportData.push({
           'Sıra': '' as any,
-          'Teslim Tarihi / Saati': 'TOPLAM:',
+          'Teslim Tarihi': 'TOPLAM:',
           'TC Kimlik No': `${exportData.length} Hane`,
           'Adı Soyadı': '',
           'Mahalle': '',
@@ -887,7 +1157,7 @@ export async function GET(request: NextRequest) {
 
       const colWidths = [
         { wch: 6 },  // Sıra
-        { wch: 20 }, // Tarih/Saat
+        { wch: 16 }, // Teslim Tarihi
         { wch: 16 }, // TC
         { wch: 24 }, // Ad Soyad
         { wch: 18 }, // Mahalle
@@ -898,20 +1168,111 @@ export async function GET(request: NextRequest) {
         { wch: 30 }, // Not
       ];
 
+      const isCumulative = Boolean(endDate);
+      const isAllDays = targetDate === 'ALL';
+      const sheetTitle = isCumulative
+        ? 'O TARİHE KADAR TOPLU KÖMÜR TESLİMAT TUTANAĞI'
+        : (isAllDays ? 'GENEL TOPLU KÖMÜR DAĞITIM VE TESLİMAT TUTANAĞI' : 'KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI');
+
+      const subtitle = isCumulative
+        ? `${formatTrDate(endDate)} Tarihine Kadar Yapılan Toplu Dağıtımlar | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`
+        : (isAllDays
+          ? `Tüm Günler (Genel Arşiv) | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`
+          : `Dağıtım Tarihi: ${formatTrDate(targetDate || new Date().toLocaleDateString('en-CA'))} | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`);
+
+      const filename = isCumulative
+        ? `Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${endDate}.xlsx`
+        : (isAllDays ? 'Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_Tum_Gunler.xlsx' : `Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate || 'Bugun'}.xlsx`);
+
       addStyledWorksheet(
         workbook,
-        'KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI',
-        `Dağıtım Tarihi: ${targetDate} | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`,
+        sheetTitle,
+        subtitle,
         'Teslimat Listesi',
         exportData,
         colWidths
       );
 
       const buf = await workbook.xlsx.writeBuffer();
-      return buildExcelResponse(buf, `Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate}.xlsx`, session, type);
+      return buildExcelResponse(buf, filename, session, type);
     }
 
-    // 2.5. Personel Mesai ve Günlük Çalışma Saatleri Listesi
+    // 2.2. İptal Edilen Teslimatlar Toplu Listesi
+    if (type === 'cancellations' || type === 'cancelled_deliveries') {
+      const targetDate = searchParams.get('date');
+      const endDate = searchParams.get('endDate');
+
+      const filter: any = { islem_tipi: 'IPTAL' };
+      if (endDate) {
+        filter.gun_tarihi = { ...(filter.gun_tarihi || {}), $lte: endDate };
+      } else if (targetDate && targetDate !== 'ALL') {
+        filter.gun_tarihi = targetDate;
+      }
+
+      const rawRecords = await histCol
+        .find(filter)
+        .sort({ tarih: -1 })
+        .toArray();
+
+      const records = mapDocs(rawRecords);
+
+      let totalCancelledBags = 0;
+      const exportData = records.map((r: any, idx: number) => {
+        const bag = r.torba_sayisi || 34;
+        totalCancelledBags += bag;
+        const rawDate = r.gun_tarihi || (r.tarih ? String(r.tarih).split(' ')[0].split('T')[0] : '');
+        const dateOnlyStr = formatTrDate(rawDate) || rawDate || '-';
+        return {
+          'Sıra': idx + 1,
+          'İptal Tarihi': dateOnlyStr,
+          'TC Kimlik No': r.tc_no,
+          'Adı Soyadı': r.ad_soyad,
+          'Mahalle': r.mahalle,
+          'Açık Adres': r.acik_adres || '-',
+          'İptal Edilen Torba': bag,
+          'İşlemi Yapan Personel': r.personel || '-',
+          'İptal Gerekçesi / Tutanak': r.iptal_nedeni || r.notlar || 'Gerekçe belirtilmedi',
+        };
+      });
+
+      if (exportData.length > 0) {
+        exportData.push({
+          'Sıra': '' as any,
+          'İptal Tarihi': 'TOPLAM:',
+          'TC Kimlik No': `${exportData.length} İptal`,
+          'Adı Soyadı': '',
+          'Mahalle': '',
+          'Açık Adres': '',
+          'İptal Edilen Torba': `${totalCancelledBags} Torba (${(totalCancelledBags * 0.025).toFixed(2)} Ton)` as any,
+          'İşlemi Yapan Personel': '',
+          'İptal Gerekçesi / Tutanak': '',
+        });
+      }
+
+      const colWidths = [
+        { wch: 6 },  // Sıra
+        { wch: 16 }, // İptal Tarihi
+        { wch: 16 }, // TC
+        { wch: 24 }, // Ad Soyad
+        { wch: 18 }, // Mahalle
+        { wch: 38 }, // Açık Adres
+        { wch: 18 }, // Torba
+        { wch: 22 }, // Personel
+        { wch: 40 }, // İptal Gerekçesi
+      ];
+
+      addStyledWorksheet(
+        workbook,
+        'İPTAL EDİLEN KÖMÜR TESLİMATLARI RESMİ TUTANAĞI',
+        `Kapsam: ${targetDate && targetDate !== 'ALL' ? formatTrDate(targetDate) : (endDate ? `${formatTrDate(endDate)} Tarihine Kadar` : 'Tüm Dönem (Genel Arşiv)')} | Toplam İptal: ${records.length} Hane | Toplam Torba: ${totalCancelledBags} Torba`,
+        'İptal Edilenler',
+        exportData,
+        colWidths
+      );
+
+      const buf = await workbook.xlsx.writeBuffer();
+      return buildExcelResponse(buf, 'Edirne_SYDV_Iptal_Edilen_Teslimatlar_Listesi.xlsx', session, type);
+    }
     if (type === 'shifts') {
       const month = searchParams.get('month') || 'ALL'; // 'YYYY-MM' or 'ALL'
       const personel = searchParams.get('personel') || 'ALL';
@@ -1276,6 +1637,9 @@ export async function GET(request: NextRequest) {
           'Teslimat Tarihi': r.teslimat_tarihi || '-',
           'Teslim Alan': r.teslim_alan || '-',
           'Teslim Eden Personel': normalizeStaffName(r.teslim_eden_personel) || r.teslim_eden_personel || '-',
+          'Islak İmza / Not': (r.manuel_ek_liste_imzasi || r.ek_komur_verildi)
+            ? (r.ek_liste_imza_notu || (r.teslimat_tarihi ? `${r.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı'))
+            : (r.imza_durumu === 'IMZALANDI' ? 'İmzalandı' : 'Bekliyor'),
         };
       });
 
@@ -1535,7 +1899,12 @@ export async function GET(request: NextRequest) {
             'Açık Adres': formatSignatureListAddress(r),
             'Hedef (Torba)': target,
             'Teslim (Torba)': delivered,
-            'Durum': durumText,
+            'Durum': (r.manuel_ek_liste_imzasi || r.ek_komur_verildi)
+              ? `${durumText} (Ek Listeye İmzalı)`
+              : durumText,
+            'Islak İmza / Not': (r.manuel_ek_liste_imzasi || r.ek_komur_verildi)
+              ? (r.ek_liste_imza_notu || (r.teslimat_tarihi ? `${r.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı'))
+              : (r.imza_durumu === 'IMZALANDI' ? 'İmzalandı' : 'Bekliyor'),
           };
         });
 
@@ -1555,6 +1924,7 @@ export async function GET(request: NextRequest) {
             'Hedef (Torba)': groupTargetTorba,
             'Teslim (Torba)': groupDeliveredTorba,
             'Durum': '',
+            'Islak İmza / Not': '',
           });
         }
 
@@ -1591,6 +1961,95 @@ export async function GET(request: NextRequest) {
     }
 
     // 3B. Resmi Islak İmza Listesi (Mahalle Mahalle Sekmeli, Adres A-Z Sıralı, Islak İmza Kutucuklu, A4 Baskıya Hazır)
+    // 3B-1. Ek Kömür Verilenler Listesi (Manuel Ek Listeye İmza Alınanlar Çıktısı)
+    if (type === 'ek_komur_verilenler') {
+      const donemKodu = (searchParams.get('donem_kodu') || '').trim();
+      const targetBenCol = donemKodu && donemKodu !== 'AKTIF' ? archBenCol : benCol;
+
+      const rawRecords = await targetBenCol
+        .find({
+          $or: [
+            { ek_komur_verildi: true },
+            { manuel_ek_liste_imzasi: true },
+            { ek_liste_imza_notu: { $exists: true, $ne: null } },
+          ],
+        })
+        .sort({ mahalle: 1, ad_soyad: 1 })
+        .toArray();
+
+      const records = mapDocs(rawRecords);
+      let totalBags = 0;
+
+      const exportData = records.map((r: any, idx: number) => {
+        const phones = extractPhoneNumbers(r.telefon, r.telefon2);
+        const deliveredBags = Number(r.torba_sayisi || 0);
+        totalBags += deliveredBags;
+        const imzaNotu = r.ek_liste_imza_notu || (r.teslimat_tarihi ? `${r.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı');
+
+        return {
+          'Sıra': idx + 1,
+          'İmza Sıra No': r.sira_no || '-',
+          'TC Kimlik No': r.tc_no,
+          'Adı Soyadı': r.ad_soyad,
+          'Telefon': phones[0] || r.telefon || '-',
+          'Mahalle': r.mahalle,
+          'Açık Adres': formatSignatureListAddress(r),
+          'Teslim Edilen Torba': deliveredBags,
+          'Teslim Edilen Ton': `${(deliveredBags * 0.025).toFixed(2)} Ton`,
+          'Teslim Tarihi': r.teslimat_tarihi || r.ek_liste_imza_tarihi || '-',
+          'Teslim Alan': r.teslim_alan || r.ad_soyad,
+          'Teslim Eden Personel': normalizeStaffName(r.teslim_eden_personel) || r.teslim_eden_personel || '-',
+          'Islak İmza Onayı / Not': sanitizeCellValue(imzaNotu),
+        };
+      });
+
+      if (exportData.length > 0) {
+        exportData.push({
+          'Sıra': '' as any,
+          'İmza Sıra No': '',
+          'TC Kimlik No': 'TOPLAM:',
+          'Adı Soyadı': `${records.length} Hane`,
+          'Telefon': '',
+          'Mahalle': '',
+          'Açık Adres': '',
+          'Teslim Edilen Torba': totalBags,
+          'Teslim Edilen Ton': `${(totalBags * 0.025).toFixed(2)} Ton`,
+          'Teslim Tarihi': '',
+          'Teslim Alan': '',
+          'Teslim Eden Personel': '',
+          'Islak İmza Onayı / Not': 'Manuel Ek Listeye Elden İmza Alınmıştır',
+        });
+      }
+
+      const colWidths = [
+        { wch: 6 },  // Sıra
+        { wch: 14 }, // Sıra No
+        { wch: 16 }, // TC
+        { wch: 24 }, // Ad Soyad
+        { wch: 15 }, // Telefon
+        { wch: 20 }, // Mahalle
+        { wch: 38 }, // Adres
+        { wch: 20 }, // Torba
+        { wch: 18 }, // Ton
+        { wch: 18 }, // Tarih
+        { wch: 22 }, // Teslim Alan
+        { wch: 22 }, // Personel
+        { wch: 36 }, // İmza Notu
+      ];
+
+      addStyledWorksheet(
+        workbook,
+        'KÖMÜR YARDIMI EK KÖMÜR VERİLENLER VE MANUEL EK LİSTE İMZA ÇİZELGESİ',
+        `Toplam Ek Kömür Verilen: ${records.length} Hane | Toplam Dağıtılan: ${totalBags} Torba (${(totalBags * 0.025).toFixed(2)} Ton) | Islak imzaları saha ek listesine elden alınmış kabul edilmiştir.`,
+        'Ek Kömür Verilenler',
+        exportData,
+        colWidths
+      );
+
+      const buf = await workbook.xlsx.writeBuffer();
+      return buildExcelResponse(buf, 'Edirne_SYDV_Ek_Komur_Verilenler_Listesi.xlsx', session, type);
+    }
+
     if (type === 'signature_list') {
       const listId = (searchParams.get('listId') || '').trim();
       const donemKodu = (searchParams.get('donem_kodu') || '').trim();
@@ -1695,6 +2154,14 @@ export async function GET(request: NextRequest) {
           seenSheetNames
         );
       }
+
+      // N+1. SEKME: EK İMZA LİSTESİ (Saha Ek / Manuel Islak İmza Çizelgesi)
+      addEkImzaListesiSheet(
+        workbook,
+        listTitle,
+        records.filter((r) => r.manuel_ek_liste_imzasi || r.ek_komur_verildi),
+        seenSheetNames
+      );
 
       const buf = await workbook.xlsx.writeBuffer();
       const cleanTitle = listTitle.replace(/[^a-zA-Z0-9ÇŞĞÜÖİçşğüöı_-]/g, '_');

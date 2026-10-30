@@ -107,7 +107,7 @@ export default function BeneficiaryList({
   const [isBulkSignLoading, setIsBulkSignLoading] = useState(false);
 
   // Liste Türü Filtresi (Tümü, Ana Liste, Ek Listeler, Sigortalılar Listesi)
-  const [selectedListTypeFilter, setSelectedListTypeFilter] = useState<'HEPSI' | 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI'>('HEPSI');
+  const [selectedListTypeFilter, setSelectedListTypeFilter] = useState<'HEPSI' | 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI' | 'EK_KOMUR'>('HEPSI');
 
   // Filtre veya arama değiştiğinde sayfa numarasını otomatik olarak 1'e sıfırla
   useEffect(() => {
@@ -420,7 +420,9 @@ export default function BeneficiaryList({
         return !signed;
       });
     }
-    if (selectedListTypeFilter !== 'HEPSI') {
+    if (selectedListTypeFilter === 'EK_KOMUR') {
+      list = list.filter((r) => Boolean(r.manuel_ek_liste_imzasi || r.ek_komur_verildi));
+    } else if (selectedListTypeFilter !== 'HEPSI') {
       list = list.filter((r) => getBeneficiaryListTypeInfo(r).type === selectedListTypeFilter);
     }
     return list;
@@ -430,13 +432,17 @@ export default function BeneficiaryList({
     let ana = 0;
     let ek = 0;
     let sig = 0;
+    let ekKomur = 0;
     for (const r of mahalleFilteredList) {
+      if (r.manuel_ek_liste_imzasi || r.ek_komur_verildi) {
+        ekKomur++;
+      }
       const t = getBeneficiaryListTypeInfo(r).type;
       if (t === 'SIGORTALI') sig++;
       else if (t === 'EK_LISTE') ek++;
       else ana++;
     }
-    return { ana, ek, sig, total: mahalleFilteredList.length };
+    return { ana, ek, sig, ekKomur, total: mahalleFilteredList.length };
   }, [mahalleFilteredList]);
 
   // Sayfalama Hesaplamaları (Sayfa başına varsayılan 250 kayıt)
@@ -1256,6 +1262,19 @@ export default function BeneficiaryList({
                   >
                     <Shield className="w-3 h-3 text-purple-600 group-hover:text-purple-800" />
                     <span>Sigortalılar ({listTypeCounts.sig})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('EK_KOMUR')}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap ${
+                      selectedListTypeFilter === 'EK_KOMUR'
+                        ? 'bg-amber-600 text-white shadow-2xs font-black'
+                        : 'text-amber-900 hover:bg-amber-50'
+                    }`}
+                    title="Islak imza listeleri basıldıktan sonra eklenip kömür teslim edilenler (manuel ek listeye elden imza alınmıştır)"
+                  >
+                    <span>📝</span>
+                    <span>Ek Kömür Verilenler ({listTypeCounts.ekKomur})</span>
                   </button>
                 </div>
               </div>
@@ -2094,7 +2113,16 @@ export default function BeneficiaryList({
 
                       {/* Sağ Taraf: Durum Rozeti & İmza Rozeti */}
                       <div className="shrink-0 flex items-center gap-1.5">
-                        {isSigned && (
+                        {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && (
+                          <span
+                            className="text-[10px] font-black text-amber-900 bg-amber-100/95 px-2 py-0.5 rounded-lg border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
+                            title={person.ek_liste_imza_notu || 'Manuel ek listeye imzası alındı'}
+                          >
+                            <PenTool className="w-3 h-3 text-amber-700" />
+                            <span>Ek Listeye İmzalı</span>
+                          </span>
+                        )}
+                        {!(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && isSigned && (
                           <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
                             <PenTool className="w-3 h-3 text-emerald-700" />
                             <span>İmzalı</span>
@@ -2130,6 +2158,13 @@ export default function BeneficiaryList({
                         {person.ad_soyad}
                       </h4>
                     </div>
+
+                    {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi || person.ek_liste_imza_notu) && (
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-50/90 border border-amber-200/90 rounded-xl px-2.5 py-1 shadow-2xs">
+                        <span>📝</span>
+                        <span>{person.ek_liste_imza_notu || (person.teslimat_tarihi ? `${person.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}</span>
+                      </div>
+                    )}
 
                     {/* 3. AYNI ADRESTE BAŞKA HAK SAHİBİ UYARI BUTONU (Tıklanabilir Uyarı Kartı) */}
                     {(hasHouseholdDuplicate || person.uyari_notu) && (

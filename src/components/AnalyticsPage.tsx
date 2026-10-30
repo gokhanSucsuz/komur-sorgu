@@ -120,6 +120,7 @@ export default function AnalyticsPage({
   const summary = reportData?.summary;
   const donemStats = reportData?.donemStats;
   const eksikHaneler = reportData?.eksikHaneler || [];
+  const ekKomurListesi = reportData?.ekKomurListesi || [];
   const mahalleStats: any[] = reportData?.mahalleStats || [];
   const sokakStats: any[] = reportData?.sokakStats || [];
   const batchStats: any[] = reportData?.batchStats || [];
@@ -600,10 +601,16 @@ export default function AnalyticsPage({
             </div>
 
             {/* Hane Durumları Kırılımı */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200 text-center">
               <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
                 <span className="text-[10px] font-bold text-emerald-800 uppercase block">Tam Teslimat Yapılan</span>
                 <div className="text-lg font-black text-emerald-700 mt-0.5">{summary?.tamHane || 0} Hane</div>
+
+              <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                <span className="text-[10px] font-bold text-indigo-800 uppercase block">Ek Kömür (Manuel İmza)</span>
+                <div className="text-lg font-black text-indigo-700 mt-0.5">{summary?.ekKomurVerilenHane || 0} Hane</div>
+                <span className="text-[10px] text-indigo-700 font-bold block">{summary?.ekKomurVerilenTorba || 0} Torba Teslim</span>
+              </div>
               </div>
 
               <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
@@ -680,6 +687,78 @@ export default function AnalyticsPage({
               </div>
             )}
           </div>
+
+          {/* EK KÖMÜR VERİLENLER (MANUEL EK LİSTEYE İMZALI) LİSTESİ */}
+          {ekKomurListesi.length > 0 && (
+            <div className="p-5 rounded-2xl bg-white border border-indigo-300 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-800 flex items-center justify-center border border-indigo-200">
+                    <PackageCheck className="w-4 h-4 text-indigo-700" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">
+                      Ek Kömür Verilenler ({ekKomurListesi.length} Hane)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Islak imza listeleri çıkarıldıktan sonra eklenip teslimatı yapılan ve manuel ek listeye imzası alınan haneler
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-bold text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200">
+                    Toplam {summary?.ekKomurVerilenTorba || 0} Torba ({summary?.ekKomurVerilenTonaj || 0} Ton)
+                  </span>
+                  <a
+                    href="/api/export?type=ek_komur_verilenler"
+                    download="Edirne_SYDV_Ek_Komur_Verilenler_Listesi.xlsx"
+                    className="text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-800 px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-2xs transition-all active:scale-95"
+                    title="Ek kömür verilenler listesini Excel olarak indir"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Excel İndir</span>
+                  </a>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-600 text-[11px] uppercase bg-indigo-50/50">
+                      <th className="py-2.5 px-3">TC Kimlik</th>
+                      <th className="py-2.5 px-3">Ad Soyad</th>
+                      <th className="py-2.5 px-3">Mahalle & Adres</th>
+                      <th className="py-2.5 px-3 text-center">Verilen Torba</th>
+                      <th className="py-2.5 px-3 text-center">Teslim Tarihi</th>
+                      <th className="py-2.5 px-3">Teslim Eden</th>
+                      <th className="py-2.5 px-3">Islak İmza / Not</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-800">
+                    {ekKomurListesi.map((h: any) => (
+                      <tr key={h.id} className="hover:bg-indigo-50/30">
+                        <td className="py-2.5 px-3 font-mono font-bold text-amber-800">{h.tc_no}</td>
+                        <td className="py-2.5 px-3 font-bold text-slate-900">{h.ad_soyad}</td>
+                        <td className="py-2.5 px-3 max-w-[200px] truncate">
+                          <strong className="text-slate-900">{h.mahalle}</strong>{h.adres ? ` - ${h.adres}` : ''}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-bold text-emerald-700">{h.torba_sayisi} Torba</td>
+                        <td className="py-2.5 px-3 text-center text-slate-600 font-medium">
+                          {h.teslimat_tarihi ? formatTrAuto(h.teslimat_tarihi) : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-700 font-medium">{h.teslim_eden_personel || '-'}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300">
+                            {h.ek_liste_imza_notu || (h.teslimat_tarihi ? `${formatTrDate(h.teslimat_tarihi)} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* GÜNLÜK HAREKETLER & TIRLAR */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1550,7 +1629,7 @@ export default function AnalyticsPage({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200 text-center">
                   <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
                     <span className="text-[10px] font-bold text-emerald-800 uppercase block">Tam Teslim Yapılan</span>
                     <span className="text-sm font-black text-emerald-700">{summary?.tamHane || 0} Hane</span>
@@ -1562,6 +1641,11 @@ export default function AnalyticsPage({
                   <div className="p-2 rounded-xl bg-slate-50 border border-slate-200">
                     <span className="text-[10px] font-bold text-slate-600 uppercase block">Bekleyen (Teslim Almayan)</span>
                     <span className="text-sm font-black text-slate-800">{summary?.bekleyenHane || 0} Hane</span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-200">
+                    <span className="text-[10px] font-bold text-indigo-800 uppercase block">Ek Kömür (Manuel İmzalı)</span>
+                    <span className="text-sm font-black text-indigo-800">{summary?.ekKomurVerilenHane || 0} Hane ({summary?.ekKomurVerilenTorba || 0} Torba)</span>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { PackageCheck, Minus, Plus, User, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus, PenTool } from 'lucide-react';
@@ -38,7 +38,16 @@ export default function DeliveryModal({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [isSigned, setIsSigned] = useState<boolean>(beneficiary.imza_durumu === 'IMZALANDI');
+  const isWithoutSigList = !beneficiary.imza_listesi_id || String(beneficiary.imza_listesi_id).trim() === '';
+  const isManuelEkListeCandidate = Boolean(
+    beneficiary.manuel_ek_liste_imzasi ||
+    beneficiary.ek_komur_verildi ||
+    (isWithoutSigList && (beneficiary.tekil_hane_ekleme || beneficiary.sonradan_eklenen_hane || beneficiary.liste_turu === 'EK_LISTE'))
+  );
+
+  const [isSigned, setIsSigned] = useState<boolean>(
+    beneficiary.imza_durumu === 'IMZALANDI' || isManuelEkListeCandidate
+  );
   const listInfo = getBeneficiaryListTypeInfo(beneficiary);
 
   const projectedTotal = mevcutTorba > 0
@@ -234,6 +243,19 @@ export default function DeliveryModal({
             <span>{errorMsg}</span>
           </div>
         )}
+        {/* Manuel Ek Liste İmzası Bilgilendirmesi */}
+        {(isWithoutSigList || isManuelEkListeCandidate) && (
+          <div className="p-3 mb-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 text-amber-950 text-xs shadow-xs space-y-1">
+            <div className="flex items-center gap-1.5 font-black text-amber-900">
+              <span className="text-sm">📋</span>
+              <span>Manuel Ek Listeye İmza Alındı Kabul Edilecek</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+              Bu hane için basılı ıslak imza listesi henüz çıkmadığından, kömür teslimatı yapıldığında imza saha manuel ek listesine elden alınmış kabul edilir ve sistemde <strong>Ek Kömür Verilenler Listesi</strong> olarak takip edilir.
+            </p>
+          </div>
+        )}
+
         {/* Islak İmza Durumu ve Onayı */}
         <div className={`p-3 rounded-2xl border mb-3 flex items-center justify-between text-xs transition-all shadow-xs ${
           isSigned
@@ -248,7 +270,11 @@ export default function DeliveryModal({
             </div>
             <div className="min-w-0">
               <span className="block font-black text-xs leading-tight">
-                {isSigned ? '✓ Kapıda Islak İmza Formu Alındı' : '⚠️ Kapıda Islak İmza Alınmalıdır'}
+                {isManuelEkListeCandidate
+                  ? '✓ Manuel Ek Listeye İmza Alındı Kabul Edildi'
+                  : isSigned
+                  ? '✓ Kapıda Islak İmza Formu Alındı'
+                  : '⚠️ Kapıda Islak İmza Alınmalıdır'}
               </span>
               <span className="text-[11px] text-slate-600 font-medium block truncate mt-0.5">
                 {listInfo.folderLabel} • #{beneficiary.sira_no || beneficiary.mahalle_sira || beneficiary.id}

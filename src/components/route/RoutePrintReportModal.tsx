@@ -310,6 +310,11 @@ export default function RoutePrintReportModal({
                         <div className="font-semibold text-slate-900">
                           {stop.teslim_alan ? stop.teslim_alan : '.....................'}
                         </div>
+                        {(stop.manuel_ek_liste_imzasi || stop.ek_komur_verildi || stop.ek_liste_imza_notu) && (
+                          <div className="text-[9px] font-black text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0.5 rounded mt-1 leading-tight">
+                            {stop.ek_liste_imza_notu || (stop.teslim_tarihi ? `${stop.teslim_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}
+                          </div>
+                        )}
                         {(isTamam || isEksik) &&
                           (stop.teslim_eden_personel ||
                             printRoute.kapatan_personel ||
