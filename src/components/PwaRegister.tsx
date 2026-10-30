@@ -31,16 +31,41 @@ export default function PwaRegister() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // 1. Register Service Worker safely (graceful fallback on very old WebViews)
+    // 1. Register Service Worker safely with version tracking & auto-update
+    let swInterval: any = null;
     if ('serviceWorker' in navigator) {
+      const appVer = process.env.NEXT_PUBLIC_APP_VERSION || '';
+      const swUrl = appVer ? `/sw.js?v=${encodeURIComponent(appVer)}` : '/sw.js';
       navigator.serviceWorker
-        .register('/sw.js')
+        .register(swUrl)
         .then((reg) => {
           console.log('SW registered successfully:', reg.scope);
+          // Check for service worker updates immediately
+          reg.update().catch(() => {});
+
+          reg.onupdatefound = () => {
+            const installing = reg.installing;
+            if (installing) {
+              installing.onstatechange = () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[PWA] New version installed and ready.');
+                }
+              };
+            }
+          };
         })
         .catch((err) => {
           console.warn('SW registration failed (legacy browser fallback active):', err);
         });
+
+      // Periodically check for SW updates when user is online
+      swInterval = setInterval(() => {
+        if (navigator.onLine) {
+          navigator.serviceWorker.getRegistration().then((reg) => {
+            if (reg) reg.update().catch(() => {});
+          }).catch(() => {});
+        }
+      }, 60000);
     }
 
     // 2. Check if already running as standalone PWA
@@ -114,6 +139,7 @@ export default function PwaRegister() {
     window.addEventListener('komur_open_android_helper', handleOpenHelper);
 
     return () => {
+      if (swInterval) clearInterval(swInterval);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('komur_open_android_helper', handleOpenHelper);
     };

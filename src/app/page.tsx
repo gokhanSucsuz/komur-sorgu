@@ -24,6 +24,7 @@ import { setOfflineQueueActiveMode, clearSandboxOfflineQueue } from '@/lib/offli
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
 import { signatureQueue } from '@/lib/signatureQueue';
 import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
+import { applySafeCachePurge, checkAndPurgeIfVersionChanged, purgeSessionStorage } from '@/lib/cacheManager';
 
 // Modern Skeleton loader for dynamically loaded sub-tabs
 function TabLoadingSkeleton({ text = 'Yükleniyor...' }: { text?: string }) {
@@ -692,9 +693,30 @@ export default function Home() {
     }
   }, []);
 
+  // Safe version upgrade & cache purge on initial app boot
+  useEffect(() => {
+    const bundledVersion = process.env.NEXT_PUBLIC_APP_VERSION;
+    if (bundledVersion) {
+      const vCheck = checkAndPurgeIfVersionChanged(bundledVersion);
+      if (vCheck.changed) {
+        applySafeCachePurge(bundledVersion).then(() => {
+          if (!vCheck.isFirstRun) {
+            showToast({
+              type: 'info',
+              title: '🚀 Sistem Yeni Sürüme Güncellendi',
+              message: 'Son güncellemeler yüklendi ve cihaz önbelleği güvenle yenilendi.',
+            });
+          }
+        });
+      }
+    }
+  }, []);
+
   // Refresh all data
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
+    beneficiariesMemoryCacheRef.current = null;
+    purgeSessionStorage();
     await Promise.all([
       fetchBeneficiaries(true), // Force reload from server
       fetchArchive(),
@@ -710,7 +732,7 @@ export default function Home() {
   useEffect(() => {
     if (isLoggedIn) {
       fetchSettings();
-      fetchBeneficiaries();
+      fetchBeneficiaries(true);
       fetchArchive();
       fetchTrucks();
       fetchStats();
@@ -781,6 +803,26 @@ export default function Home() {
       try {
         const res = await fetch('/api/sync/status');
         const data = await res.json();
+        if (data.appVersion) {
+          const vCheck = checkAndPurgeIfVersionChanged(data.appVersion);
+          if (vCheck.changed) {
+            beneficiariesMemoryCacheRef.current = null;
+            await applySafeCachePurge(data.appVersion);
+            if (!vCheck.isFirstRun) {
+              showToast({
+                type: 'info',
+                title: '🚀 Sistem Yeni Sürüme Güncellendi',
+                message: 'Son güncellemeler yüklendi ve cihaz önbelleği güvenle yenilendi.',
+              });
+            }
+            fetchSettings();
+            fetchBeneficiaries(true);
+            fetchArchive();
+            fetchTrucks();
+            fetchStats();
+            fetchActiveRouteCount();
+          }
+        }
         if (data.success) {
           let modeChangedOnServer = false;
           if (data.calismaModu === 'DENEME' || data.calismaModu === 'RESMI') {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'komur-takip-v3';
+const CACHE_NAME = 'komur-takip-v4';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/edirne-sydv-logo.png',
@@ -25,9 +25,25 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.action === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data && event.data.action === 'CLEAR_CACHE') {
+    event.waitUntil(
+      caches.keys().then((keys) => {
+        return Promise.all(keys.map((k) => caches.delete(k)));
+      }).then(() => {
+        if (event.ports && event.ports[0]) {
+          event.ports[0].postMessage({ cleared: true });
+        }
+      })
+    );
+  }
 });
 
 self.addEventListener('fetch', (event) => {

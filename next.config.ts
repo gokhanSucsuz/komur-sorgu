@@ -1,5 +1,20 @@
 import type { NextConfig } from "next";
 
+let appVersion = 'dev';
+try {
+  const { execSync } = require('child_process');
+  appVersion =
+    process.env.NEXT_PUBLIC_APP_VERSION ||
+    process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
+    process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ||
+    process.env.GIT_COMMIT_SHA?.slice(0, 7) ||
+    execSync('git rev-parse --short HEAD', { encoding: 'utf-8', timeout: 2000 }).trim() ||
+    'v_' + Date.now().toString().slice(-6);
+} catch {
+  appVersion = 'v_' + Date.now().toString().slice(-6);
+}
+
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   experimental: {
@@ -15,6 +30,23 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   async headers() {
     return [
+      {
+        source: '/sw.js',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
+          },
+        ],
+      },
       {
         source: '/api/:path*',
         headers: [

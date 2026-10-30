@@ -3,12 +3,23 @@ import { getDbCollections } from '@/lib/mongodb';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError } from '@/lib/security';
+import { getAppVersion } from '@/lib/version';
 
 export async function GET(request: NextRequest) {
   try {
     const session = await verifySession(request);
     if (!session.valid) {
-      return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Oturum gerekli', appVersion: getAppVersion() },
+        {
+          status: 401,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        }
+      );
     }
 
     const { systemSettings, deliveryRoutes: routeCol, calismaModu, isSandboxMode } = await getDbCollections();
@@ -54,6 +65,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
+        appVersion: getAppVersion(),
         lastSyncTime: syncDoc?.value || '',
         lastUpdatedBy: syncDoc?.updated_by || '',
         serverTime: nowIso,

@@ -22,6 +22,8 @@ import {
   Building2,
 } from 'lucide-react';
 import { formatTrAuto } from '@/lib/dateUtils';
+import { showToast } from './GlobalAlertManager';
+import { applySafeCachePurge } from '@/lib/cacheManager';
 import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
 
 interface ProfileModalProps {
@@ -82,6 +84,27 @@ export default function ProfileModal({
   const [disableMode, setDisableMode] = useState(false);
   const [disableCode, setDisableCode] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
+  const [isPurgingCache, setIsPurgingCache] = useState(false);
+  const appVersion = typeof window !== 'undefined' ? (localStorage.getItem('komur_app_version') || process.env.NEXT_PUBLIC_APP_VERSION || '') : '';
+
+  const handleManualCachePurge = async () => {
+    setIsPurgingCache(true);
+    try {
+      await applySafeCachePurge(appVersion);
+      showToast({
+        type: 'success',
+        title: 'Önbellek Temizlendi',
+        message: 'Cihazınızdaki eski önbellek güvenle temizlendi. Sayfa yenileniyor...',
+      });
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }, 800);
+    } catch {
+      setIsPurgingCache(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -874,6 +897,24 @@ export default function ProfileModal({
             </button>
           </div>
         </form>
+
+        {/* Sürüm & Cihaz Önbelleği Temizleme */}
+        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+          <div className="flex items-center gap-1.5 font-medium truncate">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0"></span>
+            <span className="truncate">Sürüm: <strong>{appVersion || 'Güncel'}</strong></span>
+          </div>
+          <button
+            type="button"
+            onClick={handleManualCachePurge}
+            disabled={isPurgingCache}
+            className="text-[11px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all active:scale-95 shrink-0"
+            title="Eski önbelleği ve geçici verileri temizleyip sistemi yeniler. Oturumunuz ve bekleyen çevrimdışı teslimatlarınız korunur."
+          >
+            <RefreshCw className={`w-3 h-3 ${isPurgingCache ? 'animate-spin text-amber-600' : ''}`} />
+            <span>{isPurgingCache ? 'Temizleniyor...' : 'Önbelleği Temizle & Yenile'}</span>
+          </button>
+        </div>
 
         {/* Logout Option */}
         {onLogout && (
