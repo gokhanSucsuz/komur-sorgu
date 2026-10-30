@@ -19,6 +19,7 @@ import RoutePrintReportModal from './route/RoutePrintReportModal';
 import RouteModeCockpitModal from './route/RouteModeCockpitModal';
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
+import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';
 
 function getOrCreateClientId(): string {
   if (typeof window === 'undefined') return '';
@@ -601,11 +602,14 @@ export default function RoutePage({
   useEffect(() => {
     if (isRouteModeOpen) {
       requestWakeLock();
+      requestAppFullscreen();
     } else {
       releaseWakeLock();
+      exitAppFullscreen();
     }
     return () => {
       releaseWakeLock();
+      exitAppFullscreen();
     };
   }, [isRouteModeOpen, requestWakeLock, releaseWakeLock]);
 

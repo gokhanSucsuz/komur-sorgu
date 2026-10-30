@@ -4034,28 +4034,54 @@ img[src*="edirne-sydv-logo"] {
   }
 
   /* ========================================================
-     ROTA MODU (SAHA TESLİMAT MODU - UBER/LYFT COCKPIT)
+     ROTA MODU (SAHA TESLİMAT MODU - TAM EKRAN MOBİL KOKPİT)
      ======================================================== */
+  body:has(.route-mode-overlay) {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100% !important;
+    height: 100% !important;
+    touch-action: none;
+  }
+
+  body:has(.route-mode-overlay) .mobile-nav-bar,
+  body:has(.route-mode-overlay) .pwa-banner,
+  body:has(.route-mode-overlay) header {
+    display: none !important;
+  }
+
   .route-mode-overlay {
     position: fixed;
     inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    width: 100dvw;
     height: 100vh;
     height: 100dvh;
     max-height: 100dvh;
-    z-index: 120;
+    z-index: 9999;
     background: #0f172a;
     color: #0f172a;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    touch-action: pan-y;
   }
 
   .route-mode-topbar {
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
     color: #ffffff;
     border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-    padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem 1rem;
+    padding: calc(0.5rem + env(safe-area-inset-top, 0px)) 0.75rem 0.5rem 0.75rem;
     flex-shrink: 0;
+  }
+  @media (min-width: 640px) {
+    .route-mode-topbar {
+      padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem 1rem;
+    }
   }
 
   .route-mode-body {
@@ -4065,10 +4091,15 @@ img[src*="edirne-sydv-logo"] {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     background: #f1f5f9;
-    padding: 0.875rem;
+    padding: 0.5rem 0.5rem 0.75rem 0.5rem;
     display: flex;
     flex-direction: column;
     align-items: center;
+  }
+  @media (min-width: 640px) {
+    .route-mode-body {
+      padding: 0.875rem;
+    }
   }
 
   .route-mode-container {
@@ -4076,17 +4107,29 @@ img[src*="edirne-sydv-logo"] {
     max-width: 680px;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding-bottom: 1.5rem;
+    gap: 0.5rem;
+    padding-bottom: 0.75rem;
+  }
+  @media (min-width: 640px) {
+    .route-mode-container {
+      gap: 0.75rem;
+      padding-bottom: 1.5rem;
+    }
   }
 
   .route-mode-footer {
     background: #ffffff;
     border-top: 1px solid #cbd5e1;
-    padding: 0.65rem 1rem;
-    padding-bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
+    padding: 0.5rem 0.75rem;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
     flex-shrink: 0;
     box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+  }
+  @media (min-width: 640px) {
+    .route-mode-footer {
+      padding: 0.65rem 1rem;
+      padding-bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
+    }
   }
 
   .route-mode-pill-strip {
