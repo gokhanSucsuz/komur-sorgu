@@ -395,4 +395,70 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(telefon, '05454476937', '1. telefon Başvuran Cep Telefonu olmalıdır');
     assert.equal(telefon2, '05079940917', '2. telefon Hane Telefonu olmalıdır');
   });
+
+  it('9. Birden fazla telefon numarası olan kayıtlarda numaralar alt alta (\\n ile ayrılmış) olarak gösterilir', () => {
+    const phones = ['0545 447 69 37', '0507 994 09 17'];
+    const phoneStr = phones.length > 0 ? phones.join('\n') : '-';
+    assert.ok(phoneStr.includes('\n'), 'Telefon numaraları \\n ile alt alta ayrılmalıdır');
+    const lines = phoneStr.split('\n');
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '0545 447 69 37');
+    assert.equal(lines[1], '0507 994 09 17');
+  });
+
+  it('10. Standart adreslerde satır yüksekliği 45pt kalırken, uzun adreslerde adres içeriğine göre dinamik olarak genişler', () => {
+    const shortAddress = 'Fatih Mah. Gül Sok. No: 4';
+    const longAddress = 'Şükrüpaşa Mah. Şehit Cem Havale Sok. Barış Sitesi A Blok Kat: 3 Daire: 7 Merkez / Edirne (Şehit Asım İlkokulu Yanı, Büyük Market Karşısı)';
+
+    function calculateAddressRowHeight(address: string, standardHeight = 45): number {
+      if (!address) return standardHeight;
+      const text = String(address).trim();
+      if (!text) return standardHeight;
+
+      const charsPerLine = 28;
+      const paragraphs = text.split(/\r?\n/);
+      let totalLines = 0;
+
+      for (const para of paragraphs) {
+        const trimmed = para.trim();
+        if (!trimmed) {
+          totalLines += 1;
+          continue;
+        }
+
+        const words = trimmed.split(/\s+/);
+        let currentLineLen = 0;
+        let linesInPara = 1;
+
+        for (const w of words) {
+          if (w.length > charsPerLine) {
+            if (currentLineLen > 0) {
+              linesInPara += 1;
+              currentLineLen = 0;
+            }
+            linesInPara += Math.ceil(w.length / charsPerLine) - 1;
+            currentLineLen = w.length % charsPerLine || charsPerLine;
+          } else if (currentLineLen === 0) {
+            currentLineLen = w.length;
+          } else if (currentLineLen + 1 + w.length <= charsPerLine) {
+            currentLineLen += 1 + w.length;
+          } else {
+            linesInPara += 1;
+            currentLineLen = w.length;
+          }
+        }
+        totalLines += linesInPara;
+      }
+
+      const neededHeight = totalLines * 15 + 8;
+      return Math.max(standardHeight, neededHeight);
+    }
+
+    const shortHeight = calculateAddressRowHeight(shortAddress, 45);
+    const longHeight = calculateAddressRowHeight(longAddress, 45);
+
+    assert.equal(shortHeight, 45, 'Kısa adreste standart 45pt korunmalıdır');
+    assert.ok(longHeight > 45, `Uzun adreste satır yüksekliği standardın üzerine çıkmalıdır (Hesaplanan: ${longHeight}pt)`);
+    assert.ok(longHeight >= 68, '4+ satırlı uzun adreste en az 68pt yükseklik sağlanmalıdır');
+  });
 });

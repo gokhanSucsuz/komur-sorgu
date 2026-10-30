@@ -280,6 +280,57 @@ function addStyledWorksheet(
 }
 
 /**
+ * Adres metninin uzunluğuna ve satır sayısına göre satır yüksekliğini hesaplar.
+ * Standart ıslak imza yüksekliği 45pt'dir; adres standardın üzerinde ise yüksekliği artırır.
+ */
+function calculateAddressRowHeight(address: string, standardHeight = 45): number {
+  if (!address) return standardHeight;
+  const text = String(address).trim();
+  if (!text) return standardHeight;
+
+  // A4 yatay tabloda Adres kolon genişliği ~34 karakterdir.
+  // Kelime kaydırmalarıyla satır başına ortalama 28-30 karakter düşer.
+  const charsPerLine = 28;
+  const paragraphs = text.split(/\r?\n/);
+  let totalLines = 0;
+
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) {
+      totalLines += 1;
+      continue;
+    }
+
+    const words = trimmed.split(/\s+/);
+    let currentLineLen = 0;
+    let linesInPara = 1;
+
+    for (const w of words) {
+      if (w.length > charsPerLine) {
+        if (currentLineLen > 0) {
+          linesInPara += 1;
+          currentLineLen = 0;
+        }
+        linesInPara += Math.ceil(w.length / charsPerLine) - 1;
+        currentLineLen = w.length % charsPerLine || charsPerLine;
+      } else if (currentLineLen === 0) {
+        currentLineLen = w.length;
+      } else if (currentLineLen + 1 + w.length <= charsPerLine) {
+        currentLineLen += 1 + w.length;
+      } else {
+        linesInPara += 1;
+        currentLineLen = w.length;
+      }
+    }
+    totalLines += linesInPara;
+  }
+
+  // Segoe UI 10pt font: satır başına ~15pt + 8pt dikey padding
+  const neededHeight = totalLines * 15 + 8;
+  return Math.max(standardHeight, neededHeight);
+}
+
+/**
  * Resmi Islak İmza Listesi İçin Özel Mahalle Sekmesi Oluşturucu.
  * Kural Gereksinimleri:
  * - Adres A'dan Z'ye sıralı (localeCompare tr numeric)
@@ -377,7 +428,9 @@ function addOfficialSignatureSheet(
   let totalBags = 0;
   group.forEach((r: any, idx: number) => {
     const phones = extractPhoneNumbers(r.telefon, r.telefon2);
-    const phoneStr = phones.length > 0 ? phones.join(' / ') : (r.telefon || '-');
+    const phoneStr = phones.length > 0
+      ? phones.join('\n')
+      : (r.telefon ? String(r.telefon).replace(/\s*[\/;|,]\s*/g, '\n') : '-');
     const target = Number(r.hedef_torba || 34);
     totalBags += target;
 
@@ -385,12 +438,14 @@ function addOfficialSignatureSheet(
       ? formatTrDateWithDay(r.teslimat_tarihi) || r.teslimat_tarihi
       : '';
 
+    const fullAddress = r.acik_adres || r.sokak || '-';
+
     const rowData = [
       idx + 1,
       r.ad_soyad || '-',
       r.tc_no || '-',
       phoneStr,
-      r.acik_adres || r.sokak || '-',
+      fullAddress,
       '34 Torba (Takribi 850kg)',
       '', // Teslim Eden Islak İmza alanı kural gereği BOŞTUR
       teslimTarihiStr,
@@ -399,7 +454,10 @@ function addOfficialSignatureSheet(
 
     const dataRow = sheet.addRow(rowData);
     // Islak imza için ferah satır yüksekliği (45pt = ~16mm)
-    dataRow.height = 45;
+    const addressHeight = calculateAddressRowHeight(fullAddress, 45);
+    const phoneLines = phoneStr.split('\n').length;
+    const phoneHeight = phoneLines > 2 ? phoneLines * 15 + 8 : 45;
+    dataRow.height = Math.max(45, addressHeight, phoneHeight);
 
     const isEven = idx % 2 === 1;
     const zebraBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
@@ -431,8 +489,14 @@ function addOfficialSignatureSheet(
 
       if (colNumber === 2) {
         cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else if (colNumber === 4) {
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       } else if (colNumber === 5) {
         cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+
+      } else if (colNumber === 6) {
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
       } else {
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       }
