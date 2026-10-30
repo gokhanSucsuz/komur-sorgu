@@ -319,6 +319,8 @@ export default function ExcelImportPage({
           assignedCount: data.assignedCount || 0,
           nextListNo: data.nextListNo || 1,
           lists: data.lists || [],
+          missingAddressCount: data.missingAddressCount || (data.missingAddressBeneficiaries?.length ?? 0),
+          missingAddressBeneficiaries: data.missingAddressBeneficiaries || [],
         });
       }
     } catch (err) {
@@ -380,6 +382,13 @@ export default function ExcelImportPage({
       const data = await res.json();
       if (!data.success) {
         if (data.code === 'MISSING_ADDRESSES_MANDATORY_UPDATE' || data.missingAddressCount > 0) {
+          if (data.missingAddressBeneficiaries) {
+            setSignatureData((prev) => ({
+              ...prev,
+              missingAddressCount: data.missingAddressCount || data.missingAddressBeneficiaries.length,
+              missingAddressBeneficiaries: data.missingAddressBeneficiaries,
+            }));
+          }
           await showAlert({
             title: '⚠️ Adres Güncellemesi Zorunludur!',
             message: data.error || 'Sistemde adresi eksik kayıtlar bulunmaktadır. Lütfen önce bu adresleri tamamlayınız.',
@@ -3318,7 +3327,9 @@ export default function ExcelImportPage({
           missingBeneficiaries={signatureData.missingAddressBeneficiaries || []}
           onUpdated={() => {
             fetchSignatureData();
+            onRefreshAll();
           }}
+          userName={userRole === 'ADMIN' ? 'Yönetici' : 'Personel'}
         />
       )}
     </div>
