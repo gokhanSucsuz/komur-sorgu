@@ -326,15 +326,28 @@ export async function POST(request: NextRequest) {
       const rowNum = row.__rowNum || (i + 2); // Excel row index
       const sheetName = String(row.__sheetName || '').trim();
 
-      // Helper to extract field case-insensitively
+      // Helper to extract field case-insensitively with exact-match priority
       const getField = (fieldAliases: string[]): string => {
+        const cleanAliases = fieldAliases.map((a) => cleanTurkishText(a).replace(/[^a-z0-9]/g, ''));
+        // 1. Önce tam eşleşme (Exact match)
         for (const key of Object.keys(row)) {
           if (key.startsWith('__')) continue;
           const cleanKey = cleanTurkishText(key).replace(/[^a-z0-9]/g, '');
-          for (const alias of fieldAliases) {
-            const cleanAlias = cleanTurkishText(alias).replace(/[^a-z0-9]/g, '');
-            if (cleanKey === cleanAlias || cleanKey.includes(cleanAlias)) {
-              return row[key] !== undefined && row[key] !== null ? String(row[key]).trim() : '';
+          for (const cleanAlias of cleanAliases) {
+            if (cleanKey === cleanAlias) {
+              const val = row[key] !== undefined && row[key] !== null ? String(row[key]).trim() : '';
+              if (val) return val;
+            }
+          }
+        }
+        // 2. Kısmi eşleşme (Contains) fallback
+        for (const key of Object.keys(row)) {
+          if (key.startsWith('__')) continue;
+          const cleanKey = cleanTurkishText(key).replace(/[^a-z0-9]/g, '');
+          for (const cleanAlias of cleanAliases) {
+            if (cleanKey.includes(cleanAlias)) {
+              const val = row[key] !== undefined && row[key] !== null ? String(row[key]).trim() : '';
+              if (val) return val;
             }
           }
         }
@@ -348,14 +361,102 @@ export async function POST(request: NextRequest) {
         adSoyad = `${adSoyad} ${soyad}`.trim();
       }
 
-      // Check both primary phone column and secondary phone column
-      const rawPhone1 = getField(['telefon', 'tel', 'gsm', 'cep', 'cep telefonu', 'iletisim', 'telefon 1', 'tel 1', '1 telefon']);
-      const rawPhone2 = getField(['telefon 2', 'tel 2', 'telefon2', 'tel2', 'gsm 2', 'gsm2', 'cep 2', 'cep2', 'ikinci telefon', '2 telefon', 'yedek tel', 'yedek telefon', 'es tel', 'es telefonu', 'iletisim 2', 'diger telefon', 'diger tel']);
+      // Telefon Numarası Ayıklama (Kullanıcı Kuralı):
+      // - Başvuran cep telefonu BİRİNCİ telefon olarak eklenecek.
+      // - Var ise hane telefonu İKİNCİ telefon olarak eklenecek.
+      const rawApplicantCep = getField([
+        'basvuran cep telefonu',
+        'basvuran cep',
+        'basvuran telefon',
+        'basvuran gsm',
+        'cep telefonu',
+        'cep tel',
+        'cep no',
+        'cep',
+        'gsm no',
+        'gsm',
+        'mobil tel',
+        'mobil',
+      ]);
 
-      // Parse both numbers whether in separate columns or delimited in a single column
-      const phones = extractPhoneNumbers(rawPhone1, rawPhone2);
-      const telefon = phones[0] || '';
-      const telefon2 = phones[1] || '';
+      const rawHaneTel = getField([
+        'hane telefonu',
+        'hane tel',
+        'ev telefonu',
+        'ev tel',
+        'sabit telefon',
+        'sabit tel',
+        'ev',
+      ]);
+
+      const rawPhone2 = getField([
+        'telefon 2',
+        'tel 2',
+        'telefon2',
+        'tel2',
+        'gsm 2',
+        'gsm2',
+        'cep 2',
+        'cep2',
+        'ikinci telefon',
+        '2 telefon',
+        'yedek tel',
+        'yedek telefon',
+        'es tel',
+        'es telefonu',
+        'iletisim 2',
+        'diger telefon',
+        'diger tel',
+      ]);
+
+      const rawGenericPhone = getField([
+        'telefon',
+        'tel',
+        'iletisim',
+        'telefon 1',
+        'tel 1',
+        '1 telefon',
+      ]);
+
+      const applicantPhones = extractPhoneNumbers(rawApplicantCep);
+      const hanePhones = extractPhoneNumbers(rawHaneTel);
+      const generic2Phones = extractPhoneNumbers(rawPhone2);
+      const generic1Phones = extractPhoneNumbers(rawGenericPhone);
+
+      let telefon = '';
+      let telefon2 = '';
+
+      // KURAL 1: Başvuran cep telefonu daima 1. telefon (birinci telefon)
+      if (applicantPhones.length > 0) {
+        telefon = applicantPhones[0];
+        if (applicantPhones.length > 1) {
+          telefon2 = applicantPhones[1];
+        }
+      }
+
+      // KURAL 2: Hane telefonu var ise 2. telefon (ikinci telefon)
+      if (hanePhones.length > 0) {
+        if (!telefon) {
+          telefon = hanePhones[0];
+          if (hanePhones.length > 1) {
+            telefon2 = hanePhones[1];
+          }
+        } else if (!telefon2 && hanePhones[0] !== telefon) {
+          telefon2 = hanePhones[0];
+        }
+      }
+
+      // Genel sütunlardan tamamla (eğer hala boş alan varsa)
+      if (!telefon) {
+        const remaining = [...generic1Phones, ...generic2Phones].filter((p) => p !== telefon && p !== telefon2);
+        if (remaining.length > 0) telefon = remaining[0];
+        if (remaining.length > 1 && !telefon2) telefon2 = remaining[1];
+      } else if (!telefon2) {
+        const remaining = [...generic2Phones, ...generic1Phones].filter((p) => p !== telefon);
+        if (remaining.length > 0) telefon2 = remaining[0];
+      }
+
+      const phones = [telefon, telefon2].filter(Boolean);
       const displayPhoneLog = phones.length > 1 ? phones.join(' / ') : telefon;
 
       // Settlement detection: Mahalle or Köy (fallback to sheet name on multi-sheet workbooks)

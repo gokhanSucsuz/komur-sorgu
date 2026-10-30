@@ -52,13 +52,14 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
       },
     });
 
-    const titleRow = sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ÇAVUŞBEY MAH.']);
-    sheet.mergeCells(1, 1, 1, 6);
+        const titleRow = sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ÇAVUŞBEY MAH.']);
+    sheet.mergeCells(1, 1, 1, 7);
     titleRow.height = 28;
 
-    sheet.addRow(['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Alan Islak İmza']);
+    const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Tarihi', 'Teslim Alan Islak İmza'];
+    sheet.addRow(headers);
 
-    const dataRow = sheet.addRow([1, 'Ahmet Yılmaz', '12345678901', '0555 111 22 33', 'Atatürk Cad. No: 1', '']);
+    const dataRow = sheet.addRow([1, 'Ahmet Yılmaz', '12345678901', '0555 111 22 33', 'Atatürk Cad. No: 1', '', '']);
     dataRow.height = 45;
 
     assert.equal(sheet.pageSetup.paperSize, 9);
@@ -66,8 +67,10 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(sheet.pageSetup.fitToWidth, 1);
     assert.equal(sheet.pageSetup.printTitlesRow, '1:2');
     assert.equal(dataRow.height, 45);
-    // İmza alanı kesinlikle boştur
-    assert.equal(dataRow.getCell(6).value, '');
+    // Teslim Tarihi ve İmza alanları
+    assert.equal(headers[5], 'Teslim Tarihi', '6. kolon Teslim Tarihi olmalıdır');
+    assert.equal(headers[6], 'Teslim Alan Islak İmza', '7. kolon Teslim Alan Islak İmza olmalıdır');
+    assert.equal(dataRow.getCell(7).value, '', 'İmza alanı boş olmalıdır');
 
     const buffer = await workbook.xlsx.writeBuffer();
     assert.ok(buffer.byteLength > 0);
@@ -276,31 +279,84 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(pendingAfter.length, 0, 'Kilitleme sonrası bekleyen kayıt 0 kalmalıdır');
   });
 
-  it('7. Islak imza listesi tutanağında sol tarafta Dağıtımı Yapan Vakıf Görevlisi/Personeli, sağ tarafta Vakıf Müdürü yer alır; Muhtar ve Şoför alanı bulunmaz', () => {
+  it('7. Islak imza listesinde imza sütununun öncesinde Teslim Tarihi sütunu yer alır; mahalle/köy listelerinin sonunda dağıtım sorumlusu ve vakıf müdürü imza alanları yer almaz', () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('1. FATIH MAH.');
 
-    // Simüle edilen resmi tutanak ve imza satırı
-    const signTitleRow = sheet.addRow([
-      'Dağıtımı Yapan Vakıf Görevlisi veya Personeli\n(Ad Soyad / İmza)',
-      '',
-      '',
-      'Vakıf Müdürü\n(Ad Soyad / İmza / Mühür)',
-      '',
-      '',
-    ]);
-    sheet.mergeCells(signTitleRow.number, 1, signTitleRow.number, 3);
-    sheet.mergeCells(signTitleRow.number, 4, signTitleRow.number, 6);
+    const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Tarihi', 'Teslim Alan Islak İmza'];
+    sheet.addRow(headers);
+    assert.equal(headers[5], 'Teslim Tarihi', 'İmza sütunundan önce Teslim Tarihi sütunu bulunmalıdır');
+    assert.equal(headers[6], 'Teslim Alan Islak İmza');
 
-    const leftBoxText = String(signTitleRow.getCell(1).value);
-    const rightBoxText = String(signTitleRow.getCell(4).value);
+    // Mahalle alt toplam satırı eklenir
+    const summaryRow = sheet.addRow(['', 'TOPLAM: 5 HANE', '', '', 'Tahsis Kömür Miktarı: 170 Torba (4.25 Ton)', '', '']);
+    assert.equal(summaryRow.values.length, 8); // index 0 boşluk + 7 kolon
 
-    // Doğrulamalar:
-    assert.ok(leftBoxText.includes('Dağıtımı Yapan Vakıf Görevlisi veya Personeli'), 'Sol kutuda Vakıf Görevlisi / Personeli yer almalıdır');
-    assert.ok(rightBoxText.includes('Vakıf Müdürü'), 'Sağ kutuda Vakıf Müdürü yer almalıdır');
+    // Mahalle/köy sonunda dağıtım sorumlusu veya vakıf müdürü imza bloğu BULUNMAZ
+    let foundSignatureBlock = false;
+    sheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        const val = String(cell.value || '');
+        if (val.includes('Vakıf Müdürü') || val.includes('Dağıtımı Yapan Vakıf')) {
+          foundSignatureBlock = true;
+        }
+      });
+    });
+    assert.equal(foundSignatureBlock, false, 'Mahalle ve köy listeleri sonunda dağıtım görevlisi ve vakıf müdürü imza bloğu yer almamalıdır');
+  });
 
-    // Muhtar ve Şoför olmamalıdır:
-    assert.ok(!leftBoxText.includes('Muhtar') && !rightBoxText.includes('Muhtar'), 'İmza bloğunda Muhtar yer almamalıdır');
-    assert.ok(!leftBoxText.includes('Şoför') && !rightBoxText.includes('Şoför'), 'İmza bloğunda Şoför yer almamalıdır');
+  it('8. Excel listesi yüklenirken Başvuran Cep Telefonu 1. telefon, Hane Telefonu 2. telefon olarak ayrıştırılır', () => {
+    // SOYBİS formatındaki örnek satır
+        const row: Record<string, any> = {
+      'HANE NO': 2320456,
+      'BAŞVURAN AD': 'HEDİYE',
+      'BAŞVURAN SOYAD': 'OĞEÇUK',
+      'HANE TELEFONU': '05079940917',
+      'BAŞVURAN CEP TELEFONU': '05454476937',
+    };
+
+    function cleanKey(k: string): string {
+      return k.toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    const getField = (aliases: string[]): string => {
+      const cleanAliases = aliases.map((a: string) => a.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      for (const k of Object.keys(row)) {
+        const ck = cleanKey(k);
+        for (const ca of cleanAliases) {
+          if (ck === ca) return String(row[k]).trim();
+        }
+      }
+      for (const k of Object.keys(row)) {
+        const ck = cleanKey(k);
+        for (const ca of cleanAliases) {
+          if (ck.includes(ca)) return String(row[k]).trim();
+        }
+      }
+      return '';
+    };
+
+    const rawApplicantCep = getField(['basvuran cep telefonu', 'cep telefonu']);
+    const rawHaneTel = getField(['hane telefonu', 'ev telefonu']);
+
+    assert.equal(rawApplicantCep, '05454476937', 'Başvuran cep telefonu doğru ayıklanmalıdır');
+    assert.equal(rawHaneTel, '05079940917', 'Hane telefonu doğru ayıklanmalıdır');
+
+    // Telefon atama önceliği
+    const applicantPhones = [rawApplicantCep];
+    const hanePhones = [rawHaneTel];
+
+    let telefon = '';
+    let telefon2 = '';
+
+    if (applicantPhones.length > 0) {
+      telefon = applicantPhones[0];
+    }
+    if (hanePhones.length > 0 && hanePhones[0] !== telefon) {
+      telefon2 = hanePhones[0];
+    }
+
+    assert.equal(telefon, '05454476937', '1. telefon Başvuran Cep Telefonu olmalıdır');
+    assert.equal(telefon2, '05079940917', '2. telefon Hane Telefonu olmalıdır');
   });
 });

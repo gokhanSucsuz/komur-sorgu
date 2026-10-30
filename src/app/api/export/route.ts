@@ -329,7 +329,7 @@ function addOfficialSignatureSheet(
 
   // 1. Mahalle Çizelge Başlığı (İlk sayfa [Özet İcmal] dışındaki tüm sayfalarda sadece bu başlık yer alır)
   const titleRow = sheet.addRow([`KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - ${mahName.toUpperCase()}`]);
-  sheet.mergeCells(1, 1, 1, 6);
+  sheet.mergeCells(1, 1, 1, 7);
   titleRow.height = 28;
   titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
   titleRow.font = { name: 'Segoe UI', size: 12.5, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -340,7 +340,7 @@ function addOfficialSignatureSheet(
   };
 
   // 2. Tablo Kolon Başlıkları (Row 2)
-  const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Alan Islak İmza'];
+  const headers = ['Sıra No', 'Adı Soyadı', 'T.C. Kimlik No', 'Telefon', "Adres (A'dan Z'ye Sıralı)", 'Teslim Tarihi', 'Teslim Alan Islak İmza'];
   const headerRow = sheet.addRow(headers);
   headerRow.height = 28;
   headerRow.eachCell((cell, colNum) => {
@@ -371,12 +371,17 @@ function addOfficialSignatureSheet(
     const target = Number(r.hedef_torba || 34);
     totalBags += target;
 
+    const teslimTarihiStr = r.teslimat_tarihi
+      ? formatTrDateWithDay(r.teslimat_tarihi) || r.teslimat_tarihi
+      : '';
+
     const rowData = [
       idx + 1,
       r.ad_soyad || '-',
       r.tc_no || '-',
       phoneStr,
       r.acik_adres || r.sokak || '-',
+      teslimTarihiStr,
       '', // Islak İmza alanı kural gereği BOŞTUR
     ];
 
@@ -388,7 +393,7 @@ function addOfficialSignatureSheet(
     const zebraBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
 
     dataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const isSignatureCol = colNumber === 6;
+      const isSignatureCol = colNumber === 7;
 
       cell.font = {
         name: 'Segoe UI',
@@ -430,6 +435,7 @@ function addOfficialSignatureSheet(
     '',
     `Tahsis Kömür Miktarı: ${totalBags} Torba (${(totalBags * 0.025).toFixed(2)} Ton)`,
     '',
+    '',
   ]);
   summaryRow.height = 26;
   summaryRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
@@ -448,56 +454,15 @@ function addOfficialSignatureSheet(
     cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center' };
   });
 
-  // Boşluk satırı
-  sheet.addRow([]);
-
-  // Resmi Teslim Tutanağı ve Yetkili İmzaları Alanı
-  const certRow1 = sheet.addRow([
-    'TUTANAKTIR: Yukarıda adı soyadı, TC kimlik numarası ve adresi belirtilen hak sahiplerine yardım kömürleri tutanak ve ıslak imza karşılığında eksiksiz olarak teslim edilmiştir.',
-  ]);
-  sheet.mergeCells(certRow1.number, 1, certRow1.number, 6);
-  certRow1.height = 22;
-  certRow1.getCell(1).font = { name: 'Segoe UI', size: 9, italic: true, bold: true, color: { argb: 'FF334155' } };
-  certRow1.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
-
-  sheet.addRow([]); // boşluk
-
-  const signTitleRow = sheet.addRow([
-    'Dağıtımı Yapan Vakıf Görevlisi veya Personeli\n(Ad Soyad / İmza)',
-    '',
-    '',
-    'Vakıf Müdürü\n(Ad Soyad / İmza / Mühür)',
-    '',
-    '',
-  ]);
-  signTitleRow.height = 55;
-  sheet.mergeCells(signTitleRow.number, 1, signTitleRow.number, 3);
-  sheet.mergeCells(signTitleRow.number, 4, signTitleRow.number, 6);
-
-  for (let col = 1; col <= 6; col++) {
-    const c = signTitleRow.getCell(col);
-    c.border = {
-      top: { style: 'thin', color: { argb: 'FF94A3B8' } },
-      bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
-      left: col === 1 || col === 4 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
-      right: col === 3 || col === 6 ? { style: 'thin', color: { argb: 'FF94A3B8' } } : undefined,
-    };
-  }
-
-  [1, 4].forEach((col) => {
-    const c = signTitleRow.getCell(col);
-    c.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
-    c.alignment = { vertical: 'top', horizontal: 'center', wrapText: true };
-  });
-
   // Kolon Genişlikleri (A4 Yatay Sayfa Baskısına Tam Uyumlu)
   sheet.columns = [
-    { width: 7 },  // Sıra No
-    { width: 26 }, // Adı Soyadı
-    { width: 16 }, // TC Kimlik No
-    { width: 16 }, // Telefon
-    { width: 46 }, // Açık Adres
-    { width: 24 }, // Teslim Alan Islak İmza
+    { width: 6.5 }, // Sıra No
+    { width: 25 },   // Adı Soyadı
+    { width: 15 },   // TC Kimlik No
+    { width: 16 },   // Telefon
+    { width: 42 },   // Açık Adres
+    { width: 14 },   // Teslim Tarihi
+    { width: 22 },   // Teslim Alan Islak İmza
   ];
 
   return sheet;
