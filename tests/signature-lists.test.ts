@@ -8,7 +8,7 @@ process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
 import { encryptBeneficiary, decryptBeneficiary } from '@/lib/crypto';
-import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle } from '@/lib/normalizer';
+import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing } from '@/lib/normalizer';
 
 describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', () => {
   it('1. Adres A\'dan Z\'ye sıralama mantığı Türkçe karakterleri ve kapı numaralarını doğru sıralar', () => {
@@ -596,5 +596,72 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
       sheet.getRow(3).getCell(5).value,
       'Gül Sokak No: 5 (Yeni Adres: Şükrüpaşa Mah., Atatürk Bulvarı No: 14 Daire: 2)'
     );
+  });
+
+  it('13. isBeneficiaryAddressMissing adresi veya mahallesi bos/eksik olan kayitlari tespit eder ve getBeneficiaryEffectiveListMahalle ADRESI OLMAYANLAR dondurur', () => {
+    // 1. Mahalle bos veya '-' olan kayit
+    const recordEmptyMah = { mahalle: '', acik_adres: 'Atatürk Cad. No: 12' };
+    const recordDashMah = { mahalle: '-', acik_adres: 'Atatürk Cad. No: 12' };
+    assert.equal(isBeneficiaryAddressMissing(recordEmptyMah), true);
+    assert.equal(isBeneficiaryAddressMissing(recordDashMah), true);
+    assert.equal(getBeneficiaryEffectiveListMahalle(recordEmptyMah), 'ADRESİ OLMAYANLAR');
+    assert.equal(getBeneficiaryEffectiveListMahalle(recordDashMah), 'ADRESİ OLMAYANLAR');
+
+    // 2. Acik adres bos veya gecersiz etiketli kayit
+    const recordEmptyAddr = { mahalle: 'Fatih Mah.', acik_adres: '' };
+    const recordPlaceholderAddr = { mahalle: 'Fatih Mah.', acik_adres: 'belirtilmedi' };
+    const recordNoAddr = { mahalle: 'Fatih Mah.', acik_adres: 'yok' };
+    assert.equal(isBeneficiaryAddressMissing(recordEmptyAddr), true);
+    assert.equal(isBeneficiaryAddressMissing(recordPlaceholderAddr), true);
+    assert.equal(isBeneficiaryAddressMissing(recordNoAddr), true);
+    assert.equal(getBeneficiaryEffectiveListMahalle(recordEmptyAddr), 'ADRESİ OLMAYANLAR');
+
+    // 3. Sadece mahalle adi ve "No: Belirtilmemiş" olan kayit (sokak/kapi no yok)
+    const recordOnlyMahAndNo = { mahalle: 'Menzilahır Mah.', acik_adres: 'Menzilahır Mah. No: Belirtilmemiş' };
+    assert.equal(isBeneficiaryAddressMissing(recordOnlyMahAndNo), true);
+    assert.equal(getBeneficiaryEffectiveListMahalle(recordOnlyMahAndNo), 'ADRESİ OLMAYANLAR');
+
+    // 4. Gecerli tam adresli kayit
+    const validRecord = { mahalle: 'Menzilahır Mah.', acik_adres: 'Gül Sokak No: 15 Daire: 2' };
+    assert.equal(isBeneficiaryAddressMissing(validRecord), false);
+    assert.equal(getBeneficiaryEffectiveListMahalle(validRecord), 'Menzilahır Mah.');
+  });
+
+  it('14. Excel islak imza listelerinde adresi olmayanlar ADRESI OLMAYANLAR sekmesinde toplanir ve formatSignatureListAddress uyari metni gosterir', () => {
+    const missingRecord1 = { mahalle: '', acik_adres: '' };
+    const missingRecord2 = { mahalle: 'Fatih Mah.', acik_adres: '' };
+    const missingRecord3 = { mahalle: '', acik_adres: 'Mithatpaşa Cad. No: 4' };
+
+    assert.equal(
+      formatSignatureListAddress(missingRecord1),
+      '⚠️ ADRES BELİRTİLMEMİŞ (GÜNCELLEME GEREKLİ)'
+    );
+    assert.equal(
+      formatSignatureListAddress(missingRecord2),
+      'Fatih Mah. (⚠️ Açık Adres / Kapı No Yok)'
+    );
+    assert.equal(
+      formatSignatureListAddress(missingRecord3),
+      'Mithatpaşa Cad. No: 4 (⚠️ Mahalle Belirtilmemiş)'
+    );
+
+    // Listelerde gruplandiginda ADRESI OLMAYANLAR kumesinde toplanmali
+    const records = [
+      { ad_soyad: 'Hüseyin Demir', mahalle: 'Şükrüpaşa Mah.', acik_adres: 'Barış Sokak No: 5' },
+      { ad_soyad: 'Ayşe Yıldız', mahalle: '', acik_adres: '' },
+      { ad_soyad: 'Mehmet Kara', mahalle: 'Genel', acik_adres: 'belirtilmedi' },
+    ];
+
+    const groups = new Map();
+    for (const r of records) {
+      const mah = getBeneficiaryEffectiveListMahalle(r);
+      if (!groups.has(mah)) groups.set(mah, []);
+      groups.get(mah).push(r);
+    }
+
+    assert.equal(groups.has('Şükrüpaşa Mah.'), true);
+    assert.equal(groups.get('Şükrüpaşa Mah.').length, 1);
+    assert.equal(groups.has('ADRESİ OLMAYANLAR'), true);
+    assert.equal(groups.get('ADRESİ OLMAYANLAR').length, 2);
   });
 });

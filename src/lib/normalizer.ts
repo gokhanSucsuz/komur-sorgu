@@ -1415,12 +1415,78 @@ export function compareByAddressAsc(a: any, b: any): number {
  * İmza listesi çıktısı alındıktan sonra adres değişikliği yapıldıysa, basılı klasörlerle ve mahalle
  * listeleriyle karışıklık yaşanmaması için kayıt eski/basılı mahallesinde yer almaya devam eder.
  */
-export function getBeneficiaryEffectiveListMahalle(record: any): string {
-  if (!record) return 'Genel';
-  if (record.imza_sonrasi_adres_degisti && (record.imza_listesi_mahalle || record.onceki_mahalle)) {
-    return record.imza_listesi_mahalle || record.onceki_mahalle;
+/**
+ * Hak sahibinin mahalle veya açık adres bilgisinin boş/eksik olup olmadığını denetler.
+ * Islak imza listesi çıktısı alınmadan önce bu kayıtların tespit edilmesi veya
+ * Excel çıktısında "ADRESİ OLMAYANLAR" sekmesinde toplanması için kullanılır.
+ */
+export function isBeneficiaryAddressMissing(record: any): boolean {
+  if (!record) return true;
+
+  const mah = String(record.mahalle || '').trim();
+  const addr = String(record.acik_adres || '').trim();
+
+  // 1. Mahalle bilgisi boş veya geçersiz genel/belirtilmedi etiketli mi?
+  const invalidMahalleValues = [
+    '',
+    '-',
+    'genel',
+    'genel (belirtilmemiş)',
+    'adres belirtilmedi',
+    'adres eksik',
+    'belirtilmemiş',
+    'bilinmiyor',
+    'adres yok',
+    'adres yok (belirtilmemiş)'
+  ];
+  if (invalidMahalleValues.includes(mah.toLowerCase())) {
+    return true;
   }
-  return record.mahalle || 'Genel';
+
+  // 2. Açık adres boş veya geçersiz etiketli mi?
+  const invalidAddrValues = [
+    '',
+    '-',
+    'belirtilmedi',
+    'belirtilmemiş',
+    'adres belirtilmedi',
+    'açık adres belirtilmedi',
+    'açık adres belirtilmemiş',
+    'adres eksik',
+    'yok',
+    'adres yok',
+    'bilinmiyor'
+  ];
+  if (invalidAddrValues.includes(addr.toLowerCase())) {
+    return true;
+  }
+
+  // 3. Açık adres yalnızca mahalle adından ve "No: Belirtilmemiş" ibaresinden mi ibaret?
+  const strippedAddr = addr
+    .replace(new RegExp(mah, 'gi'), '')
+    .replace(/no:\s*belirtilmemiş/gi, '')
+    .replace(/kapi\s*no:\s*belirtilmemiş/gi, '')
+    .replace(/mah(\.|allesi)?/gi, '')
+    .replace(/köyü?/gi, '')
+    .trim();
+
+  if (!strippedAddr || strippedAddr === '-' || strippedAddr === 'No:') {
+    return true;
+  }
+
+  return false;
+}
+
+export function getBeneficiaryEffectiveListMahalle(record: any): string {
+  if (!record) return 'ADRESİ OLMAYANLAR';
+  if (isBeneficiaryAddressMissing(record)) {
+    return 'ADRESİ OLMAYANLAR';
+  }
+  if (record.imza_sonrasi_adres_degisti && (record.imza_listesi_mahalle || record.onceki_mahalle)) {
+    const effectiveOld = record.imza_listesi_mahalle || record.onceki_mahalle;
+    return effectiveOld || 'ADRESİ OLMAYANLAR';
+  }
+  return record.mahalle || 'ADRESİ OLMAYANLAR';
 }
 
 /**
@@ -1431,6 +1497,18 @@ export function getBeneficiaryEffectiveListMahalle(record: any): string {
  */
 export function formatSignatureListAddress(record: any): string {
   if (!record) return '-';
+
+  if (isBeneficiaryAddressMissing(record)) {
+    const rawAddr = (record.acik_adres || '').trim();
+    const rawMah = (record.mahalle || '').trim();
+    if (rawAddr && rawAddr !== '-' && !rawAddr.toLowerCase().includes('belirtilme') && !rawAddr.toLowerCase().includes('eksik')) {
+      return `${rawAddr} (⚠️ Mahalle Belirtilmemiş)`;
+    }
+    if (rawMah && rawMah !== '-' && !rawMah.toLowerCase().includes('genel') && !rawMah.toLowerCase().includes('belirtilme')) {
+      return `${rawMah} (⚠️ Açık Adres / Kapı No Yok)`;
+    }
+    return '⚠️ ADRES BELİRTİLMEMİŞ (GÜNCELLEME GEREKLİ)';
+  }
 
   if (record.imza_sonrasi_adres_degisti) {
     const oldAddr = (record.imza_listesi_acik_adres || record.onceki_acik_adres || record.acik_adres || '').trim();

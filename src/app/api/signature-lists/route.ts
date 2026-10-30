@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
-import { normalizeMahalleName } from '@/lib/normalizer';
+import { normalizeMahalleName, isBeneficiaryAddressMissing, getBeneficiaryEffectiveListMahalle } from '@/lib/normalizer';
+import { decryptBeneficiary } from '@/lib/crypto';
 import { serverError, asString } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
@@ -34,23 +35,48 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Aktif dönem hak sahiplerini çek (Yalnızca şifrelenmemiş metadata alanları: mahalle ve imza_listesi_id)
-    // Şifreli alanları (TC, isim, adres vs.) çözmeden doğrudan sayım yaparak GET yanıt süresi anlık (10ms) tutulur.
+    // Aktif dönem hak sahiplerini çek
     const rawBeneficiaries = await benCol
-      .find({}, { projection: { _id: 1, id: 1, mahalle: 1, imza_listesi_id: 1 } })
+      .find({})
+      .project({
+        _id: 1,
+        id: 1,
+        mahalle: 1,
+        acik_adres: 1,
+        ad_soyad: 1,
+        tc_no: 1,
+        telefon: 1,
+        imza_listesi_id: 1,
+        imza_sonrasi_adres_degisti: 1,
+        imza_listesi_mahalle: 1,
+        onceki_mahalle: 1
+      })
       .toArray();
 
     let pendingCount = 0;
     let assignedCount = 0;
     const pendingMahalleMap = new Map<string, number>();
+    const missingAddressBeneficiaries: any[] = [];
 
-    for (const b of rawBeneficiaries) {
-      const isAssigned = Boolean(b.imza_listesi_id && String(b.imza_listesi_id).trim().length > 0);
+    for (const rawB of rawBeneficiaries) {
+      const isAssigned = Boolean(rawB.imza_listesi_id && String(rawB.imza_listesi_id).trim().length > 0);
       if (isAssigned) {
         assignedCount++;
       } else {
         pendingCount++;
-        const m = normalizeMahalleName(b.mahalle) || b.mahalle || 'Genel';
+        const b = decryptBeneficiary(rawB);
+        const isMissing = isBeneficiaryAddressMissing(b);
+        if (isMissing) {
+          missingAddressBeneficiaries.push({
+            id: b.id || b._id.toString(),
+            tc_no: b.tc_no || '',
+            ad_soyad: b.ad_soyad || '',
+            mahalle: b.mahalle || '',
+            acik_adres: b.acik_adres || '',
+            telefon: b.telefon || ''
+          });
+        }
+        const m = getBeneficiaryEffectiveListMahalle(b);
         pendingMahalleMap.set(m, (pendingMahalleMap.get(m) || 0) + 1);
       }
     }
@@ -76,6 +102,8 @@ export async function GET(request: NextRequest) {
       assignedCount,
       pendingMahalleCount: pendingMahalleMap.size,
       pendingMahalleler,
+      missingAddressCount: missingAddressBeneficiaries.length,
+      missingAddressBeneficiaries,
       nextListNo,
       lists,
     });

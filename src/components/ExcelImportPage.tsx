@@ -11,6 +11,7 @@ import {
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
+import MissingAddressModal, { MissingAddressBeneficiary } from './MissingAddressModal';
 
 const isKoySettlement = (name: string, tip?: string) => {
   if (tip === 'KOY') return true;
@@ -261,6 +262,7 @@ export default function ExcelImportPage({
   const [isDeletingBatch, setIsDeletingBatch] = useState<boolean>(false);
 
   // Islak İmza Listesi Yönetim Durumu
+  const [showMissingAddressModal, setShowMissingAddressModal] = useState<boolean>(false);
   const [signatureData, setSignatureData] = useState<{
     pendingCount: number;
     pendingMahalleCount: number;
@@ -269,6 +271,8 @@ export default function ExcelImportPage({
     assignedCount: number;
     nextListNo: number;
     lists: any[];
+    missingAddressCount?: number;
+    missingAddressBeneficiaries?: MissingAddressBeneficiary[];
   }>({
     pendingCount: 0,
     pendingMahalleCount: 0,
@@ -277,6 +281,8 @@ export default function ExcelImportPage({
     assignedCount: 0,
     nextListNo: 1,
     lists: [],
+    missingAddressCount: 0,
+    missingAddressBeneficiaries: [],
   });
   const [isLoadingSignatureData, setIsLoadingSignatureData] = useState<boolean>(false);
   const [isGeneratingSignatureList, setIsGeneratingSignatureList] = useState<boolean>(false);
@@ -324,6 +330,21 @@ export default function ExcelImportPage({
 
   const handleGenerateSignatureList = async () => {
     if (signatureData.pendingCount === 0 || isGeneratingSignatureList) return;
+
+    // Islak imza listesi çıktısı almadan önce adresi eksik kayıt kontrolü ve uyarısı
+    if (signatureData.missingAddressCount && signatureData.missingAddressCount > 0) {
+      const confirmed = await showConfirm({
+        title: `⚠️ Adresi Eksik ${signatureData.missingAddressCount} Hane Bulundu!`,
+        message: `İmza listesi çıkarılacak kayıtlar arasında adresi veya mahallesi belirtilmemiş ${signatureData.missingAddressCount} hane bulunmaktadır.\n\n• Eğer bu hanelerin mahallelerini şimdi girmek isterseniz "Vazgeç" deyip "Adresleri Düzenle" butonuna tıklayabilirsiniz.\n• "Yine de Oluştur" seçeneğiyle devam ederseniz, bu kayıtlar mahalle listelerini bozmamak için imza listesinde "ADRESİ OLMAYANLAR" sekmesinde toplanacaktır.\n\nNasıl devam etmek istersiniz?`,
+        type: 'warning',
+        confirmText: 'Yine de Listeyi Oluştur (Adresi Olmayanlar Sekmesinde Topla)',
+        cancelText: 'Vazgeç (Adresleri Düzenleyeceğim)',
+      });
+      if (!confirmed) {
+        setShowMissingAddressModal(true);
+        return;
+      }
+    }
 
     const isFirstList = signatureData.lists.length === 0;
     const confirmTitle = isFirstList
