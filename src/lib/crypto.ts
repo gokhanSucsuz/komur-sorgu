@@ -81,12 +81,17 @@ function resolveRequiredKey(name: 'ENCRYPTION_MASTER_KEY' | 'BLIND_INDEX_KEY'): 
   }
 
   const fp = keyFingerprint(raw.trim());
-  if (COMPROMISED_KEY_FINGERPRINTS.has(fp) && !warnedCompromised.has(name)) {
-    warnedCompromised.add(name);
-    console.error(
-      `[GÜVENLİK - KRİTİK] ${name} değeri kaynak kodda daha önce yayımlanmış bir anahtardır ve ELE GEÇİRİLMİŞ kabul edilmelidir! ` +
-        'Yeni anahtar üretip "npm run security:rotate-keys" ile verileri yeniden şifreleyiniz (bkz. SECURITY.md).'
-    );
+  if (COMPROMISED_KEY_FINGERPRINTS.has(fp)) {
+    if (process.env.ALLOW_COMPROMISED_KEYS !== 'true') {
+      throw new Error(
+        `[GÜVENLİK - KRİTİK] ${name} değeri daha önce ifşa olmuş (compromised) bir anahtardır! ` +
+          'Sistem güvenliği gereği bu anahtarla çalışılması engellenmiştir. Yeni 256-bit anahtar kullanınız.'
+      );
+    }
+    if (!warnedCompromised.has(name)) {
+      warnedCompromised.add(name);
+      console.error(`[GÜVENLİK - UYARI] ${name} geçici rotasyon modunda çalışıyor.`);
+    }
   }
 
   return parseKeyMaterial(name, raw);
@@ -155,11 +160,17 @@ export function clearDecryptionCache(): void {
   decryptionCache.clear();
 }
 
+const MAX_ENCRYPTED_FIELD_LENGTH = 65536;
+
 export function decryptField(ciphertext: string | null | undefined): string | null | undefined {
   if (ciphertext === null || ciphertext === undefined) return ciphertext;
   const str = String(ciphertext);
   if (str.length === 0) return '';
   if (!isEncrypted(str)) return str; // Legacy unencrypted string, return as-is
+  if (str.length > MAX_ENCRYPTED_FIELD_LENGTH) {
+    console.warn('[Crypto] Ciphertext exceeds maximum allowed length');
+    return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
+  }
 
   try {
     const primaryKey = getMasterKeyBuffer();

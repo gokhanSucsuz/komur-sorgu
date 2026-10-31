@@ -45,9 +45,9 @@ function timeToMinutes(t: string): number {
 
 function areIntervalsOverlapping(startA: string, endA: string, startB: string, endB: string): boolean {
   if (!startA || !endA || !startB || !endB) return false;
-  let sA = timeToMinutes(startA);
+  const sA = timeToMinutes(startA);
   let eA = timeToMinutes(endA);
-  let sB = timeToMinutes(startB);
+  const sB = timeToMinutes(startB);
   let eB = timeToMinutes(endB);
   if (eA <= sA) eA += 24 * 60;
   if (eB <= sB) eB += 24 * 60;
@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Now filter by date / month / range for the response
-    let dateFiltered = enrichedAll.filter((s) => {
+    const dateFiltered = enrichedAll.filter((s) => {
       if (gun && s.tarih !== gun) return false;
       if (month && month !== 'ALL') {
         if (!s.tarih.startsWith(month)) return false;

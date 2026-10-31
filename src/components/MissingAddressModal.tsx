@@ -120,8 +120,6 @@ export default function MissingAddressModal({
     }
   }, [isOpen, missingBeneficiaries, fetchMissingFromApi]);
 
-  if (!isOpen) return null;
-
   const handleInputChange = (id: string, field: 'mahalle' | 'acik_adres', value: string) => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
@@ -269,6 +267,8 @@ export default function MissingAddressModal({
         item.acik_adres.toLowerCase().includes(q)
     );
   }, [remainingItems, searchTerm]);
+
+  if (!isOpen) return null;
 
   return (
     <div

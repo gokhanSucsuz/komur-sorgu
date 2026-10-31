@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       mahalle && mahalle !== 'HEPSI'
         ? allBeneficiaries.filter((b: any) => b.mahalle === mahalle)
         : allBeneficiaries;
-    let toplamHane = filteredBeneficiaries.length;
+    const toplamHane = filteredBeneficiaries.length;
     let tamHane = 0;
     let eksikHane = 0;
     let bekleyenHane = 0;

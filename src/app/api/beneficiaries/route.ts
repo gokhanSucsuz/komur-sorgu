@@ -595,7 +595,7 @@ export async function POST(request: NextRequest) {
         .join(' ');
     }
 
-    let sameAddressRecords: any[] = [];
+    const sameAddressRecords: any[] = [];
     let settlement = {
       name: rawMahalleStr ? (normalizeMahalleName(rawMahalleStr) || rawMahalleStr) : 'Adres Belirtilmemiş',
       type: 'MAHALLE' as 'MAHALLE' | 'KOY',

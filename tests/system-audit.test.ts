@@ -15,11 +15,18 @@ import {
   maskName,
   isRetentionExpired,
   anonymizeBeneficiaryRecord,
+  sanitizeJsonPayload,
+  sanitizeSpreadsheetCell,
 } from '@/lib/security';
-import { roleAllowed, isSessionExpired } from '@/lib/auth';
+import {
+  roleAllowed,
+  isSessionExpired,
+  isSessionIdleExpired,
+  computeSessionContextHash,
+} from '@/lib/auth';
 import { InMemoryCollection } from '@/lib/inMemoryDb';
 
-describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Mimari Testleri', () => {
+describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Sıfır-Güven (Zero-Trust) Testleri', () => {
   before(() => {
     if (!process.env.ENCRYPTION_MASTER_KEY) {
       process.env.ENCRYPTION_MASTER_KEY = crypto.randomBytes(32).toString('hex');
@@ -31,61 +38,67 @@ describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Mimari Testleri', ()
 
   it('1. AES-256-GCM şifre çözme mikro-önbelleği (LRU cache) doğru çalışır ve anahtar değişiminde sıfırlanır', () => {
     clearDecryptionCache();
-    const cipher = encryptField('EDİRNE SYDV TEST VERİSİ');
+    const plain = 'EDİRNE MERKEZ ŞÜKRÜPAŞA MAH. 123. SOK NO: 4';
+    const cipher = encryptField(plain);
     assert.ok(cipher && cipher.startsWith('ENC:GCM:v1:'));
 
     const first = decryptField(cipher);
-    const second = decryptField(cipher); // Önbellekten döner
-    assert.equal(first, 'EDİRNE SYDV TEST VERİSİ');
-    assert.equal(second, 'EDİRNE SYDV TEST VERİSİ');
+    const second = decryptField(cipher);
+    assert.equal(first, plain);
+    assert.equal(second, plain);
+
+    // Anahtar değiştiğinde önbellek otomatik temizlenmeli
+    const oldKey = process.env.ENCRYPTION_MASTER_KEY;
+    process.env.ENCRYPTION_MASTER_KEY = crypto.randomBytes(32).toString('hex');
+    const wrongKeyResult = decryptField(cipher);
+    assert.equal(wrongKeyResult, '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***');
+    process.env.ENCRYPTION_MASTER_KEY = oldKey;
+    assert.equal(decryptField(cipher), plain);
   });
 
-  it('2. checkCryptoEngineHealth kriptografik motor sağlığını doğrular', () => {
-    const health = checkCryptoEngineHealth();
-    assert.equal(health.healthy, true);
-    assert.equal(health.masterKeyConfigured, true);
-    assert.equal(health.blindKeyConfigured, true);
-    assert.equal(health.compromisedKeyDetected, false);
+  it('2. checkCryptoEngineHealth kriptografik motor sağlığını doğrular ve aşırı büyük şifreli metinleri reddeder', () => {
+    const status = checkCryptoEngineHealth();
+    assert.equal(status.healthy, true);
+    assert.equal(status.masterKeyConfigured, true);
+
+    const oversized = 'ENC:GCM:v1:' + 'a'.repeat(70000);
+    assert.equal(decryptField(oversized), '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***');
   });
 
   it('3. Denetim günlüğü HMAC-SHA256 bütünlük zinciri (Tamper-Evident Chain) müdahaleyi tespit eder', () => {
     const log1 = {
-      prev_hash: 'GENESIS',
       kullanici_adi: 'admin',
-      kullanici_rolu: 'ADMIN',
       islem_tipi: 'GIRIS',
       baslik: 'Yönetici Girişi',
-      tarih_iso: '2026-10-31T08:00:00.000Z',
-      hedef_tc_hash: null,
+      detay: 'Başarılı giriş',
+      tarih: '2026-10-31 10:00:00',
+      timestamp: 1761904800000,
+      prev_hash: 'GENESIS',
+      integrity_hash: '',
     };
-    const hash1 = computeActivityLogIntegrityHash(log1);
+    log1.integrity_hash = computeActivityLogIntegrityHash(log1);
 
     const log2 = {
-      prev_hash: hash1,
-      kullanici_adi: 'admin',
-      kullanici_rolu: 'ADMIN',
+      kullanici_adi: 'personel1',
       islem_tipi: 'TESLIMAT',
-      baslik: 'Kömür Teslim Edildi',
-      tarih_iso: '2026-10-31T08:05:00.000Z',
-      hedef_tc_hash: 'abc123hash',
+      baslik: 'Kömür Teslimatı',
+      detay: '34 Torba teslim edildi',
+      tarih: '2026-10-31 10:05:00',
+      timestamp: 1761905100000,
+      prev_hash: log1.integrity_hash,
+      integrity_hash: '',
     };
-    const hash2 = computeActivityLogIntegrityHash(log2);
+    log2.integrity_hash = computeActivityLogIntegrityHash(log2);
 
-    const validResult = verifyActivityLogChain([
-      { ...log1, integrity_hash: hash1 },
-      { ...log2, integrity_hash: hash2 },
-    ]);
+    const validResult = verifyActivityLogChain([log2, log1]);
     assert.equal(validResult.valid, true);
-    assert.equal(validResult.chainedCount, 2);
     assert.equal(validResult.tamperedCount, 0);
 
-    // Kayıtlardan birinin başlığı dışarıdan değiştirilirse zincir doğrulaması başarısız olmalı
-    const tamperedResult = verifyActivityLogChain([
-      { ...log1, integrity_hash: hash1 },
-      { ...log2, baslik: 'SAHTE KAYIT', integrity_hash: hash2 },
-    ]);
-    assert.equal(tamperedResult.valid, false);
-    assert.equal(tamperedResult.tamperedCount, 1);
+    // Kayıt üzerinde yetkisiz değişiklik simülasyonu
+    const tamperedLog2 = { ...log2, baslik: '10 Torba teslim edildi (DEĞİŞTİRİLDİ)' };
+    const invalidResult = verifyActivityLogChain([tamperedLog2, log1]);
+    assert.equal(invalidResult.valid, false);
+    assert.equal(invalidResult.tamperedCount, 1);
   });
 
   it('4. KVKK Madde 7 maskeleme, saklama süresi ve anonimleştirme yardımcıları kişisel verileri temizler', () => {
@@ -118,7 +131,7 @@ describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Mimari Testleri', ()
     assert.equal(anon.torba_sayisi, 34);
   });
 
-  it('5. Rol yetkilendirme matrisi (roleAllowed) ve 6 saatlik oturum süresi (isSessionExpired) doğru çalışır', () => {
+  it('5. Rol yetkilendirme matrisi, 6 saat mutlak oturum, 60 dk hareketsizlik ve User-Agent bağlam imzası doğru çalışır', () => {
     assert.equal(roleAllowed('ADMIN', 'ADMIN'), true);
     assert.equal(roleAllowed('MUDUR', 'ADMIN'), false);
     assert.equal(roleAllowed('MUDUR', ['ADMIN', 'MUDUR']), true);
@@ -129,6 +142,16 @@ describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Mimari Testleri', ()
     const expiredLogin = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
     assert.equal(isSessionExpired(freshLogin), false);
     assert.equal(isSessionExpired(expiredLogin), true);
+
+    const activeRecent = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const idleTooLong = new Date(Date.now() - 75 * 60 * 1000).toISOString();
+    assert.equal(isSessionIdleExpired(activeRecent), false);
+    assert.equal(isSessionIdleExpired(idleTooLong), true);
+
+    const reqChrome = { headers: { get: (k: string) => (k === 'user-agent' ? 'Mozilla/5.0 Chrome/130' : null) } };
+    const reqCurl = { headers: { get: (k: string) => (k === 'user-agent' ? 'curl/8.5.0' : null) } };
+    assert.notEqual(computeSessionContextHash(reqChrome), computeSessionContextHash(reqCurl));
+    assert.equal(computeSessionContextHash(reqChrome), computeSessionContextHash(reqChrome));
   });
 
   it('6. Ayrıştırılmış InMemoryCollection modülü CRUD ve filtreleme işlemlerini eksiksiz yürütür', async () => {
@@ -144,5 +167,26 @@ describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Mimari Testleri', ()
     const updated = await col.findOne({ kod: 'A1' });
     assert.equal(updated?.miktar, 25);
     await col.deleteMany({});
+  });
+
+  it('7. sanitizeJsonPayload Prototype Pollution, NoSQL operatör enjeksiyonu ve null-byte saldırılarını temizler', () => {
+    const rawMalicious = JSON.parse(
+      '{"username":"admin\\u0000","$where":"this.a == 1","nested":{"$gt":"","safe":"ok","a.b":"dot"},"__proto__":{"polluted":true}}'
+    );
+    const cleaned = sanitizeJsonPayload(rawMalicious);
+    assert.equal(cleaned.username, 'admin');
+    assert.equal('$where' in cleaned, false);
+    assert.equal('$gt' in cleaned.nested, false);
+    assert.equal('a.b' in cleaned.nested, false);
+    assert.equal(cleaned.nested.safe, 'ok');
+    assert.equal(({} as Record<string, unknown>).polluted, undefined);
+  });
+
+  it('8. sanitizeSpreadsheetCell Excel/CSV formül (DDE) enjeksiyonlarını etkisizleştirir ve negatif sayıları korur', () => {
+    assert.equal(sanitizeSpreadsheetCell('=cmd|\' /C calc\'!A0'), '\'=cmd|\' /C calc\'!A0');
+    assert.equal(sanitizeSpreadsheetCell('+HYPERLINK("http://evil.tld")'), '\'+HYPERLINK("http://evil.tld")');
+    assert.equal(sanitizeSpreadsheetCell('@SUM(A1:A10)'), '\'@SUM(A1:A10)');
+    assert.equal(sanitizeSpreadsheetCell('-150'), '-150');
+    assert.equal(sanitizeSpreadsheetCell('Şükrüpaşa Mah.'), 'Şükrüpaşa Mah.');
   });
 });

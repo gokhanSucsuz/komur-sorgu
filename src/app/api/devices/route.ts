@@ -3,9 +3,9 @@ import crypto from 'crypto';
 import { getDbCollections, recordActivityLog } from '@/lib/mongodb';
 import { verifySession, checkDistributedRateLimit, recordDistributedFailedAttempt, clearDistributedRateLimit } from '@/lib/auth';
 import { generateQrCodeSvgDataUrl } from '@/lib/totp';
-import { encryptField, decryptField, isEncrypted } from '@/lib/crypto';
+import { encryptField, decryptField, isEncrypted, timingSafeTokenEqual } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
-import { getClientIp, serverError } from '@/lib/security';
+import { getClientIp, serverError, sanitizeJsonPayload } from '@/lib/security';
 
 function hashDeviceToken(token: string): string {
   return crypto.createHash('sha256').update(token.trim()).digest('hex');
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
         last_used_at: s.last_used_at || null,
         last_ip: lastIpPlain,
         has_active_code: Boolean(isCodeActive),
-        activation_code: isCodeActive ? s.activation_code : null,
+        activation_code: isCodeActive ? (isEncrypted(s.activation_code) ? decryptField(s.activation_code) : s.activation_code) : null,
         activation_code_expires_at: isCodeActive ? s.activation_code_expires_at : null,
       };
     });
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { authorizedDevices: devCol } = await getDbCollections();
-    const body = await request.json().catch(() => ({}));
+    const body = sanitizeJsonPayload(await request.json().catch(() => ({})));
     const { action } = body;
     const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') || 'Bilinmeyen Cihaz';
@@ -143,11 +143,17 @@ export async function POST(request: NextRequest) {
     // ACTION 1: ACTIVATE_DEVICE (Phone side pairing with 6-digit code)
     // =========================================================================
     if (action === 'ACTIVATE_DEVICE') {
-      const rlKey = `device_activate::${clientIp}`;
-      const rl = await checkDistributedRateLimit(rlKey);
-      if (rl.locked) {
+      const uaFp = crypto.createHash('sha256').update(userAgent).digest('hex').slice(0, 16);
+      const rlKey = `device_activate::${clientIp !== 'bilinmiyor' ? clientIp : 'ua:' + uaFp}`;
+      const globalRlKey = 'device_activate_global';
+      const [rl, globalRl] = await Promise.all([
+        checkDistributedRateLimit(rlKey),
+        checkDistributedRateLimit(globalRlKey),
+      ]);
+      const activeLock = rl.locked ? rl : globalRl;
+      if (activeLock.locked) {
         return NextResponse.json(
-          { success: false, error: `Çok fazla hatalı kod denemesi yapıldı! Lütfen ${rl.waitSeconds} saniye bekleyiniz.` },
+          { success: false, error: `Çok fazla hatalı kod denemesi yapıldı! Lütfen ${activeLock.waitSeconds} saniye bekleyiniz.` },
           { status: 429 }
         );
       }
@@ -163,12 +169,53 @@ export async function POST(request: NextRequest) {
       }
 
       const now = Date.now();
-      const slot = await devCol.findOne({
-        activation_code: rawCode,
+      const codeHash = hashDeviceToken(rawCode);
+      let slot = await devCol.findOne({
+        activation_code_hash: codeHash,
       });
+      if (!slot) {
+        const legacySlot = await devCol.findOne({ activation_code: rawCode });
+        if (legacySlot && timingSafeTokenEqual(String(legacySlot.activation_code), rawCode)) {
+          slot = legacySlot;
+        }
+      }
 
       if (!slot) {
-        await recordDistributedFailedAttempt(rlKey, 5, 10 * 60 * 1000, 15 * 60 * 1000);
+        await Promise.all([
+          recordDistributedFailedAttempt(rlKey, 5, 10 * 60 * 1000, 15 * 60 * 1000),
+          recordDistributedFailedAttempt(globalRlKey, 10, 10 * 60 * 1000, 15 * 60 * 1000),
+        ]);
+
+        // Self-destructing activation code defense: burn active codes after 5 global failed guesses
+        const allSlots = await devCol.find({}).toArray();
+        for (const s of allSlots) {
+          if (s.activation_code_expires_at && new Date(s.activation_code_expires_at).getTime() > now) {
+            const nextFails = Number(s.activation_failed_attempts || 0) + 1;
+            if (nextFails >= 5) {
+              await devCol.updateOne(
+                { _id: s._id },
+                {
+                  $set: {
+                    activation_code: null,
+                    activation_code_hash: null,
+                    activation_code_expires_at: null,
+                    activation_failed_attempts: 0,
+                  },
+                }
+              );
+              await recordActivityLog({
+                kullanici_adi: 'Güvenlik Duvarı',
+                kullanici_rolu: 'ADMIN',
+                islem_tipi: 'GUVENLIK_ENGEL',
+                baslik: 'Cihaz Aktivasyon Kodu Otomatik İmha Edildi',
+                detay: `Slot ${s.slot_no} için arka arkaya 5 hatalı aktivasyon kodu denemesi yapıldığı için aktif kod güvenlik amacıyla imha edildi.`,
+              });
+            } else {
+              await devCol.updateOne({ _id: s._id }, { $set: { activation_failed_attempts: nextFails } });
+            }
+          }
+        }
+
         return NextResponse.json(
           { success: false, error: 'Girdiğiniz aktivasyon kodu hatalı veya süresi dolmuş! Lütfen Sistem Yöneticisinden (Admin) yeni kod alınız.' },
           { status: 400 }
@@ -201,7 +248,9 @@ export async function POST(request: NextRequest) {
             last_used_at: nowStr,
             last_ip: encryptField(clientIp),
             activation_code: null,
+            activation_code_hash: null,
             activation_code_expires_at: null,
+            activation_failed_attempts: 0,
           },
         }
       );
@@ -275,8 +324,10 @@ export async function POST(request: NextRequest) {
         { slot_no: slotNo },
         {
           $set: {
-            activation_code: code,
+            activation_code: encryptField(code),
+            activation_code_hash: hashDeviceToken(code),
             activation_code_expires_at: expiresAt,
+            activation_failed_attempts: 0,
           },
         },
         { upsert: true }
@@ -287,7 +338,7 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'CIHAZ_KOD_URETIMI',
         baslik: 'Cihaz Eşleme Kodu Üretildi',
-        detay: `Slot ${slotNo} ("${slotName}") için 15 dakika geçerli tek kullanımlık aktivasyon kodu (${code}) üretildi.`,
+        detay: `Slot ${slotNo} ("${slotName}") için 15 dakika geçerli tek kullanımlık aktivasyon kodu üretildi.`,
       });
 
       return NextResponse.json({
@@ -321,7 +372,9 @@ export async function POST(request: NextRequest) {
             device_model: null,
             paired_at: null,
             activation_code: null,
+            activation_code_hash: null,
             activation_code_expires_at: null,
+            activation_failed_attempts: 0,
           },
         }
       );

@@ -69,24 +69,34 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
     {
       id: 'intro',
       order: 1,
-      title: '1. Sisteme Giriş, 2FA Doğrulama ve Tek Cihaz Oturumu',
+      title: '1. Sisteme Giriş, Roller, 2FA Doğrulama ve Akıllı Oturum Koruması',
       badge: 'GÜVENLİK',
       badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-      description: 'Sistem kullanıcı rolleri, Google Authenticator 2FA, 6 saatlik oturum süresi ve tek cihaz güvenliği.',
+      description: 'Kullanıcı rolleri (Yönetici, Müdür, Saha Personeli), Google Authenticator 2FA, tek cihaz kilidi ve 60 dk hareketsizlik koruması.',
       content: (
         <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
           <p>
-            Edirne SYDV Kömür Dağıtım ve Sorgulama Sistemi, yüksek güvenlik standartlarına sahip rol tabanlı (Role-Based Access Control) ve uçtan uca şifreli bir mimariyle çalışır.
+            Edirne SYDV Kömür Dağıtım ve Sorgulama Sistemi, vatandaşlarımızın kişisel verilerini korumak için <strong>Sıfır-Güven (Zero-Trust)</strong> ilkesiyle ve rol tabanlı yetki ayrımıyla çalışır. Her kullanıcı yalnızca kendi görev alanına giren işlemleri yapabilir:
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200">
               <div className="flex items-center gap-1.5 font-bold text-amber-900 mb-1">
                 <Shield className="w-4 h-4 text-amber-600" />
                 <span>Sistem Yöneticisi (ADMIN)</span>
               </div>
               <p className="text-[11px] text-amber-800">
-                Excel hak sahibi listesi yükleme, kömür dönemi belirleme ve arşivleme, personel ekleme/şifre yönetimi, hane kömür kotası belirleme, Google Authenticator (2FA) tanımlama ve sistem denetim loglarını inceleme yetkilerine sahiptir.
+                Excel hak sahibi listesi yükleme, dönem belirleme/arşivleme, personel ve cihaz eşleme yönetimi, kilitlenen hesapları açma ve mühürlü denetim kayıtlarını inceleme yetkisine sahiptir.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200">
+              <div className="flex items-center gap-1.5 font-bold text-indigo-900 mb-1">
+                <Monitor className="w-4 h-4 text-indigo-600" />
+                <span>Müdür Yetkilisi (MUDUR)</span>
+              </div>
+              <p className="text-[11px] text-indigo-800">
+                Yalnızca masaüstü/dizüstü bilgisayardan giriş yapabilir. Tüm dağıtım istatistiklerini, raporları ve teslimat durumlarını canlı izler; ancak güvenlik gereği <strong>salt okunur (izleme)</strong> yetkisine sahiptir, veri değiştiremez.
               </p>
             </div>
 
@@ -96,7 +106,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
                 <span>Saha Personeli (PERSONEL)</span>
               </div>
               <p className="text-[11px] text-sky-800">
-                Hak sahibi arama ve sorgulama, kömür teslimatı yapma, dokunmatik ıslak imza alma, hatalı yapılan teslimatları geri alma / iptal etme, saha dağıtım rotası oluşturma ve çalışma saatlerini sisteme kaydetme işlemlerini gerçekleştirir.
+                Yalnızca kurumun onayladığı yetkili saha telefonlarından giriş yapabilir. Hak sahibi sorgulama, kömür teslimatı, ıslak imza alma, saha rotası yürütme ve çalışma saati girişi işlemlerini yapar.
               </p>
             </div>
           </div>
@@ -105,9 +115,11 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <h5 className="font-extrabold text-xs text-rose-950">Önemli Güvenlik Kuralı: Tek Cihaz Oturumu ve 6 Saatlik Süre</h5>
+                <h5 className="font-extrabold text-xs text-rose-950">Akıllı Oturum Koruması: Tek Cihaz, Cihaz İmzası Kilidi ve Zaman Aşımı</h5>
                 <p className="text-[11px] text-rose-800 mt-1">
-                  Aynı kullanıcı adı ve şifre ile <strong>yalnızca 1 cihaz</strong> aynı anda sisteme giriş yapabilir. Yeni bir cihazdan giriş yapıldığında önceki cihazdaki oturum otomatik sonlandırılır. Ayrıca tüm oturumlar sunucu tarafında <strong>6 saat sonunda</strong> otomatik olarak zaman aşımına uğrar.
+                  • <strong>Tek Cihaz Kuralı:</strong> Aynı kullanıcı hesabıyla aynı anda <strong>yalnızca 1 cihaz</strong> sisteme girebilir. Başka bir cihazdan giriş yapılırsa önceki oturum anında kapatılır.<br />
+                  • <strong>Çifte Süre Koruması:</strong> Hiçbir işlem yapılmadan açık unutulan ekranlar <strong>60 dakika hareketsizlik</strong> sonunda, aktif kullanılan oturumlar ise en geç <strong>6 saat sonunda</strong> otomatik olarak kapatılır.<br />
+                  • <strong>Tarayıcı/Cihaz İmzası Kilidi:</strong> Açık bir oturumun güvenlik çerezi kopyalanıp başka bir bilgisayarda veya tarayıcıda kullanılmaya çalışılırsa sistem cihaz değişikliğini anında fark eder ve oturumu iptal eder.
                 </p>
               </div>
             </div>
@@ -116,7 +128,7 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
             <h5 className="font-bold text-slate-900 text-xs mb-1">Şifre Güncelleme & Google Authenticator (2FA) Kurulumu:</h5>
             <p className="text-[11px] text-slate-600">
-              Kullanıcılar sağ üst köşedeki ismine tıklayarak açılan <strong>Kullanıcı Profili</strong> penceresinden şifresini güncelleyebilir. Yöneticiler aynı pencereden <strong>İki Faktörlü Doğrulama (Google Authenticator)</strong> özelliğini QR kod okutarak veya tek dokunuşla telefonuna tanımlayabilir.
+              Kullanıcılar sağ üst köşedeki ismine tıklayarak açılan <strong>Kullanıcı Profili</strong> penceresinden şifresini güncelleyebilir ve <strong>İki Faktörlü Doğrulama (Google Authenticator)</strong> özelliğini QR kod okutarak veya tek dokunuşla telefonuna tanımlayabilir.
             </p>
           </div>
         </div>
@@ -886,10 +898,10 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
     {
       id: 'security_arch',
       order: 12,
-      title: '12. Kurumsal Bilgi Güvenliği, KVKK ve Kriptografik Sistem Mimarisi',
-      badge: 'KRİPTOGRAFİK MİMARİ',
+      title: '12. Sistemimiz Nasıl Korunuyor? (Basit ve Anlaşılır Güvenlik & KVKK Rehberi)',
+      badge: 'SIFIR-GÜVEN (10/10)',
       badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-      description: '2FA TOTP ve cihaz eşleştirme, 6 saatlik muafiyet penceresi, AES-256-GCM kör indeksleme, şifreli LocalStorage ve sezon izolasyonu mimarisi.',
+      description: 'Teknik terimlere boğulmadan, sistemdeki 10/10 güvenlik kalkanlarının günlük kullanımda verilerimizi ve vatandaşlarımızı nasıl koruduğunun sade anlatımı.',
       content: (
         <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
           {/* Giriş Bilgi Paneli */}
@@ -897,12 +909,75 @@ export default function GuidePage({ userRole = 'PERSONEL', onNavigateTab }: Guid
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-amber-400" />
               <h4 className="text-sm sm:text-base font-black text-white">
-                Kurumsal Güvenlik ve Veri Koruma Standartları
+                Basit Dille 10/10 Güvenlik: &quot;Hiçbir Açık Kapı Bırakmayan&quot; Koruma Sistemi
               </h4>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Kömür Dağıtım Sistemi; <strong>6698 Sayılı KVKK</strong>, <strong>Cumhurbaşkanlığı Dijital Dönüşüm Ofisi Bilgi ve İletişim Güvenliği Rehberi</strong> ve Sayıştay denetim standartlarına tam uyumlu olarak çok katmanlı savunma mimarisiyle (Defense in Depth) korunmaktadır.
+              Bu sistem, vatandaşlarımızın TC Kimlik, adres ve telefon bilgilerini korumak için tıpkı bir <strong>banka kasası</strong> gibi çok katmanlı güvenlik kalkanlarıyla donatılmıştır. Aşağıda, arka planda çalışan ileri seviye güvenlik önlemlerinin ne işe yaradığı sade ve anlaşılır bir dille özetlenmiştir.
             </p>
+          </div>
+
+          {/* HALK DİLİYLE 6 YENİ SÜPER GÜVENLİK KALKANI ÖZETİ */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-1">
+              <div className="font-black text-xs text-emerald-950 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>1. Kasa İçinde Kasa (Şifreli Veritabanı & Anahtar Yenileme)</span>
+              </div>
+              <p className="text-[11px] text-emerald-900 leading-normal">
+                <strong>Basitçe:</strong> Vatandaşların TC kimlik numarası, adı, telefonu ve adresi veritabanında düz yazı olarak durmaz; askeri düzeyde (AES-256-GCM) şifreli kodlara dönüştürülür. Veritabanı dosyası dışarı sızsa bile anahtar olmadan kimse tek bir ismi dahi okuyamaz. Üstelik kasa anahtarları düzenli olarak yenilenebilir.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1">
+              <div className="font-black text-xs text-blue-950 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-blue-700 shrink-0" />
+                <span>2. Kapıdaki Güvenlik Görevlisi (Çevre Güvenlik Duvarı)</span>
+              </div>
+              <p className="text-[11px] text-blue-900 leading-normal">
+                <strong>Basitçe:</strong> Sisteme gelen her istek önce dış kapıdaki dijital güvenlik görevlisinden (<code>proxy.ts</code>) geçer. Sahte sitelerden gelen istekler, sistem dosyalarını kurcalamaya çalışan tarayıcılar, aşırı büyük dosyalar ve Excel içine gizlenmiş zararlı formüller içeri alınmadan kapıda engellenir.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-1">
+              <div className="font-black text-xs text-indigo-950 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-indigo-700 shrink-0" />
+                <span>3. Kendi Kendini İmha Eden Telefon Eşleme Kodları</span>
+              </div>
+              <p className="text-[11px] text-indigo-900 leading-normal">
+                <strong>Basitçe:</strong> Saha personeli sadece yöneticinin onayladığı 3 saha telefonundan girebilir. Yeni bir telefonu eşlemek için üretilen 6 haneli kod şifreli saklanır. Dışarıdan birisi bu kodu tahmin etmek için <strong>5 kez yanlış deneme yaparsa kod kendi kendini imha eder</strong> ve geçersiz olur.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-1">
+              <div className="font-black text-xs text-amber-950 flex items-center gap-1.5">
+                <FileCheck2 className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>4. Zincirleme Mühürlü İşlem Defteri (Değiştirilemez Loglar)</span>
+              </div>
+              <p className="text-[11px] text-amber-900 leading-normal">
+                <strong>Basitçe:</strong> Sistemde yapılan her işlem (kim girdi, kime kömür verdi, kim iptal etti) noter defteri gibi bir önceki kayda matematiksel mühürle (HMAC-SHA256) bağlanır. Sonradan veritabanından tek bir satır bile silinse veya değiştirilse sistem bunu anında tespit edip yöneticinin ekranında uyarır.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-1">
+              <div className="font-black text-xs text-rose-950 flex items-center gap-1.5">
+                <KeyRound className="w-4 h-4 text-rose-700 shrink-0" />
+                <span>5. Çalınan Oturum Çalışmaz & 60 Dk Hareketsizlik Kilidi</span>
+              </div>
+              <p className="text-[11px] text-rose-900 leading-normal">
+                <strong>Basitçe:</strong> Giriş anahtarları tarayıcıda gizli kasada (<code>HttpOnly</code> çerez) tutulur ve girdiğiniz cihazın tarayıcı imzasına kilitlenir. Başka bir bilgisayara kopyalansa bile çalışmaz. Ayrıca ekran başında <strong>60 dakika</strong> işlem yapılmazsa oturum kendiliğinden kapanır.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-100 border border-slate-300 space-y-1">
+              <div className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-slate-700 shrink-0" />
+                <span>6. Yönetici Kilit Açma Paneli & Müdür İzleme Modu</span>
+              </div>
+              <p className="text-[11px] text-slate-700 leading-normal">
+                <strong>Basitçe:</strong> Şifresini üst üste yanlış girip geçici olarak kilitlenen personelin kilidini Yönetici tek tıkla açabilir, aktif oturumları canlı görebilir. Müdür hesabı ise tüm raporları inceler ancak yanlışlıkla dahi olsa hiçbir veriyi silemez veya değiştiremez.
+              </p>
+            </div>
           </div>
 
           {/* 1. İKİ AŞAMALI DOĞRULAMA & 4 CİHAZ SLOTLU EŞLEŞTİRME */}

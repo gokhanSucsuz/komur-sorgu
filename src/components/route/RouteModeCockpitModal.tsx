@@ -96,12 +96,11 @@ export default function RouteModeCockpitModal({
   handleSkipCurrentStop,
   setCancelStopTarget,
 }: RouteModeCockpitModalProps) {
-  if (!isRouteModeOpen || !activeRoute || typeof document === 'undefined') return null;
-
-  const stops: any[] = activeRoute.duraklar || [];
+  const stops: any[] = activeRoute?.duraklar || [];
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
+    if (typeof document === 'undefined') return;
     const handleFsChange = () => {
       setIsFullscreen(isAppFullscreen());
     };
@@ -119,12 +118,14 @@ export default function RouteModeCockpitModal({
 
   // Auto-scroll active pill into view in the pill strip
   useEffect(() => {
-    if (typeof document === 'undefined') return;
+    if (!isRouteModeOpen || typeof document === 'undefined') return;
     const activePill = document.getElementById(`route-pill-${safeIndex}`);
     if (activePill) {
       activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
-  }, [safeIndex]);
+  }, [isRouteModeOpen, safeIndex]);
+
+  if (!isRouteModeOpen || !activeRoute || typeof document === 'undefined') return null;
   const currentStop = stops[safeIndex] || null;
   const currentStopListInfo = getBeneficiaryListTypeInfo(currentStop);
   const nextStopInOrder = safeIndex + 1 < totalStops ? stops[safeIndex + 1] : null;

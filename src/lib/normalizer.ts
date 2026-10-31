@@ -341,7 +341,7 @@ export function isValidTcNo(tc: string): boolean {
  */
 export function formatSinglePhone(raw: string | number | null | undefined): string {
   if (!raw) return '';
-  let str = raw.toString().trim();
+  const str = raw.toString().trim();
   let digits = str.replace(/[^0-9]/g, '');
 
   if (digits.startsWith('90') && digits.length >= 12) {
@@ -833,7 +833,7 @@ export function detectSettlement(
 ): { name: string; type: 'MAHALLE' | 'KOY' } {
   let m = (rawMahalle || '').toString().trim();
   let k = (rawKoy || '').toString().trim();
-  let addr = (acikAdres || '').toString().trim();
+  const addr = (acikAdres || '').toString().trim();
 
   // Strip generic district prefixes
   m = m.replace(/^(?:T\.?C\.?\s*)?(?:ED[İI]RNE\s*)?(?:MERKEZ\s*)?[\/,-]?\s*/i, '').trim();
@@ -877,7 +877,7 @@ export function detectSettlement(
     // -----------------------------------------------------------------------
     // 1a. Mahalle sütununda (m) mahalle ifadesi varsa doğrudan oradan ayıkla
     if (m && hasMahalleKeyword(m)) {
-      let cleanM = m.replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh][Aa][Ll][Ll][Ee]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)$/i, '').trim();
+      const cleanM = m.replace(/\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh][Aa][Ll][Ll][Ee]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?)$/i, '').trim();
       const lowerM = cleanM.toLocaleLowerCase('tr-TR');
       if (EDIRNE_MAHALLE_LOOKUP[lowerM]) {
         return { name: EDIRNE_MAHALLE_LOOKUP[lowerM], type: 'MAHALLE' };
@@ -1325,7 +1325,7 @@ export function getRecordStreetInfo(record: Record<string, any> | null | undefin
         /k[oö]y\s+[iı]çi/i.test(finalSokak)) &&
       rawSokak
     ) {
-      let cleanedRaw = rawSokak.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+      const cleanedRaw = rawSokak.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
       if (!/k[oö]y\s+[iı]çi/i.test(cleanedRaw) && cleanedRaw) {
         finalSokak = cleanedRaw;
       }

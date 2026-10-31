@@ -7,15 +7,32 @@ import type { AppRole, UserRecord } from '@/types';
 
 /**
  * Kurumsal Mutlak Oturum Süresi: 6 Saat (Milisaniye ve Saniye)
+ * Hareketsizlik (Idle) Zaman Aşımı: 60 Dakika
  */
 export const SESSION_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 export const SESSION_MAX_AGE_SECONDS = 6 * 60 * 60;
+export const SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export function isSessionExpired(lastLoginAt: string | null | undefined): boolean {
   if (!lastLoginAt) return false;
   const loginTimeMs = new Date(lastLoginAt).getTime();
   if (isNaN(loginTimeMs)) return false;
   return Date.now() - loginTimeMs > SESSION_MAX_AGE_MS;
+}
+
+export function isSessionIdleExpired(lastActivityAt: string | null | undefined): boolean {
+  if (!lastActivityAt) return false;
+  const activityTimeMs = new Date(lastActivityAt).getTime();
+  if (isNaN(activityTimeMs)) return false;
+  return Date.now() - activityTimeMs > SESSION_IDLE_TIMEOUT_MS;
+}
+
+/**
+ * Oturum çalınmasına (Session Hijacking / Cookie Replay) karşı istemci User-Agent bağlam özeti üretir.
+ */
+export function computeSessionContextHash(request: NextRequest | { headers: { get(name: string): string | null } }): string {
+  const ua = (request.headers.get('user-agent') || '').trim().slice(0, 300);
+  return crypto.createHash('sha256').update('komur-session-ua-v1:' + ua).digest('hex');
 }
 
 /** requiredRole verilmemişse her oturum açmış rol geçer; verilmişse rol listede olmalıdır. */
@@ -170,6 +187,20 @@ export async function verifySession(
   const cached = sessionMicroCache.get(tokenHash);
   if (cached && cached.expiresAt > nowMs) {
     const user = cached.user;
+    if (user.session_ua_hash && !timingSafeTokenEqual(user.session_ua_hash, computeSessionContextHash(request))) {
+      sessionMicroCache.delete(tokenHash);
+      return {
+        valid: false,
+        response: NextResponse.json(
+          {
+            success: false,
+            code: 'SESSION_TERMINATED',
+            error: 'Güvenlik ihlali tespiti: Oturum bağlamı değiştiği için oturumunuz sonlandırıldı.',
+          },
+          { status: 401 }
+        ),
+      };
+    }
     const tfBlock = twoFactorBlock(user, request);
     if (tfBlock) return { valid: false, response: tfBlock };
     const mwBlock = mudurWriteBlock(user, request, method);
@@ -223,12 +254,12 @@ export async function verifySession(
       };
     }
 
-    // Enforce 6-hour institutional absolute session TTL
-    if (isSessionExpired(rawUser.last_login_at)) {
+    // Enforce 6-hour institutional absolute session TTL & 60-minute idle timeout
+    if (isSessionExpired(rawUser.last_login_at) || isSessionIdleExpired(rawUser.last_activity_at)) {
       sessionMicroCache.delete(tokenHash);
       await usersCol.updateOne(
         { _id: rawUser._id },
-        { $set: { active_session_token: null } }
+        { $set: { active_session_token: null, session_ua_hash: null } }
       );
       return {
         valid: false,
@@ -236,11 +267,40 @@ export async function verifySession(
           {
             success: false,
             code: 'SESSION_TERMINATED',
-            error: 'Kurumsal güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+            error: 'Kurumsal güvenlik politikası gereği oturum süreniz (6 saat mutlak / 60 dk hareketsizlik) dolmuştur. Lütfen tekrar giriş yapınız.',
           },
           { status: 401 }
         ),
       };
+    }
+
+    // Zero-Trust Session Context Binding: prevent stolen cookie replay across different browsers/OS/CLI tools
+    const currentUaHash = computeSessionContextHash(request);
+    if (rawUser.session_ua_hash && !timingSafeTokenEqual(rawUser.session_ua_hash, currentUaHash)) {
+      sessionMicroCache.delete(tokenHash);
+      await usersCol.updateOne(
+        { _id: rawUser._id },
+        { $set: { active_session_token: null, session_ua_hash: null } }
+      );
+      return {
+        valid: false,
+        response: NextResponse.json(
+          {
+            success: false,
+            code: 'SESSION_TERMINATED',
+            error: 'Güvenlik ihlali tespiti: Oturum bağlamı (tarayıcı/cihaz imzası) değiştiği için oturumunuz sonlandırıldı.',
+          },
+          { status: 401 }
+        ),
+      };
+    }
+
+    // Throttled sliding activity timestamp update (at most once every 2 minutes)
+    const lastActMs = rawUser.last_activity_at ? new Date(rawUser.last_activity_at).getTime() : 0;
+    if (!lastActMs || isNaN(lastActMs) || nowMs - lastActMs > 2 * 60 * 1000) {
+      const nowIsoStr = new Date(nowMs).toISOString();
+      rawUser.last_activity_at = nowIsoStr;
+      usersCol.updateOne({ _id: rawUser._id }, { $set: { last_activity_at: nowIsoStr } }).catch(() => {});
     }
 
     const user = mapDoc<UserRecord>(rawUser);
@@ -298,6 +358,8 @@ export function sanitizeUser<T extends Record<string, unknown> | null | undefine
   delete safe.sifre;
   delete safe.sifre_hash;
   delete safe.active_session_token;
+  delete safe.session_ua_hash;
+  delete safe.last_activity_at;
   delete safe.last_ip;
   delete safe.last_device;
   delete safe.totp_secret;

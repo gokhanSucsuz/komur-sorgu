@@ -85,8 +85,15 @@ export async function POST(request: NextRequest) {
     if (!workbook.worksheets || workbook.worksheets.length === 0) {
       return NextResponse.json({ success: false, error: 'Excel dosyasında sayfa bulunamadı' }, { status: 400 });
     }
+    if (workbook.worksheets.length > 100) {
+      return NextResponse.json(
+        { success: false, error: 'Excel dosyası izin verilen maksimum çalışma sayfası sınırını (100) aşıyor.' },
+        { status: 400 }
+      );
+    }
 
     const rawRows: any[] = [];
+    const MAX_TOTAL_IMPORT_ROWS = 25000;
     const totalSheets = workbook.worksheets.length;
     const headerKeywords = ['tc', 'kimlik', 'adsoyad', 'adisoyadi', 'isim', 'mahalle', 'adres', 'telefon', 'tel', 'hane'];
 
@@ -140,6 +147,7 @@ export async function POST(request: NextRequest) {
 
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRowIndex) return;
+        if (rawRows.length >= MAX_TOTAL_IMPORT_ROWS) return;
         const rowObj: Record<string, any> = {
           __sheetName: sheetTitle,
           __rowNum: rowNumber,

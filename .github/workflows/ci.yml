@@ -1,4 +1,4 @@
-name: Kurumsal CI & Guvenlik Denetimi
+name: Kurumsal Güvenlik, Tip ve Kalite Denetimi (CI)
 
 on:
   push:
@@ -8,27 +8,29 @@ on:
 
 jobs:
   verify:
-    name: Tip Kontrolu, Testler ve Guvenlik
+    name: Tip Kontrolü, Lint, Testler ve Sıfır-Zafiyet Denetimi
     runs-on: ubuntu-latest
     steps:
-      - name: Kaynak Kodu Indir
+      - name: Kaynak Kodu İndir
         uses: actions/checkout@v4
 
-      - name: Node.js 22 Kurulumu
+      - name: Node.js 20 Kurulumu
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
 
-      - name: Bagimliliklari Yukle
+      - name: Bağımlılıkları Yükle
         run: npm ci
 
-      - name: TypeScript Tip Kontrolu
+      - name: TypeScript Tip Denetimi (tsc --noEmit)
         run: npm run typecheck
 
-      - name: Birim ve Guvenlik Testlerini Calistir
+      - name: ESLint Statik Kod Analizi
+        run: npm run lint
+
+      - name: Güvenlik, KVKK ve İş Mantığı Birim Testleri
         run: npm test
 
-      - name: Yuksek Riskli Bagimlilik Denetimi
-        run: npm audit --omit=dev --audit-level=high
-
+      - name: Bağımlılık Güvenlik Denetimi (Sıfır Zafiyet Politikası)
+        run: npm audit --audit-level=low

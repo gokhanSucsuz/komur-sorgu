@@ -380,3 +380,64 @@ export function anonymizeBeneficiaryRecord<T extends Record<string, unknown>>(re
   cloned.kvkk_anonymized_at = new Date().toISOString();
   return cloned as T;
 }
+
+
+// ============================================================================
+// Derin JSON Yükü Temizleyici (Prototype Pollution & NoSQL Operatör Güvenlik Duvarı)
+// ============================================================================
+
+const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Gelen JSON gövdelerini özyinelemeli (recursive) olarak temizler:
+ * - `__proto__`, `constructor`, `prototype` anahtarlarını (Prototype Pollution) engeller.
+ * - `$` ile başlayan veya `.` içeren anahtarları (NoSQL Operator Injection) temizler.
+ * - Metinlerdeki null-byte (`\u0000`) karakterlerini siler ve derinlik sınırı (`maxDepth`) uygular.
+ */
+export function sanitizeJsonPayload<T>(payload: T, maxDepth: number = 8): T {
+  function walk(val: unknown, depth: number): unknown {
+    if (val === null || val === undefined) return val;
+    if (typeof val === 'string') {
+      return val.replace(/\0/g, '');
+    }
+    if (typeof val !== 'object') return val;
+    if (depth > maxDepth) {
+      throw new Error('Güvenlik duvarı: JSON nesne derinliği izin verilen sınırı aşıyor.');
+    }
+    if (Array.isArray(val)) {
+      return val.map((item) => walk(item, depth + 1));
+    }
+    const cleanObj: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      if (FORBIDDEN_OBJECT_KEYS.has(k) || k.startsWith('$') || k.includes('.')) {
+        continue;
+      }
+      cleanObj[k] = walk(v, depth + 1);
+    }
+    return cleanObj;
+  }
+
+  return walk(payload, 0) as T;
+}
+
+// ============================================================================
+// Excel / CSV Formül Enjeksiyonu (DDE / Formula Injection) Koruması
+// ============================================================================
+
+/**
+ * Excel veya CSV dışa/içe aktarımlarında `=`, `+`, `-`, `@`, `\t`, `\r` ile başlayan
+ * metin hücrelerini (örn. `=cmd|...` veya `=HYPERLINK(...)`) etkisizleştirir.
+ * Salt negatif sayılara dokunmaz.
+ */
+export function sanitizeSpreadsheetCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value).replace(/\0/g, '');
+  if (str.length === 0) return '';
+  if (/^[=+\-@]/.test(str) && !/^-[0-9]+(?:[.,][0-9]+)?$/.test(str)) {
+    return `'${str}`;
+  }
+  if (/^[\t\r]/.test(str)) {
+    return `'${str.trimStart()}`;
+  }
+  return str;
+}

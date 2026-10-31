@@ -3,12 +3,14 @@ import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
 import { encryptField, decryptField, hashPassword, verifyPassword, timingSafeTokenEqual, burnPasswordCheck, needsPasswordRehash, checkCryptoEngineHealth } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
-import { getClientIp, serverError, validatePasswordPolicy } from '@/lib/security';
+import { getClientIp, serverError, validatePasswordPolicy, sanitizeJsonPayload } from '@/lib/security';
 import {
   sanitizeUser,
   verifySession,
   clearSessionMicroCache,
   isSessionExpired,
+  isSessionIdleExpired,
+  computeSessionContextHash,
   SESSION_MAX_AGE_SECONDS,
   checkDistributedRateLimit,
   recordDistributedFailedAttempt,
@@ -68,31 +70,34 @@ async function findActiveUserByIdentifier(usersCol: any, identifier: string) {
  */
 async function verifyUserPassword(usersCol: any, rawUser: any, plainPassword: string): Promise<boolean> {
   if (!rawUser || !plainPassword) return false;
-  let isValid = false;
   if (rawUser.sifre_hash) {
-    isValid = verifyPassword(plainPassword, rawUser.sifre_hash);
-  }
-  if (!isValid) {
-    const decUser = mapDoc(rawUser);
-    if (
-      timingSafeTokenEqual(decUser.sifre, plainPassword) ||
-      timingSafeTokenEqual(rawUser.sifre, plainPassword)
-    ) {
-      isValid = true;
+    const isValid = verifyPassword(plainPassword, rawUser.sifre_hash);
+    if (isValid && needsPasswordRehash(rawUser.sifre_hash)) {
       try {
         const newHash = hashPassword(plainPassword);
-        await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash }, $unset: { sifre: "" } });
-      } catch (e) {
-        console.error('Notice: Could not upgrade password hash:', e);
+        await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash }, $unset: { sifre: '' } });
+      } catch {
+        // ignore
       }
     }
-  } else if (rawUser.sifre_hash && needsPasswordRehash(rawUser.sifre_hash)) {
+    return isValid;
+  }
+
+  // Legacy migration path ONLY when sifre_hash does not exist yet
+  const decUser = mapDoc(rawUser);
+  if (
+    timingSafeTokenEqual(decUser.sifre, plainPassword) ||
+    timingSafeTokenEqual(rawUser.sifre, plainPassword)
+  ) {
     try {
       const newHash = hashPassword(plainPassword);
-      await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash }, $unset: { sifre: "" } });
-    } catch (e) {}
+      await usersCol.updateOne({ _id: rawUser._id }, { $set: { sifre_hash: newHash }, $unset: { sifre: '' } });
+    } catch {
+      // ignore
+    }
+    return true;
   }
-  return isValid;
+  return false;
 }
 
 export async function GET(request: NextRequest) {
@@ -140,14 +145,28 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Enforce 6-hour absolute server-side session expiration
-      if (isSessionExpired(rawUser.last_login_at)) {
+      // Enforce 6-hour absolute session TTL & 60-minute idle timeout
+      if (isSessionExpired(rawUser.last_login_at) || isSessionIdleExpired(rawUser.last_activity_at)) {
+        await usersCol.updateOne({ _id: rawUser._id }, { $set: { active_session_token: null, session_ua_hash: null } });
         return NextResponse.json(
           {
             success: false,
             valid: false,
             code: 'SESSION_EXPIRED',
-            error: 'Güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+            error: 'Güvenlik politikası gereği oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+          },
+          { status: 401 }
+        );
+      }
+
+      if (rawUser.session_ua_hash && !timingSafeTokenEqual(rawUser.session_ua_hash, computeSessionContextHash(request))) {
+        await usersCol.updateOne({ _id: rawUser._id }, { $set: { active_session_token: null, session_ua_hash: null } });
+        return NextResponse.json(
+          {
+            success: false,
+            valid: false,
+            code: 'SESSION_TERMINATED',
+            error: 'Güvenlik ihlali: Oturum tarayıcı/cihaz imzası uyuşmadığı için oturum sonlandırıldı.',
           },
           { status: 401 }
         );
@@ -320,7 +339,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { users: usersCol } = await getDbCollections();
-    const body = await request.json();
+    const body = sanitizeJsonPayload(await request.json());
     const {
       username,
       password,
@@ -373,14 +392,28 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Enforce 6-hour absolute session TTL
-      if (isSessionExpired(rawUser.last_login_at)) {
+      // Enforce 6-hour absolute session TTL & 60-minute idle timeout
+      if (isSessionExpired(rawUser.last_login_at) || isSessionIdleExpired(rawUser.last_activity_at)) {
+        await usersCol.updateOne({ _id: rawUser._id }, { $set: { active_session_token: null, session_ua_hash: null } });
         return NextResponse.json(
           {
             success: false,
             valid: false,
             code: 'SESSION_EXPIRED',
-            error: 'Güvenlik politikası gereği 6 saatlik oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+            error: 'Güvenlik politikası gereği oturum süreniz dolmuştur. Lütfen tekrar giriş yapınız.',
+          },
+          { status: 401 }
+        );
+      }
+
+      if (rawUser.session_ua_hash && !timingSafeTokenEqual(rawUser.session_ua_hash, computeSessionContextHash(request))) {
+        await usersCol.updateOne({ _id: rawUser._id }, { $set: { active_session_token: null, session_ua_hash: null } });
+        return NextResponse.json(
+          {
+            success: false,
+            valid: false,
+            code: 'SESSION_TERMINATED',
+            error: 'Güvenlik ihlali: Oturum tarayıcı/cihaz imzası uyuşmadığı için oturum sonlandırıldı.',
           },
           { status: 401 }
         );
@@ -417,7 +450,7 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    // 2. Explicit Logout: Clean up active session
+    // 2. Explicit Logout: Clean up active session ONLY when caller possesses the valid session token
     if (action === 'logout') {
       let targetToken = (session_token || '').trim();
       if (!targetToken) {
@@ -427,8 +460,8 @@ export async function POST(request: NextRequest) {
         clearSessionMicroCache(targetToken);
       }
 
-      let rawUser = trimmedUser ? await findActiveUserByIdentifier(usersCol, trimmedUser) : null;
-      if (!rawUser && targetToken) {
+      let rawUser = null;
+      if (targetToken && targetToken.length >= 32) {
         const tokenHash = crypto.createHash('sha256').update(targetToken).digest('hex');
         rawUser = await usersCol.findOne({
           active_session_token: tokenHash,
@@ -439,7 +472,7 @@ export async function POST(request: NextRequest) {
         await usersCol.updateOne(
           { _id: rawUser._id },
           {
-            $set: { active_session_token: null, last_logout_at: getIstanbulDate().iso },
+            $set: { active_session_token: null, session_ua_hash: null, last_logout_at: getIstanbulDate().iso },
           }
         );
 
@@ -1074,7 +1107,9 @@ export async function POST(request: NextRequest) {
 
     const loginUpdateDoc: any = {
       active_session_token: newSessionTokenHash,
+      session_ua_hash: computeSessionContextHash(request),
       last_login_at: nowIso,
+      last_activity_at: nowIso,
       last_device: encryptField(userAgent.substring(0, 150)),
       last_ip: encryptField(clientIp),
     };
@@ -1293,7 +1328,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const { users: usersCol } = await getDbCollections();
-    const body = await request.json();
+    const body = sanitizeJsonPayload(await request.json());
     const {
       username,
       current_password,
@@ -1423,10 +1458,14 @@ export async function PUT(request: NextRequest) {
       }
       if (isSelfUpdate) {
         rotatedSessionToken = crypto.randomUUID();
+        const rotatedIso = getIstanbulDate().iso;
         updateFields.active_session_token = crypto.createHash('sha256').update(rotatedSessionToken).digest('hex');
-        updateFields.last_login_at = getIstanbulDate().iso;
+        updateFields.session_ua_hash = computeSessionContextHash(request);
+        updateFields.last_login_at = rotatedIso;
+        updateFields.last_activity_at = rotatedIso;
       } else {
         updateFields.active_session_token = null;
+        updateFields.session_ua_hash = null;
       }
     }
 

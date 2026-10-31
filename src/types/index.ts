@@ -27,7 +27,9 @@ export interface UserRecord {
   ekip_arkadaslari?: string[];
   ekip_arkadasi?: string;
   active_session_token?: string | null;
+  session_ua_hash?: string | null;
   last_login_at?: string | null;
+  last_activity_at?: string | null;
   last_logout_at?: string | null;
   last_ip?: string | null;
   last_device?: string | null;
