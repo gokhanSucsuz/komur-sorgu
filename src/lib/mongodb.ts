@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { MongoClient, Db, ObjectId, ServerApiVersion } from 'mongodb';
 import { normalizeAddress, extractStreetAndDoor, normalizeMahalleName, getRecordStreetInfo, normalizeToTon, detectSettlement } from './normalizer';
 import {
@@ -31,6 +32,23 @@ import { getIstanbulDate } from './dateUtils';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'komur_db';
+
+/**
+ * Ilk kurulum icin kaynak kodda SABIT parola bulunmaz. Ortam degiskeni yoksa rastgele,
+ * guclu bir parola uretilir ve yalnizca sunucu konsoluna BIR KEZ yazilir; ilk giriste degistirilmelidir.
+ */
+function generateBootstrapPassword(account: string): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = crypto.randomBytes(20);
+  let pass = '';
+  for (let i = 0; i < bytes.length; i++) pass += alphabet[bytes[i] % alphabet.length];
+  pass += '!7';
+  console.warn(
+    `[Guvenlik] "${account}" hesabi icin ortam degiskeni tanimli degil; gecici ilk kurulum parolasi uretildi: ${pass} ` +
+      '(ilk giriste degistirin ve bu logu temizleyin).'
+  );
+  return pass;
+}
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
@@ -764,7 +782,8 @@ async function initializeIndexesAndSeed(db: Db) {
     if (process.env.NODE_ENV === 'production') {
       console.warn('[Güvenlik Uyarısı] INITIAL_ADMIN_PASSWORD ortam değişkeni tanımlanmamış. İlk kurulum için güçlü bir şifre belirleyiniz.');
     }
-    initialAdminPass = 'EdirneSydv2026!';
+    // Parola yalnizca gercekten ilk yonetici olusturulacaksa uretilir (mevcut kurulumda log uretilmez).
+    if (userCount === 0) initialAdminPass = generateBootstrapPassword('admin');
   }
   const nowStr = new Date().toLocaleString('tr-TR');
 
@@ -795,7 +814,9 @@ async function initializeIndexesAndSeed(db: Db) {
       username: 'müdür',
       ad_soyad: 'Müdür Yetkilisi',
       rol: 'MUDUR',
-      sifre_hash: hashPassword('784512Tf.'),
+      sifre_hash: hashPassword(
+        (process.env.INITIAL_MUDUR_PASSWORD || '').trim() || generateBootstrapPassword('mudur')
+      ),
       telefon: '',
       aktif: 1,
       totp_enabled: false,
@@ -836,7 +857,7 @@ async function initializeIndexesAndSeed(db: Db) {
 
 function seedInMemoryStore(store: Record<string, any[]>) {
   const { nowLocaleTr } = getIstanbulDate();
-  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || 'EdirneSydv2026!').trim();
+  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '').trim() || generateBootstrapPassword('admin');
   store.system_settings = [
     { key: 'varsayilan_hedef_torba', value: '34' },
     { key: 'toplam_tahsis_tonaj', value: '0' },

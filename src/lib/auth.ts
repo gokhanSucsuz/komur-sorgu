@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDoc } from './mongodb';
 import { timingSafeTokenEqual } from './crypto';
-import { isSameOriginRequest } from './security';
+import { isSameOriginRequest, checkRateLimit, rateLimitExceededResponse } from './security';
 
 /**
  * Kurumsal Mutlak Oturum Süresi: 6 Saat (Milisaniye ve Saniye)
@@ -15,6 +15,34 @@ export function isSessionExpired(lastLoginAt: string | null | undefined): boolea
   const loginTimeMs = new Date(lastLoginAt).getTime();
   if (isNaN(loginTimeMs)) return false;
   return Date.now() - loginTimeMs > SESSION_MAX_AGE_MS;
+}
+
+type AppRole = 'ADMIN' | 'PERSONEL' | 'MUDUR';
+
+/** requiredRole verilmemişse her oturum açmış rol geçer; verilmişse rol listede olmalıdır (ADMIN, listede olmasa da yalnızca ADMIN gerekiyorsa geçer). */
+function roleAllowed(userRole: string | undefined, required?: AppRole | AppRole[]): boolean {
+  if (!required) return true;
+  const list = Array.isArray(required) ? required : [required];
+  return list.includes(userRole as AppRole);
+}
+
+/**
+ * REQUIRE_PRIVILEGED_2FA=true iken 2FA'sı olmayan ADMIN/MUDUR oturumları yalnızca /api/auth
+ * (2FA kurulumu) uç noktasını kullanabilir; diğer tüm API'ler 403 döner.
+ */
+function twoFactorBlock(user: any, request: NextRequest): NextResponse | null {
+  if (process.env.REQUIRE_PRIVILEGED_2FA !== 'true') return null;
+  if (user.rol !== 'ADMIN' && user.rol !== 'MUDUR') return null;
+  if (user.totp_enabled) return null;
+  if (request.nextUrl.pathname.startsWith('/api/auth')) return null;
+  return NextResponse.json(
+    {
+      success: false,
+      code: 'TWO_FACTOR_SETUP_REQUIRED',
+      error: 'Güvenlik politikası gereği yönetici ve müdür hesapları için Google Authenticator (2FA) kurulumu zorunludur.',
+    },
+    { status: 403 }
+  );
 }
 
 export interface AuthSessionResult {
@@ -104,17 +132,27 @@ export async function verifySession(
   // Check 4-second micro-cache to prevent 6x redundant MongoDB user queries on parallel API bursts
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const nowMs = Date.now();
+
+  // Oturum basina genel API hiz siniri (yazma islemleri daha siki). Tum rotalari kapsar.
+  const isWrite = method !== 'GET' && method !== 'HEAD';
+  const apiLimit = checkRateLimit('api:' + (isWrite ? 'w' : 'r') + ':' + tokenHash, isWrite ? 120 : 600, 60);
+  if (!apiLimit.allowed) {
+    return { valid: false, response: rateLimitExceededResponse(apiLimit) };
+  }
+
   const cached = sessionMicroCache.get(tokenHash);
   if (cached && cached.expiresAt > nowMs) {
     const user = cached.user;
-    if (options.requiredRole && options.requiredRole === 'ADMIN' && user.rol !== 'ADMIN') {
+    const tfBlock = twoFactorBlock(user, request);
+    if (tfBlock) return { valid: false, response: tfBlock };
+    if (!roleAllowed(user.rol, options.requiredRole)) {
       return {
         valid: false,
         response: NextResponse.json(
           {
             success: false,
             code: 'FORBIDDEN',
-            error: 'Bu işlem için Sistem Yöneticisi (ADMIN) yetkisi gereklidir.',
+            error: 'Bu işlem için gerekli yetkiye sahip değilsiniz.',
           },
           { status: 403 }
         ),
@@ -133,14 +171,11 @@ export async function verifySession(
   try {
     const { users: usersCol } = await getDbCollections();
     const rawUser = await usersCol.findOne({
-      active_session_token: { $in: [token, tokenHash] },
+      active_session_token: tokenHash,
       aktif: 1,
     });
 
-    const isTokenMatch = rawUser?.active_session_token && (
-      timingSafeTokenEqual(rawUser.active_session_token, token) ||
-      timingSafeTokenEqual(rawUser.active_session_token, tokenHash)
-    );
+    const isTokenMatch = Boolean(rawUser?.active_session_token) && timingSafeTokenEqual(rawUser.active_session_token, tokenHash);
 
     if (!rawUser || !isTokenMatch) {
       sessionMicroCache.delete(tokenHash);
@@ -180,14 +215,16 @@ export async function verifySession(
     const user = mapDoc(rawUser);
     sessionMicroCache.set(tokenHash, { expiresAt: Date.now() + SESSION_MICRO_CACHE_TTL_MS, user });
 
-    if (options.requiredRole && options.requiredRole === 'ADMIN' && user.rol !== 'ADMIN') {
+    const tfBlock = twoFactorBlock(user, request);
+    if (tfBlock) return { valid: false, response: tfBlock };
+    if (!roleAllowed(user.rol, options.requiredRole)) {
       return {
         valid: false,
         response: NextResponse.json(
           {
             success: false,
             code: 'FORBIDDEN',
-            error: 'Bu işlem için Sistem Yöneticisi (ADMIN) yetkisi gereklidir.',
+            error: 'Bu işlem için gerekli yetkiye sahip değilsiniz.',
           },
           { status: 403 }
         ),
@@ -254,7 +291,9 @@ export async function checkDistributedRateLimit(rateKey: string): Promise<{ lock
     }
     return { locked: false, waitSeconds: 0 };
   } catch {
-    return { locked: false, waitSeconds: 0 };
+    // Fail-closed: hiz siniri deposuna ulasilamiyorsa brute-force korumasi devre disi kalmamali.
+    console.error('[Auth] Rate-limit store unavailable; failing closed.');
+    return { locked: true, waitSeconds: 30 };
   }
 }
 

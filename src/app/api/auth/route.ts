@@ -49,7 +49,7 @@ async function findActiveUserByIdentifier(usersCol: any, identifier: string) {
   }
 
   // 2. Fallback: decrypt active users and match by ad_soyad or username (case-insensitive Turkish)
-  const allActiveRaw = await usersCol.find({ aktif: 1 }).toArray();
+  const allActiveRaw = await usersCol.find({ aktif: 1 }).limit(300).toArray();
   const targetLower = trimmed.toLocaleLowerCase('tr-TR');
   for (const raw of allActiveRaw) {
     const dec = mapDoc(raw);
@@ -103,9 +103,7 @@ export async function GET(request: NextRequest) {
 
     // 1. Session Verification for Single Device Checking & 6h TTL (GET)
     if (action === 'verify') {
-      const username = (searchParams.get('username') || '').trim();
       const sessionToken = (
-        searchParams.get('session_token') ||
         request.cookies.get('komur_session_token')?.value ||
         request.headers.get('x-session-token') ||
         ''
@@ -119,26 +117,17 @@ export async function GET(request: NextRequest) {
       }
 
       const tokenHash = crypto.createHash('sha256').update(sessionToken).digest('hex');
-      let rawUser = username ? await findActiveUserByIdentifier(usersCol, username) : null;
-      if (!rawUser) {
-        rawUser = await usersCol.findOne({
-          active_session_token: { $in: [sessionToken, tokenHash] },
-          aktif: 1,
-        });
-      }
+      const rawUser: any = await usersCol.findOne({ active_session_token: tokenHash, aktif: 1 });
 
       if (!rawUser) {
         return NextResponse.json(
-          { success: false, valid: false, code: 'USER_NOT_FOUND', error: 'Kullanıcı hesabı bulunamadı veya pasife alınmış.' },
-          { status: 404 }
+          { success: false, valid: false, code: 'SESSION_TERMINATED', error: 'Oturum geçersiz veya sonlandırılmış. Lütfen tekrar giriş yapınız.' },
+          { status: 401 }
         );
       }
 
       // Strictly require an active session token and verify in constant time (supports raw or SHA-256 hashed DB token)
-      const isTokenMatch = rawUser.active_session_token && (
-        timingSafeTokenEqual(rawUser.active_session_token, sessionToken) ||
-        timingSafeTokenEqual(rawUser.active_session_token, tokenHash)
-      );
+      const isTokenMatch = rawUser.active_session_token && timingSafeTokenEqual(rawUser.active_session_token, tokenHash);
       if (!isTokenMatch) {
         return NextResponse.json(
           {
@@ -303,26 +292,17 @@ export async function POST(request: NextRequest) {
       }
 
       const tokenHash = crypto.createHash('sha256').update(targetToken).digest('hex');
-      let rawUser = trimmedUser ? await findActiveUserByIdentifier(usersCol, trimmedUser) : null;
-      if (!rawUser) {
-        rawUser = await usersCol.findOne({
-          active_session_token: { $in: [targetToken, tokenHash] },
-          aktif: 1,
-        });
-      }
+      const rawUser: any = await usersCol.findOne({ active_session_token: tokenHash, aktif: 1 });
 
       if (!rawUser) {
         return NextResponse.json(
-          { success: false, valid: false, code: 'USER_NOT_FOUND', error: 'Kullanıcı hesabı bulunamadı veya pasif.' },
-          { status: 404 }
+          { success: false, valid: false, code: 'SESSION_TERMINATED', error: 'Oturum geçersiz veya sonlandırılmış. Lütfen tekrar giriş yapınız.' },
+          { status: 401 }
         );
       }
 
       // Strictly require an active session token and verify in constant time
-      const isTokenMatch = rawUser.active_session_token && (
-        timingSafeTokenEqual(rawUser.active_session_token, targetToken) ||
-        timingSafeTokenEqual(rawUser.active_session_token, tokenHash)
-      );
+      const isTokenMatch = rawUser.active_session_token && timingSafeTokenEqual(rawUser.active_session_token, tokenHash);
 
       if (!isTokenMatch) {
         return NextResponse.json(
@@ -394,7 +374,7 @@ export async function POST(request: NextRequest) {
       if (!rawUser && targetToken) {
         const tokenHash = crypto.createHash('sha256').update(targetToken).digest('hex');
         rawUser = await usersCol.findOne({
-          active_session_token: { $in: [targetToken, tokenHash] },
+          active_session_token: tokenHash,
         });
       }
 
@@ -759,8 +739,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Lütfen şifre / PIN giriniz' }, { status: 400 });
     }
 
-    const rateLimitKey = `login::${clientIp}::${trimmedUser.toLocaleLowerCase('tr-TR')}`;
-    const rateLimitStatus = await checkDistributedRateLimit(rateLimitKey);
+    // IP güvenilir değilse (TRUSTED_PROXY_HOPS=0) kilit anahtarı istemci parmak iziyle ayrıştırılır;
+    // böylece bir saldırgan gerçek kullanıcıyı kendi hesabından kilitleyemez.
+    const uaFingerprint = crypto
+      .createHash('sha256')
+      .update((request.headers.get('user-agent') || '') + '|' + (request.headers.get('accept-language') || ''))
+      .digest('hex')
+      .slice(0, 16);
+    const clientKeyPart = clientIp !== 'bilinmiyor' ? clientIp : 'ua:' + uaFingerprint;
+    const userLower = trimmedUser.toLocaleLowerCase('tr-TR');
+    const rateLimitKey = `login::${clientKeyPart}::${userLower}`;
+    const userWideKey = `login-user::${userLower}`;
+    const ipWideKey = clientIp !== 'bilinmiyor' ? `login-ip::${clientIp}` : '';
+    const rateLimitChecks = await Promise.all([
+      checkDistributedRateLimit(rateLimitKey),
+      checkDistributedRateLimit(userWideKey),
+      ipWideKey ? checkDistributedRateLimit(ipWideKey) : Promise.resolve({ locked: false, waitSeconds: 0 }),
+    ]);
+    const rateLimitStatus = rateLimitChecks.find((r) => r.locked) || rateLimitChecks[0];
+    const recordLoginFailure = async () => {
+      const [primary] = await Promise.all([
+        recordDistributedFailedAttempt(rateLimitKey),
+        recordDistributedFailedAttempt(userWideKey, 20, 15 * 60 * 1000, 10 * 60 * 1000),
+        ipWideKey ? recordDistributedFailedAttempt(ipWideKey, 40, 10 * 60 * 1000, 10 * 60 * 1000) : Promise.resolve(null),
+      ]);
+      return primary;
+    };
 
     if (rateLimitStatus.locked) {
       return NextResponse.json(
@@ -779,7 +783,7 @@ export async function POST(request: NextRequest) {
     const isPasswordCorrect = rawUser ? await verifyUserPassword(usersCol, rawUser, trimmedPass) : false;
 
     if (!rawUser || !isPasswordCorrect) {
-      const failResult = await recordDistributedFailedAttempt(rateLimitKey);
+      const failResult = await recordLoginFailure();
 
       if (failResult.count >= 5) {
         await recordActivityLog({
@@ -909,7 +913,7 @@ export async function POST(request: NextRequest) {
     const existingGraces: any[] = Array.isArray(rawUser.totp_device_graces) ? rawUser.totp_device_graces : [];
 
     if (rawUser.totp_enabled && decUser.totp_secret) {
-      if (matchedDeviceSlot && matchedDeviceSlot.slot_no) {
+      if (user.rol === 'PERSONEL' && matchedDeviceSlot && matchedDeviceSlot.slot_no) {
         const activeGrace = existingGraces.find((g: any) =>
           Number(g.slot_no) === Number(matchedDeviceSlot.slot_no) &&
           g.expires_at &&
@@ -941,7 +945,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (!isTotpValid && matchedRecoveryIdx === -1) {
-          const failResult = await recordDistributedFailedAttempt(rateLimitKey);
+          const failResult = await recordLoginFailure();
           if (failResult.count >= 5) {
             await recordActivityLog({
               kullanici_adi: user.ad_soyad || user.username,
@@ -970,6 +974,7 @@ export async function POST(request: NextRequest) {
 
     // Reset failed attempts on full authentication (password + 2FA if enabled)
     await clearDistributedRateLimit(rateLimitKey);
+    await clearDistributedRateLimit(userWideKey);
 
     // Generate fresh session token and store only its SHA-256 hash in MongoDB (prevents session hijacking on DB leak)
     const newSessionToken = crypto.randomUUID();
@@ -988,7 +993,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Eşleşmiş yetkili cihazda yeni 2FA doğrulaması yapıldıysa 6 saatlik muafiyeti kaydet
-    if (matchedDeviceSlot && rawUser.totp_enabled && !skip2faDueToGrace) {
+    if (user.rol === 'PERSONEL' && matchedDeviceSlot && rawUser.totp_enabled && !skip2faDueToGrace) {
       const updatedGraces = existingGraces.filter(
         (g: any) => Number(g.slot_no) !== Number(matchedDeviceSlot.slot_no)
       );
@@ -1139,6 +1144,7 @@ export async function POST(request: NextRequest) {
       message: 'Giriş başarılı',
       session_token: newSessionToken,
       two_factor_grace_active: skip2faDueToGrace,
+      must_setup_2fa: (user.rol === 'ADMIN' || user.rol === 'MUDUR') && !rawUser.totp_enabled,
       user: {
         id: user.id,
         username: user.username,
@@ -1153,7 +1159,6 @@ export async function POST(request: NextRequest) {
     };
 
     if (adminDeviceTokenIssued) {
-      loginResponsePayload.device_token = adminDeviceTokenIssued;
       loginResponsePayload.device_slot_name = '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)';
     }
 

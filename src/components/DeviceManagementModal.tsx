@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { 
@@ -104,10 +104,6 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
       const data = await res.json();
       if (!data.success) {
         throw new Error(data.error || 'Cihaz eşlenemedi');
-      }
-
-      if (data.device_token && typeof window !== 'undefined') {
-        localStorage.setItem('komur_device_token', data.device_token);
       }
 
       showToast({

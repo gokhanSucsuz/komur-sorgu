@@ -53,19 +53,15 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
       const checkDevice = async () => {
         try {
           const savedDeviceToken = localStorage.getItem('komur_device_token') || '';
-          if (!savedDeviceToken) {
-            setIsDeviceAuthorized(false);
-            setIsDeviceChecking(false);
-            return;
-          }
-
           const res = await fetch('/api/devices?action=check_status', {
-            headers: { 'x-device-token': savedDeviceToken },
+            headers: savedDeviceToken ? { 'x-device-token': savedDeviceToken } : {},
           });
           const data = await res.json();
           if (data.success && data.authorized) {
             setIsDeviceAuthorized(true);
             setDeviceSlotName(data.slot_name || '');
+            // Cihaz token'i artik HttpOnly cerezde; eski localStorage kopyasini sil.
+            localStorage.removeItem('komur_device_token');
           } else {
             setIsDeviceAuthorized(false);
             localStorage.removeItem('komur_device_token');
@@ -146,7 +142,6 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
         throw new Error(data.error || 'Aktivasyon kodu doğrulanamadı.');
       }
 
-      localStorage.setItem('komur_device_token', data.device_token);
       setIsDeviceAuthorized(true);
       setDeviceSlotName(data.slot_name || '');
       setActivationSuccess(`Başarılı! Bu telefon "${data.slot_name}" olarak eşlendi.`);
@@ -210,10 +205,6 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
 
       if (!data.success) {
         throw new Error(data.error || 'Giriş yapılamadı');
-      }
-
-      if (data.device_token && typeof window !== 'undefined') {
-        localStorage.setItem('komur_device_token', data.device_token);
       }
 
       onLoginSuccess({

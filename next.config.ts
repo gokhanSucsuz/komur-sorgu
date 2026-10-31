@@ -15,6 +15,27 @@ try {
 }
 
 
+const isDev = process.env.NODE_ENV !== 'production';
+
+// Not: Next.js'in satır içi hydration betikleri nedeniyle 'unsafe-inline' gereklidir (nonce'lu CSP dinamik render ister).
+// Yine de dış kaynaklı betik, eklenti (object), iframe ve veri sızdırma (connect-src) engellenir.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob:",
+  "connect-src 'self'",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "frame-src 'none'",
+  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+  ...(isDev ? [] : ['upgrade-insecure-requests']),
+].join('; ');
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   experimental: {
@@ -80,10 +101,6 @@ const nextConfig: NextConfig = {
             value: 'strict-origin-when-cross-origin',
           },
           {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-          {
             key: 'Strict-Transport-Security',
             value: 'max-age=63072000; includeSubDomains; preload',
           },
@@ -109,7 +126,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'",
+            value: contentSecurityPolicy,
           },
         ],
       },

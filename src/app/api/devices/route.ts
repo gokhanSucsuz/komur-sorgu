@@ -22,7 +22,6 @@ export async function GET(request: NextRequest) {
       const token = (
         request.headers.get('x-device-token') ||
         request.cookies.get('komur_device_token')?.value ||
-        searchParams.get('token') ||
         ''
       ).trim();
       if (!token || token.length < 16 || token.length > 256) {
@@ -33,7 +32,7 @@ export async function GET(request: NextRequest) {
       const slot = await devCol.findOne({ device_token_hash: tokenHash, durum: 'AKTIF' });
 
       if (slot) {
-        return NextResponse.json({
+        const okRes = NextResponse.json({
           success: true,
           is_authorized: true,
           authorized: true,
@@ -41,6 +40,17 @@ export async function GET(request: NextRequest) {
           slot_name: slot.slot_name,
           device_model: slot.device_model,
         });
+        // Eski surumlerde localStorage'da tutulan token'i HttpOnly cereze tasi (tek seferlik gecis).
+        if (!request.cookies.get('komur_device_token')?.value) {
+          okRes.cookies.set('komur_device_token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 365 * 24 * 60 * 60,
+          });
+        }
+        return okRes;
       }
 
       return NextResponse.json({ success: true, is_authorized: false, authorized: false });
@@ -208,7 +218,6 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json({
         success: true,
         message: `Tebrikler! Bu telefon "${slot.slot_name}" olarak başarıyla yetkilendirildi.`,
-        device_token: newDeviceToken,
         slot_no: slot.slot_no,
         slot_name: slot.slot_name,
       });
@@ -386,7 +395,6 @@ export async function POST(request: NextRequest) {
         message: 'Telefonunuz "1. Yönetici Telefonu (Admin)" olarak başarıyla eşlendi.',
         slot_no: 1,
         slot_name: '1. Yönetici Telefonu (Admin - Gökhan SUÇSUZ)',
-        device_token: adminDeviceToken,
       });
 
       res.cookies.set('komur_device_token', adminDeviceToken, {
