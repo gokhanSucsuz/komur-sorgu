@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, BookOpen } from 'lucide-react';
 
 export type NavTab = 'search' | 'add_household' | 'route' | 'shift' | 'analytics' | 'archive' | 'tonnage' | 'import' | 'guide';
@@ -86,6 +87,22 @@ export default function BottomNav({
     return true;
   });
 
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (activeTabRef.current && typeof activeTabRef.current.scrollIntoView === 'function') {
+      try {
+        activeTabRef.current.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest'
+        });
+      } catch {
+        // Fallback for older Android WebViews
+      }
+    }
+  }, [currentTab]);
+
   return (
     <nav className="mobile-nav-bar no-print lg:hidden" role="navigation" aria-label="Ana Menü">
       {visibleTabs.map((tab) => {
@@ -95,12 +112,20 @@ export default function BottomNav({
         return (
           <button
             key={tab.id}
+            ref={isActive ? activeTabRef : null}
+            type="button"
             onClick={() => onTabChange(tab.id)}
             className={`nav-item ${isActive ? 'active' : ''}`}
-            aria-selected={isActive}
+            aria-current={isActive ? 'page' : undefined}
           >
             <div className="nav-icon-container relative">
               <Icon className="w-5 h-5" />
+              {tab.id === 'shift' && hasActiveShift && tab.badge === undefined && (
+                <span
+                  className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white absolute -top-0.5 -right-0.5 animate-pulse"
+                  title="Aktif Mesai Devam Ediyor"
+                />
+              )}
               {tab.badge !== undefined && (
                 <span className={`nav-badge ${tab.badgeColor || 'bg-rose-600 text-white'}`}>
                   {typeof tab.badge === 'number' && tab.badge > 99 ? '99+' : tab.badge}

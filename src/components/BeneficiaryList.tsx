@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, 
   CheckCircle2, Clock, Filter, AlertCircle, ChevronRight, ChevronDown, ChevronLeft,
   ChevronsLeft, ChevronsRight, AlertTriangle, 
   PackagePlus, CheckSquare, Square, X, SlidersHorizontal, ArrowRight, Undo2,
   Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool,
-  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus
+  List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp
 } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { 
@@ -108,6 +108,19 @@ export default function BeneficiaryList({
 
   // Liste Türü Filtresi (Tümü, Ana Liste, Ek Listeler, Sigortalılar Listesi)
   const [selectedListTypeFilter, setSelectedListTypeFilter] = useState<'HEPSI' | 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI' | 'EK_KOMUR'>('HEPSI');
+
+  // Mobil Tek Parmakla Hızlı Yukarı Çık & Arama Odaklama
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 450);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Filtre veya arama değiştiğinde sayfa numarasını otomatik olarak 1'e sıfırla
   useEffect(() => {
@@ -584,24 +597,24 @@ export default function BeneficiaryList({
             </button>
           </div>
 
-          {/* Hızlı Excel Dışa Aktarma Butonları */}
-          <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-2 border-l border-slate-200">
+          {/* Hızlı Excel Dışa Aktarma Butonları (Mobil ve Masaüstü Uyumlu) */}
+          <div className="flex flex-wrap items-center gap-1.5 sm:ml-2 sm:pl-2 sm:border-l border-slate-200 w-full sm:w-auto pt-1.5 sm:pt-0 border-t sm:border-t-0">
             <a
               href="/api/export?type=batch_by_mahalle&batchId=ALL"
               download="Edirne_SYDV_Tum_Mahalleler_Sekmeli_Dagitim_Listesi.xlsx"
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold transition-all shadow-2xs active:scale-95"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold transition-all shadow-2xs active:scale-95"
               title="Tüm hak sahiplerini mahallelere göre ayrı sekmelerde Excel olarak indirin"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
               <span>Mahallelere Göre İndir</span>
             </a>
             <a
               href="/api/export?type=beneficiaries"
               download="Edirne_SYDV_Komur_Hak_Sahipleri_Listesi.xlsx"
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-bold transition-all shadow-2xs active:scale-95"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-bold transition-all shadow-2xs active:scale-95"
               title="Tüm hak sahiplerini tek liste halinde Excel olarak indirin"
             >
-              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <Download className="w-3.5 h-3.5 text-slate-600 shrink-0" />
               <span>Tek Liste İndir</span>
             </a>
           </div>
@@ -692,7 +705,10 @@ export default function BeneficiaryList({
         <div className="relative flex-1 flex items-center">
           <Search className="w-5 h-5 absolute left-3.5 text-slate-400 pointer-events-none" />
           <input
-            type="text"
+            ref={searchInputRef}
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="TC Kimlik No veya Hak Sahibi (Ad Soyad) ile ara..."
@@ -1215,7 +1231,7 @@ export default function BeneficiaryList({
             <div className="pt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100">
               <div className="flex items-center gap-1.5 overflow-x-auto text-xs w-full sm:w-auto">
                 <span className="text-[11px] font-bold text-slate-500 shrink-0">İmza Dosyası:</span>
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold overflow-x-auto">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold overflow-x-auto no-scrollbar scroll-fade-x">
                   <button
                     type="button"
                     onClick={() => setSelectedListTypeFilter('HEPSI')}
@@ -1363,7 +1379,7 @@ export default function BeneficiaryList({
 
           {/* Quick-filter Street Chips (Hızlı Sokak Seçimi) */}
           {availableStreets.length > 1 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar scroll-fade-x">
               <button
                 type="button"
                 onClick={() => setSelectedSokak('HEPSI')}
@@ -3057,6 +3073,27 @@ export default function BeneficiaryList({
           </div>
         );
       })()}
+
+      {/* MOBİL & MASAÜSTÜ TEK DOKUNUŞLA YUKARI ÇIK / HIZLI ARAMA BUTONU */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+            setTimeout(() => {
+              searchInputRef.current?.focus();
+            }, 350);
+          }}
+          className="mobile-fab-top no-print"
+          title="Sayfanın en üstüne çık ve arama çubuğuna odaklan"
+          aria-label="Yukarı Çık ve Ara"
+        >
+          <ArrowUp className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Yukarı / Ara</span>
+        </button>
+      )}
     </div>
   );
 }

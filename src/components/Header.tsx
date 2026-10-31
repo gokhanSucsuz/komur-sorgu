@@ -300,21 +300,23 @@ export default function Header({
 
               {/* Refresh Button */}
               <button
+                type="button"
                 onClick={onRefresh}
                 title="Yenile"
                 aria-label="Yenile"
-                className={`p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 hover:text-slate-900 transition-all active:scale-95 shadow-sm shrink-0 ${
+                className={`min-w-[38px] min-h-[38px] p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 hover:text-slate-900 flex items-center justify-center transition-all active:scale-95 shadow-sm shrink-0 ${
                   isRefreshing ? 'animate-spin text-amber-600' : ''
                 }`}
               >
-                <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <RefreshCw className="w-4 h-4" />
               </button>
 
               {/* User Profile Badge (Clicking Opens Profile Info, No Arbitrary Role Change) */}
               <button
+                type="button"
                 onClick={() => setShowProfileModal(true)}
-                className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[95px] xs:max-w-[110px] sm:max-w-[130px] shrink-0"
-                title="Kullanıcı Oturum Bilgisi"
+                className="min-h-[38px] flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-800 transition-all active:scale-95 shadow-sm max-w-[100px] xs:max-w-[115px] sm:max-w-[140px] shrink-0"
+                title="Kullanıcı Oturum ve 2FA Güvenlik Bilgisi"
               >
                 {userRole === 'ADMIN' ? (
                   <>
@@ -337,19 +339,20 @@ export default function Header({
               {/* Logout Button */}
               {onLogout && (
                 <button
+                  type="button"
                   onClick={onLogout}
                   title="Güvenli Çıkış Yap"
                   aria-label="Güvenli Çıkış Yap"
-                  className="p-1.5 sm:p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 transition-all active:scale-95 shadow-sm shrink-0"
+                  className="min-w-[38px] min-h-[38px] p-1.5 sm:p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 flex items-center justify-center transition-all active:scale-95 shadow-sm shrink-0"
                 >
-                  <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <LogOut className="w-4 h-4" />
                 </button>
               )}
             </div>
           </div>
 
-          {/* MOBILE ONLY: Quick Management Ribbon (Horizontal scrollable, zero overflow or overlap) */}
-          <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 pb-0.5 border-t border-slate-100/90 w-full">
+          {/* MOBILE ONLY: Quick Management Ribbon (Horizontal scrollable, soft-edge fade, zero overflow or overlap) */}
+          <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-fade-x pt-1.5 pb-1 border-t border-slate-100/90 w-full">
             {/* Admin Deneme Modu Toggle / Personnel Deneme Modu Badge on Mobile Ribbon */}
             {userRole === 'ADMIN' && onToggleDenemeModu ? (
               <button
