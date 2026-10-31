@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import PwaRegister from "@/components/PwaRegister";
 import GlobalAlertManager from "@/components/GlobalAlertManager";
@@ -7,7 +7,14 @@ import GlobalAlertManager from "@/components/GlobalAlertManager";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
-  display: "swap"
+  display: "swap",
+});
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-jakarta",
+  display: "swap",
 });
 
 export const viewport: Viewport = {
@@ -16,7 +23,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  viewportFit: "cover"
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {
@@ -31,12 +38,12 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Edirne SYDV Kömür Takip"
+    title: "Edirne SYDV Kömür Takip",
   },
   icons: {
     icon: "/edirne-sydv-logo.png",
-    apple: "/icons/icon-192x192.png"
-  }
+    apple: "/icons/icon-192x192.png",
+  },
 };
 
 export default function RootLayout({
@@ -45,7 +52,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className={inter.variable}>
+    <html lang="tr" className={`${inter.variable} ${jakarta.variable}`}>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

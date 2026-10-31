@@ -6,18 +6,7 @@ import Header from '@/components/Header';
 import BottomNav, { NavTab } from '@/components/BottomNav';
 import BeneficiaryList from '@/components/BeneficiaryList';
 import MorningAlertBanner from '@/components/MorningAlertBanner';
-import DeliveryModal from '@/components/DeliveryModal';
-import CancelModal from '@/components/CancelModal';
-import HouseholdModal from '@/components/HouseholdModal';
-import QuotaModal from '@/components/QuotaModal';
 import LoginPage from '@/components/LoginPage';
-import PersonnelManagementModal from '@/components/PersonnelManagementModal';
-import DeviceManagementModal from '@/components/DeviceManagementModal';
-import AuditLogsModal from '@/components/AuditLogsModal';
-import AdminAuthModal from '@/components/AdminAuthModal';
-import EditBeneficiaryModal from '@/components/EditBeneficiaryModal';
-import KomurIptalModal from '@/components/KomurIptalModal';
-import SeasonManagementModal from '@/components/SeasonManagementModal';
 import { FlaskConical, Play, RotateCcw, Shield, Sparkles } from 'lucide-react';
 import { showToast, showAlert, showConfirm } from '@/components/GlobalAlertManager';
 import { setOfflineQueueActiveMode, clearSandboxOfflineQueue } from '@/lib/offlineSync';
@@ -66,6 +55,19 @@ const ExcelImportPage = dynamic(() => import('@/components/ExcelImportPage'), {
 const GuidePage = dynamic(() => import('@/components/GuidePage'), {
   loading: () => <TabLoadingSkeleton text="Resmi Kullanım Kılavuzu Yükleniyor..." />,
 });
+
+// Lazy-loaded Modals (yalnızca ilgili modal açıldığında indirilir; ilk açılış JS paketini küçültür)
+const DeliveryModal = dynamic(() => import('@/components/DeliveryModal'));
+const CancelModal = dynamic(() => import('@/components/CancelModal'));
+const HouseholdModal = dynamic(() => import('@/components/HouseholdModal'));
+const QuotaModal = dynamic(() => import('@/components/QuotaModal'));
+const PersonnelManagementModal = dynamic(() => import('@/components/PersonnelManagementModal'));
+const DeviceManagementModal = dynamic(() => import('@/components/DeviceManagementModal'));
+const AuditLogsModal = dynamic(() => import('@/components/AuditLogsModal'));
+const AdminAuthModal = dynamic(() => import('@/components/AdminAuthModal'));
+const EditBeneficiaryModal = dynamic(() => import('@/components/EditBeneficiaryModal'));
+const KomurIptalModal = dynamic(() => import('@/components/KomurIptalModal'));
+const SeasonManagementModal = dynamic(() => import('@/components/SeasonManagementModal'));
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {

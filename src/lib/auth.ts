@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getDbCollections, mapDoc } from './mongodb';
 import { timingSafeTokenEqual } from './crypto';
 import { isSameOriginRequest, checkRateLimit, rateLimitExceededResponse } from './security';
+import type { AppRole, UserRecord } from '@/types';
 
 /**
  * Kurumsal Mutlak Oturum Süresi: 6 Saat (Milisaniye ve Saniye)
@@ -17,10 +18,8 @@ export function isSessionExpired(lastLoginAt: string | null | undefined): boolea
   return Date.now() - loginTimeMs > SESSION_MAX_AGE_MS;
 }
 
-type AppRole = 'ADMIN' | 'PERSONEL' | 'MUDUR';
-
-/** requiredRole verilmemişse her oturum açmış rol geçer; verilmişse rol listede olmalıdır (ADMIN, listede olmasa da yalnızca ADMIN gerekiyorsa geçer). */
-function roleAllowed(userRole: string | undefined, required?: AppRole | AppRole[]): boolean {
+/** requiredRole verilmemişse her oturum açmış rol geçer; verilmişse rol listede olmalıdır. */
+export function roleAllowed(userRole: string | undefined, required?: AppRole | AppRole[]): boolean {
   if (!required) return true;
   const list = Array.isArray(required) ? required : [required];
   return list.includes(userRole as AppRole);
@@ -30,7 +29,7 @@ function roleAllowed(userRole: string | undefined, required?: AppRole | AppRole[
  * REQUIRE_PRIVILEGED_2FA=true iken 2FA'sı olmayan ADMIN/MUDUR oturumları yalnızca /api/auth
  * (2FA kurulumu) uç noktasını kullanabilir; diğer tüm API'ler 403 döner.
  */
-function twoFactorBlock(user: any, request: NextRequest): NextResponse | null {
+function twoFactorBlock(user: UserRecord, request: NextRequest): NextResponse | null {
   if (process.env.REQUIRE_PRIVILEGED_2FA !== 'true') return null;
   if (user.rol !== 'ADMIN' && user.rol !== 'MUDUR') return null;
   if (user.totp_enabled) return null;
@@ -45,15 +44,43 @@ function twoFactorBlock(user: any, request: NextRequest): NextResponse | null {
   );
 }
 
-export interface AuthSessionResult {
-  valid: boolean;
-  user?: any;
-  response?: NextResponse;
-  id?: string;
-  username?: string;
-  ad_soyad?: string;
-  rol?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
+/**
+ * MUDUR rolü kurumsal olarak salt okunur (izleme ve raporlama) yetkisine sahiptir.
+ * Kendi oturum/şifre/2FA işlemleri (/api/auth) dışında hiçbir veri değiştirme (POST/PUT/PATCH/DELETE) işlemi yapamaz.
+ */
+function mudurWriteBlock(user: UserRecord, request: NextRequest, method: string): NextResponse | null {
+  if (user.rol !== 'MUDUR') return null;
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
+  if (request.nextUrl.pathname.startsWith('/api/auth')) return null;
+  return NextResponse.json(
+    {
+      success: false,
+      code: 'READ_ONLY_ROLE',
+      error: 'Müdür yetkilisi hesabı salt okunur (izleme ve raporlama) yetkisine sahiptir; veri ekleme, güncelleme veya silme işlemi yapamaz.',
+    },
+    { status: 403 }
+  );
 }
+
+export type AuthSessionResult =
+  | {
+      valid: true;
+      user: UserRecord;
+      response?: undefined;
+      id: string;
+      username: string;
+      ad_soyad?: string;
+      rol: AppRole;
+    }
+  | {
+      valid: false;
+      user?: undefined;
+      response: NextResponse;
+      id?: undefined;
+      username?: undefined;
+      ad_soyad?: undefined;
+      rol?: undefined;
+    };
 
 /**
  * Extracts session token from incoming request (Header, Bearer, or Cookie)
@@ -75,7 +102,7 @@ export function extractSessionToken(request: NextRequest): string {
 }
 
 const SESSION_MICRO_CACHE_TTL_MS = 4000;
-const sessionMicroCache = new Map<string, { expiresAt: number; user: any }>();
+const sessionMicroCache = new Map<string, { expiresAt: number; user: UserRecord }>();
 
 export function clearSessionMicroCache(token?: string) {
   if (token) {
@@ -92,7 +119,7 @@ export function clearSessionMicroCache(token?: string) {
  */
 export async function verifySession(
   request: NextRequest,
-  options: { requiredRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR' | Array<'ADMIN' | 'PERSONEL' | 'MUDUR'> } = {}
+  options: { requiredRole?: AppRole | AppRole[] } = {}
 ): Promise<AuthSessionResult> {
   // Enforce Same-Origin (CSRF) protection on state-changing HTTP methods
   const method = (request.method || 'GET').toUpperCase();
@@ -145,6 +172,8 @@ export async function verifySession(
     const user = cached.user;
     const tfBlock = twoFactorBlock(user, request);
     if (tfBlock) return { valid: false, response: tfBlock };
+    const mwBlock = mudurWriteBlock(user, request, method);
+    if (mwBlock) return { valid: false, response: mwBlock };
     if (!roleAllowed(user.rol, options.requiredRole)) {
       return {
         valid: false,
@@ -161,9 +190,9 @@ export async function verifySession(
     return {
       valid: true,
       user,
-      id: user.id || (user._id ? user._id.toString() : ''),
+      id: user.id || (user._id ? String(user._id) : ''),
       username: user.username,
-      ad_soyad: user.ad_soyad,
+      ad_soyad: user.ad_soyad || undefined,
       rol: user.rol,
     };
   }
@@ -175,7 +204,9 @@ export async function verifySession(
       aktif: 1,
     });
 
-    const isTokenMatch = Boolean(rawUser?.active_session_token) && timingSafeTokenEqual(rawUser.active_session_token, tokenHash);
+    const isTokenMatch =
+      Boolean(rawUser?.active_session_token) &&
+      timingSafeTokenEqual(rawUser.active_session_token, tokenHash);
 
     if (!rawUser || !isTokenMatch) {
       sessionMicroCache.delete(tokenHash);
@@ -212,11 +243,13 @@ export async function verifySession(
       };
     }
 
-    const user = mapDoc(rawUser);
+    const user = mapDoc<UserRecord>(rawUser);
     sessionMicroCache.set(tokenHash, { expiresAt: Date.now() + SESSION_MICRO_CACHE_TTL_MS, user });
 
     const tfBlock = twoFactorBlock(user, request);
     if (tfBlock) return { valid: false, response: tfBlock };
+    const mwBlock = mudurWriteBlock(user, request, method);
+    if (mwBlock) return { valid: false, response: mwBlock };
     if (!roleAllowed(user.rol, options.requiredRole)) {
       return {
         valid: false,
@@ -234,12 +267,12 @@ export async function verifySession(
     return {
       valid: true,
       user,
-      id: user.id || (user._id ? user._id.toString() : ''),
+      id: user.id || (user._id ? String(user._id) : ''),
       username: user.username,
-      ad_soyad: user.ad_soyad,
+      ad_soyad: user.ad_soyad || undefined,
       rol: user.rol,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Auth] verifySession error:', err);
     return {
       valid: false,
@@ -258,9 +291,9 @@ export async function verifySession(
 /**
  * Strip sensitive credentials, TOTP secrets, and tokens before sending user object to client
  */
-export function sanitizeUser(user: any): any {
+export function sanitizeUser<T extends Record<string, unknown> | null | undefined>(user: T): T {
   if (!user) return user;
-  const safe = { ...user };
+  const safe: Record<string, unknown> = { ...user };
   safe.totp_enabled = Boolean(user.totp_enabled);
   delete safe.sifre;
   delete safe.sifre_hash;
@@ -271,7 +304,7 @@ export function sanitizeUser(user: any): any {
   delete safe.totp_pending_secret;
   delete safe.totp_recovery_codes;
   delete safe.totp_device_graces;
-  return safe;
+  return safe as T;
 }
 
 // ============================================================================
@@ -350,4 +383,3 @@ export async function clearDistributedRateLimit(rateKey: string): Promise<void> 
     // ignore
   }
 }
-

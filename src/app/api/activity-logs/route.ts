@@ -3,15 +3,20 @@ import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { turkishRecordMatches } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, clampInt } from '@/lib/security';
+import { verifyActivityLogChain } from '@/lib/crypto';
+import type { ActivityLogRecord } from '@/types';
 
 // GET /api/activity-logs - Query user activity/audit logs
 export async function GET(request: NextRequest) {
   try {
     const session = await verifySession(request, { requiredRole: 'ADMIN' });
     if (!session.valid) {
-      return session.response || NextResponse.json(
-        { success: false, error: 'Yetkisiz erişim! Güvenlik ve denetim loglarını sadece Sistem Yöneticisi görüntüleyebilir.' },
-        { status: 403 }
+      return (
+        session.response ||
+        NextResponse.json(
+          { success: false, error: 'Yetkisiz erişim! Güvenlik ve denetim loglarını sadece Sistem Yöneticisi görüntüleyebilir.' },
+          { status: 403 }
+        )
       );
     }
 
@@ -28,7 +33,7 @@ export async function GET(request: NextRequest) {
     const limit = clampInt(searchParams.get('limit'), 1, 1000, 200);
     const page = clampInt(searchParams.get('page'), 1, 10000, 1);
 
-    const filter: any = {};
+    const filter: Record<string, unknown> = {};
 
     if (islemTipi && islemTipi !== 'HEPSI') {
       if (islemTipi === 'TESLIMAT') {
@@ -53,33 +58,37 @@ export async function GET(request: NextRequest) {
     if (gun) {
       filter.gun_tarihi = gun;
     } else if (startDate || endDate) {
-      const dateRange: any = {};
+      const dateRange: Record<string, string> = {};
       if (startDate) dateRange.$gte = `${startDate}T00:00:00.000Z`;
       if (endDate) dateRange.$lte = `${endDate}T23:59:59.999Z`;
       filter.tarih_iso = dateRange;
     }
 
-    let logs: any[] = [];
+    let logs: ActivityLogRecord[] = [];
     let total = 0;
 
     if (!q) {
-      const rawLogs = await activityLogs
-        .find(filter)
-        .sort({ _id: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .toArray();
+      const [rawLogs, count] = await Promise.all([
+        activityLogs
+          .find(filter)
+          .sort({ _id: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .toArray(),
+        activityLogs.countDocuments(filter),
+      ]);
 
-      total = await activityLogs.countDocuments(filter);
-      logs = mapDocs(rawLogs);
+      total = count;
+      logs = mapDocs<ActivityLogRecord>(rawLogs);
     } else {
       // Encrypted fields (detay, hedef_kisi, hedef_tc) must be decrypted before text search
       const rawCandidates = await activityLogs
         .find(filter)
         .sort({ _id: -1 })
+        .limit(2000)
         .toArray();
-      const decryptedCandidates = mapDocs(rawCandidates);
-      const matched = decryptedCandidates.filter((item: any) =>
+      const decryptedCandidates = mapDocs<ActivityLogRecord>(rawCandidates);
+      const matched = decryptedCandidates.filter((item) =>
         turkishRecordMatches(
           item,
           [
@@ -98,9 +107,13 @@ export async function GET(request: NextRequest) {
       logs = matched.slice(skip, skip + limit);
     }
 
-    // Dynamic stats and personnel list across logs
-    const allRaw = await activityLogs.find({}).sort({ _id: -1 }).limit(1000).toArray();
-    const allLogs = mapDocs(allRaw);
+    // Performans Optimizasyonu: İstatistik ve bütünlük doğrulaması için 1000 kaydın şifreli alanlarını (detay, ek_bilgi)
+    // çözmeye gerek yoktur; kullanici_adi, islem_tipi ve integrity_hash zaten düz metindir.
+    const allRaw: ActivityLogRecord[] = await activityLogs
+      .find({})
+      .sort({ _id: -1 })
+      .limit(1000)
+      .toArray();
 
     const personnelSet = new Set<string>();
     let teslimatCount = 0;
@@ -110,7 +123,7 @@ export async function GET(request: NextRequest) {
     let excelCount = 0;
     let mesaiCount = 0;
 
-    for (const log of allLogs) {
+    for (const log of allRaw) {
       if (log.kullanici_adi) {
         personnelSet.add(log.kullanici_adi);
       }
@@ -123,15 +136,18 @@ export async function GET(request: NextRequest) {
       else if (tip?.startsWith('MESAI')) mesaiCount++;
     }
 
+    const integrity = verifyActivityLogChain(allRaw);
+
     return NextResponse.json({
       success: true,
       logs,
       total,
       page,
       limit,
+      integrity,
       personelListesi: Array.from(personnelSet).sort((a, b) => a.localeCompare(b, 'tr')),
       stats: {
-        toplamIslem: allLogs.length,
+        toplamIslem: allRaw.length,
         teslimat: teslimatCount,
         eksikTeslimat: eksikTeslimatCount,
         iptal: iptalCount,
@@ -140,7 +156,7 @@ export async function GET(request: NextRequest) {
         mesai: mesaiCount,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return serverError('activity-logs:GET', error);
   }
 }
@@ -153,7 +169,7 @@ export async function POST(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
     const { islem_tipi, baslik, detay, hedef_kisi, hedef_tc, mahalle, torba_sayisi, ek_bilgi } = body;
 
     const finalUser = session.ad_soyad || session.username || 'Kullanıcı';
@@ -181,7 +197,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true, log: recorded });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return serverError('activity-logs:POST', error);
   }
 }

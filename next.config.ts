@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
+import { execSync } from "child_process";
 
 let appVersion = 'dev';
 try {
-  const { execSync } = require('child_process');
   appVersion =
     process.env.NEXT_PUBLIC_APP_VERSION ||
     process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
@@ -14,8 +14,8 @@ try {
   appVersion = 'v_' + Date.now().toString().slice(-6);
 }
 
-
 const isDev = process.env.NODE_ENV !== 'production';
+const isStandaloneBuild = process.env.DOCKER_BUILD === 'true' || process.env.NEXT_STANDALONE === 'true';
 
 // Not: Next.js'in satır içi hydration betikleri nedeniyle 'unsafe-inline' gereklidir (nonce'lu CSP dinamik render ister).
 // Yine de dış kaynaklı betik, eklenti (object), iframe ve veri sızdırma (connect-src) engellenir.
@@ -38,8 +38,13 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  ...(isStandaloneBuild ? { output: 'standalone' } : {}),
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   experimental: {
     agentUpgrade: 'security',
+    optimizePackageImports: ['lucide-react'],
   },
   allowedDevOrigins: [
     '10.22.1.42',

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDbCollections, mapDocs, mapDoc, recordActivityLog } from '@/lib/mongodb';
-import { encryptField, decryptField, hashPassword, verifyPassword, timingSafeTokenEqual, burnPasswordCheck, needsPasswordRehash } from '@/lib/crypto';
+import { encryptField, decryptField, hashPassword, verifyPassword, timingSafeTokenEqual, burnPasswordCheck, needsPasswordRehash, checkCryptoEngineHealth } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { getClientIp, serverError, validatePasswordPolicy } from '@/lib/security';
 import {
@@ -189,6 +189,63 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // 2B. Admin Security Overview (Active Sessions, Rate-Limit Lockouts, 2FA Coverage, Crypto Health)
+    if (action === 'security_overview') {
+      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      if (!session.valid) {
+        return session.response || NextResponse.json({ success: false, error: 'Yönetici yetkisi gerekli.' }, { status: 403 });
+      }
+
+      const { securityRateLimits } = await getDbCollections();
+      const [rawUsersList, rawRateLimits] = await Promise.all([
+        usersCol.find({ aktif: 1 }).sort({ rol: 1 }).toArray(),
+        securityRateLimits.find({}).toArray(),
+      ]);
+
+      const nowMs = Date.now();
+      const activeSessions: Array<Record<string, unknown>> = [];
+      const accounts2fa: Array<Record<string, unknown>> = [];
+
+      for (const ru of rawUsersList) {
+        const dec = mapDoc(ru);
+        const hasValidSession = Boolean(ru.active_session_token) && !isSessionExpired(ru.last_login_at);
+        accounts2fa.push({
+          username: dec.username,
+          ad_soyad: dec.ad_soyad || dec.username,
+          rol: dec.rol,
+          totp_enabled: Boolean(ru.totp_enabled),
+          has_active_session: hasValidSession,
+          last_login_at: ru.last_login_at || null,
+        });
+        if (hasValidSession) {
+          activeSessions.push({
+            username: dec.username,
+            ad_soyad: dec.ad_soyad || dec.username,
+            rol: dec.rol,
+            last_login_at: ru.last_login_at || null,
+            last_device: dec.last_device || null,
+            totp_enabled: Boolean(ru.totp_enabled),
+          });
+        }
+      }
+
+      const rateLimits = rawRateLimits.map((r: any) => ({
+        key: r.key,
+        count: Number(r.count || 0),
+        locked: Boolean(r.locked_until && r.locked_until > nowMs),
+        waitSeconds: r.locked_until && r.locked_until > nowMs ? Math.ceil((r.locked_until - nowMs) / 1000) : 0,
+        updated_at: r.updated_at || null,
+      }));
+
+      return NextResponse.json({
+        success: true,
+        activeSessions,
+        accounts: accounts2fa,
+        rateLimits,
+        cryptoHealth: checkCryptoEngineHealth(),
+        requirePrivileged2fa: process.env.REQUIRE_PRIVILEGED_2FA === 'true',
+      });
+    }
     // 3. Return active staff members for login screen
     // KVKK & Security: Only expose minimal public personnel fields when unauthenticated; hide admin accounts from unauthenticated callers
     const session = await verifySession(request);
@@ -730,6 +787,40 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === 'admin_unlock_rate_limit') {
+      const session = await verifySession(request, { requiredRole: 'ADMIN' });
+      if (!session.valid) {
+        return session.response || NextResponse.json({ success: false, error: 'Yönetici oturumu gerekli.' }, { status: 403 });
+      }
+
+      const { securityRateLimits } = await getDbCollections();
+      const rateKey = String(body.rate_key || '').trim();
+      const targetUser = String(body.target_username || '').trim().toLowerCase();
+
+      if (body.clear_all === true) {
+        await securityRateLimits.deleteMany({});
+      } else if (rateKey) {
+        await securityRateLimits.deleteOne({ key: rateKey });
+      } else if (targetUser) {
+        const escaped = targetUser.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        await securityRateLimits.deleteMany({ key: new RegExp(escaped, 'i') });
+      } else {
+        return NextResponse.json({ success: false, error: 'Kilit anahtarı veya kullanıcı adı belirtilmedi.' }, { status: 400 });
+      }
+
+      await recordActivityLog({
+        kullanici_adi: session.username || 'ADMIN',
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'GUVENLIK_KILIT_ACMA',
+        baslik: 'Giriş Hız Sınırı / Hesap Kilidi Açıldı',
+        detay: `Sistem Yöneticisi tarafından güvenlik hız sınırı kilidi (${rateKey || targetUser || 'TÜMÜ'}) kaldırıldı.`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Güvenlik hız sınırı / hesap kilidi başarıyla kaldırıldı.',
+      });
+    }
     // =========================================================================
     // 4. USER LOGIN & ADMIN ELEVATION PROCESS
     // (Distributed Brute-Force Rate Limiting + Scrypt + TOTP 2FA + Single Device)

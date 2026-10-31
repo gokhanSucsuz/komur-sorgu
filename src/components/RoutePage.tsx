@@ -10,13 +10,15 @@ import {
   ArrowUpDown, X, UserMinus, Play, Pause, SkipForward, ChevronLeft, ChevronRight,
   Undo2, Lock, Unlock, ListOrdered, Shield, FileSpreadsheet
 } from 'lucide-react';
-import CancelModal from '@/components/CancelModal';
+import dynamic from 'next/dynamic';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
 import ActiveRouteAccordionCard from './ActiveRouteAccordionCard';
-import RouteCreationModals from './route/RouteCreationModals';
-import RouteActionModals from './route/RouteActionModals';
-import RoutePrintReportModal from './route/RoutePrintReportModal';
-import RouteModeCockpitModal from './route/RouteModeCockpitModal';
+
+const CancelModal = dynamic(() => import('@/components/CancelModal'));
+const RouteCreationModals = dynamic(() => import('./route/RouteCreationModals'));
+const RouteActionModals = dynamic(() => import('./route/RouteActionModals'));
+const RoutePrintReportModal = dynamic(() => import('./route/RoutePrintReportModal'));
+const RouteModeCockpitModal = dynamic(() => import('./route/RouteModeCockpitModal'));
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';

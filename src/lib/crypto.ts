@@ -147,6 +147,14 @@ export function encryptField(plaintext: string | null | undefined): string | nul
  * Decrypt a single AES-256-GCM ciphertext.
  * Backward compatible: if the value is not encrypted, returns it as-is.
  */
+const DECRYPT_CACHE_MAX_SIZE = 6000;
+const decryptionCache = new Map<string, string>();
+let lastCacheKeyFingerprint = '';
+
+export function clearDecryptionCache(): void {
+  decryptionCache.clear();
+}
+
 export function decryptField(ciphertext: string | null | undefined): string | null | undefined {
   if (ciphertext === null || ciphertext === undefined) return ciphertext;
   const str = String(ciphertext);
@@ -154,6 +162,21 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
   if (!isEncrypted(str)) return str; // Legacy unencrypted string, return as-is
 
   try {
+    const primaryKey = getMasterKeyBuffer();
+    const previousKey = getPreviousMasterKeyBuffer();
+    const keyTag =
+      primaryKey.subarray(0, 8).toString('hex') +
+      (previousKey ? ':' + previousKey.subarray(0, 4).toString('hex') : '');
+    if (keyTag !== lastCacheKeyFingerprint) {
+      decryptionCache.clear();
+      lastCacheKeyFingerprint = keyTag;
+    }
+
+    const cached = decryptionCache.get(str);
+    if (cached !== undefined) {
+      return cached;
+    }
+
     const parts = str.slice(PREFIX.length).split(':');
     if (parts.length !== 3) {
       console.warn('[Crypto] Invalid ciphertext format');
@@ -168,8 +191,7 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
       return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
     }
 
-    const candidateKeys: Buffer[] = [getMasterKeyBuffer()];
-    const previousKey = getPreviousMasterKeyBuffer();
+    const candidateKeys: Buffer[] = [primaryKey];
     if (previousKey) candidateKeys.push(previousKey);
 
     let lastErr: unknown = null;
@@ -179,6 +201,12 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
         decipher.setAuthTag(authTag);
         let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
+
+        if (decryptionCache.size >= DECRYPT_CACHE_MAX_SIZE) {
+          const oldestKey = decryptionCache.keys().next().value;
+          if (oldestKey !== undefined) decryptionCache.delete(oldestKey);
+        }
+        decryptionCache.set(str, decrypted);
         return decrypted;
       } catch (err) {
         lastErr = err;
@@ -809,3 +837,106 @@ export function timingSafeTokenEqual(
 
 // Re-export Istanbul date utilities from decoupled dateUtils module
 export { getIstanbulDate, type IstanbulDateResult } from './dateUtils';
+
+// ============================================================
+// Denetim Günlüğü (Audit Log) Kriptografik Bütünlük Zinciri (HMAC-SHA256)
+// ============================================================
+
+export interface AuditIntegrityInput {
+  prev_hash?: string | null;
+  kullanici_adi?: string | null;
+  kullanici_rolu?: string | null;
+  islem_tipi?: string | null;
+  baslik?: string | null;
+  tarih_iso?: string | null;
+  hedef_tc_hash?: string | null;
+}
+
+/**
+ * Her denetim günlüğü kaydı için önceki kaydın özetine (prev_hash) bağlı
+ * HMAC-SHA256 bütünlük imzası üretir (Tamper-Evident Audit Log Chain).
+ */
+export function computeActivityLogIntegrityHash(entry: AuditIntegrityInput): string {
+  const prev = String(entry.prev_hash || 'GENESIS').trim();
+  const payload = [
+    prev,
+    String(entry.kullanici_adi || '').trim(),
+    String(entry.kullanici_rolu || '').trim(),
+    String(entry.islem_tipi || '').trim(),
+    String(entry.baslik || '').trim(),
+    String(entry.tarih_iso || '').trim(),
+    String(entry.hedef_tc_hash || '').trim(),
+  ].join('|');
+  const key = getBlindIndexKeyBuffer();
+  return crypto.createHmac('sha256', key).update('audit-chain-v1:' + payload).digest('hex');
+}
+
+/**
+ * Verilen denetim günlüğü kayıtlarının HMAC imzalarını doğrular.
+ */
+export function verifyActivityLogChain(
+  logs: Array<AuditIntegrityInput & { integrity_hash?: string | null }>
+): { valid: boolean; checkedCount: number; chainedCount: number; tamperedCount: number } {
+  let checkedCount = 0;
+  let chainedCount = 0;
+  let tamperedCount = 0;
+
+  for (const log of logs) {
+    checkedCount++;
+    if (!log.integrity_hash) continue;
+    chainedCount++;
+    const expected = computeActivityLogIntegrityHash(log);
+    if (!timingSafeTokenEqual(log.integrity_hash, expected)) {
+      tamperedCount++;
+    }
+  }
+
+  return {
+    valid: tamperedCount === 0,
+    checkedCount,
+    chainedCount,
+    tamperedCount,
+  };
+}
+
+/**
+ * Kriptografik motor ve anahtar sağlığını kontrol eder (/api/health ve güvenlik paneli için).
+ */
+export function checkCryptoEngineHealth(): {
+  healthy: boolean;
+  masterKeyConfigured: boolean;
+  blindKeyConfigured: boolean;
+  compromisedKeyDetected: boolean;
+  rotationKeyActive: boolean;
+} {
+  try {
+    const rawMaster = (process.env.ENCRYPTION_MASTER_KEY || '').trim();
+    const rawBlind = (process.env.BLIND_INDEX_KEY || '').trim();
+    const rawPrev = (process.env.ENCRYPTION_MASTER_KEY_PREVIOUS || '').trim();
+
+    const compromised =
+      (rawMaster.length > 0 && COMPROMISED_KEY_FINGERPRINTS.has(keyFingerprint(rawMaster))) ||
+      (rawBlind.length > 0 && COMPROMISED_KEY_FINGERPRINTS.has(keyFingerprint(rawBlind)));
+
+    const probe = 'health-check-probe';
+    const enc = encryptField(probe);
+    const dec = decryptField(enc);
+    const h = hashBlindIndex(probe);
+
+    return {
+      healthy: dec === probe && Boolean(h) && !compromised,
+      masterKeyConfigured: rawMaster.length >= 32,
+      blindKeyConfigured: rawBlind.length >= 32,
+      compromisedKeyDetected: compromised,
+      rotationKeyActive: rawPrev.length >= 32,
+    };
+  } catch {
+    return {
+      healthy: false,
+      masterKeyConfigured: false,
+      blindKeyConfigured: false,
+      compromisedKeyDetected: false,
+      rotationKeyActive: false,
+    };
+  }
+}

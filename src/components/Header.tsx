@@ -6,7 +6,8 @@ import {
   Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone, FlaskConical, Building2
 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
-import ProfileModal from '@/components/ProfileModal';
+import dynamic from 'next/dynamic';
+const ProfileModal = dynamic(() => import('@/components/ProfileModal'));
 
 interface HeaderProps {
   userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';

@@ -192,8 +192,8 @@ export function stripBlindHashes<T>(input: T): T {
   if (Array.isArray(input)) {
     return input.map((item) => stripBlindHashes(item)) as unknown as T;
   }
-  const cloned: Record<string, any> = {};
-  for (const [k, v] of Object.entries(input as Record<string, any>)) {
+  const cloned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
     if (BLIND_HASH_KEYS.has(k)) continue;
     if (k === 'duraklar' && Array.isArray(v)) {
       cloned[k] = v.map((stop) => stripBlindHashes(stop));
@@ -306,4 +306,77 @@ export function rateLimitExceededResponse(result: RateLimitResult, customMessage
       },
     }
   );
+}
+
+
+// ============================================================================
+// KVKK Veri Maskeleme, Anonimleştirme ve Saklama Süresi Politikası (Madde 7)
+// ============================================================================
+
+/** Kurumsal sosyal yardım ve teslimat tutanakları için yasal saklama süresi (yıl). */
+export const KVKK_RETENTION_YEARS = 10;
+
+/** T.C. Kimlik Numarasını KVKK uyumlu maskeler (örn: 123*****901). */
+export function maskTcNo(tc: string | null | undefined): string {
+  const digits = String(tc ?? '').replace(/\D/g, '');
+  if (digits.length < 5) return '***';
+  return `${digits.slice(0, 3)}*****${digits.slice(-3)}`;
+}
+
+/** Telefon numarasını KVKK uyumlu maskeler (örn: 0555***4567). */
+export function maskPhone(phone: string | null | undefined): string {
+  const clean = String(phone ?? '').replace(/\s+/g, '');
+  if (clean.length < 7) return '***';
+  return `${clean.slice(0, 4)}***${clean.slice(-4)}`;
+}
+
+/** Ad ve soyadı KVKK uyumlu maskeler (örn: AH*** YI****). */
+export function maskName(fullName: string | null | undefined): string {
+  const parts = String(fullName ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return '***';
+  return parts
+    .map((p) => (p.length <= 2 ? `${p[0]}*` : `${p.slice(0, 2)}${'*'.repeat(Math.min(4, p.length - 2))}`))
+    .join(' ');
+}
+
+/**
+ * Kaydın oluşturulma/kapanış tarihinin yasal KVKK saklama süresini doldurup doldurmadığını kontrol eder.
+ */
+export function isRetentionExpired(dateInput: string | Date | null | undefined, retentionYears: number = KVKK_RETENTION_YEARS): boolean {
+  if (!dateInput) return false;
+  const ts = dateInput instanceof Date ? dateInput.getTime() : new Date(dateInput).getTime();
+  if (!Number.isFinite(ts)) return false;
+  const maxAgeMs = retentionYears * 365.25 * 24 * 60 * 60 * 1000;
+  return Date.now() - ts > maxAgeMs;
+}
+
+/**
+ * KVKK Madde 7 kapsamında hak sahibi kaydını geri döndürülemez biçimde anonimleştirir.
+ * İstatistiksel bütünlük (mahalle, torba_sayisi, teslimat_durumu, donem_kodu) korunur;
+ * tüm kişisel veriler ve kör indeks özetleri temizlenir.
+ */
+export function anonymizeBeneficiaryRecord<T extends Record<string, unknown>>(record: T): T {
+  const cloned: Record<string, unknown> = { ...record };
+  cloned.tc_no = 'ANONIM';
+  cloned.tc_hash = null;
+  cloned.ad_soyad = 'ANONİM HANE KAYDI (KVKK)';
+  cloned.telefon = null;
+  cloned.telefon2 = null;
+  cloned.acik_adres = cloned.mahalle ? `${String(cloned.mahalle)} (KVKK Anonim)` : 'KVKK Anonim';
+  cloned.hane_no = null;
+  cloned.hane_hash = null;
+  cloned.norm_adres = null;
+  cloned.adres_hash = null;
+  cloned.teslim_alan = cloned.teslim_alan ? 'ANONİM TESLİM ALAN' : null;
+  cloned.teslimat_notu = null;
+  cloned.uyari_notu = null;
+  cloned.uyarilar = [];
+  cloned.adres_guncelleme_notu = null;
+  cloned.onceki_acik_adres = null;
+  cloned.imza_listesi_acik_adres = null;
+  cloned.kvkk_anonymized_at = new Date().toISOString();
+  return cloned as T;
 }

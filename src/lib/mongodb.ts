@@ -27,28 +27,13 @@ import {
   hashAddress,
   hashPassword,
   isEncrypted,
+  computeActivityLogIntegrityHash,
 } from './crypto';
+import { InMemoryCollection, generateBootstrapPassword } from './inMemoryDb';
 import { getIstanbulDate } from './dateUtils';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'komur_db';
-
-/**
- * Ilk kurulum icin kaynak kodda SABIT parola bulunmaz. Ortam degiskeni yoksa rastgele,
- * guclu bir parola uretilir ve yalnizca sunucu konsoluna BIR KEZ yazilir; ilk giriste degistirilmelidir.
- */
-function generateBootstrapPassword(account: string): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = crypto.randomBytes(20);
-  let pass = '';
-  for (let i = 0; i < bytes.length; i++) pass += alphabet[bytes[i] % alphabet.length];
-  pass += '!7';
-  console.warn(
-    `[Guvenlik] "${account}" hesabi icin ortam degiskeni tanimli degil; gecici ilk kurulum parolasi uretildi: ${pass} ` +
-      '(ilk giriste degistirin ve bu logu temizleyin).'
-  );
-  return pass;
-}
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
@@ -57,7 +42,7 @@ let mahalleMigrationDone = false;
 
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;
-  var _inMemoryMongoStore: Record<string, any[]> | undefined;
+  var _inMemoryMongoStore: Record<string, Record<string, unknown>[]> | undefined;
 }
 
 /**
@@ -87,7 +72,7 @@ export async function getMongoClient(): Promise<MongoClient> {
         strict: false,
         deprecationErrors: true,
       },
-      maxPoolSize: 5,
+      maxPoolSize: Math.max(5, Number.parseInt(process.env.MONGODB_MAX_POOL_SIZE || '15', 10) || 15),
       minPoolSize: 0,
       maxIdleTimeMS: 30000,
       serverSelectionTimeoutMS: 8000,
@@ -290,237 +275,29 @@ export function mapDocs<T = any>(docs: any[]): T[] {
   return docs.map(mapDoc);
 }
 
-// -------------------------------------------------------------
-// In-Memory Fallback Implementation for Local Dev Without Atlas
-// -------------------------------------------------------------
-function getInMemoryStore() {
-  if (!global._inMemoryMongoStore) {
-    global._inMemoryMongoStore = {
-      users: [],
-      beneficiaries: [],
-      delivery_history: [],
-      truck_deliveries: [],
-      import_logs: [],
-      system_settings: [],
-      work_shifts: [],
-      import_batches: [],
-      delivery_routes: [],
-      activity_logs: [],
-      season_archives: [],
-      archived_beneficiaries: [],
-      archived_truck_deliveries: [],
-      archived_delivery_history: [],
-      security_rate_limits: [],
-      authorized_devices: [],
-      signature_lists: [],
-      sandbox_signature_lists: [],
-    };
-    seedInMemoryStore(global._inMemoryMongoStore);
+/**
+ * Yalnızca belirtilen şifreli alanları çözen hafif doküman eşleyici (büyük listelerde CPU tasarrufu sağlar).
+ */
+export function mapDocFields<T = Record<string, unknown>>(doc: any, fieldsToDecrypt: string[]): T {
+  if (!doc) return doc;
+  const mapped: Record<string, any> = { ...doc };
+  if (!mapped.id && mapped._id) {
+    mapped.id = mapped._id.toString();
+  } else if (mapped.id) {
+    mapped.id = String(mapped.id);
   }
-  if (global._inMemoryMongoStore && Array.isArray(global._inMemoryMongoStore.users)) {
-    const adminUser = global._inMemoryMongoStore.users.find((u: any) => u.username === 'admin');
-    if (adminUser) {
-      adminUser.ad_soyad = encryptField('Gökhan SUÇSUZ');
+  for (const field of fieldsToDecrypt) {
+    if (typeof mapped[field] === 'string' && isEncrypted(mapped[field])) {
+      mapped[field] = decryptField(mapped[field]);
     }
   }
-  return global._inMemoryMongoStore;
+  return mapped as T;
 }
 
-function matchDoc(doc: any, filter: any): boolean {
-  if (!filter || Object.keys(filter).length === 0) return true;
-
-  if (filter.$or && Array.isArray(filter.$or)) {
-    if (!filter.$or.some((subFilter: any) => matchDoc(doc, subFilter))) {
-      return false;
-    }
-  }
-  if (filter.$and && Array.isArray(filter.$and)) {
-    if (!filter.$and.every((subFilter: any) => matchDoc(doc, subFilter))) {
-      return false;
-    }
-  }
-
-  for (const key of Object.keys(filter)) {
-    if (key === '$or' || key === '$and') continue;
-    const cond = filter[key];
-    const val = doc[key];
-
-    if (cond && typeof cond === 'object' && !(cond instanceof ObjectId) && !(cond instanceof RegExp)) {
-      if ('$in' in cond) {
-        if (!Array.isArray(cond.$in) || !cond.$in.some((item: any) => String(item) === String(val))) return false;
-      }
-      if ('$exists' in cond) {
-        const exists = val !== undefined && val !== null && val !== '';
-        if (Boolean(cond.$exists) !== exists) return false;
-      }
-      if ('$gte' in cond) {
-        if (val === undefined || val === null || val < cond.$gte) return false;
-      }
-      if ('$lte' in cond) {
-        if (val === undefined || val === null || val > cond.$lte) return false;
-      }
-      if ('$ne' in cond) {
-        if (String(val) === String(cond.$ne)) return false;
-      }
-      if ('$regex' in cond) {
-        const re = new RegExp(cond.$regex, cond.$options || 'i');
-        if (!re.test(String(val || ''))) return false;
-      }
-    } else if (cond instanceof RegExp) {
-      if (!cond.test(String(val || ''))) return false;
-    } else {
-      if (String(val ?? '').toLocaleLowerCase('tr-TR') !== String(cond ?? '').toLocaleLowerCase('tr-TR')) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+export function mapDocsFields<T = Record<string, unknown>>(docs: any[], fieldsToDecrypt: string[]): T[] {
+  if (!Array.isArray(docs)) return [];
+  return docs.map((d) => mapDocFields<T>(d, fieldsToDecrypt));
 }
-
-class InMemoryCollection {
-  private colName: string;
-
-  constructor(colName: string) {
-    this.colName = colName;
-  }
-
-  private get items(): any[] {
-    const store = getInMemoryStore();
-    if (!store[this.colName]) {
-      store[this.colName] = [];
-    }
-    return store[this.colName];
-  }
-
-  private set items(val: any[]) {
-    const store = getInMemoryStore();
-    store[this.colName] = val;
-  }
-
-  async findOne(filter: any = {}) {
-    const found = this.items.find((item) => matchDoc(item, filter));
-    return found ? JSON.parse(JSON.stringify(found)) : null;
-  }
-
-  find(filter: any = {}) {
-    let results = this.items.filter((item) => matchDoc(item, filter)).map((i) => JSON.parse(JSON.stringify(i)));
-
-    const cursor = {
-      sort: (sortSpec: any) => {
-        const keys = Object.keys(sortSpec);
-        if (keys.length > 0) {
-          const [k] = keys;
-          const dir = sortSpec[k] >= 0 ? 1 : -1;
-          results.sort((a, b) => {
-            const va = a[k] ?? '';
-            const vb = b[k] ?? '';
-            if (va < vb) return -1 * dir;
-            if (va > vb) return 1 * dir;
-            return 0;
-          });
-        }
-        return cursor;
-      },
-      skip: (n: number) => {
-        results = results.slice(n);
-        return cursor;
-      },
-      limit: (n: number) => {
-        results = results.slice(0, n);
-        return cursor;
-      },
-      toArray: async () => results,
-    };
-
-    return cursor;
-  }
-
-  async insertOne(doc: any) {
-    const clone = { ...doc };
-    if (!clone._id) clone._id = new ObjectId();
-    if (!clone.id) clone.id = clone._id.toString();
-    this.items.push(clone);
-    return { acknowledged: true, insertedId: clone._id };
-  }
-
-  async insertMany(docs: any[]) {
-    const insertedIds: any[] = [];
-    for (const d of docs) {
-      const res = await this.insertOne(d);
-      insertedIds.push(res.insertedId);
-    }
-    return { acknowledged: true, insertedCount: docs.length, insertedIds };
-  }
-
-  async updateOne(filter: any, update: any, options: any = {}) {
-    let index = this.items.findIndex((item) => matchDoc(item, filter));
-    if (index === -1) {
-      if (options.upsert) {
-        const newDoc = { ...(update.$set || update), ...(filter.$set || filter) };
-        await this.insertOne(newDoc);
-        return { acknowledged: true, modifiedCount: 1, upsertedCount: 1 };
-      }
-      return { acknowledged: true, modifiedCount: 0 };
-    }
-
-    if (update.$set) {
-      this.items[index] = { ...this.items[index], ...update.$set };
-    } else {
-      this.items[index] = { ...this.items[index], ...update };
-    }
-    return { acknowledged: true, modifiedCount: 1 };
-  }
-
-  async updateMany(filter: any, update: any) {
-    let count = 0;
-    this.items.forEach((item, index) => {
-      if (matchDoc(item, filter)) {
-        if (update.$set) {
-          this.items[index] = { ...item, ...update.$set };
-        } else {
-          this.items[index] = { ...item, ...update };
-        }
-        count++;
-      }
-    });
-    return { acknowledged: true, modifiedCount: count };
-  }
-
-  async deleteOne(filter: any) {
-    const index = this.items.findIndex((item) => matchDoc(item, filter));
-    if (index !== -1) {
-      this.items.splice(index, 1);
-      return { acknowledged: true, deletedCount: 1 };
-    }
-    return { acknowledged: true, deletedCount: 0 };
-  }
-
-  async deleteMany(filter: any = {}) {
-    const initialLen = this.items.length;
-    this.items = this.items.filter((item) => !matchDoc(item, filter));
-    return { acknowledged: true, deletedCount: initialLen - this.items.length };
-  }
-
-  async countDocuments(filter: any = {}) {
-    return this.items.filter((item) => matchDoc(item, filter)).length;
-  }
-
-  async distinct(field: string, filter: any = {}) {
-    const values = new Set<any>();
-    this.items.filter((item) => matchDoc(item, filter)).forEach((item) => {
-      if (item[field] !== undefined && item[field] !== null) {
-        values.add(item[field]);
-      }
-    });
-    return Array.from(values);
-  }
-
-  async createIndex() {
-    return 'ok';
-  }
-}
-
 /**
  * Get typed collection handles - automatically handles MongoDB Atlas or fallback
  * Supports isolated Sandbox/Test Mode ('DENEME') vs Official Mode ('RESMI').
@@ -829,17 +606,20 @@ async function initializeIndexesAndSeed(db: Db) {
     );
   }
 
-  // 3. Otomatik Şifreleme Migrasyonu: Veritabanındaki tüm kullanıcılar, şoförler, rotalar ve kişisel verileri AES-256-GCM ile şifrele
-  await migrateAndEncryptExistingData(db);
-
-  // 4. Mahalle İsimleri İyileştirme Migrasyonu: "Yıl Mahallesi", "Yıl Mah." -> "100. Yıl Mah."
-  await migrateMahalleNames(db);
-
-  // 5. Kapı No ve Sokak Senkronizasyonu: Açık adresteki gerçek kapı no ve sokak ile eşitle
-  await migrateKapiNoAndStreets(db);
-
-  // 6. Merkez Mahallesi ve Sokak İyileştirmesi: Merkez Mah. kayıtlarını gerçek köy/mahallere dönüştür, kadastro _ eklerini temizle ve Köy İçi etiketini düzelt
-  await migrateFixMerkezAndStreets(db);
+  // 3-6. Soğuk Başlangıç (Cold-Start) Hızlandırması: Tüm şema migrasyonları tamamlanmışsa tek sorguda atla
+  const masterMigFlag = await settings.findOne({ key: 'all_schema_migrations_v6_done' });
+  if (masterMigFlag?.value !== 'true') {
+    await migrateAndEncryptExistingData(db);
+    await migrateMahalleNames(db);
+    await migrateKapiNoAndStreets(db);
+    await migrateFixMerkezAndStreets(db);
+    await settings.updateOne(
+      { key: 'all_schema_migrations_v6_done' },
+      { $set: { key: 'all_schema_migrations_v6_done', value: 'true', completed_at: new Date().toISOString() } },
+      { upsert: true }
+    );
+  }
+  mahalleMigrationDone = true;
 
   // 7. Initial 4 Authorized Device Slots (Kurumsal 4 Saha Telefonu Kuralı)
   const devicesCol = db.collection('authorized_devices');
@@ -853,56 +633,6 @@ async function initializeIndexesAndSeed(db: Db) {
     ];
     await devicesCol.insertMany(initialSlots);
   }
-}
-
-function seedInMemoryStore(store: Record<string, any[]>) {
-  const { nowLocaleTr } = getIstanbulDate();
-  const initialAdminPass = (process.env.INITIAL_ADMIN_PASSWORD || '').trim() || generateBootstrapPassword('admin');
-  store.system_settings = [
-    { key: 'varsayilan_hedef_torba', value: '34' },
-    { key: 'toplam_tahsis_tonaj', value: '0' },
-    { key: 'calisma_modu', value: 'RESMI' },
-  ];
-  store.users = [
-    encryptUser({
-      id: '1',
-      username: 'admin',
-      ad_soyad: 'Gökhan SUÇSUZ',
-      rol: 'ADMIN',
-      sifre_hash: hashPassword(initialAdminPass),
-      telefon: '05551112233',
-      aktif: 1,
-      created_at: nowLocaleTr,
-    }),
-  ];
-  store.beneficiaries = [];
-  store.delivery_history = [];
-  store.truck_deliveries = [];
-  store.work_shifts = [];
-  store.activity_logs = [];
-  store.import_logs = [];
-  store.import_batches = [];
-  store.delivery_routes = [];
-  store.sandbox_beneficiaries = [];
-  store.sandbox_delivery_history = [];
-  store.sandbox_truck_deliveries = [];
-  store.sandbox_work_shifts = [];
-  store.sandbox_activity_logs = [];
-  store.sandbox_import_logs = [];
-  store.sandbox_import_batches = [];
-  store.sandbox_delivery_routes = [];
-  store.season_archives = [];
-  store.archived_beneficiaries = [];
-  store.archived_truck_deliveries = [];
-  store.archived_delivery_history = [];
-  store.archived_import_batches = [];
-  store.archived_import_logs = [];
-  store.authorized_devices = [
-    { slot_no: 1, slot_name: '1. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
-    { slot_no: 2, slot_name: '2. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
-    { slot_no: 3, slot_name: '3. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
-    { slot_no: 4, slot_name: '4. Saha Dağıtım Telefonu', durum: 'BEKLIYOR', device_token_hash: null, device_model: null, paired_at: null, last_used_at: null, created_at: nowLocaleTr },
-  ];
 }
 
 /**
@@ -938,8 +668,29 @@ export async function recordActivityLog(item: {
     // Encrypt sensitive details before writing to MongoDB Atlas
     const encryptedDoc = encryptActivityLog(doc);
     const targetCol = forceOfficial ? officialActivityLogs : activityLogs;
+
+    // Tamper-Evident Audit Log Chain (HMAC-SHA256): zincirleme bütünlük imzası
+    let prevHash = 'GENESIS';
+    try {
+      const lastLogs = await targetCol.find({}).sort({ _id: -1 }).limit(1).toArray();
+      if (lastLogs.length > 0 && lastLogs[0].integrity_hash) {
+        prevHash = String(lastLogs[0].integrity_hash);
+      }
+    } catch {}
+
+    encryptedDoc.prev_hash = prevHash;
+    encryptedDoc.integrity_hash = computeActivityLogIntegrityHash({
+      prev_hash: prevHash,
+      kullanici_adi: encryptedDoc.kullanici_adi,
+      kullanici_rolu: encryptedDoc.kullanici_rolu,
+      islem_tipi: encryptedDoc.islem_tipi,
+      baslik: encryptedDoc.baslik,
+      tarih_iso: encryptedDoc.tarih_iso,
+      hedef_tc_hash: encryptedDoc.hedef_tc_hash || null,
+    });
+
     await targetCol.insertOne(encryptedDoc);
-    return doc;
+    return { ...doc, prev_hash: encryptedDoc.prev_hash, integrity_hash: encryptedDoc.integrity_hash };
   } catch (err) {
     console.error('Error recording activity log:', err);
     return null;
@@ -1516,7 +1267,7 @@ export async function migrateMahalleNames(db?: Db | null) {
 
   // Also migrate in-memory store if active
   if (global._inMemoryMongoStore) {
-    const store = global._inMemoryMongoStore;
+    const store = global._inMemoryMongoStore as Record<string, any[]>;
     if (store.beneficiaries) {
       for (const b of store.beneficiaries) {
         if (targetVariants.includes(b.mahalle) || (b.mahalle && /^(?:100\s*\.?\s*)?y[ıi]l(?:\s*mah.*)?$/i.test(b.mahalle))) {
@@ -1734,7 +1485,7 @@ export async function migrateFixMerkezAndStreets(db?: Db | null) {
 
   // Also migrate in-memory store if active
   if (global._inMemoryMongoStore && global._inMemoryMongoStore.beneficiaries) {
-    for (const b of global._inMemoryMongoStore.beneficiaries) {
+    for (const b of global._inMemoryMongoStore.beneficiaries as any[]) {
       if (!b.acik_adres) continue;
       if (/^(?:Edirne\s+)?Merkez(?:\s+Mahallesi|\s+Mah\.?|\s+Mh\.?)?$/i.test(b.mahalle) || b.mahalle === 'Merkez Mah.') {
         const det = detectSettlement(null, null, b.acik_adres);

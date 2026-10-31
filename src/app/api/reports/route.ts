@@ -28,14 +28,13 @@ export async function GET(request: NextRequest) {
     const settingDoc = await settingsCol.findOne({ key: 'varsayilan_hedef_torba' });
     const varsayilanHedefTorba = settingDoc ? parseInt(settingDoc.value, 10) : 34;
 
-    // 2. Beneficiaries Overview
-    const benFilter: any = {};
-    if (mahalle && mahalle !== 'HEPSI') {
-      benFilter.mahalle = mahalle;
-    }
-
-    const rawFiltered = await benCol.find(benFilter).toArray();
-    const filteredBeneficiaries = mapDocs(rawFiltered);
+    // 2. Beneficiaries Overview (Tek sorgu ve tek mapDocs ile 3x DB/CPU tasarrufu)
+    const rawAllBeneficiaries = await benCol.find({}).toArray();
+    const allBeneficiaries = mapDocs(rawAllBeneficiaries);
+    const filteredBeneficiaries =
+      mahalle && mahalle !== 'HEPSI'
+        ? allBeneficiaries.filter((b: any) => b.mahalle === mahalle)
+        : allBeneficiaries;
     let toplamHane = filteredBeneficiaries.length;
     let tamHane = 0;
     let eksikHane = 0;
@@ -117,24 +116,20 @@ export async function GET(request: NextRequest) {
     }
     const dailyBreakdown = Array.from(dailyMap.values()).sort((a, b) => b.gun.localeCompare(a.gun));
 
-    // 4. Incomplete Households Detailed List
-    const eksikFilter: any = { teslimat_durumu: 'EKSIK' };
-    if (mahalle && mahalle !== 'HEPSI') {
-      eksikFilter.mahalle = mahalle;
-    }
-    const rawEksik = await benCol
-      .find(eksikFilter)
-      .sort({ mahalle: 1, ad_soyad: 1 })
-      .toArray();
-
-    const eksikHaneler = mapDocs(rawEksik).map((m: any) => ({
-      ...m,
-      eksik_torba: Math.max(0, (m.hedef_torba || 34) - (m.torba_sayisi || 0)),
-    }));
+    // 4. Incomplete Households Detailed List (bellekte çözülmüş listeden, ek DB sorgusu yok)
+    const eksikHaneler = filteredBeneficiaries
+      .filter((m: any) => m.teslimat_durumu === 'EKSIK')
+      .sort((a: any, b: any) => {
+        const mc = String(a.mahalle || '').localeCompare(String(b.mahalle || ''), 'tr');
+        if (mc !== 0) return mc;
+        return String(a.ad_soyad || '').localeCompare(String(b.ad_soyad || ''), 'tr');
+      })
+      .map((m: any) => ({
+        ...m,
+        eksik_torba: Math.max(0, (m.hedef_torba || 34) - (m.torba_sayisi || 0)),
+      }));
 
     // 5. Neighborhood Completion Comparison
-    const rawAllBeneficiaries = await benCol.find({}).toArray();
-    const allBeneficiaries = mapDocs(rawAllBeneficiaries);
     const mahMap = new Map<string, any>();
 
     for (const b of allBeneficiaries) {

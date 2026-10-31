@@ -6,7 +6,8 @@ import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCirc
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto, formatTrDateWithDay } from '@/lib/dateUtils';
-import InstitutionTonnageModal from './InstitutionTonnageModal';
+import dynamic from 'next/dynamic';
+const InstitutionTonnageModal = dynamic(() => import('./InstitutionTonnageModal'));
 
 interface TonnagePageProps {
   trucks: any[];
