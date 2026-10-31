@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { cleanTcNo, cleanHaneKey, normalizeAddress } from './normalizer';
+import { cleanTcNo, cleanHaneKey } from './normalizer';
 
 /**
  * ASKERİ / BANKACILIK DÜZEYİ ALAN BAZLI ŞİFRELEME (FIELD-LEVEL ENCRYPTION)

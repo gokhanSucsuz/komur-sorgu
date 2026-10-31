@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { Route as RouteIcon, X, Download, Printer } from 'lucide-react';
 import { getBeneficiaryListTypeInfo } from '@/lib/normalizer';
@@ -106,7 +107,7 @@ export default function RoutePrintReportModal({
           <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
             <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
               <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
-                <img
+                <Image unoptimized
                   src="/edirne-sydv-logo.png"
                   alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                   width={48}

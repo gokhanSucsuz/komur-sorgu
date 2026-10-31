@@ -1,12 +1,10 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
-import { 
-  Smartphone, Shield, QrCode, RefreshCw, Trash2, Key, Check, Copy, 
-  AlertTriangle, Clock, CheckCircle2, X, Edit3, SmartphoneCharging, Lock
-} from 'lucide-react';
+import { Smartphone, Shield, QrCode, RefreshCw, Trash2, Check, Copy, Clock, X, Edit3, Lock } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
-import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
+import { getSecureItem } from '@/lib/secureStorage';
 
 interface DeviceSlot {
   slot_no: number;
@@ -338,7 +336,7 @@ export default function DeviceManagementModal({ isOpen, onClose }: DeviceManagem
               {/* QR Code */}
               {activeCodeData.qr_code_svg && (
                 <div className="p-2.5 bg-white rounded-2xl border-2 border-indigo-200 shadow-sm shrink-0 flex flex-col items-center">
-                  <img
+                  <Image unoptimized width={144} height={144}
                     src={activeCodeData.qr_code_svg}
                     alt="Aktivasyon QR Kodu"
                     className="w-36 h-36 rounded-xl block"

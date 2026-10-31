@@ -146,7 +146,7 @@ describe('Ek Kömür ve Manuel Islak İmza Listesi Sistemi Testleri', () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('BABADEMİRTAŞ MAH.');
 
-    const titleRow = sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - BABADEMİRTAŞ MAH.']);
+    sheet.addRow(['KÖMÜR YARDIMI HAK SAHİBİ TESLİM VE ISLAK İMZA ÇİZELGESİ - BABADEMİRTAŞ MAH.']);
     sheet.addRow(['Sıra No', 'Hane No', 'TC Kimlik No', 'Adı Soyadı', 'İkametgah Adresi', 'Teslim Edilen Kömür Miktarı', 'Teslim Eden Görevli', 'Teslim Tarihi', 'Islak İmza']);
 
     const beneficiary = {

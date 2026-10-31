@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useCallback } from 'react';
 import {
   FileClock,
@@ -262,7 +263,7 @@ export default function AuditLogsModal({ onClose }: AuditLogsModalProps) {
               className="w-11 h-11 rounded-full border-2 border-indigo-200 bg-white p-0.5 shadow-xs shrink-0 flex items-center justify-center overflow-hidden"
               style={{ width: '40px', height: '40px', minWidth: '40px', minHeight: '40px' }}
             >
-              <img
+              <Image unoptimized
                 src="/edirne-sydv-logo.png"
                 alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                 width={36}

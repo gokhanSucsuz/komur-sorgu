@@ -1,10 +1,11 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, User, MapPin, Printer, X, FileText, CheckCircle2, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
-import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
+import { formatTrDate, formatTrAuto } from '@/lib/dateUtils';
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -20,7 +21,6 @@ export default function DeliveryArchive({
   allRecords,
   stats,
   onOpenCancel,
-  isLoading = false,
   userRole = 'PERSONEL'
 }: DeliveryArchiveProps) {
   const [subTab, setSubTab] = useState<'DELIVERIES' | 'CANCELLATIONS'>('DELIVERIES');
@@ -29,7 +29,6 @@ export default function DeliveryArchive({
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [printDayGroup, setPrintDayGroup] = useState<any | null>(null);
   const [printCancelGroup, setPrintCancelGroup] = useState<any | null>(null);
-  const [deliveryViewMode, setDeliveryViewMode] = useState<'GUNLUK' | 'TOPLU'>('GUNLUK');
   const [cumulativeDate, setCumulativeDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
 
   // ESC tuşu ve overlay ile yazdırma modalını güvenli kapatma (ekran kilitlenmesini önler)
@@ -77,12 +76,6 @@ export default function DeliveryArchive({
   const deliveredItems = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT');
 
   // Search filter for deliveries (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
-  const filteredDelivered = deliveredItems.filter((r) => {
-    if (selectedDay !== 'ALL' && r.gun_tarihi !== selectedDay) return false;
-    if (!searchQuery) return true;
-    return isBirebirBeneficiaryMatch(r, searchQuery);
-  });
-
   // Search filter for cancellations (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
   const filteredCancelled = cancelledItems.filter((r) => {
     if (!searchQuery) return true;
@@ -648,7 +641,7 @@ export default function DeliveryArchive({
               <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
-                    <img
+                    <Image unoptimized
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                       width={48}
@@ -855,7 +848,7 @@ export default function DeliveryArchive({
               <div className="p-3 sm:p-4 rounded-2xl bg-white border border-rose-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-rose-900 gap-2">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
-                    <img
+                    <Image unoptimized
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                       width={48}

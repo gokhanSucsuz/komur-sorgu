@@ -1,13 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  BarChart3, Calendar, Printer, Filter, AlertTriangle, 
-  CheckCircle2, Clock, Truck, Target, TrendingUp, Users, MapPin, 
-  Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, 
-  Layers, ArrowUpDown, ChevronDown, Archive, X, FileText, Download
-} from 'lucide-react';
+import { BarChart3, Calendar, Printer, AlertTriangle, Clock, Truck, Target, TrendingUp, Users, Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, ChevronDown, Archive, X, Download } from 'lucide-react';
 import { formatTonnage, normalizeToTon } from '@/lib/normalizer';
 import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
 
@@ -19,7 +15,6 @@ interface AnalyticsPageProps {
 }
 
 export default function AnalyticsPage({
-  onRefreshAll,
   userRole,
   onOpenQuotaModal,
   onOpenSeasonModal
@@ -44,10 +39,7 @@ export default function AnalyticsPage({
 
   // Report data state
   const [reportData, setReportData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchReport = async () => {
-    setIsLoading(true);
+  const fetchReport = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (startDate) params.set('startDate', startDate);
@@ -61,14 +53,12 @@ export default function AnalyticsPage({
       }
     } catch (err) {
       console.error('Error fetching report:', err);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [startDate, endDate, selectedMahalle]);
 
   useEffect(() => {
     fetchReport();
-  }, [startDate, endDate, selectedMahalle]);
+  }, [fetchReport]);
 
   // Quick Date Presets
   const applyPreset = (preset: string) => {
@@ -121,11 +111,11 @@ export default function AnalyticsPage({
   const donemStats = reportData?.donemStats;
   const eksikHaneler = reportData?.eksikHaneler || [];
   const ekKomurListesi = reportData?.ekKomurListesi || [];
-  const mahalleStats: any[] = reportData?.mahalleStats || [];
-  const sokakStats: any[] = reportData?.sokakStats || [];
-  const batchStats: any[] = reportData?.batchStats || [];
+  const mahalleStats: any[] = useMemo(() => reportData?.mahalleStats || [], [reportData]);
+  const sokakStats: any[] = useMemo(() => reportData?.sokakStats || [], [reportData]);
+  const batchStats: any[] = useMemo(() => reportData?.batchStats || [], [reportData]);
   const dailyBreakdown = reportData?.dailyBreakdown || [];
-  const personelStats: any[] = reportData?.personelStats || [];
+  const personelStats: any[] = useMemo(() => reportData?.personelStats || [], [reportData]);
 
   // Filtered Personel Stats
   const filteredPersonelStats = useMemo(() => {
@@ -1561,7 +1551,7 @@ export default function AnalyticsPage({
               <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
-                    <img
+                    <Image unoptimized
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                       width={48}

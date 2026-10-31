@@ -1,10 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
-import { 
-  Users, UserPlus, Edit3, Trash2, Key, Phone, Shield, User, X, Check, Eye, EyeOff, 
-  AlertCircle, Smartphone, KeyRound, LogOut, ShieldAlert, QrCode, Copy, ShieldCheck, RefreshCw, Building2 
-} from 'lucide-react';
+import { Users, UserPlus, Edit3, Trash2, Key, Shield, User, X, Check, Eye, EyeOff, AlertCircle, Smartphone, LogOut, ShieldAlert, QrCode, Copy, ShieldCheck, RefreshCw, Building2 } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { getSecureItem } from '@/lib/secureStorage';
 
@@ -899,7 +897,7 @@ export default function PersonnelManagementModal({
 
                 {/* QR SVG */}
                 <div className="flex justify-center p-2 bg-slate-50 rounded-xl border border-slate-200">
-                  <img
+                  <Image unoptimized width={160} height={160}
                     src={totpSetupData.qr_svg_data_url}
                     alt="Google Authenticator QR"
                     className="w-40 h-40 object-contain bg-white p-1 rounded-lg"

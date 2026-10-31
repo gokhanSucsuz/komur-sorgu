@@ -12,15 +12,16 @@ declare global {
  * guclu bir parola uretilir ve yalnizca sunucu konsoluna BIR KEZ yazilir; ilk giriste degistirilmelidir.
  */
 export function generateBootstrapPassword(account: string): string {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_EPHEMERAL_BOOTSTRAP !== 'true') {
+    throw new Error(
+      `[Güvenlik] Üretim ortamında "${account}" hesabı ilk kurulumu için ortam değişkeni (INITIAL_ADMIN_PASSWORD / INITIAL_MUDUR_PASSWORD) zorunludur.`
+    );
+  }
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   const bytes = crypto.randomBytes(20);
   let pass = '';
   for (let i = 0; i < bytes.length; i++) pass += alphabet[bytes[i] % alphabet.length];
   pass += '!7';
-  console.warn(
-    `[Guvenlik] "${account}" hesabi icin ortam degiskeni tanimli degil; gecici ilk kurulum parolasi uretildi: ${pass} ` +
-      '(ilk giriste degistirin ve bu logu temizleyin).'
-  );
   return pass;
 }
 

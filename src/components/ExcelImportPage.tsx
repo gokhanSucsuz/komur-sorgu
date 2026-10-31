@@ -1,13 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, 
-  Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck,
-  Eye, Phone, MapPin, Copy, Check, Users, Info, Hash, Building2, Trees,
-  ChevronDown, ChevronUp, ChevronRight, FlaskConical, Play, RotateCcw, Loader2,
-  Printer, PenLine, FileCheck, Layers, Sparkles
-} from 'lucide-react';
+import { FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck, Eye, Phone, MapPin, Copy, Check, Users, Building2, Trees, ChevronDown, FlaskConical, Play, RotateCcw, Loader2, Printer, PenLine, FileCheck, Sparkles } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
@@ -222,8 +216,8 @@ export default function ExcelImportPage({
   
   // Logs state
   const [logs, setLogs] = useState<any[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
-  const [logStats, setLogStats] = useState<any>(null);
+  const [, setBatches] = useState<any[]>([]);
+  const [, setLogStats] = useState<any>(null);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   // Logs Accordion State
@@ -483,14 +477,6 @@ export default function ExcelImportPage({
     }
   };
 
-  const handleRollbackSignatureList = async (listId: string, listName: string, count?: number) => {
-    setRollbackModalTarget({
-      id: listId,
-      name: listName,
-      count: count,
-    });
-  };
-
   // Eliminated / Duplicate Records Detail Modal State
   const [eliminatedModalBatch, setEliminatedModalBatch] = useState<{
     batchId?: string;
@@ -615,6 +601,8 @@ export default function ExcelImportPage({
       fetchSignatureData(selectedSeasonView);
       fetchModeStats();
     }
+    // The loader functions are re-created every render; the effect must only re-run for these three inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole, selectedSeasonView, localCalismaModu]);
 
   const isRecordElenen = (l: any) => {

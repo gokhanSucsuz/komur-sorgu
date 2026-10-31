@@ -1,11 +1,12 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, CheckCircle2, Printer, X, Download, Search, Filter, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
-import { formatTrDate, formatTrDateTime, formatTrAuto, formatTrDateWithDay } from '@/lib/dateUtils';
+import { formatTrDateTime, formatTrDateWithDay } from '@/lib/dateUtils';
 import dynamic from 'next/dynamic';
 const InstitutionTonnageModal = dynamic(() => import('./InstitutionTonnageModal'));
 
@@ -21,7 +22,6 @@ export default function TonnagePage({
   trucks,
   stats,
   onRefresh,
-  isLoading = false,
   userRole = 'PERSONEL'
 }: TonnagePageProps) {
   const todayDefault = () => new Date().toISOString().split('T')[0];
@@ -31,7 +31,7 @@ export default function TonnagePage({
   const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [plaka, setPlaka] = useState('');
-  const [dorsePlaka, setDorsePlaka] = useState('');
+  const [, setDorsePlaka] = useState('');
   const [irsaliyeNo, setIrsaliyeNo] = useState('');
   const [tutanakNo, setTutanakNo] = useState('');
   const [ocakCikisTarihi, setOcakCikisTarihi] = useState(todayDefault);
@@ -316,17 +316,9 @@ export default function TonnagePage({
   const reportTotalYuklenenKg = filteredReportTrucks.reduce((acc: number, t: any) => acc + Math.round(normalizeToTon(t.brut_tonaj) * 1000), 0);
   const reportTotalTeslimKg = filteredReportTrucks.reduce((acc: number, t: any) => acc + Math.round(normalizeToTon(t.net_tonaj) * 1000), 0);
   const reportTotalFarkKg = reportTotalTeslimKg - reportTotalYuklenenKg;
-  const reportTotalTara = filteredReportTrucks.reduce((acc: number, t: any) => {
-    const b = normalizeToTon(t.brut_tonaj);
-    const n = normalizeToTon(t.net_tonaj);
-    const tr = normalizeToTon(t.tara_tonaj);
-    return acc + (tr > 0 ? tr : (b > n ? b - n : 0));
-  }, 0);
 
   const netVal = normalizeToTon(netTonaj, true);
   const brutVal = normalizeToTon(brutTonaj, true);
-  const autoTaraVal = brutVal > netVal ? parseFloat((brutVal - netVal).toFixed(3)) : 0;
-  const autoTara = autoTaraVal.toFixed(3);
 
   const handleAddTruck = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1727,7 +1719,7 @@ export default function TonnagePage({
               <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200">
-                    <img
+                    <Image unoptimized
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                       width={48}

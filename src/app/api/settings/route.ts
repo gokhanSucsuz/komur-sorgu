@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
       const switchToOfficial = Boolean(body.switch_to_official);
       const reseedFake = action === 'SEED_SANDBOX_FAKE_DATA' || Boolean(body.seed_fake_data);
 
-      const [delBen, delBatch, delLog, delHist, delRoute, delTruck, delShift, delSig] = await Promise.all([
+      const [delBen, delBatch, delLog, delHist, delRoute, delTruck, delShift] = await Promise.all([
         sandboxBeneficiaries.deleteMany({}),
         sandboxImportBatches.deleteMany({}),
         sandboxSignatureLists.deleteMany({}),

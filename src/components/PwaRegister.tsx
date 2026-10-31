@@ -21,7 +21,7 @@ export default function PwaRegister() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showHelperModal, setShowHelperModal] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-  const [isAndroid, setIsAndroid] = useState(false);
+  const [, setIsAndroid] = useState(false);
   const [isOldAndroid, setIsOldAndroid] = useState(false);
   const [androidVersion, setAndroidVersion] = useState<string | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);

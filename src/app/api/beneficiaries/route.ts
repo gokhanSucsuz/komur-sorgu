@@ -1,22 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, buildIdFilter, mapDocs, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
-import {
-  cleanTcNo,
-  normalizeAddress,
-  cleanPhone,
-  cleanTurkishText,
-  turkishIncludes,
-  extractPhoneNumbers,
-  detectSettlement,
-  extractStreetAndDoor,
-  cleanHaneNo,
-  cleanHaneKey,
-  formatDeliveryStatusSummary,
-  isBirebirBeneficiaryMatch,
-  normalizeMahalleName,
-  normalizeStreetForCompare,
-  getRecordStreetInfo
-} from '@/lib/normalizer';
+import { cleanTcNo, normalizeAddress, extractPhoneNumbers, detectSettlement, extractStreetAndDoor, cleanHaneNo, cleanHaneKey, formatDeliveryStatusSummary, isBirebirBeneficiaryMatch, normalizeMahalleName, normalizeStreetForCompare, getRecordStreetInfo } from '@/lib/normalizer';
 import {
   hashTc,
   hashHane,
@@ -47,7 +31,6 @@ export async function GET(request: NextRequest) {
       beneficiaries: benCol,
       officialBeneficiaries,
       archivedBeneficiaries,
-      systemSettings,
       calismaModu,
       isSandboxMode,
     } = await getDbCollections();

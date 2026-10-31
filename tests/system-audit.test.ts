@@ -189,4 +189,19 @@ describe('Sistem Denetimi: Performans, Bütünlük, KVKK ve Sıfır-Güven (Zero
     assert.equal(sanitizeSpreadsheetCell('-150'), '-150');
     assert.equal(sanitizeSpreadsheetCell('Şükrüpaşa Mah.'), 'Şükrüpaşa Mah.');
   });
+
+  it('9. Bootstrap parola üretimi CWE-532 log sızıntısı içermez ve üretim ortamında fail-closed davranır', async () => {
+    const fs = await import('node:fs');
+    const inMemorySrc = fs.readFileSync('src/lib/inMemoryDb.ts', 'utf8');
+    assert.equal(
+      inMemorySrc.includes('Generated ephemeral bootstrap password'),
+      false,
+      'inMemoryDb.ts must never log plaintext bootstrap passwords to console'
+    );
+    assert.equal(
+      inMemorySrc.includes("process.env.NODE_ENV === 'production'"),
+      true,
+      'inMemoryDb.ts must enforce fail-closed bootstrap password check in production'
+    );
+  });
 });

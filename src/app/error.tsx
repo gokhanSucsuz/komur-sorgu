@@ -19,7 +19,7 @@ export default function ErrorBoundary({ error, reset }: ErrorProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.clear();
         localStorage.removeItem('komur_active_tab');
-        window.location.href = '/';
+        window.location.replace(window.location.origin + '/');
       }
     } catch {
       window.location.reload();

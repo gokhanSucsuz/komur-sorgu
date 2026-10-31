@@ -225,8 +225,6 @@ export async function GET(request: NextRequest) {
     }
 
     const { deliveryRoutes: routeCol, beneficiaries: benCol } = await getDbCollections();
-    const searchParams = request.nextUrl.searchParams;
-    const action = searchParams.get('action') || 'all';
 
     // 1. Fetch All Active & Paused Routes (Simultaneous multi-team & multi-vehicle support)
     const activeRouteDocs = await routeCol
@@ -1019,7 +1017,6 @@ export async function POST(request: NextRequest) {
         torba_sayisi,
         teslim_alan,
         notlar = '',
-        personel = 'Dağıtım Ekibi',
         daha_sonra_tamamlanacak = false
       } = body;
 

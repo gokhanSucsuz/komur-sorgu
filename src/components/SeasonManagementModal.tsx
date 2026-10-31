@@ -1,24 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Calendar,
-  Archive,
-  CheckCircle2,
-  AlertTriangle,
-  FileSpreadsheet,
-  Download,
-  RefreshCw,
-  X,
-  Target,
-  Layers,
-  ShieldAlert,
-  ChevronRight,
-  TrendingUp,
-  MapPin,
-  Clock,
-  HelpCircle
-} from 'lucide-react';
+import { Calendar, Archive, CheckCircle2, AlertTriangle, Download, RefreshCw, X, Target, ShieldAlert, ChevronRight } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
 import { formatTrAuto } from '@/lib/dateUtils';
 
@@ -63,7 +46,7 @@ export default function SeasonManagementModal({
 
   // Archive inspection state
   const [selectedArchiveDetail, setSelectedArchiveDetail] = useState<any | null>(null);
-  const [isLoadingArchiveDetail, setIsLoadingArchiveDetail] = useState(false);
+  const [, setIsLoadingArchiveDetail] = useState(false);
 
   // Fetch season data
   const fetchSeasonData = useCallback(async () => {

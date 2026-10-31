@@ -1,7 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
-import { Shield, User, KeyRound, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone, QrCode, RefreshCw, X, Check, Building2 } from 'lucide-react';
+import { Shield, User, LogIn, AlertCircle, CheckCircle2, Lock, Eye, EyeOff, Smartphone, RefreshCw, Check, Building2 } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: (user: {
@@ -228,7 +229,7 @@ export default function LoginPage({ onLoginSuccess, sessionTerminatedReason }: L
       {/* Brand Header */}
       <div className="login-card-container text-center mb-6">
         <div className="login-logo-container" style={{ width: '76px', height: '76px', minWidth: '76px', minHeight: '76px', margin: '0 auto 12px auto' }}>
-          <img
+          <Image unoptimized
             src="/edirne-sydv-logo.png"
             alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
             width={76}

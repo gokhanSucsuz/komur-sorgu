@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState, useEffect } from 'react';
-import { Target, CheckCircle2, AlertCircle, X, Truck, Package, Layers, Info } from 'lucide-react';
+import { Target, CheckCircle2, AlertCircle, X, Truck, Package } from 'lucide-react';
 import { formatTonnage, normalizeToTon } from '@/lib/normalizer';
 import { showToast } from './GlobalAlertManager';
 

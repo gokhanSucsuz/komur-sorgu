@@ -1,24 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  MapPin,
-  X,
-  Check,
-  AlertTriangle,
-  RefreshCw,
-  Building,
-  User,
-  Phone,
-  CheckCircle2,
-  Sparkles,
-  Search,
-  Edit3,
-  Info,
-  Layers,
-  ArrowRight,
-  ShieldAlert,
-} from 'lucide-react';
+import { MapPin, X, Check, AlertTriangle, RefreshCw, Phone, CheckCircle2, Search, Info } from 'lucide-react';
 import { showToast } from './GlobalAlertManager';
 import {
   EDIRNE_NEIGHBORHOODS_LIST,

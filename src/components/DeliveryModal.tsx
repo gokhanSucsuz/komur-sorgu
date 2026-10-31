@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { PackageCheck, Minus, Plus, User, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus, PenTool } from 'lucide-react';
+import { PackageCheck, Minus, Plus, MapPin, AlertCircle, CheckCircle2, AlertTriangle, PackagePlus, PenTool } from 'lucide-react';
 import { saveOfflineDelivery } from '@/lib/offlineSync';
 import { showAlert } from './GlobalAlertManager';
 import { getBeneficiaryListTypeInfo } from '@/lib/normalizer';

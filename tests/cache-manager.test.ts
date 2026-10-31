@@ -1,11 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  isProtectedStorageKey,
-  purgeStaleLocalStorage,
-  purgeSessionStorage,
-  checkAndPurgeIfVersionChanged,
-} from '../src/lib/cacheManager';
+import { isProtectedStorageKey, purgeStaleLocalStorage, checkAndPurgeIfVersionChanged } from '../src/lib/cacheManager';
 import { getAppVersion } from '../src/lib/version';
 
 test('CacheManager: isProtectedStorageKey correctly protects sensitive and essential keys', () => {
@@ -65,7 +60,7 @@ test('CacheManager: purgeStaleLocalStorage wipes only unwhitelisted data while p
   mockLocalStorage.setItem('old_search_results', 'some_old_json');
   mockLocalStorage.setItem('temp_view_state', 'active');
 
-  const { removedKeys, preservedKeys } = purgeStaleLocalStorage();
+  const { removedKeys } = purgeStaleLocalStorage();
 
   // Verify stale keys are removed
   assert.ok(removedKeys.includes('komur_beneficiaries_cache'));

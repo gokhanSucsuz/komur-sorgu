@@ -1,53 +1,9 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import {
-  UserPlus,
-  Search,
-  MapPin,
-  Phone,
-  Home,
-  AlertTriangle,
-  CheckCircle2,
-  ShieldAlert,
-  Navigation,
-  Building2,
-  Hash,
-  FileText,
-  PackageCheck,
-  PenTool,
-  Loader2,
-  ArrowRight,
-  RotateCcw,
-  Users,
-  Info,
-  Sparkles,
-  Ban,
-  Flame,
-  FileSpreadsheet,
-  Lock,
-  ChevronDown,
-  ChevronUp,
-  Tag,
-  FlaskConical,
-  Check,
-  X,
-} from 'lucide-react';
+import { UserPlus, Search, MapPin, Phone, AlertTriangle, CheckCircle2, ShieldAlert, Navigation, Building2, Hash, PackageCheck, PenTool, Loader2, RotateCcw, Info, Sparkles, Ban, Flame, FileSpreadsheet, Lock, ChevronDown, ChevronUp, Tag, FlaskConical, Check, X } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
-import {
-  cleanTcNo,
-  isValidTcNo,
-  normalizeAddress,
-  detectSettlement,
-  extractStreetAndDoor,
-  normalizeMahalleName,
-  normalizeStreetForCompare,
-  getRecordStreetInfo,
-  cleanHaneNo,
-  cleanHaneKey,
-  formatDeliveryStatusSummary,
-  formatPhoneDisplay,
-} from '@/lib/normalizer';
+import { cleanTcNo, isValidTcNo, normalizeAddress, detectSettlement, extractStreetAndDoor, normalizeMahalleName, normalizeStreetForCompare, getRecordStreetInfo, cleanHaneKey, formatDeliveryStatusSummary, formatPhoneDisplay } from '@/lib/normalizer';
 
 interface SingleHouseholdAddPageProps {
   records: any[];
@@ -67,7 +23,6 @@ interface SingleHouseholdAddPageProps {
 export default function SingleHouseholdAddPage({
   records = [],
   mahalleler = [],
-  userRole,
   userName,
   defaultQuota = 34,
   initialTcOrName = '',
@@ -110,7 +65,7 @@ export default function SingleHouseholdAddPage({
   const [activeBatches, setActiveBatches] = useState<any[]>([]);
   const [archivedSeasonsList, setArchivedSeasonsList] = useState<any[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
-  const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
+  const [, setIsLoadingBatches] = useState<boolean>(false);
 
   // Aktif döneme ait Excel listelerini ve arşivlenmiş dönemleri yükle
   useEffect(() => {
@@ -179,8 +134,8 @@ export default function SingleHouseholdAddPage({
 
   // Varsayılan kota değiştiğinde güncelle
   useEffect(() => {
-    if (defaultQuota && (!hedefTorba || hedefTorba === '34')) {
-      setHedefTorba(String(defaultQuota));
+    if (defaultQuota) {
+      setHedefTorba((current) => (!current || current === '34' ? String(defaultQuota) : current));
     }
   }, [defaultQuota]);
 
@@ -465,11 +420,6 @@ export default function SingleHouseholdAddPage({
 
     return Array.from(countMap.values()).sort((a, b) => a.sokak.localeCompare(b.sokak, 'tr'));
   }, [records, mahalle, serverStreetsForMahalle]);
-
-  const availableStreetsInMahalle = useMemo(
-    () => streetTagItemsInMahalle.map((item) => item.sokak),
-    [streetTagItemsInMahalle]
-  );
 
   const filteredStreetTags = useMemo(() => {
     const q = sokakSearch.trim().toLocaleLowerCase('tr-TR');

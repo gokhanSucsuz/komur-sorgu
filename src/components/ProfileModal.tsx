@@ -1,26 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
-import {
-  User,
-  Shield,
-  KeyRound,
-  Lock,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  AlertCircle,
-  LogOut,
-  X,
-  Smartphone,
-  Check,
-  RefreshCw,
-  QrCode,
-  Copy,
-  ShieldCheck,
-  ShieldOff,
-  Building2,
-} from 'lucide-react';
+import { User, Shield, KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle, LogOut, X, Smartphone, Check, RefreshCw, QrCode, Copy, ShieldCheck, ShieldOff, Building2 } from 'lucide-react';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { showToast } from './GlobalAlertManager';
 import { applySafeCachePurge } from '@/lib/cacheManager';
@@ -577,7 +559,7 @@ export default function ProfileModal({
                     className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl mx-auto w-fit shadow-inner"
                     style={{ width: 'fit-content' }}
                   >
-                    <img
+                    <Image unoptimized width={176} height={176}
                       src={qrSvgUrl}
                       alt="Google Authenticator QR Kodu"
                       className="w-44 h-44 object-contain"

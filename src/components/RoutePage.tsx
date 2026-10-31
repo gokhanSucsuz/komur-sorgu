@@ -1,26 +1,17 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import {
-  Route as RouteIcon, MapPin, Navigation, CheckCircle2, AlertTriangle, XCircle,
-  Clock, Plus, ArrowUp, ArrowDown, Users, Phone, Truck, Trash2, Archive,
-  CheckSquare, Square, Search, RefreshCw, FileText, ChevronDown, ChevronUp,
-  AlertCircle, ShieldCheck, PenTool, Check, ArrowRight, Download, Printer,
-  ArrowUpDown, X, UserMinus, Play, Pause, SkipForward, ChevronLeft, ChevronRight,
-  Undo2, Lock, Unlock, ListOrdered, Shield, FileSpreadsheet
-} from 'lucide-react';
+import { Route as RouteIcon, Navigation, CheckCircle2, Plus, Truck, Trash2, Archive, RefreshCw, ChevronDown, ChevronUp, PenTool, Download, Printer, Play, Pause } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
 import ActiveRouteAccordionCard from './ActiveRouteAccordionCard';
 
-const CancelModal = dynamic(() => import('@/components/CancelModal'));
 const RouteCreationModals = dynamic(() => import('./route/RouteCreationModals'));
 const RouteActionModals = dynamic(() => import('./route/RouteActionModals'));
 const RoutePrintReportModal = dynamic(() => import('./route/RoutePrintReportModal'));
 const RouteModeCockpitModal = dynamic(() => import('./route/RouteModeCockpitModal'));
-import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo, extractUniquePersonnelList } from '@/lib/normalizer';
-import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
+import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
+import { formatTrDate } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';
 
 function getOrCreateClientId(): string {
@@ -55,8 +46,6 @@ export default function RoutePage({
   userUsername,
   userTeam,
   userPartners,
-  eksikHaneler = [],
-  onCompleteHousehold,
   onRefreshAll,
   onNavigateToSearch
 }: RoutePageProps) {
@@ -218,7 +207,7 @@ export default function RoutePage({
 
   const [archivedRoutes, setArchivedRoutes] = useState<any[]>([]);
   const [signedBeneficiaries, setSignedBeneficiaries] = useState<any[]>([]);
-  const [allPendingBeneficiaries, setAllPendingBeneficiaries] = useState<any[]>([]);
+  const [, setAllPendingBeneficiaries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
@@ -245,7 +234,7 @@ export default function RoutePage({
   const [newRoutePlate, setNewRoutePlate] = useState<string>('');
   const [newRouteStaff, setNewRouteStaff] = useState<string>(userName || 'Personel');
   const [newRouteNote, setNewRouteNote] = useState<string>('');
-  const [createSelectionTab, setCreateSelectionTab] = useState<'SIGNED' | 'ALL'>('SIGNED');
+  const [, setCreateSelectionTab] = useState<'SIGNED' | 'ALL'>('SIGNED');
   const [createModalStep, setCreateModalStep] = useState<'SELECT' | 'ORDER'>('SELECT');
   const [selectedBeneficiaryIds, setSelectedBeneficiaryIds] = useState<string[]>([]);
   const [createSearchQuery, setCreateSearchQuery] = useState<string>('');
@@ -873,36 +862,6 @@ export default function RoutePage({
     }
   };
 
-  // Normal Exit Rota Modu (Release lock)
-  const handleExitRouteMode = async () => {
-    clearSavedSession();
-    setIsRouteModeOpen(false);
-    setRouteModePausedNotice(false);
-
-    if (activeRoute) {
-      const routeId = activeRoute.id || activeRoute._id;
-      try {
-        await fetch('/api/routes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-client-id': currentClientId
-          },
-          body: JSON.stringify({
-            action: 'RELEASE_ROUTE_LOCK',
-            route_id: routeId,
-            personel: userName || 'Personel',
-            client_id: currentClientId
-          })
-        });
-        await fetchRoutes();
-        if (onRefreshAll) onRefreshAll();
-      } catch (e) {
-        console.error('Error releasing route lock on exit:', e);
-      }
-    }
-  };
-
   // Pause Route and Exit Rota Modu (releases lock on backend)
   const handlePauseRouteAndExit = async (customReason?: string) => {
     clearSavedSession();
@@ -943,61 +902,6 @@ export default function RoutePage({
     }
   };
 
-  // Admin Force Unlock
-  const handleForceUnlockRoute = async (routeId: string) => {
-    const confirmed = await showConfirm({
-      title: 'Rotanın Kilidini Kaldır',
-      message: `Bu rotanın kilidini zorla kaldırmak istediğinize emin misiniz?\n\n"${routeLockedByName || 'Diğer personel'}" personeline ait aktif Rota Modu oturumu sonlandırılabilir.`,
-      type: 'warning',
-      confirmText: 'Evet, Kilidi Kaldır',
-      cancelText: 'Vazgeç'
-    });
-    if (!confirmed) {
-      return;
-    }
-    setIsActionLoading(true);
-    try {
-      const res = await fetch('/api/routes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': currentClientId
-        },
-        body: JSON.stringify({
-          action: 'RELEASE_ROUTE_LOCK',
-          route_id: routeId,
-          force: true,
-          personel: userName || 'Admin',
-          client_id: currentClientId
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast({
-          type: 'success',
-          title: 'Kilit Kaldırıldı',
-          message: 'Rota kilidi başarıyla kaldırıldı.'
-        });
-        await fetchRoutes();
-        if (onRefreshAll) onRefreshAll();
-      } else {
-        showAlert({
-          title: 'İşlem Başarısız',
-          message: data.error || 'Kilit kaldırılamadı',
-          type: 'error'
-        });
-      }
-    } catch (err: any) {
-      showAlert({
-        title: 'Hata',
-        message: 'Hata: ' + err.message,
-        type: 'error'
-      });
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
   // Heartbeat to keep route lock active and report current active stop while in Route Mode
   useEffect(() => {
     if (!isRouteModeOpen || !activeRoute) return;
@@ -1029,6 +933,8 @@ export default function RoutePage({
     const interval = setInterval(sendHeartbeat, 20 * 1000);
 
     return () => clearInterval(interval);
+    // activeRoute is intentionally tracked by id only: depending on the whole object would restart the heartbeat on every refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRouteModeOpen, activeRoute?.id, activeRoute?._id, routeModeIndex, userName, currentClientId]);
 
   // Sayfa açıldığında veya yenilendiğinde, yarım kalan aktif Rota Modu oturumunu otomatik geri yükle
@@ -1083,6 +989,8 @@ export default function RoutePage({
       console.error('Error restoring route session:', e);
       hasRestoredSessionRef.current = true;
     }
+    // Session restore must run once per route list / user change, not whenever handleOpenRouteMode is re-created.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoutes, isUserTeamAuthorized, sessionUserKey]);
 
   // Sign beneficiary directly inside Rota Modu (1-tap kapıda imza)

@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
-import { 
-  getDbCollections, 
-  buildIdFilter, 
-  mapDoc, 
-  mapDocs, 
-  recordActivityLog, 
-  touchSyncPulse,
-  reconcileArchivedSeasonImports
-} from '@/lib/mongodb';
+import { getDbCollections, mapDoc, mapDocs, recordActivityLog, touchSyncPulse, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { normalizeMahalleName, normalizeToTon } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate } from '@/lib/dateUtils';
-import { serverError, asString } from '@/lib/security';
+import { serverError } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,8 +18,7 @@ export async function GET(request: NextRequest) {
     const { 
       systemSettings, 
       seasonArchives, 
-      beneficiaries: benCol, 
-      truckDeliveries: truckCol 
+      beneficiaries: benCol
     } = await getDbCollections();
     
     const searchParams = request.nextUrl.searchParams;

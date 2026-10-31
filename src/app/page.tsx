@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Header from '@/components/Header';
@@ -7,7 +8,7 @@ import BottomNav, { NavTab } from '@/components/BottomNav';
 import BeneficiaryList from '@/components/BeneficiaryList';
 import MorningAlertBanner from '@/components/MorningAlertBanner';
 import LoginPage from '@/components/LoginPage';
-import { FlaskConical, Play, RotateCcw, Shield, Sparkles } from 'lucide-react';
+import { FlaskConical, RotateCcw, Shield, Sparkles } from 'lucide-react';
 import { showToast, showAlert, showConfirm } from '@/components/GlobalAlertManager';
 import { setOfflineQueueActiveMode, clearSandboxOfflineQueue } from '@/lib/offlineSync';
 import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync';
@@ -123,22 +124,9 @@ export default function Home() {
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedMahalleler, setSelectedMahalleler] = useState<string[]>([]);
   const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL'>('PENDING_AND_PARTIAL');
   const [selectedDurumFilter, setSelectedDurumFilter] = useState<string>('HEPSI');
-
-  // Debounce search query to prevent input stutter and out-of-order race conditions
-  useEffect(() => {
-    if (!searchQuery) {
-      setDebouncedSearchQuery('');
-      return;
-    }
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   // Data states
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
@@ -620,7 +608,7 @@ export default function Home() {
     } finally {
       setIsLoadingBeneficiaries(false);
     }
-  }, []);
+  }, [handleLogout]);
 
   // Fetch Delivery History only when authenticated
   const fetchArchive = useCallback(async () => {
@@ -742,6 +730,9 @@ export default function Home() {
     }
   }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveRouteCount]);
 
+  // Always points at the latest offline-queue sync handler (avoids stale closures in the listener effect below)
+  const syncOfflineQueueRef = useRef<() => void>(() => {});
+
   // Check online status and pending offline queue
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -750,7 +741,7 @@ export default function Home() {
 
       const handleOnline = () => {
         setIsOnline(true);
-        handleSyncOfflineQueue();
+        syncOfflineQueueRef.current();
       };
 
       const handleOffline = () => {
@@ -792,6 +783,9 @@ export default function Home() {
       setIsSyncingOffline(false);
     }
   };
+  useEffect(() => {
+    syncOfflineQueueRef.current = handleSyncOfflineQueue;
+  });
 
   // Real-time synchronization polling:
   // Polls /api/sync/status every 9 seconds and immediately upon window focus/visibilitychange
@@ -890,7 +884,7 @@ export default function Home() {
       window.removeEventListener('focus', checkSyncStatus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [isLoggedIn, fetchBeneficiaries, fetchArchive, fetchStats, fetchActiveRouteCount]);
+  }, [isLoggedIn, fetchSettings, fetchBeneficiaries, fetchArchive, fetchTrucks, fetchStats, fetchActiveRouteCount, clearOpenRecordModals]);
 
   // Tab protection: Non-admin can never view 'import' tab; Personel can never view 'analytics' tab; Mudur can never view 'add_household'
   useEffect(() => {
@@ -922,13 +916,13 @@ export default function Home() {
   };
 
   // Delivery completed handler
-  const handleDeliverySuccess = (updatedBeneficiary: any) => {
+  const handleDeliverySuccess = () => {
     setDeliveryTarget(null);
     handleRefreshAll();
   };
 
   // Cancellation completed handler
-  const handleCancelSuccess = (updatedBeneficiary: any) => {
+  const handleCancelSuccess = () => {
     setCancelTarget(null);
     handleRefreshAll();
   };
@@ -1365,7 +1359,7 @@ export default function Home() {
         {/* Official Institutional Footer */}
         <footer className="mt-8 mb-20 text-center text-xs text-slate-500 py-4 border-t border-slate-200/80 space-y-1 no-print">
           <div className="flex items-center justify-center gap-2">
-            <img
+            <Image unoptimized
               src="/edirne-sydv-logo.png"
               alt="Edirne SYDV Logo"
               width={20}
@@ -1458,7 +1452,7 @@ export default function Home() {
           mahalleler={mahalleler}
           currentStaff={userName}
           onClose={() => setEditTarget(null)}
-          onSuccess={(updatedBeneficiary) => {
+          onSuccess={() => {
             setEditTarget(null);
             handleRefreshAll();
           }}

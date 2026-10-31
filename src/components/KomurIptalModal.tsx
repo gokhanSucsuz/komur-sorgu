@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Ban, CheckCircle2, AlertTriangle, X, Shield, FileSpreadsheet, FileText, MapPin, Phone } from 'lucide-react';
+import { Ban, CheckCircle2, AlertTriangle, Shield, FileSpreadsheet, FileText, MapPin, Phone } from 'lucide-react';
 import { getBeneficiaryListTypeInfo, formatPhoneDisplay, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { showToast } from './GlobalAlertManager';

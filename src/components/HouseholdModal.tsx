@@ -2,7 +2,7 @@
 
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
-import { formatTrAuto, formatTrDate } from '@/lib/dateUtils';
+import { formatTrAuto } from '@/lib/dateUtils';
 import { useState } from 'react';
 
 interface HouseholdModalProps {

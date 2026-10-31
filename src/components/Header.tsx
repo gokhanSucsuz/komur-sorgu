@@ -1,10 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
-import { 
-  Flame, Shield, User, RefreshCw, CheckCircle2, Users, LogOut, FileClock,
-  Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Wifi, Calendar, BookOpen, Smartphone, FlaskConical, Building2
-} from 'lucide-react';
+import { Shield, User, RefreshCw, Users, LogOut, FileClock, Search, UserPlus, Route as RouteIcon, Clock, History, Truck, FileSpreadsheet, BarChart3, WifiOff, Calendar, BookOpen, Smartphone, FlaskConical, Building2 } from 'lucide-react';
 import type { NavTab } from '@/components/BottomNav';
 import dynamic from 'next/dynamic';
 const ProfileModal = dynamic(() => import('@/components/ProfileModal'));
@@ -42,9 +40,7 @@ export default function Header({
   defaultQuota = 34,
   currentTab = 'search',
   onTabChange,
-  hasActiveShift,
   incompleteDeliveriesCount,
-  importErrorsCount,
   activeRouteStopsCount,
   pendingSyncCount = 0,
   onTriggerSync,
@@ -136,7 +132,7 @@ export default function Header({
             <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
               {/* Official Edirne SYDV Logo */}
               <div className="header-logo-container" style={{ width: '40px', height: '40px', minWidth: '40px', minHeight: '40px' }}>
-                <img
+                <Image unoptimized
                   src="/edirne-sydv-logo.png"
                   alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                   width={40}

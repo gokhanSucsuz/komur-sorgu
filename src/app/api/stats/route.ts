@@ -15,7 +15,6 @@ export async function GET(request: NextRequest) {
     const {
       isFallback,
       isSandboxMode,
-      calismaModu,
       beneficiaries: benCol,
       deliveryHistory: histCol,
       truckDeliveries: trucksCol,

@@ -1,22 +1,8 @@
 ﻿'use client';
 
 import React, { useState } from 'react';
-import {
-  MapPin,
-  Phone,
-  Home,
-  Save,
-  X,
-  AlertTriangle,
-  CheckCircle2,
-  Navigation,
-  FileText,
-  Building,
-  Hash,
-  Loader2,
-  Info,
-} from 'lucide-react';
-import { extractPhoneNumbers, formatPhoneDisplay } from '@/lib/normalizer';
+import { MapPin, Phone, Home, Save, X, AlertTriangle, Navigation, FileText, Building, Hash, Loader2, Info } from 'lucide-react';
+import { extractPhoneNumbers } from '@/lib/normalizer';
 
 interface EditBeneficiaryModalProps {
   beneficiary: any;

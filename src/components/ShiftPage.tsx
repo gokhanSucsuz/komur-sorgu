@@ -1,27 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  Clock,
-  Calendar,
-  User,
-  Plus,
-  Trash2,
-  Edit3,
-  RefreshCw,
-  CheckCircle2,
-  AlertTriangle,
-  MapPin,
-  FileSpreadsheet,
-  Printer,
-  ChevronDown,
-  X,
-  History,
-  Sparkles,
-  Download,
-  FileText
-} from 'lucide-react';
+import { Clock, Calendar, Plus, Trash2, Edit3, RefreshCw, CheckCircle2, AlertTriangle, MapPin, Printer, X, History, Sparkles, Download, FileText } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
 import { formatTrDate } from '@/lib/dateUtils';
 
@@ -1209,7 +1191,7 @@ export default function ShiftPage({
               <div className="p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900">
                   <div className="w-14 h-14 shrink-0 flex items-center justify-center p-1 bg-white rounded-full border border-slate-200" style={{ width: '52px', height: '52px', minWidth: '52px', minHeight: '52px' }}>
-                    <img
+                    <Image unoptimized
                       src="/edirne-sydv-logo.png"
                       alt="Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı"
                       width={48}

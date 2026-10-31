@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, formatTonnage, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress } from '@/lib/normalizer';
 import { formatTrDateWithDay, formatTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
@@ -1088,7 +1088,6 @@ export async function GET(request: NextRequest) {
       archivedBeneficiaries: archBenCol,
       workShifts: shiftsCol,
       truckDeliveries: trucksCol,
-      systemSettings: settingsCol,
       signatureLists: sigCol
     } = await getDbCollections();
 

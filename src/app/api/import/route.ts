@@ -5,21 +5,7 @@ import { encryptBeneficiary, encryptImportLog } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError } from '@/lib/security';
-import { 
-  cleanTcNo, 
-  isValidTcNo,
-  normalizeAddress, 
-  cleanPhone, 
-  cleanTurkishText, 
-  turkishIncludes, 
-  extractPhoneNumbers, 
-  detectSettlement, 
-  extractStreetAndDoor,
-  cleanHaneNo,
-  cleanHaneKey,
-  formatDeliveryStatusSummary,
-  normalizeMahalleName
-} from '@/lib/normalizer';
+import { cleanTcNo, isValidTcNo, normalizeAddress, cleanTurkishText, turkishIncludes, extractPhoneNumbers, detectSettlement, extractStreetAndDoor, cleanHaneNo, cleanHaneKey, formatDeliveryStatusSummary, normalizeMahalleName } from '@/lib/normalizer';
 
 interface ExistingRecordInfo {
   ad_soyad: string;
@@ -191,8 +177,6 @@ export async function POST(request: NextRequest) {
 
     let totalRows = 0;
     let insertedCount = 0;
-    let elenenCount = 0;
-    let uyariliCount = 0;
 
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const defaultQuota = settingDoc ? parseInt(settingDoc.value, 10) : 34;
@@ -522,7 +506,6 @@ export async function POST(request: NextRequest) {
       const hasValidTc = Boolean(tcNo && tcNo.length === 11);
       const hasAlgorithmicValidTc = hasValidTc && isValidTcNo(tcNo);
       if (!hasValidTc) {
-        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -549,7 +532,6 @@ export async function POST(request: NextRequest) {
           tcNo = `EKSİK_TC_${batchId.slice(-4)}_${i + 2}`;
         }
       } else if (!hasAlgorithmicValidTc) {
-        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -585,7 +567,6 @@ export async function POST(request: NextRequest) {
 
       // Check 3: Address Missing (still insert into system, record warning)
       if (!mahalle && !acikAdres) {
-        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -611,7 +592,6 @@ export async function POST(request: NextRequest) {
 
       // Check 4: Phone Missing (still insert into system, record warning)
       if (!telefon && !telefon2) {
-        uyariliCount++;
         toInsertLogs.push({
           batch_id: batchId,
           satir_no: rowNum,
@@ -641,7 +621,6 @@ export async function POST(request: NextRequest) {
 
       // 5A: Yüklenen Excel dosyası içerisinde (Aynı batch'te) tekrarlanan TC
       if (hasValidTc && seenTcsInBatch.has(tcNo)) {
-        elenenCount++;
         const prev = seenTcsInBatch.get(tcNo)!;
         toInsertLogs.push({
           batch_id: batchId,
@@ -671,7 +650,6 @@ export async function POST(request: NextRequest) {
 
       // 5B: Sistemde (Veritabanında) Zaten Kayıtlı Olan TC
       if (hasValidTc && existingTcMap.has(tcNo)) {
-        elenenCount++;
         const existing = existingTcMap.get(tcNo)!;
         const statusSummary = formatDeliveryStatusSummary(existing);
         toInsertLogs.push({
@@ -710,7 +688,6 @@ export async function POST(request: NextRequest) {
 
       // 6A: Yüklenen Excel dosyası içerisinde (Aynı batch'te) tekrarlanan hane numarası
       if (cleanHane && seenHanesInBatch.has(cleanHane)) {
-        elenenCount++;
         const prev = seenHanesInBatch.get(cleanHane)!;
         toInsertLogs.push({
           batch_id: batchId,
@@ -741,7 +718,6 @@ export async function POST(request: NextRequest) {
 
       // 6B: Sistemde (Veritabanında) Zaten Kayıtlı Olan Hane Numarası
       if (cleanHane && existingHaneMap.has(cleanHane)) {
-        elenenCount++;
         const existing = existingHaneMap.get(cleanHane)!;
         const statusSummary = formatDeliveryStatusSummary(existing);
         toInsertLogs.push({
@@ -798,7 +774,6 @@ export async function POST(request: NextRequest) {
         });
 
         if (duplicateNameInBatch) {
-          elenenCount++;
           toInsertLogs.push({
             batch_id: batchId,
             satir_no: rowNum,
@@ -832,7 +807,6 @@ export async function POST(request: NextRequest) {
         });
 
         if (duplicateNameInDb) {
-          elenenCount++;
           const statusSummary = formatDeliveryStatusSummary(duplicateNameInDb);
           toInsertLogs.push({
             batch_id: batchId,

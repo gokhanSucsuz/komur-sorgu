@@ -381,7 +381,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action, personel_adi, baslama_saati, bitis_saati, tarih, mahalleler, notlar, shiftId } = body;
 
-    const { nowIso, nowLocaleTr, nowEnCa, nowTimeHHmm } = getIstanbulDate();
+    const { nowLocaleTr, nowEnCa, nowTimeHHmm } = getIstanbulDate();
     const localToday = nowEnCa; // YYYY-MM-DD
     const localTime = nowTimeHHmm;
     const nowStr = nowLocaleTr;

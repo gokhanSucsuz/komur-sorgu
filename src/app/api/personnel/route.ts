@@ -3,7 +3,7 @@ import { getDbCollections, mapDocs, buildIdFilter, recordActivityLog } from '@/l
 import { encryptUser, encryptField, hashPassword } from '@/lib/crypto';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession, sanitizeUser } from '@/lib/auth';
-import { serverError, validatePasswordPolicy, asString } from '@/lib/security';
+import { serverError, validatePasswordPolicy } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {

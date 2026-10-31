@@ -6,7 +6,7 @@ import ExcelJS from 'exceljs';
 process.env.ENCRYPTION_MASTER_KEY = crypto.randomBytes(32).toString('hex');
 process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 
-import { getDbCollections, mapDocs } from '@/lib/mongodb';
+import { getDbCollections } from '@/lib/mongodb';
 import { encryptBeneficiary, decryptBeneficiary } from '@/lib/crypto';
 import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing } from '@/lib/normalizer';
 
