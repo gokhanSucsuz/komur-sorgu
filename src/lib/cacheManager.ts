@@ -23,6 +23,9 @@ const EXACT_PROTECTED_KEYS = new Set([
   'komur_offline_queue',
   'komur_offline_queue_sandbox',
   'komur_active_calisma_modu',
+  'komur_active_tab',
+  'komur_route_client_id',
+  'komur_active_route_session_last',
   'komur_lite_mode',
   'pwa_banner_dismissed',
   'komur_app_version'
@@ -36,11 +39,13 @@ export function isProtectedStorageKey(key: string): boolean {
   if (EXACT_PROTECTED_KEYS.has(key)) return true;
 
   const lower = key.toLowerCase();
-  // Protect any device authorization tokens, offline queues, or session tokens
+  // Protect any device authorization tokens, offline queues, active route sessions, or session tokens
   if (
     lower.includes('device_token') ||
     lower.includes('offline_queue') ||
     lower.includes('session_token') ||
+    lower.includes('active_route_session') ||
+    lower.includes('route_client_id') ||
     lower.includes('user_role') ||
     lower.includes('komur_user')
   ) {

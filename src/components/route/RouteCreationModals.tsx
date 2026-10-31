@@ -507,22 +507,37 @@ export default function RouteCreationModals({
                 </div>
 
                 {/* Adım 1 Alt Butonlar */}
-                <div className="pt-3 border-t border-slate-200 flex gap-2">
+                <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateModal(false)}
+                      className="btn-secondary flex-1 sm:flex-initial text-xs py-2.5 px-3 font-bold"
+                    >
+                      Vazgeç
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateModalStep('ORDER')}
+                      disabled={selectedBeneficiaryIds.length === 0}
+                      className="btn-secondary flex-1 sm:flex-initial text-xs py-2.5 px-3 font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <span>Sırayı Düzenle</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    className="btn-secondary flex-1 text-xs py-2.5 font-bold"
+                    onClick={() => handleCreateRouteSubmit(true)}
+                    disabled={isActionLoading || selectedBeneficiaryIds.length === 0}
+                    className="btn-primary flex-1 text-xs py-2.5 font-black flex items-center justify-center gap-1.5"
                   >
-                    Vazgeç
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCreateModalStep('ORDER')}
-                    disabled={selectedBeneficiaryIds.length === 0}
-                    className="btn-primary flex-1 text-xs py-2.5 font-bold flex items-center justify-center gap-1.5"
-                  >
-                    <span>Sıralamayı Belirle ({selectedBeneficiaryIds.length})</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>
+                      {isActionLoading
+                        ? 'Oluşturuluyor...'
+                        : `Rotayı Aç & Tam Ekran Başlat (${selectedBeneficiaryIds.length})`}
+                    </span>
                   </button>
                 </div>
               </>

@@ -93,107 +93,97 @@ export default function ActiveRouteAccordionCard({
       {/* ======================================================== */}
       {/* AKORDİYON BAŞLIĞI (HEADER)                                */}
       {/* ======================================================== */}
+      {/* ROTA KARTI BAŞLIĞI (TIKLANDIĞINDA DOĞRUDAN TAM EKRAN ROTA MODUNU AÇAR) */}
+      {/* ======================================================== */}
       <div
         role="button"
         tabIndex={0}
-        onClick={onToggle}
-        className={`p-3.5 sm:p-4 cursor-pointer transition-colors select-none flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+        onClick={() => {
+          if (onStartRouteMode && userRole !== 'MUDUR') {
+            onStartRouteMode();
+          } else {
+            onToggle();
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (onStartRouteMode && userRole !== 'MUDUR') {
+              onStartRouteMode();
+            } else {
+              onToggle();
+            }
+          }
+        }}
+        className={`p-3.5 sm:p-4 cursor-pointer transition-colors select-none flex flex-col gap-3 ${
           isExpanded ? 'bg-sky-50/70 border-b border-sky-100' : 'bg-white hover:bg-slate-50/80'
         }`}
       >
-        {/* Sol Bölüm: İkon, Rota Başlığı, Plaka, Personel ve Özet */}
-        <div className="flex items-start sm:items-center gap-3 min-w-0">
-          <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
-              isExpanded
-                ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
-                : 'bg-sky-50 text-sky-700 border-sky-200'
-            }`}
-          >
-            <Truck className="w-5 h-5" />
-          </div>
-
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span
-                  className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
-                  title="Saha Dağıtımı Aktif"
-                />
-                <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
-                  {route.rota_adi || `Ekip ${routeIdx + 1} Dağıtım Rotası`}
-                </h3>
-              </div>
-              {route.arac_plaka && (
-                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-300 shrink-0">
-                  {route.arac_plaka}
-                </span>
-              )}
-              <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
-                Dağıtım Sürüyor
-              </span>
-              {Boolean(route.kilitli_personel && !(Number(route.kilit_timestamp) > 0 && Date.now() - Number(route.kilit_timestamp) > 45 * 60 * 1000)) && (
-                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-950 border border-amber-300 shrink-0">
-                  🔒 Kullanımda: {route.kilitli_personel}
-                </span>
-              )}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Sol Bölüm: İkon, Rota Başlığı, Plaka, Personel ve Özet */}
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div
+              className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
+                isExpanded
+                  ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
+                  : 'bg-sky-600 text-white border-sky-700 shadow-xs'
+              }`}
+            >
+              <Navigation className="w-5 h-5" />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500 font-medium">
-              <span className="flex items-center gap-1 text-slate-700 font-semibold">
-                <Users className="w-3.5 h-3.5 text-slate-400" />
-                {route.dagitim_personeli || 'Personel'}
-              </span>
-              <span>•</span>
-              <span>{route.tarih}</span>
-              <span>•</span>
-              <span className="font-extrabold text-slate-800">
-                {handled} / {total} Hane (%{percent})
-              </span>
-              {route.eksik_hane > 0 && (
-                <>
-                  <span>•</span>
-                  <span className="text-amber-800 font-black bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
-                    ⚠️ {route.eksik_hane} Hane Eksik Kömür
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                    title="Saha Dağıtımı Aktif"
+                  />
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
+                    {route.rota_adi || `Ekip ${routeIdx + 1} Dağıtım Rotası`}
+                  </h3>
+                </div>
+                {route.arac_plaka && (
+                  <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-300 shrink-0">
+                    {route.arac_plaka}
                   </span>
-                </>
-              )}
+                )}
+                <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                  Dağıtım Sürüyor
+                </span>
+                {Boolean(route.kilitli_personel && !(Number(route.kilit_timestamp) > 0 && Date.now() - Number(route.kilit_timestamp) > 45 * 60 * 1000)) && (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-950 border border-amber-300 shrink-0">
+                    🔒 Kullanımda: {route.kilitli_personel}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500 font-medium">
+                <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                  <Users className="w-3.5 h-3.5 text-slate-400" />
+                  {route.dagitim_personeli || 'Personel'}
+                </span>
+                <span>•</span>
+                <span>{route.tarih}</span>
+                <span>•</span>
+                <span className="font-extrabold text-slate-800">
+                  {handled} / {total} Hane (%{percent})
+                </span>
+                {route.eksik_hane > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="text-amber-800 font-black bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                      ⚠️ {route.eksik_hane} Hane Eksik Kömür
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Sağ Bölüm: İlerleme Çubuğu, Hızlı Aksiyonlar ve Aç/Kapat Butonu */}
-        <div className="flex items-center justify-between md:justify-end gap-2.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
-          {/* Mini İlerleme Çubuğu */}
-          <div className="hidden sm:flex flex-col items-end gap-1 w-24">
-            <div className="text-[11px] font-black text-slate-700">
-              %{percent} <span className="text-[10px] text-slate-400 font-normal">Tamam</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
-              <div
-                className="h-full bg-linear-to-r from-sky-500 to-emerald-500 transition-all duration-300"
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Hızlı Aksiyon Butonları */}
-          <div className="flex items-center gap-1.5">
-            {Boolean(availableSignedCount && availableSignedCount > 0 && onOpenAddToRoute) && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenAddToRoute!();
-                }}
-                className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
-                title="Bu rotaya yeni imzalı hane ekle"
-              >
-                <Plus className="w-3.5 h-3.5 text-emerald-700 stroke-[2.5]" />
-                <span className="hidden md:inline">+ Hane Ekle ({availableSignedCount})</span>
-              </button>
-            )}
-
+          {/* Sağ Bölüm: Ana "Rotayı Aç (Tam Ekran)" Butonu & Yardımcı Araçlar */}
+          <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+            {/* Ana Aksiyon: Rotayı Tam Ekran Teslimat Modunda Aç */}
             {onStartRouteMode && userRole !== 'MUDUR' && (
               <button
                 type="button"
@@ -201,54 +191,82 @@ export default function ActiveRouteAccordionCard({
                   e.stopPropagation();
                   onStartRouteMode();
                 }}
-                className="px-2.5 py-1.5 rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all"
-                title="Sıralı Saha Dağıtım Modunu Başlat"
+                className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, #0284c7 0%, #4f46e5 100%)',
+                  color: '#ffffff',
+                }}
+                title="Rotayı Tam Ekran Sıralı Teslimat Modunda Aç"
               >
-                <Navigation className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Saha Modu</span>
+                <Navigation className="w-4 h-4 shrink-0" />
+                <span>Rotayı Aç (Tam Ekran)</span>
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onPrint();
-              }}
-              className="p-2 rounded-xl text-slate-600 hover:text-amber-800 hover:bg-amber-50 border border-slate-200 transition-all active:scale-95"
-              title="Resmi Dağıtım Tutanağını Önizle ve Yazdır"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
+            {/* Yardımcı Butonlar: Hane Ekle, Yazdır, Sil, Liste Detayı */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {Boolean(availableSignedCount && availableSignedCount > 0 && onOpenAddToRoute) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenAddToRoute!();
+                  }}
+                  className="px-2.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+                  title="Bu rotaya yeni imzalı hane ekle"
+                >
+                  <Plus className="w-3.5 h-3.5 text-emerald-700 stroke-[2.5]" />
+                  <span className="hidden lg:inline">+ Hane Ekle ({availableSignedCount})</span>
+                </button>
+              )}
 
-            {userRole !== 'MUDUR' && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete();
+                  onPrint();
                 }}
-                className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-all active:scale-95"
-                title="Rotayı Sil"
+                className="p-2 rounded-xl text-slate-600 hover:text-amber-800 hover:bg-amber-50 border border-slate-200 transition-all active:scale-95"
+                title="Resmi Dağıtım Tutanağını Önizle ve Yazdır"
               >
-                <Trash2 className="w-4 h-4" />
+                <Printer className="w-4 h-4" />
               </button>
-            )}
 
-            {/* Aç / Kapat Butonu */}
-            <div
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-black transition-all ${
-                isExpanded
-                  ? 'bg-sky-600 text-white border-sky-700 shadow-2xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-              }`}
-            >
-              <span className="hidden xs:inline">{isExpanded ? 'Kapat' : 'Aç'}</span>
-              {isExpanded ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
+              {userRole !== 'MUDUR' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-all active:scale-95"
+                  title="Rotayı Sil"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
+
+              {/* Liste / Detay Göster-Gizle Butonu */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggle();
+                }}
+                className={`flex items-center gap-1 px-2.5 py-2 rounded-xl border text-xs font-extrabold transition-all active:scale-95 ${
+                  isExpanded
+                    ? 'bg-slate-800 text-white border-slate-900 shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                }`}
+                title="Rota durak listesini ve detaylarını göster/gizle"
+              >
+                <span>{isExpanded ? 'Gizle' : 'Liste'}</span>
+                {isExpanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
             </div>
           </div>
         </div>

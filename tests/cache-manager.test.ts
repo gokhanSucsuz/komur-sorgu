@@ -20,10 +20,14 @@ test('CacheManager: isProtectedStorageKey correctly protects sensitive and essen
   assert.equal(isProtectedStorageKey('pwa_banner_dismissed'), true, 'pwa_banner_dismissed must be protected');
   assert.equal(isProtectedStorageKey('komur_app_version'), true, 'komur_app_version must be protected');
 
-  // 2. Pattern matches for device token or offline queue
+  // 2. Pattern matches for device token, offline queue, or active Route Mode session
   assert.equal(isProtectedStorageKey('user_device_token_xyz'), true);
   assert.equal(isProtectedStorageKey('my_offline_queue_backup'), true);
   assert.equal(isProtectedStorageKey('custom_session_token'), true);
+  assert.equal(isProtectedStorageKey('komur_active_route_session_personel1'), true);
+  assert.equal(isProtectedStorageKey('komur_active_route_session_last'), true);
+  assert.equal(isProtectedStorageKey('komur_route_client_id'), true);
+  assert.equal(isProtectedStorageKey('komur_active_tab'), true);
 
   // 3. Stale / legacy keys that SHOULD be purged
   assert.equal(isProtectedStorageKey('komur_beneficiaries_cache'), false);

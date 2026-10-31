@@ -4111,14 +4111,6 @@ img[src*="edirne-sydv-logo"] {
   /* ========================================================
      ROTA MODU (SAHA TESLİMAT MODU - TAM EKRAN MOBİL KOKPİT)
      ======================================================== */
-  body:has(.route-mode-overlay) {
-    overflow: hidden !important;
-    position: fixed !important;
-    width: 100% !important;
-    height: 100% !important;
-    touch-action: none;
-  }
-
   body:has(.route-mode-overlay) .mobile-nav-bar,
   body:has(.route-mode-overlay) .pwa-banner,
   body:has(.route-mode-overlay) header {
@@ -4143,6 +4135,7 @@ img[src*="edirne-sydv-logo"] {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    overscroll-behavior: contain;
     touch-action: pan-y;
   }
 
@@ -4548,6 +4541,10 @@ img[src*="edirne-sydv-logo"] {
 .min-w-\[38px\] { min-width: 38px; }
 .min-h-\[44px\] { min-height: 44px; }
 .min-h-\[48px\] { min-height: 48px; }
+.min-h-\[50px\] { min-height: 50px; }
+.min-h-\[52px\] { min-height: 52px; }
+.min-h-\[54px\] { min-height: 54px; }
+.min-h-\[56px\] { min-height: 56px; }
 
 .mobile-fab-top {
   position: fixed;

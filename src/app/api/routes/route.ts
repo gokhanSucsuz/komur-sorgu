@@ -8,6 +8,30 @@ import { getIstanbulDate } from '@/lib/dateUtils';
 import { serverError } from '@/lib/security';
 
 const LOCK_TIMEOUT_MS = 25 * 60 * 1000; // 25 dakika hareketsizlik aşımı
+const ACTIVE_OPERATOR_TTL_MS = 60 * 1000; // 60 saniye canlı operatör görünürlük süresi
+
+function upsertActiveOperators(
+  existingList: any,
+  operator: {
+    personel: string;
+    username: string;
+    client_id: string;
+    stop_index: number;
+    timestamp: number;
+  }
+) {
+  const now = Date.now();
+  const list = Array.isArray(existingList) ? existingList : [];
+  const filtered = list.filter((item: any) => {
+    if (!item || typeof item !== 'object') return false;
+    if (now - (Number(item.timestamp) || 0) > ACTIVE_OPERATOR_TTL_MS) return false;
+    if (operator.client_id && item.client_id === operator.client_id) return false;
+    if (!operator.client_id && item.personel === operator.personel) return false;
+    return true;
+  });
+  filtered.push(operator);
+  return filtered;
+}
 
 export function checkRouteLock(
   route: any,
@@ -844,8 +868,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ==========================================
-    // ACTION 1.5: ROUTE LOCKING (ACQUIRE / RELEASE / HEARTBEAT)
-    // Sadece bir personel rotayı aynı anda aktif kullanabilir
+    // ACTION 1.5: ROUTE LOCKING & MULTI-OPERATOR PRESENCE (ACQUIRE / RELEASE / HEARTBEAT)
+    // Yetkili ekip arkadaşları ve yöneticiler aynı rotayı eşzamanlı canlı senkronizasyonla yönetebilir
     // ==========================================
     if (action === 'ACQUIRE_ROUTE_LOCK') {
       const { route_id, force = false, personel, client_id, stop_index = 0 } = body;
@@ -866,7 +890,7 @@ export async function POST(request: NextRequest) {
 
       // Takım / Ekip arkadaşı yetki kontrolü
       const authCheck = await checkRouteTeamAuthorization(route, session, usersCol);
-      if (!authCheck.authorized) {
+      if (!authCheck.authorized && !(force && session.rol === 'ADMIN')) {
         return NextResponse.json({
           success: false,
           unauthorized_team: true,
@@ -876,22 +900,19 @@ export async function POST(request: NextRequest) {
         }, { status: 403 });
       }
 
-      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
-
-      if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
-        return NextResponse.json({
-          success: false,
-          locked: true,
-          lockedBy: lockCheck.lockedBy,
-          error: `Bu rota şu anda "${lockCheck.lockedBy}" tarafından Rota Modunda aktif olarak kullanılmaktadır. Aynı anda yalnızca bir personel bir rotayı kullanabilir.`
-        }, { status: 409 });
-      }
-
       const nowTimestamp = Date.now();
+      const updatedOperators = upsertActiveOperators(route.aktif_operatorler, {
+        personel: staffName,
+        username: session.username || '',
+        client_id: effectiveClientId,
+        stop_index: Number(stop_index) || 0,
+        timestamp: nowTimestamp
+      });
+
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
-          isleten_personel: staffName,
-          isleten_username: session.username || '',
+          isleten_personel: route.isleten_personel || staffName,
+          isleten_username: route.isleten_username || session.username || '',
           ekip_adi: session.user?.ekip_adi || route.ekip_adi || '',
           ekip_arkadaslari: session.user?.ekip_arkadaslari || route.ekip_arkadaslari || [],
           kilitli_personel: staffName,
@@ -901,6 +922,7 @@ export async function POST(request: NextRequest) {
           kilit_timestamp: nowTimestamp,
           aktif_rota_modu: true,
           aktif_durak_index: Number(stop_index) || 0,
+          aktif_operatorler: updatedOperators,
           updated_at: localTimeStr
         }
       });
@@ -909,11 +931,17 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `Rota kilitlendi (${staffName}).`,
+        message: `Rota aktif edildi (${staffName}).`,
         kilitli_personel: staffName,
         kilitli_client_id: effectiveClientId,
         kilit_timestamp: nowTimestamp,
-        aktif_durak_index: Number(stop_index) || 0
+        aktif_durak_index: Number(stop_index) || 0,
+        aktif_operatorler: updatedOperators,
+        route: {
+          ...route,
+          aktif_rota_modu: true,
+          aktif_operatorler: updatedOperators
+        }
       });
     }
 
@@ -933,25 +961,39 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
+      const authCheck = await checkRouteTeamAuthorization(route, session, usersCol);
 
-      if (lockCheck.isLocked && !(force && session.rol === 'ADMIN')) {
+      if (!authCheck.authorized && !(force && session.rol === 'ADMIN')) {
         return NextResponse.json({
           success: false,
           locked: true,
-          lockedBy: lockCheck.lockedBy,
-          error: `Bu rota "${lockCheck.lockedBy}" tarafından kilitlenmiştir. Kilidi yalnızca ilgili personel veya Admin kaldırabilir.`
+          lockedBy: authCheck.ownerName || route.kilitli_personel,
+          error: authCheck.error || `Bu rota "${route.kilitli_personel}" tarafından kullanılmaktadır.`
         }, { status: 403 });
       }
 
+      const nowMs = Date.now();
+      const existingOps = Array.isArray(route.aktif_operatorler) ? route.aktif_operatorler : [];
+      const remainingOperators = (force && session.rol === 'ADMIN')
+        ? []
+        : existingOps.filter((op: any) => {
+            if (!op || (nowMs - Number(op.timestamp || 0) >= ACTIVE_OPERATOR_TTL_MS)) return false;
+            const sameClient = effectiveClientId && op.client_id && op.client_id === effectiveClientId;
+            const sameStaff = !effectiveClientId && normalizeStaffName(op.personel) === normalizeStaffName(staffName);
+            return !(sameClient || sameStaff);
+          });
+
+      const primaryRemaining = remainingOperators[0] || null;
+
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
-          kilitli_personel: null,
-          kilitli_personel_username: null,
-          kilitli_client_id: null,
-          kilit_tarihi: null,
-          kilit_timestamp: null,
-          aktif_rota_modu: false,
+          kilitli_personel: primaryRemaining ? primaryRemaining.personel : null,
+          kilitli_personel_username: primaryRemaining ? primaryRemaining.username : null,
+          kilitli_client_id: primaryRemaining ? primaryRemaining.client_id : null,
+          kilit_tarihi: primaryRemaining ? localTimeStr : null,
+          kilit_timestamp: primaryRemaining ? primaryRemaining.timestamp : null,
+          aktif_rota_modu: remainingOperators.length > 0,
+          aktif_operatorler: remainingOperators,
           updated_at: localTimeStr
         }
       });
@@ -960,7 +1002,8 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: 'Rota kilidi başarıyla kaldırıldı.'
+        aktif_operatorler: remainingOperators,
+        message: 'Rota oturumu güncellendi.'
       });
     }
 
@@ -980,22 +1023,32 @@ export async function POST(request: NextRequest) {
 
       const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
       const route = mapDoc(rawRoute);
-      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
+      const authCheck = await checkRouteTeamAuthorization(route, session, usersCol);
 
-      if (lockCheck.isLocked) {
+      if (!authCheck.authorized) {
         return NextResponse.json({
           success: false,
+          unauthorized_team: true,
           locked: true,
-          lockedBy: lockCheck.lockedBy,
-          error: `Kilit zaman aşımı yenilenemedi, rota "${lockCheck.lockedBy}" personeline kilitli.`
-        }, { status: 409 });
+          lockedBy: authCheck.ownerName || route.kilitli_personel,
+          error: authCheck.error || `Bu rota "${route.kilitli_personel}" personeline aittir.`
+        }, { status: 403 });
       }
 
       const nowTimestamp = Date.now();
+      const updatedOperators = upsertActiveOperators(route.aktif_operatorler, {
+        personel: staffName,
+        username: session.username || '',
+        client_id: effectiveClientId,
+        stop_index: stop_index !== undefined ? Number(stop_index) : Number(route.aktif_durak_index || 0),
+        timestamp: nowTimestamp
+      });
+
       const updateFields: any = {
         kilitli_personel: staffName,
         kilit_timestamp: nowTimestamp,
         aktif_rota_modu: true,
+        aktif_operatorler: updatedOperators,
         updated_at: localTimeStr
       };
       if (effectiveClientId) updateFields.kilitli_client_id = effectiveClientId;
@@ -1003,7 +1056,15 @@ export async function POST(request: NextRequest) {
 
       await routeCol.updateOne(buildIdFilter(route_id), { $set: updateFields });
 
-      return NextResponse.json({ success: true, kilit_timestamp: nowTimestamp });
+      return NextResponse.json({
+        success: true,
+        kilit_timestamp: nowTimestamp,
+        aktif_operatorler: updatedOperators,
+        route: {
+          ...route,
+          ...updateFields
+        }
+      });
     }
 
     // ==========================================
@@ -1051,17 +1112,6 @@ export async function POST(request: NextRequest) {
         }, { status: 403 });
       }
 
-      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
-
-      if (lockCheck.isLocked) {
-        return NextResponse.json({
-          success: false,
-          locked: true,
-          lockedBy: lockCheck.lockedBy,
-          error: `Bu rota şu anda "${lockCheck.lockedBy}" tarafından Rota Modunda aktif olarak kullanılmaktadır. Aynı anda yalnızca bir personel bir rotayı kullanabilir.`
-        }, { status: 409 });
-      }
-
       const stops = route.duraklar || [];
       const targetStop = stops[stop_index];
 
@@ -1071,6 +1121,26 @@ export async function POST(request: NextRequest) {
 
       const hedef = targetStop.hedef_torba || 34;
       const previousDelivered = Number(targetStop.teslim_edilen_torba || 0);
+
+      // Atomik Çift Teslimat Koruması: Aynı ekip içinden iki personel aynı anda aynı durağa "Teslim Et" basarsa
+      // ikinci basışı mükerrer torba / mükerrer teslimat geçmişi oluşturmadan güvenle yakala ve senkronize et.
+      if (
+        durum === 'TAMAMLANDI' &&
+        targetStop.durum === 'TAMAMLANDI' &&
+        previousDelivered >= hedef
+      ) {
+        return NextResponse.json({
+          success: true,
+          alreadyCompletedByPartner: true,
+          completedBy: targetStop.teslim_eden_personel || 'Ekip Arkadaşı',
+          message: `${targetStop.sira}. Durak (${targetStop.ad_soyad}) az önce ${targetStop.teslim_eden_personel || 'ekip arkadaşınız'} tarafından zaten teslim edildi.`,
+          stop: targetStop,
+          duraklar: stops,
+          route,
+          routeStatus: route.durum
+        });
+      }
+
       let deliveredBags = 0;
 
       if (durum === 'TAMAMLANDI') {
@@ -1180,18 +1250,23 @@ export async function POST(request: NextRequest) {
         routeSetFields.kilit_tarihi = null;
         routeSetFields.kilit_timestamp = null;
         routeSetFields.aktif_rota_modu = false;
+        routeSetFields.aktif_operatorler = [];
       } else {
+        const nextStopIdx = body.next_stop_index !== undefined ? Number(body.next_stop_index) : Number(stop_index);
         routeSetFields.kilitli_personel = staffName;
         routeSetFields.kilitli_personel_username = session.username || '';
         if (effectiveClientId) routeSetFields.kilitli_client_id = effectiveClientId;
         routeSetFields.kilit_tarihi = localTimeStr;
         routeSetFields.kilit_timestamp = Date.now();
         routeSetFields.aktif_rota_modu = true;
-        if (body.next_stop_index !== undefined) {
-          routeSetFields.aktif_durak_index = Number(body.next_stop_index);
-        } else {
-          routeSetFields.aktif_durak_index = Number(stop_index);
-        }
+        routeSetFields.aktif_durak_index = nextStopIdx;
+        routeSetFields.aktif_operatorler = upsertActiveOperators(route.aktif_operatorler, {
+          personel: staffName,
+          username: session.username || '',
+          client_id: effectiveClientId,
+          stop_index: nextStopIdx,
+          timestamp: Date.now()
+        });
         if (nextRouteDurum === 'AKTIF' && route.durum === 'TAMAMLANDI') {
           routeSetFields.completed_at = null;
           routeSetFields.kapatan_personel = null;
@@ -1386,6 +1461,7 @@ export async function POST(request: NextRequest) {
         eksik_hane: eksikCount,
         teslim_edilemeyen_hane: undeliveredCount,
         toplam_dagitilan_torba: totalDeliveredBags,
+        aktif_operatorler: routeSetFields.aktif_operatorler,
         updated_at: localTimeStr
       };
 

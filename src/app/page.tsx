@@ -74,6 +74,14 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       try {
+        // Eğer aktif bir Rota Modu oturumu varsa, uygulama arka plandan/yeniden başlatmadan döndüğünde doğrudan Rotalar sekmesini aç
+        const lastRouteRaw = localStorage.getItem('komur_active_route_session_last');
+        if (lastRouteRaw) {
+          const parsed = JSON.parse(lastRouteRaw);
+          if (parsed?.isRouteModeOpen && parsed?.timestamp && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+            return 'route';
+          }
+        }
         const saved = localStorage.getItem('komur_active_tab') as NavTab | null;
         if (saved && ['search', 'add_household', 'route', 'shift', 'analytics', 'archive', 'tonnage', 'import', 'guide'].includes(saved)) {
           return saved;
@@ -278,29 +286,38 @@ export default function Home() {
     }
   }, [handleLogout]);
 
-  // 30-minute inactivity auto-logout (KVKK / security requirement for official state systems)
+  // 60-minute inactivity auto-logout (matches server SESSION_IDLE_MS = 60 min; preserves active Route Mode across background switches)
   useEffect(() => {
     if (!isLoggedIn) return;
 
-    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
-        handleLogout('30 dakika boyunca işlem yapılmadığı için oturumunuz güvenlik nedeniyle otomatik olarak kapatıldı.');
+        handleLogout('60 dakika boyunca işlem yapılmadığı için oturumunuz güvenlik nedeniyle otomatik olarak kapatıldı.');
       }, INACTIVITY_TIMEOUT_MS);
     };
 
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    const handleVisibilityResume = () => {
+      if (document.visibilityState === 'visible') {
+        resetTimer();
+        checkActiveSession();
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'focus'];
     events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
+    document.addEventListener('visibilitychange', handleVisibilityResume);
     resetTimer();
 
     return () => {
       clearTimeout(timeoutId);
       events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+      document.removeEventListener('visibilitychange', handleVisibilityResume);
     };
-  }, [isLoggedIn, handleLogout]);
+  }, [isLoggedIn, handleLogout, checkActiveSession]);
 
   // Load user role & session from localStorage on initial mount
   useEffect(() => {
