@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
-import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare } from '@/lib/normalizer';
+import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import BeneficiaryFilterModals from './beneficiary/BeneficiaryFilterModals';
 import type { BeneficiaryRecord, MahalleSummary, QueueTabType, ListTypeFilter, UserRoleType } from '@/types/beneficiary';
@@ -91,7 +91,47 @@ export default function BeneficiaryList({
 
   // Mobil Tek Parmakla Hızlı Yukarı Çık & Arama Odaklama
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [searchWarning, setSearchWarning] = useState<string | null>(null);
+  const searchWarningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentSearchValidation = useMemo(
+    () => validateSmartSearchInput(searchQuery),
+    [searchQuery]
+  );
+  const searchInputMode = currentSearchValidation.mode; // 'IDLE' | 'TC' | 'NAME'
+
+  const handleSearchInputChange = (rawVal: string) => {
+    const result = validateSmartSearchInput(rawVal);
+    if (result.rejected && result.warning) {
+      setSearchWarning(result.warning);
+      if (searchWarningTimeoutRef.current) {
+        clearTimeout(searchWarningTimeoutRef.current);
+      }
+      searchWarningTimeoutRef.current = setTimeout(() => {
+        setSearchWarning(null);
+      }, 5000);
+    } else {
+      setSearchWarning(null);
+    }
+
+    const wasEmpty = !searchQuery || searchQuery.trim().length === 0;
+    onSearchChange(result.value);
+
+    // Yazmaya başlandığı anda aramaya odaklan ve ekranı en üste hizala
+    if (wasEmpty && result.value.length > 0 && typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (searchWarningTimeoutRef.current) {
+        clearTimeout(searchWarningTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -308,11 +348,20 @@ export default function BeneficiaryList({
 
   const isSearching = Boolean(searchQuery && searchQuery.trim().length > 0);
 
-  // ARAMA FİLTRESİ: Hangi sekme aktifse YALNIZCA o sekmenin listesinde ara!
+  // ARAMA FİLTRESİ: Arama kutusuna TC veya Ad Soyad yazıldığı anda sistemdeki tüm eşleşen kayıtları
+  // (Teslim Edilecekler en üstte olacak şekilde) hiçbir sekme/mahalle engeline takılmadan doğrudan getir!
   const searchFilteredRecords = useMemo(() => {
     if (!isSearching) return [];
-    return currentTabBaseList.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery));
-  }, [currentTabBaseList, isSearching, searchQuery]);
+    const matched = records.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery));
+    return matched.sort((a, b) => {
+      const rank = (item: any) => {
+        if (item.komur_verilmeyecek) return 3;
+        if (item.teslimat_durumu === 'TAMAMLANDI' || item.teslimat_durumu === 'TESLIM_EDILDI') return 2;
+        return 1; // Bekleyen & Eksik en üstte
+      };
+      return rank(a) - rank(b);
+    });
+  }, [records, isSearching, searchQuery]);
 
   // Arama yapıldığında her sekmede kaç adet eşleşme olduğunu gösteren dinamik sayılar
   const tabSearchCounts = useMemo(() => {
@@ -321,16 +370,16 @@ export default function BeneficiaryList({
       pending: filteredPendingRecords.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
       delivered: deliveredRecords.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
       excluded: excludedRecords.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
-      all: records.filter((r) => isBirebirBeneficiaryMatch(r, searchQuery)).length,
+      all: searchFilteredRecords.length,
     };
-  }, [isSearching, searchQuery, filteredPendingRecords, deliveredRecords, excludedRecords, records]);
+  }, [isSearching, searchQuery, filteredPendingRecords, deliveredRecords, excludedRecords, searchFilteredRecords.length]);
 
-  // Görüntülenecek aktif liste: Arama yapılıyorsa seçili sekmenin arama sonuçları, değilse sekmenin tüm listesi
+  // Görüntülenecek aktif liste: Arama yapılıyorsa doğrudan tüm arama sonuçları, değilse sekmenin temel listesi
   const activeDisplayList = isSearching ? searchFilteredRecords : currentTabBaseList;
 
-  // Filter by selected neighborhoods (resilient to formatting variations)
+  // Filter by selected neighborhoods (Arama yapılırken mahalle filtresi aranan kaydı gizlemez)
   const mahalleFilteredList = useMemo(() => {
-    if (!selectedMahalleler || selectedMahalleler.length === 0) {
+    if (isSearching || !selectedMahalleler || selectedMahalleler.length === 0) {
       return activeDisplayList;
     }
     const exactSet = new Set(selectedMahalleler);
@@ -357,7 +406,7 @@ export default function BeneficiaryList({
 
       return false;
     });
-  }, [activeDisplayList, selectedMahalleler]);
+  }, [activeDisplayList, selectedMahalleler, isSearching]);
 
   const totalPendingCount = allPendingRecords.length;
   const eksikCount = allPendingRecords.filter((r) => r.teslimat_durumu === 'EKSIK').length;
@@ -390,8 +439,11 @@ export default function BeneficiaryList({
     }).length;
   }, [mahalleFilteredList, localSignatures]);
 
-  // Filter records by selected street, signature status and list type
+  // Filter records by selected street, signature status and list type (Arama yapılırken alt filtreler sonucu gizlemez)
   const streetFilteredList = useMemo(() => {
+    if (isSearching) {
+      return mahalleFilteredList;
+    }
     let list = mahalleFilteredList;
     if (selectedSokak !== 'HEPSI') {
       const normTarget = normalizeStreetForCompare(selectedSokak);
@@ -419,7 +471,7 @@ export default function BeneficiaryList({
       list = list.filter((r) => getBeneficiaryListTypeInfo(r).type === selectedListTypeFilter);
     }
     return list;
-  }, [mahalleFilteredList, selectedSokak, signatureFilter, localSignatures, selectedListTypeFilter]);
+  }, [mahalleFilteredList, selectedSokak, signatureFilter, localSignatures, selectedListTypeFilter, isSearching]);
 
   const listTypeCounts = useMemo(() => {
     let ana = 0;
@@ -520,27 +572,42 @@ export default function BeneficiaryList({
     }
   };
 
-  // Modern Sayfalama Çubuğu Bileşeni (Üst ve Alt için Ortak)
+  // Modern Sayfalama Çubuğu Bileşeni (Üst ve Alt için Ortak - Mobilde sadeleştirilmiş)
   const renderPaginationBar = (position: 'top' | 'bottom') => {
     if (totalFilteredRecords === 0) return null;
+    if (isSearching && (position === 'top' || totalPages <= 1)) return null;
     return (
-      <div className={`p-3 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3 ${
-        position === 'top' ? 'mb-2' : 'mt-4'
-      }`}>
+      <div
+        className={`p-3 rounded-2xl bg-white border border-slate-200 shadow-xs flex-col md:flex-row items-center justify-between gap-3 ${
+          position === 'top' ? 'hidden md:flex mb-2' : 'flex mt-4'
+        }`}
+      >
         {/* Sol Taraf: Sayfa ve Kayıt Göstergesi + Sayfa Boyutu Seçici */}
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span className="font-medium">
-            Sayfa <strong className="text-slate-900 font-black">{safeCurrentPage}</strong> / <strong className="text-slate-900 font-black">{totalPages}</strong>
+            Sayfa <strong className="text-slate-900 font-black">{safeCurrentPage}</strong> /{' '}
+            <strong className="text-slate-900 font-black">{totalPages}</strong>
           </span>
           <span className="text-slate-300">•</span>
           <span>
-            Toplam <strong className="text-amber-800 font-black">{totalFilteredRecords.toLocaleString('tr-TR')}</strong> Hane
+            Toplam{' '}
+            <strong className="text-amber-800 font-black">
+              {totalFilteredRecords.toLocaleString('tr-TR')}
+            </strong>{' '}
+            Hane
             {totalFilteredRecords > 0 && (
-              <> (Bu Sayfada: <strong className="text-slate-900 font-bold">{startIndex + 1} - {endIndex}</strong>)</>
+              <span className="hidden sm:inline">
+                {' '}
+                (Bu Sayfada:{' '}
+                <strong className="text-slate-900 font-bold">
+                  {startIndex + 1} - {endIndex}
+                </strong>
+                )
+              </span>
             )}
           </span>
 
-          <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-200">
+          <div className="hidden md:flex items-center gap-1 ml-2 pl-2 border-l border-slate-200">
             <span className="text-[11px] text-slate-400 font-bold">Sayfa Başı:</span>
             {[25, 50, 100, 250, 500].map((size) => (
               <button
@@ -577,8 +644,8 @@ export default function BeneficiaryList({
             </button>
           </div>
 
-          {/* Hızlı Excel Dışa Aktarma Butonları (Mobil ve Masaüstü Uyumlu) */}
-          <div className="flex flex-wrap items-center gap-1.5 sm:ml-2 sm:pl-2 sm:border-l border-slate-200 w-full sm:w-auto pt-1.5 sm:pt-0 border-t sm:border-t-0">
+          {/* Hızlı Excel Dışa Aktarma Butonları (Masaüstü Uyumlu, Mobilde Kalabalık Yapmaması İçin Gizli) */}
+          <div className="hidden md:flex flex-wrap items-center gap-1.5 sm:ml-2 sm:pl-2 sm:border-l border-slate-200">
             <a
               href="/api/export?type=batch_by_mahalle&batchId=ALL"
               download="Edirne_SYDV_Tum_Mahalleler_Sekmeli_Dagitim_Listesi.xlsx"
@@ -677,241 +744,266 @@ export default function BeneficiaryList({
     );
   };
 
+  const activeMobileExtraFilterCount =
+    (selectedSokak !== 'HEPSI' ? 1 : 0) +
+    (signatureFilter !== 'ALL' ? 1 : 0) +
+    (selectedListTypeFilter !== 'HEPSI' ? 1 : 0) +
+    (showAllOpenAddresses ? 1 : 0);
 
   return (
-    <div className="space-y-4">
-      {/* Search Header Bar & Quick Single Household Add Button */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-        <div className="relative flex-1 flex items-center">
-          <Search className="w-5 h-5 absolute left-3.5 text-slate-400 pointer-events-none" />
-          <input
-            ref={searchInputRef}
-            type="search"
-            inputMode="search"
-            enterKeyHint="search"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="TC Kimlik No veya Hak Sahibi (Ad Soyad) ile ara..."
-            className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-white border border-slate-200 text-slate-900 placeholder-slate-400 font-medium text-sm focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-sm"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => onSearchChange('')}
-              className="absolute right-3.5 p-1 text-slate-400 hover:text-slate-700"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-        {onOpenAddHousehold && (
-          <button
-            type="button"
-            onClick={() => onOpenAddHousehold(searchQuery)}
-            className="px-4 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 shrink-0"
-            title="Sahada durumu uygun olan yeni tek haneyi sisteme ekle"
-          >
-            <UserPlus className="w-4 h-4 shrink-0" />
-            <span>Tek Hane Ekle</span>
-          </button>
-        )}
-      </div>
+    <div className="space-y-2.5 sm:space-y-4">
+      {/* AKILLI ARAMA KUTUSU (Yazıldığı anda odaklanır, TC / İsim modunu otomatik algılar ve mobilde en üste sabitlenir) */}
+      <div
+        className={
+          isSearching
+            ? 'sticky top-0 z-30 bg-[#f8fafc]/95 backdrop-blur pt-1 pb-2 -mx-1 px-1 border-b border-slate-200/80 shadow-xs space-y-1.5'
+            : 'space-y-1.5'
+        }
+      >
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="relative flex-1 flex items-center">
+            <Search
+              className={`w-5 h-5 absolute left-3.5 pointer-events-none transition-colors ${
+                searchInputMode === 'TC'
+                  ? 'text-sky-600'
+                  : searchInputMode === 'NAME'
+                  ? 'text-emerald-600'
+                  : 'text-slate-400'
+              }`}
+            />
+            <input
+              ref={searchInputRef}
+              type="text"
+              inputMode={searchInputMode === 'TC' ? 'numeric' : 'search'}
+              enterKeyHint="search"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              value={searchQuery}
+              onFocus={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 768 && window.scrollY > 40) {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              placeholder="TC Kimlik No (rakamla) veya Ad Soyad (harfle) yazın..."
+              className={`w-full pl-11 pr-28 py-3.5 rounded-2xl bg-white border-2 text-slate-900 placeholder-slate-400 font-bold text-sm focus:outline-none shadow-sm transition-all ${
+                searchWarning
+                  ? 'border-rose-500 ring-2 ring-rose-500/20'
+                  : searchInputMode === 'TC'
+                  ? 'border-sky-500 ring-2 ring-sky-500/15'
+                  : searchInputMode === 'NAME'
+                  ? 'border-emerald-500 ring-2 ring-emerald-500/15'
+                  : 'border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20'
+              }`}
+            />
 
-      {/* 4 DİNAMİK KUYRUK SEKMESİ (Teslim Edilecek vs Teslim Edilen vs Verilmeyecek vs Tüm Kayıtlar) */}
-      <div className="p-1 rounded-2xl bg-slate-200/90 border border-slate-300/70 grid grid-cols-2 sm:grid-cols-4 gap-1 shadow-inner">
-        {/* 1. Teslim Edilecek (Bekleyen & Eksik) */}
-        <button
-          type="button"
-          onClick={() => onQueueTabChange('PENDING_AND_PARTIAL')}
-          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-            selectedQueueTab === 'PENDING_AND_PARTIAL'
-              ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-          title="Henüz kömürü teslim edilmemiş ve iptal edilmemiş haneler"
-        >
-          <PackageCheck className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="truncate">
-            Teslim Edilecek ({isSearching ? (tabSearchCounts?.pending ?? 0) : totalPendingCount})
-          </span>
-        </button>
-
-        {/* 2. Teslim Edilenler */}
-        <button
-          type="button"
-          onClick={() => onQueueTabChange('DELIVERED')}
-          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-            selectedQueueTab === 'DELIVERED'
-              ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/90'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-          title="Kömür teslimatı tamamlanmış haneler"
-        >
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="truncate">
-            Teslim Edilen ({isSearching ? (tabSearchCounts?.delivered ?? 0) : deliveredRecords.length})
-          </span>
-        </button>
-
-        {/* 3. Verilmeyecek (İptal Edilenler) */}
-        <button
-          type="button"
-          onClick={() => onQueueTabChange('EXCLUDED')}
-          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-            selectedQueueTab === 'EXCLUDED'
-              ? 'bg-white text-rose-800 shadow-sm border border-rose-300'
-              : 'text-slate-600 hover:text-rose-900'
-          }`}
-          title="Eşi kömür almış, doğalgaza geçmiş vb. kömür verilmeyecek (iptal) hak sahipleri"
-        >
-          <Ban className="w-4 h-4 text-rose-600 shrink-0" />
-          <span className="truncate">
-            Verilmeyecek ({isSearching ? (tabSearchCounts?.excluded ?? 0) : excludedRecords.length})
-          </span>
-        </button>
-
-        {/* 4. Tüm Kayıtlar (YENİ SEKME!) */}
-        <button
-          type="button"
-          onClick={() => onQueueTabChange('ALL')}
-          className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-            selectedQueueTab === 'ALL'
-              ? 'bg-white text-sky-900 shadow-sm border border-sky-300'
-              : 'text-slate-600 hover:text-sky-900'
-          }`}
-          title="Sistemdeki tüm kayıtları (teslim edilecek, teslim edilmiş ve iptal olanlar) bir arada görüntüleyin"
-        >
-          <List className="w-4 h-4 text-sky-600 shrink-0" />
-          <span className="truncate">
-            Tüm Kayıtlar ({isSearching ? (tabSearchCounts?.all ?? 0) : records.length})
-          </span>
-        </button>
-      </div>
-
-      {/* ARAMA MODU: Sade, Hızlı ve Pratik Arama Bilgi Çubuğu */}
-      {isSearching && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 shadow-xs space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-amber-950">
-              <Search className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>Arama Sonucu:</span>
-              <strong className="text-slate-900 font-extrabold">{totalFilteredRecords} Hane Bulundu</strong>
-              <span className="text-[11px] font-semibold text-amber-800">
-                (
-                {selectedQueueTab === 'PENDING_AND_PARTIAL'
-                  ? 'Teslim Edilecek sekmesinde'
-                  : selectedQueueTab === 'DELIVERED'
-                  ? 'Teslim Edilen sekmesinde'
-                  : selectedQueueTab === 'EXCLUDED'
-                  ? 'Verilmeyecek sekmesinde'
-                  : 'Tüm Kayıtlar sekmesinde'}
-                )
-              </span>
-
-              {/* Aktif Filtre Etiketleri */}
-              {selectedMahalleler.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-lg border border-amber-300">
-                  <MapPin className="w-3 h-3 text-amber-700" />
-                  <span>{selectedMahalleler.length === 1 ? selectedMahalleler[0] : `${selectedMahalleler.length} Mahalle`}</span>
-                  <button
-                    type="button"
-                    onClick={() => onMahallelerChange([])}
-                    className="hover:text-rose-700 ml-0.5 font-black text-xs"
-                    title="Mahalle filtresini kaldır"
-                  >
-                    ✕
-                  </button>
+            {/* Sağ Taraf: Otomatik Algılanan Mod Etiketi (TC / İsim) + Temizle (✕) Butonu */}
+            <div className="absolute right-2.5 flex items-center gap-1">
+              {searchInputMode === 'TC' && (
+                <span
+                  className="px-2 py-0.5 rounded-lg bg-sky-100 text-sky-900 border border-sky-300 text-[11px] font-black tracking-tight select-none"
+                  title="Rakamla başladığınız için TC Kimlik No araması yapılıyor (Sadece rakam kabul edilir)"
+                >
+                  🔢 TC ({searchQuery.length}/11)
                 </span>
               )}
-
-              {selectedSokak !== 'HEPSI' && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-900 bg-sky-100/90 px-2 py-0.5 rounded-lg border border-sky-300">
-                  <Navigation className="w-3 h-3 text-sky-700" />
-                  <span>{selectedSokak}</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSokak('HEPSI')}
-                    className="hover:text-rose-700 ml-0.5 font-black text-xs"
-                    title="Sokak filtresini kaldır"
-                  >
-                    ✕
-                  </button>
+              {searchInputMode === 'NAME' && (
+                <span
+                  className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black tracking-tight select-none"
+                  title="Harfle başladığınız için Ad Soyad araması yapılıyor (Sadece harf kabul edilir)"
+                >
+                  🔤 İsim
                 </span>
               )}
-
-              {selectedListTypeFilter !== 'HEPSI' && (
-                <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg border ${
-                  selectedListTypeFilter === 'SIGORTALI'
-                    ? 'bg-purple-100 text-purple-950 border-purple-300'
-                    : selectedListTypeFilter === 'EK_LISTE'
-                    ? 'bg-amber-100 text-amber-950 border-amber-300'
-                    : 'bg-sky-100 text-sky-950 border-sky-300'
-                }`}>
-                  {selectedListTypeFilter === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-700" />}
-                  {selectedListTypeFilter === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-amber-700" />}
-                  {selectedListTypeFilter === 'ANA_LISTE' && <FileText className="w-3 h-3 text-sky-700" />}
-                  <span>{selectedListTypeFilter === 'SIGORTALI' ? 'Sigortalılar Listesi' : selectedListTypeFilter === 'EK_LISTE' ? 'Ek Liste' : 'Ana Liste'}</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedListTypeFilter('HEPSI')}
-                    className="hover:text-rose-700 ml-0.5 font-black text-xs"
-                    title="Liste filtresini kaldır"
-                  >
-                    ✕
-                  </button>
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 ml-auto">
-              {(selectedMahalleler.length > 0 || selectedSokak !== 'HEPSI') && (
+              {searchQuery && (
                 <button
                   type="button"
                   onClick={() => {
-                    onMahallelerChange([]);
-                    setSelectedSokak('HEPSI');
+                    setSearchWarning(null);
+                    onSearchChange('');
+                    searchInputRef.current?.focus();
                   }}
-                  className="text-xs font-bold text-slate-600 hover:text-slate-900 underline active:scale-95"
+                  aria-label="Aramayı temizle"
+                  className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 font-black text-xs flex items-center justify-center transition-colors"
                 >
-                  Filtreleri Temizle
+                  ✕
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => onSearchChange('')}
-                className="text-xs font-bold text-rose-600 hover:text-rose-800 underline active:scale-95"
-              >
-                Aramayı Temizle
-              </button>
             </div>
           </div>
 
-          {/* Filtreli Mahallede/Sokakta 0 kayıt çıkıp seçili sekmedeki diğer mahallelerde eşleşen kayıt varsa */}
-          {totalFilteredRecords === 0 && searchFilteredRecords.length > 0 && (
-            <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-amber-900 font-medium">
-                Seçili filtrelerde kayıt bulunamadı ancak bu sekmedeki diğer mahallelerde <strong className="text-slate-900 font-extrabold">{searchFilteredRecords.length} hane</strong> bulunmaktadır.
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  onMahallelerChange([]);
-                  setSelectedSokak('HEPSI');
-                }}
-                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-extrabold text-xs shadow-xs active:scale-95 transition-all"
-              >
-                Tüm Mahallelerde Göster ({searchFilteredRecords.length})
-              </button>
-            </div>
+          {onOpenAddHousehold && (
+            <button
+              type="button"
+              onClick={() => onOpenAddHousehold(searchQuery)}
+              className="hidden sm:flex px-4 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm items-center justify-center gap-2 shadow-sm transition-all active:scale-95 shrink-0"
+              title="Sahada durumu uygun olan yeni tek haneyi sisteme ekle"
+            >
+              <UserPlus className="w-4 h-4 shrink-0" />
+              <span>Tek Hane Ekle</span>
+            </button>
           )}
+        </div>
+
+        {/* KARAKTER TÜRÜ KONTROL UYARISI (TC modunda harf veya İsim modunda rakam girildiğinde anında görünür) */}
+        {searchWarning && (
+          <div
+            role="alert"
+            className="px-3 py-2 rounded-xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs font-extrabold flex items-center justify-between gap-2 shadow-xs animate-in fade-in"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="leading-snug">{searchWarning}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchWarning(null)}
+              className="text-rose-600 hover:text-rose-900 font-black px-1 shrink-0"
+              aria-label="Uyarıyı kapat"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ARAMA AKTİFKEN TEK SATIRLIK SADE SONUÇ ÖZETİ (Gereksiz menü/buton olmadan doğrudan kayıtların üstünde) */}
+        {isSearching && (
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-amber-50/95 border border-amber-200 text-xs font-bold text-amber-950">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+              <span className="truncate">
+                {searchInputMode === 'TC' ? 'TC Kimlik No Araması:' : 'Ad Soyad Araması:'}{' '}
+                <strong className="text-slate-900 font-black">{totalFilteredRecords} Kayıt Bulundu</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchWarning(null);
+                onSearchChange('');
+              }}
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-black shrink-0 active:scale-95 transition-all"
+            >
+              Aramayı Kapat ✕
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 4 DİNAMİK KUYRUK SEKMESİ (Arama yapılırken gizlenir; ekran doğrudan aranan kayda odaklanır) */}
+      {!isSearching && (
+        <div className="p-1 rounded-2xl bg-slate-200/90 border border-slate-300/70 grid grid-cols-2 sm:grid-cols-4 gap-1 shadow-inner">
+          {/* 1. Teslim Edilecek (Bekleyen & Eksik) */}
+          <button
+            type="button"
+            onClick={() => onQueueTabChange('PENDING_AND_PARTIAL')}
+            className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[42px] ${
+              selectedQueueTab === 'PENDING_AND_PARTIAL'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/90'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+            title="Henüz kömürü teslim edilmemiş ve iptal edilmemiş haneler"
+          >
+            <PackageCheck className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">Teslim Edilecek ({totalPendingCount})</span>
+          </button>
+
+          {/* 2. Teslim Edilenler */}
+          <button
+            type="button"
+            onClick={() => onQueueTabChange('DELIVERED')}
+            className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[42px] ${
+              selectedQueueTab === 'DELIVERED'
+                ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/90'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+            title="Kömür teslimatı tamamlanmış haneler"
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="truncate">Teslim Edilen ({deliveredRecords.length})</span>
+          </button>
+
+          {/* 3. Verilmeyecek (İptal Edilenler) */}
+          <button
+            type="button"
+            onClick={() => onQueueTabChange('EXCLUDED')}
+            className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[42px] ${
+              selectedQueueTab === 'EXCLUDED'
+                ? 'bg-white text-rose-800 shadow-sm border border-rose-300'
+                : 'text-slate-600 hover:text-rose-900'
+            }`}
+            title="Eşi kömür almış, doğalgaza geçmiş vb. kömür verilmeyecek (iptal) hak sahipleri"
+          >
+            <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+            <span className="truncate">Verilmeyecek ({excludedRecords.length})</span>
+          </button>
+
+          {/* 4. Tüm Kayıtlar */}
+          <button
+            type="button"
+            onClick={() => onQueueTabChange('ALL')}
+            className={`py-2 px-1.5 sm:px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all min-h-[42px] ${
+              selectedQueueTab === 'ALL'
+                ? 'bg-white text-sky-900 shadow-sm border border-sky-300'
+                : 'text-slate-600 hover:text-sky-900'
+            }`}
+            title="Sistemdeki tüm kayıtları (teslim edilecek, teslim edilmiş ve iptal olanlar) bir arada görüntüleyin"
+          >
+            <List className="w-4 h-4 text-sky-600 shrink-0" />
+            <span className="truncate">Tüm Kayıtlar ({records.length})</span>
+          </button>
         </div>
       )}
 
-      {/* NORMAL MOD (Arama yapılmadığında görünen kontroller) */}
+      {/* NORMAL MOD (Arama yapılmadığında görünen kontroller - Mobilde sadeleştirilmiş) */}
       {!isSearching && (
         <>
+          {/* MOBİL SADE KONTROL ÇUBUĞU: Sadece Mahalle Seçimi ve İsteğe Bağlı Filtreler Butonu */}
+          <div className="sm:hidden flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowMahalleModal(true)}
+              className="flex-1 py-2.5 px-3 rounded-xl bg-white border border-slate-200 text-xs font-extrabold text-slate-800 flex items-center justify-between shadow-2xs active:scale-95 transition-all min-h-[42px]"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <MapPin className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="truncate">
+                  {selectedMahalleler.length === 0 || selectedMahalleler.length === mahalleler.length
+                    ? 'Tüm Mahalle & Köyler'
+                    : selectedMahalleler.length === 1
+                    ? selectedMahalleler[0]
+                    : `${selectedMahalleler.length} Bölge Seçili`}
+                </span>
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+            </button>
 
-          {/* MOBİL VE MASAÜSTÜ ERGONOMİK FİLTRE VE GÖRÜNÜM KONTROL PANELİ */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-2.5 space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters((prev) => !prev)}
+              className={`px-3 py-2.5 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all min-h-[42px] shrink-0 ${
+                showMobileFilters || activeMobileExtraFilterCount > 0
+                  ? 'bg-amber-500 border-amber-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-700'
+              }`}
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
+              <span>Filtreler</span>
+              {activeMobileExtraFilterCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-white text-amber-900 text-[10px] font-black">
+                  {activeMobileExtraFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* DETAYLI FİLTRE VE GÖRÜNÜM KONTROL PANELİ (Masaüstünde her zaman açık, Mobilde yalnızca "Filtreler" seçildiğinde açılır) */}
+          <div
+            className={`${
+              showMobileFilters ? 'block' : 'hidden sm:block'
+            } bg-white rounded-2xl border border-slate-200 shadow-xs p-2.5 space-y-2`}
+          >
             {/* Mahalle/Köy, Sokak/Cadde, Adres Sıralaması & Açık Adresleri Göster/Gizle (Mobil: 2x2, Masaüstü: 4'lü Bar) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Mahalle / Köy Seçim Butonu */}
@@ -1357,9 +1449,9 @@ export default function BeneficiaryList({
             </div>
           )}
 
-          {/* Quick-filter Street Chips (Hızlı Sokak Seçimi) */}
+          {/* Quick-filter Street Chips (Hızlı Sokak Seçimi - Mobilde yalnızca Filtreler açıkken görünür) */}
           {availableStreets.length > 1 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar scroll-fade-x">
+            <div className={`${showMobileFilters ? 'flex' : 'hidden sm:flex'} items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar scroll-fade-x`}>
               <button
                 type="button"
                 onClick={() => setSelectedSokak('HEPSI')}
@@ -1596,8 +1688,8 @@ export default function BeneficiaryList({
 
         return (
           <div key={mahalleName} className="space-y-2 mb-5">
-            {/* Mahalle / Köy Header Badge */}
-            <div className="sticky top-[60px] z-20 py-2 px-3 rounded-xl bg-white/95 backdrop-blur border border-slate-200 flex items-center justify-between shadow-sm">
+            {/* Mahalle / Köy Header Badge (Mobilde arama yaparken gizlenir, kartlar doğrudan arama kutusu altında görünür) */}
+            <div className={`${isSearching ? 'hidden sm:flex' : 'flex sticky top-[60px] z-20'} py-2 px-3 rounded-xl bg-white/95 backdrop-blur border border-slate-200 items-center justify-between shadow-sm`}>
               <div className="flex items-center gap-2 min-w-0">
                 {isKoy ? (
                   <Trees className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -2027,9 +2119,10 @@ export default function BeneficiaryList({
                 const stInfo = getRecordStreetInfo(person);
                 const listInfo = getBeneficiaryListTypeInfo(person);
 
-                const isExpanded = expandedAddresses[person.id] !== undefined
-                  ? expandedAddresses[person.id]
-                  : showAllOpenAddresses;
+                const isExpanded =
+                  expandedAddresses[person.id] !== undefined
+                    ? expandedAddresses[person.id]
+                    : isSearching || showAllOpenAddresses;
                 const hasHouseholdDuplicate = (householdCounts[person.norm_adres] || 0) > 1;
                 const isSigned = localSignatures[String(person.id)] !== undefined
                   ? localSignatures[String(person.id)]

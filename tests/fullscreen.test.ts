@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { requestAppFullscreen, exitAppFullscreen, isAppFullscreen } from '../src/lib/fullscreen';
+import { validateSmartSearchInput, isBirebirBeneficiaryMatch } from '../src/lib/normalizer';
 
 test('Fullscreen: isAppFullscreen returns false when no fullscreenElement exists', () => {
   (globalThis as any).document = {
@@ -92,4 +93,51 @@ test('Route Mode Sequential Cockpit: direct launch, synchronous fullscreen, back
       cockpitSrc.includes('handleTouchEnd'),
     'RouteModeCockpitModal must use getRecordPhones and support touch swipe between sequential stops'
   );
+});
+
+test('Smart Search Input: numeric start locks to TC mode & blocks letters; letter start locks to NAME mode & blocks digits', () => {
+  // 1. Empty input -> IDLE mode
+  const idleRes = validateSmartSearchInput('');
+  assert.equal(idleRes.mode, 'IDLE');
+  assert.equal(idleRes.value, '');
+  assert.equal(idleRes.rejected, false);
+  assert.equal(idleRes.warning, null);
+
+  // 2. Numeric start -> TC mode, accepts digits, rejects letters with warning
+  const tcValid = validateSmartSearchInput('123456');
+  assert.equal(tcValid.mode, 'TC');
+  assert.equal(tcValid.value, '123456');
+  assert.equal(tcValid.rejected, false);
+  assert.equal(tcValid.warning, null);
+
+  const tcWithLetter = validateSmartSearchInput('123456a');
+  assert.equal(tcWithLetter.mode, 'TC');
+  assert.equal(tcWithLetter.value, '123456');
+  assert.equal(tcWithLetter.rejected, true);
+  assert.ok(tcWithLetter.warning && tcWithLetter.warning.includes('TC Kimlik No'));
+
+  const tcTooLong = validateSmartSearchInput('123456789012');
+  assert.equal(tcTooLong.mode, 'TC');
+  assert.equal(tcTooLong.value, '12345678901');
+  assert.equal(tcTooLong.rejected, true);
+  assert.ok(tcTooLong.warning && tcTooLong.warning.includes('11'));
+
+  // 3. Letter start -> NAME mode, accepts Turkish letters + spaces, rejects digits with warning
+  const nameValid = validateSmartSearchInput('Şükrü Çağlar');
+  assert.equal(nameValid.mode, 'NAME');
+  assert.equal(nameValid.value, 'Şükrü Çağlar');
+  assert.equal(nameValid.rejected, false);
+  assert.equal(nameValid.warning, null);
+
+  const nameWithDigit = validateSmartSearchInput('Şükrü5');
+  assert.equal(nameWithDigit.mode, 'NAME');
+  assert.equal(nameWithDigit.value, 'Şükrü');
+  assert.equal(nameWithDigit.rejected, true);
+  assert.ok(nameWithDigit.warning && nameWithDigit.warning.includes('Ad Soyad'));
+
+  // 4. Matching strictly follows TC vs Name mode
+  const sampleRecord = { tc_no: '12345678901', ad_soyad: 'Ekrem Yılmaz', sira_no: '12' };
+  assert.equal(isBirebirBeneficiaryMatch(sampleRecord, '12345'), true);
+  assert.equal(isBirebirBeneficiaryMatch(sampleRecord, 'Ekrem'), true);
+  assert.equal(isBirebirBeneficiaryMatch({ tc_no: '99999999999', ad_soyad: 'Ali Veli', sira_no: '12' }, '12'), false);
 });

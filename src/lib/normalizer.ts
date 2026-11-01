@@ -85,57 +85,112 @@ export function normalizeTurkishNameForExactMatch(name: string | null | undefine
  *   - 's' / 'S' only matches 's' / 'S' (never 'ş' / 'Ş')
  *   - 'ç' / 'Ç', 'ğ' / 'Ğ', 'ö' / 'Ö', 'ü' / 'Ü' only match their own Turkish letter.
  */
+export interface SmartSearchValidationResult {
+  value: string;
+  mode: 'IDLE' | 'TC' | 'NAME';
+  rejected: boolean;
+  warning: string | null;
+}
+
+/**
+ * Validates and sanitizes search input according to the first character typed:
+ * - If started with a numeric digit (0-9): locks to 'TC' mode (TC Kimlik No), rejects letters/symbols, and caps at 11 digits.
+ * - If started with a letter (a-zA-ZçğıöşüÇĞİÖŞÜ): locks to 'NAME' mode (Ad Soyad), rejects numeric digits and symbols.
+ */
+export function validateSmartSearchInput(rawInput: string | null | undefined): SmartSearchValidationResult {
+  const trimmedStart = (rawInput || '').replace(/^\s+/, '');
+  if (!trimmedStart) {
+    return { value: '', mode: 'IDLE', rejected: false, warning: null };
+  }
+
+  const firstChar = trimmedStart[0];
+
+  // 1. Rakam ile başlandıysa -> TC Kimlik No Arama Modu
+  if (/[0-9]/.test(firstChar)) {
+    const onlyDigits = trimmedStart.replace(/[^0-9]/g, '');
+    const clampedDigits = onlyDigits.slice(0, 11);
+
+    if (trimmedStart !== onlyDigits) {
+      return {
+        value: clampedDigits,
+        mode: 'TC',
+        rejected: true,
+        warning:
+          'Rakam ile başladığınız için TC Kimlik No araması yapılmaktadır. Bu alanda harf kullanılamaz (İsimle aramak için kutuyu temizleyip harfle başlayınız).'
+      };
+    }
+
+    if (onlyDigits.length > 11) {
+      return {
+        value: clampedDigits,
+        mode: 'TC',
+        rejected: true,
+        warning: 'TC Kimlik Numarası en fazla 11 rakamdan oluşabilir.'
+      };
+    }
+
+    return { value: clampedDigits, mode: 'TC', rejected: false, warning: null };
+  }
+
+  // 2. Harf ile başlandıysa -> Ad Soyad (İsim) Arama Modu
+  if (/[a-zA-ZçğıöşüÇĞİÖŞÜâîûÂÎÛ]/.test(firstChar)) {
+    const normalizedSpaces = trimmedStart.replace(/\s{2,}/g, ' ');
+    const onlyLetters = normalizedSpaces
+      .replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜâîûÂÎÛ\s]/g, '')
+      .replace(/\s{2,}/g, ' ');
+
+    if (/[0-9]/.test(trimmedStart)) {
+      return {
+        value: onlyLetters,
+        mode: 'NAME',
+        rejected: true,
+        warning:
+          'Harf ile başladığınız için Ad Soyad araması yapılmaktadır. İsim alanında rakam kullanılamaz (TC No ile aramak için kutuyu temizleyip rakamla başlayınız).'
+      };
+    }
+
+    if (normalizedSpaces !== onlyLetters) {
+      return {
+        value: onlyLetters,
+        mode: 'NAME',
+        rejected: true,
+        warning: 'Ad Soyad aramasında yalnızca harf ve boşluk karakteri kullanılabilir.'
+      };
+    }
+
+    return { value: onlyLetters, mode: 'NAME', rejected: false, warning: null };
+  }
+
+  // 3. Sembol veya geçersiz karakter ile başlandıysa
+  return {
+    value: '',
+    mode: 'IDLE',
+    rejected: true,
+    warning: 'Lütfen aramaya TC Kimlik No için rakamla (0-9) veya Ad Soyad için harfle (A-Z) başlayınız.'
+  };
+}
+
 export function isBirebirBeneficiaryMatch(
   record: { tc_no?: any; ad_soyad?: any; hak_sahibi?: any; sira_no?: any; mahalle_sira?: any; excel_sira_no?: any; ek_excel_sira?: any } | null | undefined,
   query: string | null | undefined
 ): boolean {
   if (!query || !query.trim() || !record) return false;
-  const rawQ = query.trim().replace(/^#/, '').trim();
+  const rawQ = query.trim();
 
-  // 1. Sıra No / Mahalle Sırası / Ek Excel Sırası Eşleşmesi (örn: "Ek1 - 5", "Ek1-5", "Ek 1 - 2", "5", vb.)
-  if (record.sira_no) {
-    const cleanRecordSira = String(record.sira_no).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanQSira = rawQ.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (cleanQSira && cleanRecordSira) {
-      if (cleanRecordSira === cleanQSira || cleanRecordSira.includes(cleanQSira)) {
-        return true;
-      }
-    }
-  }
-
-  // 2. TC Kimlik No Eşleşmesi (Yalnızca tc_no alanında arama yapar)
+  // 1. Rakam ile başlandıysa: YALNIZCA TC Kimlik No (`tc_no`) alanında arama yapar
   const qDigits = rawQ.replace(/\D/g, '');
-  const isPureDigits = /^\d+$/.test(rawQ.replace(/\s+/g, ''));
-  if (isPureDigits && qDigits.length > 0 && record.tc_no) {
+  const isDigitSearch = /^[0-9]/.test(rawQ);
+  if (isDigitSearch) {
+    if (!qDigits || !record.tc_no) return false;
     const recordTcDigits = String(record.tc_no).replace(/\D/g, '');
-    if (recordTcDigits) {
-      if (qDigits.length === 11 && recordTcDigits === qDigits) {
-        return true;
-      }
-      if (recordTcDigits.includes(qDigits)) {
-        return true;
-      }
+    if (!recordTcDigits) return false;
+    if (qDigits.length === 11) {
+      return recordTcDigits === qDigits;
     }
-    // Saf rakam sorgusunda Mahalle Sırası veya Excel Sırası tam eşleşiyorsa
-    const qNum = parseInt(qDigits, 10);
-    if (!isNaN(qNum) && qDigits.length <= 4) {
-      if (
-        record.mahalle_sira === qNum ||
-        record.excel_sira_no === qNum ||
-        record.ek_excel_sira === qNum ||
-        String(record.sira_no) === rawQ
-      ) {
-        return true;
-      }
-    }
+    return recordTcDigits.startsWith(qDigits) || recordTcDigits.includes(qDigits);
   }
 
-  // Eğer kullanıcı sadece rakam girdiyse isim alanında aramaya gerek yok
-  if (isPureDigits) {
-    return false;
-  }
-
-  // 3. Hak Sahibi / Adı Soyadı Eşleşmesi (%100 Türkçe Karakter Uyumlu)
+  // 2. Harf ile başlandıysa: YALNIZCA Hak Sahibi / Adı Soyadı alanında (%100 Türkçe Karakter Uyumlu) arama yapar
   const rawName = record.ad_soyad || record.hak_sahibi || '';
   if (rawName) {
     const normTarget = normalizeTurkishNameForExactMatch(String(rawName));
@@ -148,7 +203,6 @@ export function isBirebirBeneficiaryMatch(
 
       const queryTerms = normQuery.split(' ').filter(Boolean);
       if (queryTerms.length > 0) {
-        // Kullanıcının girdiği her arama kelimesi (%100 Türkçe karakter uyumuyla) Ad Soyad içinde yer almalıdır
         const allTermsFound = queryTerms.every((term) => normTarget.includes(term));
         if (allTermsFound) {
           return true;

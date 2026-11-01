@@ -1099,45 +1099,47 @@ export default function Home() {
   // 3. Authenticated: Render the Main Application
   return (
     <main className="min-h-screen bg-[var(--bg-app)] text-slate-900 selection:bg-amber-500 selection:text-white">
-      {/* Top Header */}
-      <Header
-        userRole={userRole}
-        userName={userName}
-        defaultQuota={defaultQuota}
-        currentTab={currentTab}
-        onTabChange={(tab) => {
-          if (tab === 'import' && userRole !== 'ADMIN') {
-            setShowAdminAuthModal(true);
-            return;
-          }
-          if (tab === 'add_household' && userRole === 'MUDUR') {
-            return;
-          }
-          setCurrentTab(tab);
-        }}
-        incompleteDeliveriesCount={eksikHaneler.length}
-        importErrorsCount={overallStats?.toplamHataSayisi}
-        activeRouteStopsCount={activeRouteStopsCount}
-        pendingSyncCount={pendingSyncCount}
-        onTriggerSync={handleSyncOfflineQueue}
-        isOnline={isOnline}
-        onOpenQuotaModal={() => setShowQuotaModal(true)}
-        onOpenPersonnelModal={() => setShowPersonnelModal(true)}
-        onOpenDeviceModal={() => setShowDeviceModal(true)}
-        onOpenAuditLogs={() => setShowAuditLogsModal(true)}
-        onOpenSeasonModal={() => setShowSeasonModal(true)}
-        activeSeasonCode={activeSeasonCode}
-        calismaModu={calismaModu}
-        onToggleDenemeModu={async () => {
-          const nextMode = calismaModu === 'DENEME' ? 'RESMI' : 'DENEME';
-          await handleGlobalModeSwitch(nextMode);
-          await handleRefreshAll();
-        }}
-        onLogout={() => handleLogout()}
-        onUserUpdated={handleUserUpdated}
-        onRefresh={handleRefreshAll}
-        isRefreshing={isRefreshing || isSyncingOffline}
-      />
+      {/* Top Header (Mobil ekranda arama yapılırken gizlenir, tüm ekran aranan kayda odaklanır) */}
+      <div className={currentTab === 'search' && searchQuery.trim().length > 0 ? 'hidden md:block' : ''}>
+        <Header
+          userRole={userRole}
+          userName={userName}
+          defaultQuota={defaultQuota}
+          currentTab={currentTab}
+          onTabChange={(tab) => {
+            if (tab === 'import' && userRole !== 'ADMIN') {
+              setShowAdminAuthModal(true);
+              return;
+            }
+            if (tab === 'add_household' && userRole === 'MUDUR') {
+              return;
+            }
+            setCurrentTab(tab);
+          }}
+          incompleteDeliveriesCount={eksikHaneler.length}
+          importErrorsCount={overallStats?.toplamHataSayisi}
+          activeRouteStopsCount={activeRouteStopsCount}
+          pendingSyncCount={pendingSyncCount}
+          onTriggerSync={handleSyncOfflineQueue}
+          isOnline={isOnline}
+          onOpenQuotaModal={() => setShowQuotaModal(true)}
+          onOpenPersonnelModal={() => setShowPersonnelModal(true)}
+          onOpenDeviceModal={() => setShowDeviceModal(true)}
+          onOpenAuditLogs={() => setShowAuditLogsModal(true)}
+          onOpenSeasonModal={() => setShowSeasonModal(true)}
+          activeSeasonCode={activeSeasonCode}
+          calismaModu={calismaModu}
+          onToggleDenemeModu={async () => {
+            const nextMode = calismaModu === 'DENEME' ? 'RESMI' : 'DENEME';
+            await handleGlobalModeSwitch(nextMode);
+            await handleRefreshAll();
+          }}
+          onLogout={() => handleLogout()}
+          onUserUpdated={handleUserUpdated}
+          onRefresh={handleRefreshAll}
+          isRefreshing={isRefreshing || isSyncingOffline}
+        />
+      </div>
 
       {/* DENEME / TEST MODU AKTİFKEN TÜM EKRANLARDA GÖRÜNEN KÜRESEL UYARI BANDI */}
       {calismaModu === 'DENEME' && (
@@ -1394,24 +1396,26 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* Mobile Sticky Bottom Navigation */}
-      <BottomNav
-        currentTab={currentTab}
-        onTabChange={(tab) => {
-          if (tab === 'import' && userRole !== 'ADMIN') {
-            setShowAdminAuthModal(true);
-            return;
-          }
-          if (tab === 'add_household' && userRole === 'MUDUR') {
-            return;
-          }
-          setCurrentTab(tab);
-        }}
-        userRole={userRole}
-        incompleteDeliveriesCount={eksikHaneler.length}
-        importErrorsCount={overallStats?.toplamHataSayisi}
-        activeRouteStopsCount={activeRouteStopsCount}
-      />
+      {/* Mobile Sticky Bottom Navigation (Arama yapılırken mobil klavye ve sonuç alanı için gizlenir) */}
+      <div className={currentTab === 'search' && searchQuery.trim().length > 0 ? 'hidden md:block' : ''}>
+        <BottomNav
+          currentTab={currentTab}
+          onTabChange={(tab) => {
+            if (tab === 'import' && userRole !== 'ADMIN') {
+              setShowAdminAuthModal(true);
+              return;
+            }
+            if (tab === 'add_household' && userRole === 'MUDUR') {
+              return;
+            }
+            setCurrentTab(tab);
+          }}
+          userRole={userRole}
+          incompleteDeliveriesCount={eksikHaneler.length}
+          importErrorsCount={overallStats?.toplamHataSayisi}
+          activeRouteStopsCount={activeRouteStopsCount}
+        />
+      </div>
 
       {/* MODALS */}
 
