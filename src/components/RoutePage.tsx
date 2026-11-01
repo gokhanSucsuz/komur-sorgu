@@ -564,6 +564,7 @@ export default function RoutePage({
   // ========================================================
   const sessionUserKey = userUsername || userName || 'personel';
   const hasRestoredSessionRef = useRef<boolean>(false);
+  const isRouteModeActiveRef = useRef<boolean>(false);
   const wakeLockSentinelRef = useRef<any>(null);
   const isSubmittingStopRef = useRef<boolean>(false);
 
@@ -634,25 +635,24 @@ export default function RoutePage({
   // Oturum durumunu anlık olarak localStorage'a kaydet (KVKK: vatandaş adı/notu gibi kişisel veriler localStorage'a yazılmaz)
   const saveCurrentSession = useCallback(() => {
     if (typeof window === 'undefined') return;
+    if (!isRouteModeOpen || !isRouteModeActiveRef.current || !activeRoute) return;
     const storageKey = `komur_active_route_session_${sessionUserKey}`;
-    if (isRouteModeOpen && activeRoute) {
-      const routeId = String(activeRoute.id || activeRoute._id);
-      const sessionData = {
-        routeId,
-        isRouteModeOpen: true,
-        routeModeIndex,
-        routeModeTorba,
-        routeModeTab,
-        routeModeDeferType,
-        timestamp: Date.now()
-      };
-      try {
-        const serialized = JSON.stringify(sessionData);
-        localStorage.setItem(storageKey, serialized);
-        localStorage.setItem('komur_active_route_session_last', serialized);
-        localStorage.setItem('komur_active_tab', 'route');
-      } catch (e) {}
-    }
+    const routeId = String(activeRoute.id || activeRoute._id);
+    const sessionData = {
+      routeId,
+      isRouteModeOpen: true,
+      routeModeIndex,
+      routeModeTorba,
+      routeModeTab,
+      routeModeDeferType,
+      timestamp: Date.now()
+    };
+    try {
+      const serialized = JSON.stringify(sessionData);
+      localStorage.setItem(storageKey, serialized);
+      localStorage.setItem('komur_active_route_session_last', serialized);
+      localStorage.setItem('komur_active_tab', 'route');
+    } catch (e) {}
   }, [
     isRouteModeOpen,
     activeRoute,
@@ -664,17 +664,23 @@ export default function RoutePage({
   ]);
 
   const clearSavedSession = useCallback(() => {
+    isRouteModeActiveRef.current = false;
     if (typeof window === 'undefined') return;
     const storageKey = `komur_active_route_session_${sessionUserKey}`;
     try {
       localStorage.removeItem(storageKey);
       localStorage.removeItem('komur_active_route_session_last');
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('komur_active_route_session_')) {
+          localStorage.removeItem(key);
+        }
+      });
     } catch (e) {}
   }, [sessionUserKey]);
 
   // Rota Modu açıkken her veri değişiminde veya sayfa arka plana geçtiğinde/kapandığında kaydet
   useEffect(() => {
-    if (isRouteModeOpen) {
+    if (isRouteModeOpen && isRouteModeActiveRef.current) {
       saveCurrentSession();
     }
   }, [
@@ -871,6 +877,7 @@ export default function RoutePage({
     }
 
     // Anında (0ms gecikme ile) Tam Ekran Rota Modunu aç ve sıradaki kaydı getir
+    isRouteModeActiveRef.current = true;
     setSelectedRouteId(String(routeId));
     setRouteModeIndex(startIdx);
     syncRouteModeInputsForStop(stops[startIdx]);
@@ -900,6 +907,7 @@ export default function RoutePage({
       });
       const lockData = await lockRes.json();
       if (!lockData.success) {
+        isRouteModeActiveRef.current = false;
         setIsRouteModeOpen(false);
         clearSavedSession();
         showAlert({
@@ -937,7 +945,7 @@ export default function RoutePage({
         setActiveRoutes((prev) =>
           prev.map((r) =>
             String(r.id || r._id) === String(routeId)
-              ? { ...r, durum: 'AKTIF' }
+              ? { ...r, durum: 'AKTIF', aktif_rota_modu: true }
               : r
           )
         );
@@ -949,11 +957,33 @@ export default function RoutePage({
 
   // Pause Route and Exit Rota Modu (releases lock on backend)
   const handlePauseRouteAndExit = async (customReason?: string) => {
+    const routeToPause = activeRoute;
+    // 1. Anında (0ms) Rota Modu referansını kapat, oturum kaydını tamamen temizle ve tam ekrandan çık
+    isRouteModeActiveRef.current = false;
     clearSavedSession();
-    if (!activeRoute) {
-      setIsRouteModeOpen(false);
+    setIsRouteModeOpen(false);
+    setRouteModePausedNotice(false);
+    exitAppFullscreen();
+
+    if (!routeToPause) {
       return;
     }
+
+    const targetRouteId = String(routeToPause.id || routeToPause._id);
+    setActiveRoutes((prev) =>
+      prev.map((r) =>
+        String(r.id || r._id) === targetRouteId
+          ? { ...r, durum: 'DURAKLATILDI', aktif_rota_modu: false }
+          : r
+      )
+    );
+
+    setRouteStatusBanner({
+      type: 'PAUSED',
+      title: '⏸️ Rota Geçici Olarak Durduruldu',
+      message: `"${routeToPause.rota_adi}" rotası geçici olarak durduruldu ve serbest bırakıldı. Eksik veya bekleyen kayıtları tamamlamak için istediğiniz zaman "Rota Moduna Devam Et" butonuna tıklayabilirsiniz.`
+    });
+
     setIsActionLoading(true);
     try {
       await fetch('/api/routes', {
@@ -964,25 +994,18 @@ export default function RoutePage({
         },
         body: JSON.stringify({
           action: 'PAUSE_ROUTE',
-          route_id: activeRoute.id || activeRoute._id,
+          route_id: routeToPause.id || routeToPause._id,
           notlar: customReason || 'Personel tarafından rota geçici olarak durduruldu (Daha sonra devam edilecek).',
           personel: userName || 'Saha Personeli',
           client_id: currentClientId
         })
       });
       await fetchRoutes();
-      setIsRouteModeOpen(false);
-      setRouteModePausedNotice(false);
-      setRouteStatusBanner({
-        type: 'PAUSED',
-        title: '⏸️ Rota Geçici Olarak Durduruldu',
-        message: `"${activeRoute.rota_adi}" rotası geçici olarak durduruldu ve serbest bırakıldı. Eksik veya bekleyen kayıtları tamamlamak için istediğiniz zaman "Rota Moduna Devam Et" butonuna tıklayabilirsiniz.`
-      });
       if (onRefreshAll) onRefreshAll();
     } catch (e) {
       console.error('Error pausing route:', e);
-      setIsRouteModeOpen(false);
     } finally {
+      clearSavedSession();
       setIsActionLoading(false);
     }
   };
@@ -1127,13 +1150,31 @@ export default function RoutePage({
         return;
       }
       const savedSession = JSON.parse(raw);
-      // Sadece son 24 saat içindeki oturumları geri yükle
-      if (savedSession && savedSession.routeId && Date.now() - savedSession.timestamp < 24 * 60 * 60 * 1000) {
+      // Sadece son 24 saat içindeki ve gerçekten açık bırakılmış oturumları geri yükle
+      if (
+        savedSession &&
+        savedSession.isRouteModeOpen === true &&
+        savedSession.routeId &&
+        Date.now() - savedSession.timestamp < 24 * 60 * 60 * 1000
+      ) {
         const targetRoute = activeRoutes.find(
           (r) => String(r.id || r._id) === String(savedSession.routeId)
         );
 
-        if (targetRoute && targetRoute.durum !== 'TAMAMLANDI' && isUserTeamAuthorized(targetRoute)) {
+        // Eğer rota bulunamadıysa, TAMAMLANDI ise veya kullanıcı daha önce çıkış yaptığı için aktif_rota_modu === false / DURAKLATILDI durumundaysa
+        // otomatik olarak Rota Moduna GİRME ve eski oturum kaydını tamamen temizle!
+        if (
+          !targetRoute ||
+          targetRoute.durum === 'TAMAMLANDI' ||
+          targetRoute.aktif_rota_modu === false ||
+          (targetRoute.durum === 'DURAKLATILDI' && !targetRoute.aktif_rota_modu)
+        ) {
+          clearSavedSession();
+          hasRestoredSessionRef.current = true;
+          return;
+        }
+
+        if (isUserTeamAuthorized(targetRoute)) {
           hasRestoredSessionRef.current = true;
           setSelectedRouteId(String(targetRoute.id || targetRoute._id));
           const stops = targetRoute.duraklar || [];
@@ -1155,25 +1196,25 @@ export default function RoutePage({
             else if (anyWaiting !== -1) stopIdx = anyWaiting;
           }
 
-          if (savedSession.isRouteModeOpen) {
-            handleOpenRouteMode(
-              targetRoute,
-              stopIdx,
-              isRestoringSameIncompleteStop ? savedSession : undefined
-            ).then(() => {
-              showToast({
-                type: 'info',
-                title: '🔄 Rota Modu Kaldığı Yerden Devam Ediyor',
-                message: `"${targetRoute.rota_adi}" teslimat ekranınız kaldığınız sıradan (#${stops[stopIdx]?.sira || stopIdx + 1}. Hane) otomatik olarak geri yüklendi.`
-              });
+          handleOpenRouteMode(
+            targetRoute,
+            stopIdx,
+            isRestoringSameIncompleteStop ? savedSession : undefined
+          ).then(() => {
+            showToast({
+              type: 'info',
+              title: '🔄 Rota Modu Kaldığı Yerden Devam Ediyor',
+              message: `"${targetRoute.rota_adi}" teslimat ekranınız kaldığınız sıradan (#${stops[stopIdx]?.sira || stopIdx + 1}. Hane) otomatik olarak geri yüklendi.`
             });
-            return;
-          }
+          });
+          return;
         }
       }
+      clearSavedSession();
       hasRestoredSessionRef.current = true;
     } catch (e) {
       console.error('Error restoring route session:', e);
+      clearSavedSession();
       hasRestoredSessionRef.current = true;
     }
     // Session restore must run once per route list / user change, not whenever handleOpenRouteMode is re-created.
@@ -1981,6 +2022,7 @@ export default function RoutePage({
 
       const data = await res.json();
       if (data.success) {
+        clearSavedSession();
         setShowDeleteConfirm(false);
         const remaining = activeRoutes.filter(r => String(r.id || r._id) !== String(activeRoute.id || activeRoute._id));
         setActiveRoutes(remaining);

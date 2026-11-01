@@ -141,3 +141,43 @@ test('Smart Search Input: numeric start locks to TC mode & blocks letters; lette
   assert.equal(isBirebirBeneficiaryMatch(sampleRecord, 'Ekrem'), true);
   assert.equal(isBirebirBeneficiaryMatch({ tc_no: '99999999999', ad_soyad: 'Ali Veli', sira_no: '12' }, '12'), false);
 });
+
+test('Route Mode Exit & Pull-to-Refresh Guard: exiting Route Mode synchronously clears all session keys and never re-enters on refresh', () => {
+  const routePageSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/RoutePage.tsx'),
+    'utf8'
+  );
+  const homePageSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/page.tsx'),
+    'utf8'
+  );
+
+  // 1. Synchronous ref lock prevents saveCurrentSession from re-saving after exit is triggered
+  assert.ok(
+    routePageSrc.includes('isRouteModeActiveRef') &&
+      routePageSrc.includes('if (!isRouteModeOpen || !isRouteModeActiveRef.current || !activeRoute) return;'),
+    'saveCurrentSession must be guarded by isRouteModeActiveRef so async fetches during exit never re-write localStorage'
+  );
+
+  // 2. clearSavedSession wipes all komur_active_route_session_* keys
+  assert.ok(
+    routePageSrc.includes("key.startsWith('komur_active_route_session_')") &&
+      routePageSrc.includes('localStorage.removeItem(key)'),
+    'clearSavedSession must clear all komur_active_route_session_* keys across username transitions'
+  );
+
+  // 3. Session restore checks aktif_rota_modu !== false and DURAKLATILDI so paused routes do not auto-open
+  assert.ok(
+    routePageSrc.includes("targetRoute.aktif_rota_modu === false") &&
+      routePageSrc.includes("targetRoute.durum === 'DURAKLATILDI'"),
+    'Session restore must not auto-open Route Mode if the route was paused/exited'
+  );
+
+  // 4. Home page respects non-route active tabs on pull-to-refresh and cleans up stale route session keys
+  assert.ok(
+    homePageSrc.includes("if (currentTab !== 'route')") &&
+      homePageSrc.includes("saved !== 'route'"),
+    'Home page must keep user on their current tab on pull-to-refresh when not in Route Mode'
+  );
+});
+

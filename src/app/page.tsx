@@ -74,6 +74,16 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       try {
+        const saved = localStorage.getItem('komur_active_tab') as NavTab | null;
+        // Eğer kullanıcı başka bir menüdeyse (route dışındaysa), eski kalmış olabilecek rota oturum anahtarlarını temizle ve mevcut menüsünde kal
+        if (saved && saved !== 'route' && ['search', 'add_household', 'shift', 'analytics', 'archive', 'tonnage', 'import', 'guide'].includes(saved)) {
+          Object.keys(localStorage).forEach((key) => {
+            if (key.startsWith('komur_active_route_session_')) {
+              localStorage.removeItem(key);
+            }
+          });
+          return saved;
+        }
         // Eğer aktif bir Rota Modu oturumu varsa, uygulama arka plandan/yeniden başlatmadan döndüğünde doğrudan Rotalar sekmesini aç
         const lastRouteRaw = localStorage.getItem('komur_active_route_session_last');
         if (lastRouteRaw) {
@@ -82,7 +92,6 @@ export default function Home() {
             return 'route';
           }
         }
-        const saved = localStorage.getItem('komur_active_tab') as NavTab | null;
         if (saved && ['search', 'add_household', 'route', 'shift', 'analytics', 'archive', 'tonnage', 'import', 'guide'].includes(saved)) {
           return saved;
         }
@@ -105,6 +114,13 @@ export default function Home() {
     if (typeof window !== 'undefined' && currentTab) {
       try {
         localStorage.setItem('komur_active_tab', currentTab);
+        if (currentTab !== 'route') {
+          Object.keys(localStorage).forEach((key) => {
+            if (key.startsWith('komur_active_route_session_')) {
+              localStorage.removeItem(key);
+            }
+          });
+        }
       } catch (e) {}
     }
   }, [currentTab]);

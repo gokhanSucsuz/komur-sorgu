@@ -1522,7 +1522,7 @@ export async function POST(request: NextRequest) {
 
       const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
 
-      if (lockCheck.isLocked && session.rol !== 'ADMIN') {
+      if (action === 'RESUME_ROUTE' && lockCheck.isLocked && session.rol !== 'ADMIN') {
         return NextResponse.json({
           success: false,
           locked: true,
@@ -1531,7 +1531,18 @@ export async function POST(request: NextRequest) {
         }, { status: 409 });
       }
 
-      const nextState = action === 'PAUSE_ROUTE' ? 'DURAKLATILDI' : 'AKTIF';
+      const nowMs = Date.now();
+      const existingOps = Array.isArray(route.aktif_operatorler) ? route.aktif_operatorler : [];
+      const remainingOperators = existingOps.filter((op: any) => {
+        if (!op || nowMs - Number(op.timestamp || 0) >= ACTIVE_OPERATOR_TTL_MS) return false;
+        const sameClient = effectiveClientId && op.client_id && op.client_id === effectiveClientId;
+        const sameStaff = normalizeStaffName(op.personel) === normalizeStaffName(staffName);
+        return !(sameClient || sameStaff);
+      });
+
+      const nextState = action === 'PAUSE_ROUTE'
+        ? (remainingOperators.length > 0 ? 'AKTIF' : 'DURAKLATILDI')
+        : 'AKTIF';
       const setObj: Record<string, any> = {
         durum: nextState,
         isleten_personel: staffName,
@@ -1545,21 +1556,31 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === 'PAUSE_ROUTE') {
-        // Rotayı geçici durdururken kilidi serbest bırak
-        setObj.kilitli_personel = null;
-        setObj.kilitli_personel_username = null;
-        setObj.kilitli_client_id = null;
-        setObj.kilit_tarihi = null;
-        setObj.kilit_timestamp = null;
-        setObj.aktif_rota_modu = false;
+        const primaryRemaining = remainingOperators[0] || null;
+        // Rotayı geçici durdururken bu personelin oturumunu ve kilidini serbest bırak
+        setObj.kilitli_personel = primaryRemaining ? primaryRemaining.personel : null;
+        setObj.kilitli_personel_username = primaryRemaining ? primaryRemaining.username : null;
+        setObj.kilitli_client_id = primaryRemaining ? primaryRemaining.client_id : null;
+        setObj.kilit_tarihi = primaryRemaining ? localTimeStr : null;
+        setObj.kilit_timestamp = primaryRemaining ? primaryRemaining.timestamp : null;
+        setObj.aktif_rota_modu = remainingOperators.length > 0;
+        setObj.aktif_operatorler = remainingOperators;
       } else {
         // Rotayı tekrar aktif ederken bu personele ve istemciye kilitle
+        const updatedOps = upsertActiveOperators(route.aktif_operatorler, {
+          personel: staffName,
+          username: session.username || '',
+          client_id: effectiveClientId,
+          stop_index: Number(route.aktif_durak_index || 0),
+          timestamp: nowMs
+        });
         setObj.kilitli_personel = staffName;
         setObj.kilitli_personel_username = session.username || '';
         if (effectiveClientId) setObj.kilitli_client_id = effectiveClientId;
         setObj.kilit_tarihi = localTimeStr;
-        setObj.kilit_timestamp = Date.now();
+        setObj.kilit_timestamp = nowMs;
         setObj.aktif_rota_modu = true;
+        setObj.aktif_operatorler = updatedOps;
       }
 
       await routeCol.updateOne(buildIdFilter(route_id), { $set: setObj });
