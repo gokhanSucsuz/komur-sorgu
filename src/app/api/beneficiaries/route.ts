@@ -27,14 +27,18 @@ export async function GET(request: NextRequest) {
       return rateLimitExceededResponse(rateLimit, 'Çok fazla hak sahibi sorgulama isteği gönderildi. Lütfen birkaç saniye bekleyiniz.');
     }
 
+    const searchParams = request.nextUrl.searchParams;
+    const requestedMode = searchParams.get('mode') || searchParams.get('calisma_modu');
+    const forceMode = (requestedMode === 'DENEME' || requestedMode === 'RESMI') ? (requestedMode as 'DENEME' | 'RESMI') : undefined;
+
     const {
       beneficiaries: benCol,
       officialBeneficiaries,
+      sandboxBeneficiaries,
       archivedBeneficiaries,
       calismaModu,
       isSandboxMode,
-    } = await getDbCollections();
-    const searchParams = request.nextUrl.searchParams;
+    } = await getDbCollections(forceMode ? { forceMode } : undefined);
     const q = asString(searchParams.get('q'), 100);
     const mahalle = asString(searchParams.get('mahalle'), 100);
     const durum = asString(searchParams.get('durum'), 50);
@@ -112,13 +116,33 @@ export async function GET(request: NextRequest) {
       const cleanedTargetTc = cleanTcNo(targetTc);
       const tcHash = hashTc(cleanedTargetTc);
 
-      // Search by blind index hash or plaintext fallback
-      const rawPerson = await benCol.findOne({
-        $or: [
-          ...(tcHash ? [{ tc_hash: tcHash }] : []),
-          { tc_no: cleanedTargetTc },
-        ],
-      });
+      const tcQueryConditions: any[] = [];
+      if (tcHash) tcQueryConditions.push({ tc_hash: tcHash });
+      if (cleanedTargetTc) tcQueryConditions.push({ tc_no: cleanedTargetTc });
+
+      if (tcQueryConditions.length === 0) {
+        return NextResponse.json({
+          success: true,
+          found: false,
+          person: null,
+          householdMembers: [],
+        });
+      }
+
+      // Primary search in active collection
+      let activeCol = benCol;
+      let rawPerson = await activeCol.findOne({ $or: tcQueryConditions });
+
+      // Fallback: If not found in primary collection, also check alternate collection (sandbox vs official)
+      if (!rawPerson) {
+        const alternateCol = isSandboxMode ? officialBeneficiaries : sandboxBeneficiaries;
+        if (alternateCol) {
+          rawPerson = await alternateCol.findOne({ $or: tcQueryConditions });
+          if (rawPerson) {
+            activeCol = alternateCol;
+          }
+        }
+      }
 
       if (!rawPerson) {
         return NextResponse.json({
@@ -133,36 +157,69 @@ export async function GET(request: NextRequest) {
       person.hedef_torba = person.hedef_torba || 34;
       person.kalan_torba = Math.max(0, person.hedef_torba - (person.torba_sayisi || 0));
 
+      // Dynamic fallback for normalized address if not stored
+      if (!person.norm_adres && (person.mahalle || person.acik_adres)) {
+        try {
+          person.norm_adres = normalizeAddress(person.mahalle || '', person.acik_adres || '', person.hane_no);
+        } catch {}
+      }
+
       // Find other people at the exact same normalized address or household
-      const normHash = hashAddress(person.norm_adres);
+      const normHash = person.norm_adres ? hashAddress(person.norm_adres) : null;
       const haneHash = person.hane_no ? hashHane(person.hane_no) : null;
 
       const householdOrList: any[] = [];
       if (normHash) householdOrList.push({ adres_hash: normHash });
-      if (person.norm_adres) householdOrList.push({ norm_adres: person.norm_adres });
+      if (person.norm_adres && typeof person.norm_adres === 'string' && person.norm_adres.trim()) {
+        householdOrList.push({ norm_adres: person.norm_adres.trim() });
+      }
       if (haneHash) householdOrList.push({ hane_hash: haneHash });
-      if (person.hane_no) householdOrList.push({ hane_no: person.hane_no });
+      if (person.hane_no && typeof person.hane_no === 'string' && person.hane_no.trim()) {
+        householdOrList.push({ hane_no: person.hane_no.trim() });
+      }
 
-      const householdFilter: any = {
-        $and: [
-          { _id: { $ne: rawPerson._id } },
-          ...(tcHash ? [{ tc_hash: { $ne: tcHash } }] : []),
-          { $or: householdOrList },
-        ],
-      };
+      let householdMembers: any[] = [];
 
-      const rawMembers = await benCol
-        .find(householdFilter)
-        .toArray();
+      // CRITICAL: In MongoDB Atlas, `{ $or: [] }` immediately throws "MongoServerError: $or must be an array of at least 1 element".
+      // Only query when householdOrList contains at least one filter criterion!
+      if (householdOrList.length > 0) {
+        try {
+          const excludeConditions: any[] = [];
+          if (rawPerson._id) {
+            excludeConditions.push({ _id: { $ne: rawPerson._id } });
+          }
+          if (tcHash) {
+            excludeConditions.push({ tc_hash: { $ne: tcHash } });
+          }
+          if (cleanedTargetTc) {
+            excludeConditions.push({ tc_no: { $ne: cleanedTargetTc } });
+          }
 
-      const householdMembers = mapDocs(rawMembers)
-        .filter((m: any) => m.id !== person.id && m.tc_no !== person.tc_no)
-        .sort((a: any, b: any) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'))
-        .map((m: any) => {
-          m.hedef_torba = m.hedef_torba || 34;
-          m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
-          return m;
-        });
+          const householdFilter: any = {
+            $and: [
+              ...excludeConditions,
+              { $or: householdOrList },
+            ],
+          };
+
+          const rawMembers = await activeCol
+            .find(householdFilter)
+            .limit(100)
+            .toArray();
+
+          householdMembers = mapDocs(rawMembers)
+            .filter((m: any) => m.id !== person.id && m.tc_no !== person.tc_no)
+            .sort((a: any, b: any) => (a.ad_soyad || '').localeCompare(b.ad_soyad || '', 'tr'))
+            .map((m: any) => {
+              m.hedef_torba = m.hedef_torba || 34;
+              m.kalan_torba = Math.max(0, m.hedef_torba - (m.torba_sayisi || 0));
+              return m;
+            });
+        } catch (memberErr) {
+          console.warn('[beneficiaries:GET:householdMembers] Graceful fallback on household members query error:', memberErr);
+          householdMembers = [];
+        }
+      }
 
       return NextResponse.json({
         success: true,

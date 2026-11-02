@@ -904,6 +904,67 @@ describe('10. Tonaj Rapor Formatları, Tutanak No ve Dorse Plakasız Kayıt Test
     assert.equal(diff.tonStr, '-0,12 Ton');
     assert.equal(diff.combined, '-120 kg (-0,12 Ton)');
   });
+
+  it('Hane Detay ve Akraba sorgusu (targetTc) adres ve hane no bos olsa bile $or: [] olusturmaz ve hatasiz calisir', () => {
+    // 1. Durum: norm_adres ve hane_no tamamen bos olan kisi
+    const emptyPerson: any = {
+      tc_no: '90010080154',
+      ad_soyad: 'SÜLEYMAN ŞİMŞEK (DENEME)',
+      norm_adres: '',
+      hane_no: null,
+      mahalle: '',
+      acik_adres: '',
+    };
+
+    const normHash1 = emptyPerson.norm_adres ? hashAddress(emptyPerson.norm_adres) : null;
+    const haneHash1 = emptyPerson.hane_no ? hashHane(emptyPerson.hane_no) : null;
+
+    const householdOrList1: any[] = [];
+    if (normHash1) householdOrList1.push({ adres_hash: normHash1 });
+    if (emptyPerson.norm_adres && typeof emptyPerson.norm_adres === 'string' && emptyPerson.norm_adres.trim()) {
+      householdOrList1.push({ norm_adres: emptyPerson.norm_adres.trim() });
+    }
+    if (haneHash1) householdOrList1.push({ hane_hash: haneHash1 });
+    if (emptyPerson.hane_no && typeof emptyPerson.hane_no === 'string' && emptyPerson.hane_no.trim()) {
+      householdOrList1.push({ hane_no: emptyPerson.hane_no.trim() });
+    }
+
+    // householdOrList1 bos olmali ve $or filtresi ASLA MongoDB'ye gonderilmemelidir
+    assert.equal(householdOrList1.length, 0);
+
+    // 2. Durum: norm_adres kayitli degil ancak mahalle ve acik adres var (otomatik fallback)
+    const personWithAddress = {
+      tc_no: '90010080154',
+      ad_soyad: 'SÜLEYMAN ŞİMŞEK (DENEME)',
+      norm_adres: '',
+      hane_no: 'DENEME-H118',
+      mahalle: 'Büyükdöllük Köyü',
+      acik_adres: 'Büyükdöllük Köyü Köy İçi No: 11',
+    };
+
+    if (!personWithAddress.norm_adres && (personWithAddress.mahalle || personWithAddress.acik_adres)) {
+      personWithAddress.norm_adres = normalizeAddress(
+        personWithAddress.mahalle,
+        personWithAddress.acik_adres,
+        personWithAddress.hane_no
+      );
+    }
+
+    assert.ok(personWithAddress.norm_adres.length > 0);
+    const normHash2 = hashAddress(personWithAddress.norm_adres);
+    const haneHash2 = hashHane(personWithAddress.hane_no);
+
+    assert.ok(normHash2);
+    assert.ok(haneHash2);
+
+    const householdOrList2: any[] = [];
+    if (normHash2) householdOrList2.push({ adres_hash: normHash2 });
+    if (personWithAddress.norm_adres) householdOrList2.push({ norm_adres: personWithAddress.norm_adres });
+    if (haneHash2) householdOrList2.push({ hane_hash: haneHash2 });
+    if (personWithAddress.hane_no) householdOrList2.push({ hane_no: personWithAddress.hane_no });
+
+    assert.equal(householdOrList2.length, 4);
+  });
 });
 
 

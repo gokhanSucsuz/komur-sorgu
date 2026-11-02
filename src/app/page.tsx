@@ -934,13 +934,20 @@ export default function Home() {
 
   // Handle opening Household Modal
   const handleOpenHousehold = async (person: any) => {
+    if (!person) return;
     setHouseholdTarget(person);
     setHouseholdMembers([]);
 
     try {
-      const res = await fetch(`/api/beneficiaries?targetTc=${person.tc_no}`);
+      const tcParam = encodeURIComponent(person.tc_no || '');
+      const modeParam = encodeURIComponent(calismaModu || 'RESMI');
+      const res = await fetch(`/api/beneficiaries?targetTc=${tcParam}&mode=${modeParam}`);
+      if (!res.ok) {
+        console.warn('Beneficiary household API non-OK response:', res.status);
+        return;
+      }
       const data = await res.json();
-      if (data.success && data.householdMembers) {
+      if (data.success && Array.isArray(data.householdMembers)) {
         setHouseholdMembers(data.householdMembers);
       }
     } catch (err) {
