@@ -32,6 +32,9 @@ interface BatchRecordInfo {
   hasValidTc?: boolean;
 }
 
+
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const session = await verifySession(request, { requiredRole: 'ADMIN' });
@@ -137,6 +140,7 @@ export async function POST(request: NextRequest) {
         const rowObj: Record<string, any> = {
           __sheetName: sheetTitle,
           __rowNum: rowNumber,
+          __cleanMap: {} as Record<string, string>,
         };
         let hasData = false;
         let isSummaryFooter = false;
@@ -154,6 +158,10 @@ export async function POST(request: NextRequest) {
               isSummaryFooter = true;
             }
             rowObj[header] = strVal;
+            const cleanH = cleanTurkishText(header).replace(/[^a-z0-9]/g, '');
+            if (cleanH) {
+              rowObj.__cleanMap[cleanH] = strVal;
+            }
             if (strVal) hasData = true;
           }
         });
@@ -318,29 +326,20 @@ export async function POST(request: NextRequest) {
       const rowNum = row.__rowNum || (i + 2); // Excel row index
       const sheetName = String(row.__sheetName || '').trim();
 
-      // Helper to extract field case-insensitively with exact-match priority
+      // Helper to extract field case-insensitively with O(1) cleanMap lookup
       const getField = (fieldAliases: string[]): string => {
-        const cleanAliases = fieldAliases.map((a) => cleanTurkishText(a).replace(/[^a-z0-9]/g, ''));
+        const cleanMap = row.__cleanMap || {};
         // 1. Önce tam eşleşme (Exact match)
-        for (const key of Object.keys(row)) {
-          if (key.startsWith('__')) continue;
-          const cleanKey = cleanTurkishText(key).replace(/[^a-z0-9]/g, '');
-          for (const cleanAlias of cleanAliases) {
-            if (cleanKey === cleanAlias) {
-              const val = row[key] !== undefined && row[key] !== null ? String(row[key]).trim() : '';
-              if (val) return val;
-            }
-          }
+        for (const alias of fieldAliases) {
+          const cleanAlias = cleanTurkishText(alias).replace(/[^a-z0-9]/g, '');
+          const val = cleanMap[cleanAlias];
+          if (val) return val;
         }
         // 2. Kısmi eşleşme (Contains) fallback
-        for (const key of Object.keys(row)) {
-          if (key.startsWith('__')) continue;
-          const cleanKey = cleanTurkishText(key).replace(/[^a-z0-9]/g, '');
-          for (const cleanAlias of cleanAliases) {
-            if (cleanKey.includes(cleanAlias)) {
-              const val = row[key] !== undefined && row[key] !== null ? String(row[key]).trim() : '';
-              if (val) return val;
-            }
+        for (const alias of fieldAliases) {
+          const cleanAlias = cleanTurkishText(alias).replace(/[^a-z0-9]/g, '');
+          for (const [k, v] of Object.entries(cleanMap)) {
+            if (v && k.includes(cleanAlias)) return v as string;
           }
         }
         return '';
@@ -965,13 +964,13 @@ export async function POST(request: NextRequest) {
       const encryptedBeneficiaries = toInsertBeneficiaries.map((b) =>
         encryptBeneficiary({ ...b, donem_kodu: activeSeasonCode })
       );
-      await benCol.insertMany(encryptedBeneficiaries);
+      await benCol.insertMany(encryptedBeneficiaries, { ordered: false });
     }
     if (toInsertLogs.length > 0) {
       const encryptedLogs = toInsertLogs.map((l) =>
         encryptImportLog({ ...l, donem_kodu: activeSeasonCode })
       );
-      await logsCol.insertMany(encryptedLogs);
+      await logsCol.insertMany(encryptedLogs, { ordered: false });
     }
 
     // Mahalle bazında yükleme özetleri (Hangi mahalleden kaç kişi, hangi liste türü ve sıra aralığıyla yüklendi)

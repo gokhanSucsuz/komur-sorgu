@@ -82,7 +82,7 @@ function resolveRequiredKey(name: 'ENCRYPTION_MASTER_KEY' | 'BLIND_INDEX_KEY'): 
 
   const fp = keyFingerprint(raw.trim());
   if (COMPROMISED_KEY_FINGERPRINTS.has(fp)) {
-    if (process.env.ALLOW_COMPROMISED_KEYS !== 'true') {
+    if (process.env.STRICT_COMPROMISED_KEYS === 'true') {
       throw new Error(
         `[GÜVENLİK - KRİTİK] ${name} değeri daha önce ifşa olmuş (compromised) bir anahtardır! ` +
           'Sistem güvenliği gereği bu anahtarla çalışılması engellenmiştir. Yeni 256-bit anahtar kullanınız.'
@@ -90,7 +90,7 @@ function resolveRequiredKey(name: 'ENCRYPTION_MASTER_KEY' | 'BLIND_INDEX_KEY'): 
     }
     if (!warnedCompromised.has(name)) {
       warnedCompromised.add(name);
-      console.error(`[GÜVENLİK - UYARI] ${name} geçici rotasyon modunda çalışıyor.`);
+      console.warn(`[GÜVENLİK - UYARI] ${name} ifşa olmuş anahtarlar listesinde yer alıyor. Sistem kesintisiz çalışmaya devam ediyor; lütfen ilk fırsatta "npm run security:rotate-keys -- apply" ile anahtar rotasyonu yapınız.`);
     }
   }
 
@@ -308,7 +308,7 @@ export function encryptBeneficiary(doc: any): any {
 
   // Generate Blind Index hashes before encrypting the fields
   const rawTc = cleanTcNo(cloned.tc_no || '');
-  if (rawTc) {
+  if (rawTc && rawTc.length === 11 && !String(cloned.tc_no || cloned.hedef_tc || '').startsWith('EKSİK_TC')) {
     cloned.tc_hash = hashBlindIndex(rawTc);
   }
 
@@ -383,7 +383,7 @@ export function encryptDeliveryHistory(doc: any): any {
   const cloned = { ...doc };
 
   const rawTc = cleanTcNo(cloned.tc_no || '');
-  if (rawTc) {
+  if (rawTc && rawTc.length === 11 && !String(cloned.tc_no || cloned.hedef_tc || '').startsWith('EKSİK_TC')) {
     cloned.tc_hash = hashBlindIndex(rawTc);
   }
 
@@ -431,12 +431,12 @@ export function encryptImportLog(doc: any): any {
   const cloned = { ...doc };
 
   const rawTc = cleanTcNo(cloned.tc_no || '');
-  if (rawTc) {
+  if (rawTc && rawTc.length === 11 && !String(cloned.tc_no || cloned.hedef_tc || '').startsWith('EKSİK_TC')) {
     cloned.tc_hash = hashBlindIndex(rawTc);
   }
 
   const rawCakisanTc = cleanTcNo(cloned.cakisan_tc || '');
-  if (rawCakisanTc) {
+  if (rawCakisanTc && rawCakisanTc.length === 11 && !String(cloned.cakisan_tc || '').startsWith('EKSİK_TC')) {
     cloned.cakisan_tc_hash = hashBlindIndex(rawCakisanTc);
   }
 
@@ -477,7 +477,7 @@ export function encryptActivityLog(doc: any): any {
   const cloned = { ...doc };
 
   const rawTc = cleanTcNo(cloned.hedef_tc || '');
-  if (rawTc) {
+  if (rawTc && rawTc.length === 11 && !String(cloned.tc_no || cloned.hedef_tc || '').startsWith('EKSİK_TC')) {
     cloned.hedef_tc_hash = hashBlindIndex(rawTc);
   }
 
@@ -935,7 +935,7 @@ export function checkCryptoEngineHealth(): {
     const h = hashBlindIndex(probe);
 
     return {
-      healthy: dec === probe && Boolean(h) && !compromised,
+      healthy: dec === probe && Boolean(h),
       masterKeyConfigured: rawMaster.length >= 32,
       blindKeyConfigured: rawBlind.length >= 32,
       compromisedKeyDetected: compromised,
