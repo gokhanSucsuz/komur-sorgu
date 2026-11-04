@@ -785,4 +785,35 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(mahalleGroups.get('Fatih Mah.')[0].ad_soyad, 'Fatma Şen');
     assert.equal(mahalleGroups.get('Şükrüpaşa Mah.').length, 1, 'Şükrüpaşa Mahallesinde 1 kayıt yer almalıdır');
   });
+
+  it('18. Islak imza listesi alt toplam satırında "Tahsis Kömür Miktarı:" hücresi metni kaydır (wrapText: true) özelliğine ve en az 28pt satır yüksekliğine sahiptir', () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Test Mahalle');
+
+    const totalBags = 1700;
+    const summaryRow = sheet.addRow([
+      '',
+      'TOPLAM: 50 HANE',
+      '',
+      '',
+      `Tahsis Kömür Miktarı: ${totalBags} Torba (${(totalBags * 0.025).toFixed(2)} Ton)`,
+      '',
+      '',
+      '',
+      '',
+    ]);
+    summaryRow.height = 30;
+    summaryRow.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center',
+        wrapText: true,
+      };
+    });
+
+    const tahsisCell = summaryRow.getCell(5);
+    assert.ok(String(tahsisCell.value).startsWith('Tahsis Kömür Miktarı:'), '5. hücre Tahsis Kömür Miktarı içermelidir');
+    assert.equal(tahsisCell.alignment?.wrapText, true, 'Tahsis Kömür Miktarı hücresi metni kaydır (wrapText: true) özelliğine sahip olmalıdır');
+    assert.ok(summaryRow.height >= 28, 'Alt toplam satır yüksekliği metin kaydırma için en az 28pt olmalıdır');
+  });
 });

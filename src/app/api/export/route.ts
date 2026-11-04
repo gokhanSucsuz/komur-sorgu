@@ -547,7 +547,7 @@ function addOfficialSignatureSheet(
     '',
     '',
   ]);
-  summaryRow.height = 26;
+  summaryRow.height = 30;
   summaryRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
     cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF0F172A' } };
     cell.fill = {
@@ -561,7 +561,7 @@ function addOfficialSignatureSheet(
       left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
       right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     };
-    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center' };
+    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 || colNumber === 5 ? 'left' : 'center', wrapText: true };
   });
 
   // Kolon Genişlikleri (A4 Yatay Sayfa Baskısına Tam Uyumlu)
@@ -643,7 +643,7 @@ function addOfficialSignatureSummarySheet(
   headerRow.eachCell((cell, colNum) => {
     cell.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
-    cell.alignment = { vertical: 'middle', horizontal: colNum === 2 ? 'left' : 'center' };
+    cell.alignment = { vertical: 'middle', horizontal: colNum === 2 ? 'left' : 'center', wrapText: true };
     cell.border = {
       top: { style: 'medium', color: { argb: 'FF000000' } },
       bottom: { style: 'medium', color: { argb: 'FF000000' } },
@@ -684,7 +684,7 @@ function addOfficialSignatureSummarySheet(
         left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
         right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
       };
-      cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center' };
+      cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center', wrapText: true };
     });
   });
 
@@ -707,7 +707,7 @@ function addOfficialSignatureSummarySheet(
       left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
       right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
     };
-    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center' };
+    cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center', wrapText: true };
   });
 
   sheet.columns = [
