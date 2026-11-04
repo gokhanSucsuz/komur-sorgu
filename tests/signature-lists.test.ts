@@ -8,7 +8,7 @@ process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 
 import { getDbCollections } from '@/lib/mongodb';
 import { encryptBeneficiary, decryptBeneficiary } from '@/lib/crypto';
-import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing } from '@/lib/normalizer';
+import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing, isBeneficiaryCancelled } from '@/lib/normalizer';
 
 describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', () => {
   it('1. Adres A\'dan Z\'ye sıralama mantığı Türkçe karakterleri ve kapı numaralarını doğru sıralar', () => {
@@ -664,5 +664,125 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.equal(groups.has('Fatih Mah.'), true);
     assert.equal(groups.get('Fatih Mah.').length, 1);
     assert.equal(groups.has('ADRESİ OLMAYANLAR'), false, 'ADRESI OLMAYANLAR sekmesi asla olusmamalidir');
+  });
+
+  it('15. isBeneficiaryCancelled kömür iptal / kömür verilmeyecek durumundaki kayıtları eksiksiz tespit eder', () => {
+    // 1. komur_verilmeyecek: true
+    assert.equal(isBeneficiaryCancelled({ komur_verilmeyecek: true }), true);
+    assert.equal(isBeneficiaryCancelled({ komur_verilmeyecek: 'true' }), true);
+
+    // 2. teslimat_durumu: 'IPTAL'
+    assert.equal(isBeneficiaryCancelled({ teslimat_durumu: 'IPTAL' }), true);
+
+    // 3. komur_iptal_nedeni dolu
+    assert.equal(isBeneficiaryCancelled({ komur_iptal_nedeni: 'Vefat Etti' }), true);
+
+    // 4. Normal aktif bekleyen veya tamamlanan kayıt
+    assert.equal(isBeneficiaryCancelled({ komur_verilmeyecek: false, teslimat_durumu: 'BEKLIYOR' }), false);
+    assert.equal(isBeneficiaryCancelled({ teslimat_durumu: 'TAMAMLANDI' }), false);
+    assert.equal(isBeneficiaryCancelled({}), false);
+    assert.equal(isBeneficiaryCancelled(null), false);
+  });
+
+  it('16. İmza listesi yazdırılmamış kayıtlardan kömür iptal olanlar imza listesi bekleyen havuzuna dahil edilmez ve yeni liste oluşturulurken listeye KİLİTLENMEZ', async () => {
+    const { beneficiaries: benCol, signatureLists: sigCol } = await getDbCollections();
+    await benCol.deleteMany({});
+    await sigCol.deleteMany({});
+
+    // 3 kayıt ekleniyor: 2 aktif, 1 kömür iptal edilmiş (henüz hiçbirinin imza listesi çıkarılmamış)
+    const testRecords = [
+      { tc_no: '11111111111', ad_soyad: 'Ahmet Aktif', mahalle: 'Fatih Mah.', acik_adres: 'Gül Sok. No: 1', komur_verilmeyecek: false },
+      { tc_no: '22222222222', ad_soyad: 'Mehmet Iptal', mahalle: 'Fatih Mah.', acik_adres: 'Karanfil Sok. No: 2', komur_verilmeyecek: true, komur_iptal_nedeni: 'Doğalgaza Geçti' },
+      { tc_no: '33333333333', ad_soyad: 'Ayşe Aktif', mahalle: 'Şükrüpaşa Mah.', acik_adres: 'Barış Sok. No: 3', komur_verilmeyecek: false },
+    ];
+
+    for (const r of testRecords) {
+      await benCol.insertOne(encryptBeneficiary(r));
+    }
+
+    // 1. Aşama: GET /api/signature-lists bekleyen filtresi simülasyonu
+    const rawAll = await benCol.find({}).toArray();
+    let pendingCount = 0;
+    const pendingMahalleMap = new Map();
+
+    for (const rawB of rawAll) {
+      const isAssigned = Boolean(rawB.imza_listesi_id && String(rawB.imza_listesi_id).trim().length > 0);
+      if (!isAssigned) {
+        if (isBeneficiaryCancelled(rawB)) {
+          // İptal olan atlanmalıdır!
+          continue;
+        }
+        pendingCount++;
+        const dec = decryptBeneficiary(rawB);
+        const m = getBeneficiaryEffectiveListMahalle(dec);
+        pendingMahalleMap.set(m, (pendingMahalleMap.get(m) || 0) + 1);
+      }
+    }
+
+    assert.equal(pendingCount, 2, 'Kömür iptal olan kayıt bekleyen sayısına DAHİL EDİLMEMELİDİR (3 yerine 2 olmalı)');
+    assert.equal(pendingMahalleMap.get('Fatih Mah.'), 1, 'Fatih Mahallesinde iptal olan hariç sadece 1 bekleyen olmalıdır');
+    assert.equal(pendingMahalleMap.get('Şükrüpaşa Mah.'), 1, 'Şükrüpaşa Mahallesinde 1 bekleyen olmalıdır');
+
+    // 2. Aşama: POST /api/signature-lists (GENERATE_NEW_LIST) simülasyonu
+    const unassignedFilter = {
+      $and: [
+        {
+          $or: [
+            { imza_listesi_id: null },
+            { imza_listesi_id: '' },
+            { imza_listesi_id: { $exists: false } },
+          ],
+        },
+        {
+          komur_verilmeyecek: { $ne: true },
+          teslimat_durumu: { $ne: 'IPTAL' },
+        },
+      ],
+    };
+
+    const unassignedDocs = await benCol.find(unassignedFilter).toArray();
+    const eligibleDocs = unassignedDocs.filter((doc: any) => !isBeneficiaryCancelled(doc));
+
+    assert.equal(eligibleDocs.length, 2, 'Yalnızca kömür verilecek 2 aktif kayıt imza listesine kilitlenecektir');
+
+    const listId = 'IMZA-TEST-CANCEL-001';
+    const rawIds = eligibleDocs.map((d: any) => d._id);
+    await benCol.updateMany(
+      { _id: { $in: rawIds } },
+      { $set: { imza_listesi_id: listId, imza_listesi_no: 1, imza_listesi_adi: '1. Dağıtım Islak İmza Listesi' } }
+    );
+
+    // Veritabanını kontrol et:
+    const allDecrypted = (await benCol.find({}).toArray()).map(decryptBeneficiary);
+    const iptalRecord = allDecrypted.find((r: any) => r.tc_no === '22222222222');
+    const aktifRecord1 = allDecrypted.find((r: any) => r.tc_no === '11111111111');
+    const aktifRecord2 = allDecrypted.find((r: any) => r.tc_no === '33333333333');
+
+    assert.ok(!iptalRecord.imza_listesi_id, 'Kömür iptal edilmiş kayıt hiçbir imza listesine kilitlenmemeli (imza_listesi_id boş kalmalıdır)');
+    assert.equal(aktifRecord1.imza_listesi_id, listId, 'Aktif hak sahibi 1 imza listesine kilitlenmelidir');
+    assert.equal(aktifRecord2.imza_listesi_id, listId, 'Aktif hak sahibi 2 imza listesine kilitlenmelidir');
+  });
+
+  it('17. Islak imza listesi Excel çıktısı oluşturulurken kömür iptal edilmiş kayıtlar hem özet icmalden hem de mahalle sayfalarından elenir', () => {
+    const records = [
+      { tc_no: '11111111111', ad_soyad: 'Fatma Şen', mahalle: 'Fatih Mah.', acik_adres: 'Gül Sok. No: 1', komur_verilmeyecek: false, hedef_torba: 34 },
+      { tc_no: '22222222222', ad_soyad: 'Mehmet Iptal', mahalle: 'Fatih Mah.', acik_adres: 'Lale Sok. No: 2', komur_verilmeyecek: true, komur_iptal_nedeni: 'Maddi Durumu Düzeldi', hedef_torba: 34 },
+      { tc_no: '33333333333', ad_soyad: 'Ali Demir', mahalle: 'Şükrüpaşa Mah.', acik_adres: 'Barış Sok. No: 3', komur_verilmeyecek: false, hedef_torba: 34 },
+    ];
+
+    // Export filtresi:
+    const eligibleRecords = records.filter((r: any) => !isBeneficiaryCancelled(r));
+    assert.equal(eligibleRecords.length, 2, 'İmza listesi dökümünde 3 yerine 2 kayıt yer almalıdır');
+
+    const mahalleGroups = new Map();
+    for (const r of eligibleRecords) {
+      const m = r.mahalle;
+      if (!mahalleGroups.has(m)) mahalleGroups.set(m, []);
+      mahalleGroups.get(m).push(r);
+    }
+
+    assert.equal(mahalleGroups.get('Fatih Mah.').length, 1, 'Fatih Mahallesinde yalnızca kömür verilecek 1 kayıt kalmalıdır');
+    assert.equal(mahalleGroups.get('Fatih Mah.')[0].ad_soyad, 'Fatma Şen');
+    assert.equal(mahalleGroups.get('Şükrüpaşa Mah.').length, 1, 'Şükrüpaşa Mahallesinde 1 kayıt yer almalıdır');
   });
 });

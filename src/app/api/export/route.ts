@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress, isBeneficiaryCancelled } from '@/lib/normalizer';
 import { formatTrDateWithDay, formatTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
@@ -2090,8 +2090,13 @@ export async function GET(request: NextRequest) {
         listTitle = 'Tüm Mahalleler Genel Islak İmza Listesi (Tüm Kayıtlar)';
       }
 
+      // KURAL: Kömür yardımı iptal edilmiş (kömür verilmeyecek) kayıtlar imza listesinde YER ALMAZ!
+      dbFilter.komur_verilmeyecek = { $ne: true };
+      dbFilter.teslimat_durumu = { $ne: 'IPTAL' };
       const rawRecords = await targetBenCol.find(dbFilter).toArray();
-      const records = mapDocs(rawRecords);
+      let records = mapDocs(rawRecords);
+      // Şifresi çözülmüş nesneler üzerinde ek güvence filtresi (Kömür İptal olanlar elenir)
+      records = records.filter((r) => !isBeneficiaryCancelled(r));
 
       if (records.length === 0) {
         const emptySheet = workbook.addWorksheet('Bilgi', {

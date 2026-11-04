@@ -1531,6 +1531,19 @@ export function isBeneficiaryAddressMissing(record: any): boolean {
   return false;
 }
 
+/**
+ * Hak sahibine kömür verilmeyecek / kömür yardımı iptal edilmiş mi kontrol eder.
+ * Kural: İptal edilmiş veya kömür verilmeyecek kayıtlar imza listesi oluşturulurken
+ * ve imza listeleri yazdırılırken listelerde YER ALMAZ.
+ */
+export function isBeneficiaryCancelled(record: any): boolean {
+  if (!record) return false;
+  if (record.komur_verilmeyecek === true || record.komur_verilmeyecek === 'true') return true;
+  if (record.teslimat_durumu === 'IPTAL') return true;
+  if (typeof record.komur_iptal_nedeni === 'string' && record.komur_iptal_nedeni.trim().length > 0) return true;
+  return false;
+}
+
 export function getBeneficiaryEffectiveListMahalle(record: any): string {
   if (!record) return 'Genel';
   if (record.imza_sonrasi_adres_degisti && (record.imza_listesi_mahalle || record.onceki_mahalle)) {

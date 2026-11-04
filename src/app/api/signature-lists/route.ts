@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
-import { normalizeMahalleName, isBeneficiaryAddressMissing, getBeneficiaryEffectiveListMahalle } from '@/lib/normalizer';
+import { normalizeMahalleName, isBeneficiaryAddressMissing, getBeneficiaryEffectiveListMahalle, isBeneficiaryCancelled } from '@/lib/normalizer';
 import { decryptBeneficiary } from '@/lib/crypto';
 import { serverError, asString } from '@/lib/security';
 
@@ -56,6 +56,8 @@ export async function GET(request: NextRequest) {
         teslimat_durumu: 1,
         torba_sayisi: 1,
         teslimat_tarihi: 1,
+        komur_verilmeyecek: 1,
+        komur_iptal_nedeni: 1,
       })
       .toArray();
 
@@ -94,6 +96,13 @@ export async function GET(request: NextRequest) {
       if (isAssigned) {
         assignedCount++;
       } else {
+        // KÖMÜR İPTAL KONTROLÜ:
+        // İmza listesi yazdırılmamış kayıtlardan kömür verilmeyecek / iptal edilmiş olanlar
+        // imza listesi bekleyen havuzuna dahil edilmez!
+        if (isBeneficiaryCancelled(rawB)) {
+          continue;
+        }
+
         pendingCount++;
         const b = decryptBeneficiary(rawB);
         const isMissing = isBeneficiaryAddressMissing(b);
@@ -188,13 +197,22 @@ export async function POST(request: NextRequest) {
       }
 
       // Henüz bir imza listesine atanmamış tüm hak sahiplerini bul
-      // KURAL: Bir kayıt sadece tek bir imza listesinde olabilir!
+      // KURAL 1: Bir kayıt sadece tek bir imza listesinde olabilir!
       // Sadece imza_listesi_id'si boş/tanımsız olan kayıtlar yeni listeye dahil edilir.
+      // KURAL 2: Kömür yardımı iptal edilmiş (kömür verilmeyecek) kayıtlar imza listesine DAHİL EDİLMEZ!
       const unassignedFilter: any = {
-        $or: [
-          { imza_listesi_id: null },
-          { imza_listesi_id: '' },
-          { imza_listesi_id: { $exists: false } },
+        $and: [
+          {
+            $or: [
+              { imza_listesi_id: null },
+              { imza_listesi_id: '' },
+              { imza_listesi_id: { $exists: false } },
+            ],
+          },
+          {
+            komur_verilmeyecek: { $ne: true },
+            teslimat_durumu: { $ne: 'IPTAL' },
+          },
         ],
       };
 
@@ -208,14 +226,20 @@ export async function POST(request: NextRequest) {
           ad_soyad: 1,
           tc_no: 1,
           telefon: 1,
+          komur_verilmeyecek: 1,
+          komur_iptal_nedeni: 1,
+          teslimat_durumu: 1,
         })
         .toArray();
 
-      if (unassignedDocs.length === 0) {
+      // Ek güvence: Şifresi çözülmüş veya JavaScript seviyesinde iptal edilmiş olanları ele
+      const eligibleDocs = unassignedDocs.filter((doc: any) => !isBeneficiaryCancelled(doc));
+
+      if (eligibleDocs.length === 0) {
         return NextResponse.json(
           {
             success: false,
-            error: 'İmza listesi çıkarılacak bekleyen YENİ kayıt bulunamadı. Tüm hak sahipleri zaten mevcut bir imza listesine atanmış durumda.',
+            error: 'İmza listesi çıkarılacak bekleyen YENİ kayıt bulunamadı. Tüm hak sahipleri zaten mevcut bir imza listesine atanmış veya kömür yardımı iptal edilmiş durumda.',
           },
           { status: 400 }
         );
@@ -224,7 +248,7 @@ export async function POST(request: NextRequest) {
       // KURAL: Islak imza listesi çıkarılmadan önce TÜM bekleyen kayıtların adresi ve mahallesi tam olmalıdır!
       // Adresi olmayanlar listesi oluşturulmaz; adresi eksik kayıtların adreslerinin güncellenmesi ZORUNLUDUR.
       const missingRecords: any[] = [];
-      for (const doc of unassignedDocs) {
+      for (const doc of eligibleDocs) {
         const decrypted = decryptBeneficiary(doc);
         if (isBeneficiaryAddressMissing(decrypted)) {
           missingRecords.push({
@@ -268,7 +292,7 @@ export async function POST(request: NextRequest) {
       const unassignedStringIds: string[] = [];
       const mahalleCounts: Record<string, number> = {};
 
-      for (const item of unassignedDocs) {
+      for (const item of eligibleDocs) {
         if (item._id) unassignedRawIds.push(item._id);
         if (item.id) unassignedStringIds.push(String(item.id));
         const m = normalizeMahalleName(item.mahalle) || item.mahalle || 'Genel';
@@ -309,7 +333,7 @@ export async function POST(request: NextRequest) {
         donem_kodu: activeSeason,
         calisma_modu: calismaModu,
         is_sandbox: isSandboxMode,
-        toplam_kayit: unassignedDocs.length,
+        toplam_kayit: eligibleDocs.length,
         mahalle_sayisi: mahalleSayisi,
         mahalle_dagilimi: mahalleCounts,
         olusturan_personel: adminName,
@@ -325,12 +349,12 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'IMZA_LISTESI_OLUSTURMA',
         baslik: `${isSandboxMode ? '[DENEME MODU] ' : ''}Resmi Islak İmza Listesi Oluşturuldu (${listName})`,
-        detay: `${isSandboxMode ? '[DENEME / TEST ALANI] ' : ''}"${listName}" kapsamında ${unassignedDocs.length} hak sahibi (${mahalleSayisi} Mahalle) için yeni ıslak imza listesi oluşturuldu ve kayıtlara kilitlendi. Bir kayıt sadece tek bir imza listesinde yer alabilir kuralı uygulandı.`,
+        detay: `${isSandboxMode ? '[DENEME / TEST ALANI] ' : ''}"${listName}" kapsamında ${eligibleDocs.length} hak sahibi (${mahalleSayisi} Mahalle) için yeni ıslak imza listesi oluşturuldu ve kayıtlara kilitlendi. Bir kayıt sadece tek bir imza listesinde yer alabilir kuralı uygulandı.`,
         ek_bilgi: {
           listId,
           listName,
           listeNo: nextNo,
-          toplamKayit: unassignedDocs.length,
+          toplamKayit: eligibleDocs.length,
           mahalleSayisi,
           calisma_modu: calismaModu,
         },
@@ -340,11 +364,11 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `"${listName}" başarıyla oluşturuldu! ${unassignedDocs.length} hane listeye kilitlendi.`,
+        message: `"${listName}" başarıyla oluşturuldu! ${eligibleDocs.length} hane listeye kilitlendi.`,
         listId,
         listName,
         listeNo: nextNo,
-        count: unassignedDocs.length,
+        count: eligibleDocs.length,
         mahalleSayisi,
       });
     }
