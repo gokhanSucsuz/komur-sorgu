@@ -24,9 +24,10 @@ import {
   Maximize2,
   Minimize2,
   Navigation,
+  Building2,
 } from 'lucide-react';
 import { showToast } from '@/components/GlobalAlertManager';
-import { formatPhoneDisplay, getBeneficiaryListTypeInfo, getRecordPhones, getYandexNaviUrl } from '@/lib/normalizer';
+import { formatPhoneDisplay, getBeneficiaryListTypeInfo, getRecordPhones, getYandexNaviUrl, getGoogleMapsUrl, getParselSorguSearchSummary, PARSEL_SORGU_URL } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen, isAppFullscreen } from '@/lib/fullscreen';
 
@@ -751,17 +752,42 @@ export default function RouteModeCockpitModal({
                     <MapPin className="w-4 h-4 text-sky-600" />
                     TESLİMAT ADRESİ
                   </span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <a
                       href={getYandexNaviUrl(currentStop)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs font-black shadow-xs transition-all"
-                      title="Yandex Navigasyon ile kapıya kadar nokta atışı yol tarifi al"
+                      title="1. Öncelik: Yandex Navigasyon ile kapıya kadar canlı sesli yol tarifi al"
                     >
                       <Navigation className="w-3.5 h-3.5" />
                       <span>Yol Tarifi</span>
                     </a>
+                    <a
+                      href={getGoogleMapsUrl(currentStop)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-black border border-slate-300 shadow-xs transition-all active:scale-95"
+                      title="2. Öncelik: Google Haritalar"
+                    >
+                      <span>Google</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const summary = getParselSorguSearchSummary(currentStop);
+                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          navigator.clipboard.writeText(summary).catch(() => {});
+                        }
+                        showToast({ message: `Adres kopyalandı (${summary}). Parsel Sorgu açılıyor...`, type: 'info' });
+                        window.open(PARSEL_SORGU_URL, '_blank', 'noopener,noreferrer');
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 text-xs font-black border border-indigo-200 shadow-xs transition-all active:scale-95 cursor-pointer"
+                      title="3. Öncelik: TKGM Parsel Sorgu (Adresi panoya kopyalar ve Parsel Sorgu'yu açar)"
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Parsel</span>
+                    </button>
                     <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-sky-900 text-white">
                       {currentStop.mahalle || 'Belirtilmemiş'}
                     </span>

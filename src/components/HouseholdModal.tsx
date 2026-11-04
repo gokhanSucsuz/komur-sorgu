@@ -1,7 +1,7 @@
 'use client';
 
-import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool, Navigation } from 'lucide-react';
-import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, getYandexNaviUrl } from '@/lib/normalizer';
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool, Navigation, Building2 } from 'lucide-react';
+import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, getYandexNaviUrl, getGoogleMapsUrl, getParselSorguSearchSummary, PARSEL_SORGU_URL } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { useState } from 'react';
 
@@ -212,16 +212,42 @@ export default function HouseholdModal({
                   </span>
                 )}
               </div>
-              <a
-                href={getYandexNaviUrl(person)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-bold text-xs shrink-0 transition-all shadow-xs"
-                title="Yandex Navigasyon ile kapıya yol tarifi al"
-              >
-                <Navigation className="w-3.5 h-3.5" />
-                <span>Yol Tarifi</span>
-              </a>
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                <a
+                  href={getYandexNaviUrl(person)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-bold text-xs shrink-0 transition-all shadow-xs"
+                  title="1. Öncelik: Yandex Navigasyon ile kapıya yol tarifi al"
+                >
+                  <Navigation className="w-3.5 h-3.5" />
+                  <span>Yol Tarifi</span>
+                </a>
+                <a
+                  href={getGoogleMapsUrl(person)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300 shrink-0 transition-all shadow-xs"
+                  title="2. Öncelik: Google Haritalar ile aç"
+                >
+                  <span>Google</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const summary = getParselSorguSearchSummary(person);
+                    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                      navigator.clipboard.writeText(summary).catch(() => {});
+                    }
+                    window.open(PARSEL_SORGU_URL, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-bold text-xs border border-indigo-200 shrink-0 transition-all shadow-xs cursor-pointer"
+                  title="3. Öncelik: TKGM Parsel Sorgu"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Parsel</span>
+                </button>
+              </div>
             </div>
             <p className="text-slate-800 bg-white p-3 rounded-xl border border-slate-200 leading-relaxed font-semibold">
               {person.acik_adres}

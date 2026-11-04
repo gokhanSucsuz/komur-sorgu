@@ -2167,3 +2167,38 @@ export function getGoogleMapsUrl(record: Record<string, any> | null | undefined)
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
+/**
+ * TKGM Parsel Sorgu resmi web adresi.
+ */
+export const PARSEL_SORGU_URL = 'https://parselsorgu.tkgm.gov.tr/';
+
+/**
+ * TKGM Parsel Sorgu Adres sekmesinde arama yapmak için hazır kılavuz metni.
+ * Örn: "Edirne / Merkez / Menzilahır Mah. / Enez Sokak / No: 17"
+ */
+export function getParselSorguSearchSummary(record: Record<string, any> | null | undefined): string {
+  if (!record) return 'Edirne / Merkez';
+  const stInfo = getRecordStreetInfo(record);
+  let mah = (record.mahalle || '').toString().trim();
+  if (!mah && record.acik_adres) {
+    const det = detectSettlement(null, null, record.acik_adres);
+    if (det && det.name) mah = det.name;
+  }
+  const isVillage = /(?:Köyü|Koy|Koyu)$/i.test(mah);
+  const parts: string[] = ['Edirne', 'Merkez'];
+  if (mah) parts.push(mah);
+  if (!isVillage && stInfo.sokak && !stInfo.sokak.includes('Belirtilmemiş')) {
+    parts.push(stInfo.sokak);
+  } else if (isVillage && /k[üu]me\s+evler[iı]/i.test(record.acik_adres || '')) {
+    parts.push('Küme Evleri');
+  }
+  const hasValidDoor =
+    stInfo.kapiNo !== undefined &&
+    stInfo.kapiNo !== null &&
+    stInfo.kapiNo !== 999999 &&
+    stInfo.kapiNo !== '999999';
+  if (hasValidDoor) {
+    parts.push(`No: ${stInfo.kapiNo}`);
+  }
+  return parts.join(' / ');
+}

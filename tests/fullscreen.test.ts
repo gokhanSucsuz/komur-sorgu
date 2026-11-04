@@ -9,6 +9,8 @@ import {
   getCleanNavigationAddress,
   getYandexNaviUrl,
   getGoogleMapsUrl,
+  getParselSorguSearchSummary,
+  PARSEL_SORGU_URL,
 } from '../src/lib/normalizer';
 
 test('Fullscreen: isAppFullscreen returns false when no fullscreenElement exists', () => {
@@ -276,6 +278,28 @@ test('Yandex Navigasyon & Clean Address: deduplicated neighborhood, exterior doo
   assert.ok(
     accordionSrc.includes('getYandexNaviUrl({'),
     'ActiveRouteAccordionCard must provide direct Yandex Navigasyon button'
+  );
+
+  // 8. 3-Tier Navigation: 1. Yandex, 2. Google Maps, 3. TKGM Parsel Sorgu
+  assert.equal(PARSEL_SORGU_URL, 'https://parselsorgu.tkgm.gov.tr/');
+  assert.ok(
+    getParselSorguSearchSummary(personDuplicate).includes('Menzilahır') ||
+      getParselSorguSearchSummary(personDuplicate).includes('Cumhuriyet'),
+    'Parsel Sorgu summary must include neighborhood'
+  );
+  assert.equal(
+    getParselSorguSearchSummary(villagePerson),
+    'Edirne / Merkez / Kayapa Köyü / No: 48'
+  );
+  assert.ok(
+    beneficiaryListSrc.includes('PARSEL_SORGU_URL') &&
+      beneficiaryListSrc.includes('getParselSorguSearchSummary'),
+    'BeneficiaryList must integrate TKGM Parsel Sorgu helper'
+  );
+  assert.ok(
+    cockpitSrc.includes('PARSEL_SORGU_URL') &&
+      cockpitSrc.includes('getParselSorguSearchSummary'),
+    'RouteModeCockpitModal must integrate TKGM Parsel Sorgu helper'
   );
 });
 
