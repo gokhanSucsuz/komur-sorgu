@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { requestAppFullscreen, exitAppFullscreen, isAppFullscreen } from '../src/lib/fullscreen';
-import { validateSmartSearchInput, isBirebirBeneficiaryMatch } from '../src/lib/normalizer';
+import {
+  validateSmartSearchInput,
+  isBirebirBeneficiaryMatch,
+  getCleanNavigationAddress,
+  getYandexNaviUrl,
+  getGoogleMapsUrl,
+} from '../src/lib/normalizer';
 
 test('Fullscreen: isAppFullscreen returns false when no fullscreenElement exists', () => {
   (globalThis as any).document = {
@@ -178,6 +184,98 @@ test('Route Mode Exit & Pull-to-Refresh Guard: exiting Route Mode synchronously 
     homePageSrc.includes("if (currentTab !== 'route')") &&
       homePageSrc.includes("saved !== 'route'"),
     'Home page must keep user on their current tab on pull-to-refresh when not in Route Mode'
+  );
+});
+
+test('Yandex Navigasyon & Clean Address: deduplicated neighborhood, exterior door precision, and direct card button', () => {
+  // 1. Prevent duplicate mahalle (the core bug: "mahalle adını 2 kez yazıyor navigasyona ve aranan adres bulunmuyor")
+  const personDuplicate = {
+    mahalle: 'Cumhuriyet Mah.',
+    acik_adres: 'Cumhuriyet Mah. Karanfil Sokak No: 14 Kat: 2 Daire: 5 Edirne',
+  };
+  const cleanAddr = getCleanNavigationAddress(personDuplicate);
+  assert.equal(cleanAddr, 'Cumhuriyet Mahallesi, Karanfil Sokak No: 14, Edirne');
+  // Check that "Cumhuriyet" only occurs once
+  const cumhuriyetMatches = cleanAddr.match(/Cumhuriyet/gi) || [];
+  assert.equal(cumhuriyetMatches.length, 1, 'Mahalle name must never appear twice in navigation address');
+
+  // 2. Village address with door number
+  const villagePerson = {
+    mahalle: 'Kayapa Köyü',
+    acik_adres: 'Kayapa Köyü No: 48 Edirne',
+  };
+  const villageAddr = getCleanNavigationAddress(villagePerson);
+  assert.equal(villageAddr, 'Kayapa Köyü, No: 48, Edirne');
+
+  // 2.1 Village address with Küme Evleri
+  const villageKumePerson = {
+    mahalle: 'Avarız Köyü',
+    acik_adres: 'Avarız Köyü Küme Evleri No: 12 Edirne',
+  };
+  assert.equal(getCleanNavigationAddress(villageKumePerson), 'Avarız Köyü, Küme Evleri No: 12, Edirne');
+
+  // 3. Numbered street and apartment noise stripping (interior noise confuses outdoor GPS)
+  const numberedStreetPerson = {
+    mahalle: 'Fatih Mahallesi',
+    acik_adres: 'Fatih Mah. 24. Sokak No: 7/A Kat: 3 Daire: 8 Merkez Edirne',
+  };
+  const numberedAddr = getCleanNavigationAddress(numberedStreetPerson);
+  assert.equal(numberedAddr, 'Fatih Mahallesi, 24. Sokak No: 7A, Edirne');
+
+  // 4. Cul-de-sac (Çıkmazı) street
+  const culDeSacPerson = {
+    mahalle: 'Babademirtaş',
+    acik_adres: 'Babademirtaş Mah. Gül Çıkmazı No: 5',
+  };
+  const culDeSacAddr = getCleanNavigationAddress(culDeSacPerson);
+  assert.equal(culDeSacAddr, 'Babademirtaş Mahallesi, Gül Çıkmazı No: 5, Edirne');
+
+  // 5. Yandex Navigasyon URL generation
+  const yandexUrl = getYandexNaviUrl(personDuplicate);
+  assert.ok(yandexUrl.startsWith('https://yandex.com.tr/harita/?text='), 'Must produce valid Yandex Navigasyon URL');
+  assert.ok(
+    decodeURIComponent(yandexUrl).includes('Cumhuriyet Mahallesi, Karanfil Sokak No: 14, Edirne'),
+    'Yandex query must be the clean pinpoint address'
+  );
+
+  // 6. Google Maps URL generation
+  const googleUrl = getGoogleMapsUrl(personDuplicate);
+  assert.ok(googleUrl.startsWith('https://www.google.com/maps/search/?api=1&query='), 'Must produce valid Google Maps URL');
+
+  // 7. Component check: BeneficiaryList, RouteModeCockpitModal, HouseholdModal, ActiveRouteAccordionCard all provide Yandex Navigasyon
+  const beneficiaryListSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/BeneficiaryList.tsx'),
+    'utf8'
+  );
+  const cockpitSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/route/RouteModeCockpitModal.tsx'),
+    'utf8'
+  );
+  const householdSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/HouseholdModal.tsx'),
+    'utf8'
+  );
+  const accordionSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/ActiveRouteAccordionCard.tsx'),
+    'utf8'
+  );
+
+  assert.ok(
+    beneficiaryListSrc.includes('getYandexNaviUrl(person)') &&
+      beneficiaryListSrc.includes('Yandex Navigasyon'),
+    'BeneficiaryList must display Yandex Navigasyon directly in record cards'
+  );
+  assert.ok(
+    cockpitSrc.includes('getYandexNaviUrl(currentStop)'),
+    'RouteModeCockpitModal must provide direct Yandex Navigasyon button in delivery address box'
+  );
+  assert.ok(
+    householdSrc.includes('getYandexNaviUrl(person)'),
+    'HouseholdModal must provide direct Yandex Navigasyon button in address section'
+  );
+  assert.ok(
+    accordionSrc.includes('getYandexNaviUrl({'),
+    'ActiveRouteAccordionCard must provide direct Yandex Navigasyon button'
   );
 });
 

@@ -23,9 +23,10 @@ import {
   FileSpreadsheet,
   Maximize2,
   Minimize2,
+  Navigation,
 } from 'lucide-react';
 import { showToast } from '@/components/GlobalAlertManager';
-import { formatPhoneDisplay, getBeneficiaryListTypeInfo, getRecordPhones } from '@/lib/normalizer';
+import { formatPhoneDisplay, getBeneficiaryListTypeInfo, getRecordPhones, getYandexNaviUrl } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen, isAppFullscreen } from '@/lib/fullscreen';
 
@@ -750,9 +751,21 @@ export default function RouteModeCockpitModal({
                     <MapPin className="w-4 h-4 text-sky-600" />
                     TESLİMAT ADRESİ
                   </span>
-                  <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-sky-900 text-white">
-                    {currentStop.mahalle || 'Belirtilmemiş'}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={getYandexNaviUrl(currentStop)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs font-black shadow-xs transition-all"
+                      title="Yandex Navigasyon ile kapıya kadar nokta atışı yol tarifi al"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>Yol Tarifi</span>
+                    </a>
+                    <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-sky-900 text-white">
+                      {currentStop.mahalle || 'Belirtilmemiş'}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="p-3 rounded-2xl bg-white border-2 border-sky-300 shadow-2xs">

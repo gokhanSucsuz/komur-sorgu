@@ -1129,7 +1129,7 @@ export function extractStreetAndDoor(
     }
     clean = clean.replace(/^[A-Za-z0-9ÇŞĞÜÖİçşğüöı\s.]+?\s+(?:[Mm][Aa][Hh][Aa][Ll][Ll][Ee][Ss][İiIı]|[Mm][Aa][Hh]\.?|[Mm][Hh]\.?|[Kk][öo]y[uü]?)\s*/i, '').trim();
 
-    const regex = /(?:^|[\s,;])([A-Za-zÇŞĞÜÖİçşğüöı0-9\s.]+?)\s+(Caddesi|Cad\.|Cad|Cd\.|Cd|Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Bulvarı|Bulvar|Blv\.|Blv|Küme\s+Evler[iİıI]|Kume\s+Evler[iİıI]|Mevkii|Mevki|Meydanı|Meydani|Yolu|Yol|Kümesi|Kumesi)\b/i;
+    const regex = /(?:^|[\s,;])([A-Za-zÇŞĞÜÖİçşğüöı0-9\s.]+?)\s+(Caddesi|Cad\.|Cad|Cd\.|Cd|Sokağı|Sokak|Sok\.|Sok|Sk\.|Sk|Bulvarı|Bulvar|Blv\.|Blv|Küme\s+Evler[iİıI]|Kume\s+Evler[iİıI]|Mevkii|Mevki|Meydanı|Meydani|Yolu|Yol|Kümesi|Kumesi|Çıkmazı|Cikmazi|Çıkmaz|Cikmaz)\b/i;
     const sm = clean.match(regex);
     if (sm) {
       let suffix = sm[2].trim();
@@ -1140,6 +1140,7 @@ export function extractStreetAndDoor(
       else if (/^mev/i.test(suffix)) suffix = 'Mevkii';
       else if (/^meydan/i.test(suffix)) suffix = 'Meydanı';
       else if (/^yol/i.test(suffix)) suffix = 'Yolu';
+      else if (/^çık|^cik/i.test(suffix)) suffix = 'Çıkmazı';
 
       let prefix = sm[1].replace(/^[,\s.-]+/, '').replace(/_\d+/g, '').replace(/_+/g, ' ').trim();
       prefix = prefix.replace(/.*(?:Mahallesi|Mah\.|Mh\.|Köyü|Koy|Koyu)\s*/i, '').trim();
@@ -1162,7 +1163,7 @@ export function extractStreetAndDoor(
       .replace(/\b(?:bulvarı|bulvari|bulvar|blv\.?)\b/gi, 'Bulvarı')
       .replace(/\b(?:küme\s+evler[iİıI]|kume\s+evler[iİıI])\b/gi, 'Küme Evleri');
 
-    if (!/(?:Cad\.|Sok\.|Bulvarı|Mevkii|Küme Evleri|Yolu)\b/i.test(street)) {
+    if (!/(?:Cad\.|Sok\.|Bulvarı|Mevkii|Küme Evleri|Yolu|Çıkmazı)\b/i.test(street)) {
       if (/cad/i.test(street)) street += ' Cad.';
       else if (/sok|sk/i.test(street)) street += ' Sok.';
       else if (/^\d+\.?$/.test(street)) street = street.replace(/\.$/, '') + '. Sok.';
@@ -2047,6 +2048,122 @@ export function calculateCoalStockMetrics(
   };
 }
 
+/**
+ * Hak sahibi veya durak kaydı için mükerrer mahalle veya ilçe tekrarı içermeyen,
+ * harita ve navigasyon servislerinde (Yandex Navigasyon, Google Haritalar) doğrudan kapı numarasına
+ * nokta atışı odaklanmayı sağlayan temiz adres metnini üretir.
+ */
+export function getCleanNavigationAddress(record: Record<string, any> | null | undefined): string {
+  if (!record) return 'Edirne';
 
+  // 1. Ayrıştırılmış sokak ve dış kapı numarası
+  const stInfo = getRecordStreetInfo(record);
+  let mah = (record.mahalle || '').toString().trim();
+  if (!mah && record.acik_adres) {
+    const det = detectSettlement(null, null, record.acik_adres);
+    if (det && det.name) mah = det.name;
+  }
 
+  const isVillage = /(?:Köyü|Koy|Koyu)$/i.test(mah);
+  let cleanMahalle = mah;
+  if (!isVillage && cleanMahalle) {
+    if (cleanMahalle.endsWith('Mah.')) {
+      cleanMahalle = cleanMahalle.replace(/Mah\.$/, 'Mahallesi').trim();
+    } else if (cleanMahalle.endsWith('Mah')) {
+      cleanMahalle = cleanMahalle.replace(/Mah$/, 'Mahallesi').trim();
+    } else if (!cleanMahalle.endsWith('Mahallesi') && cleanMahalle.length > 0) {
+      cleanMahalle = cleanMahalle + ' Mahallesi';
+    }
+  }
+
+  const hasValidDoor =
+    stInfo.kapiNo !== undefined &&
+    stInfo.kapiNo !== null &&
+    stInfo.kapiNo !== 999999 &&
+    stInfo.kapiNo !== '999999';
+  const doorStr = hasValidDoor ? `No: ${stInfo.kapiNo}` : '';
+
+  // Köyler için navigasyon adresi
+  if (isVillage) {
+    const parts: string[] = [cleanMahalle || 'Köy'];
+    if (/k[üu]me\s+evler[iı]/i.test(record.acik_adres || '')) {
+      parts.push('Küme Evleri' + (doorStr ? ' ' + doorStr : ''));
+    } else if (doorStr) {
+      parts.push(doorStr);
+    }
+    parts.push('Edirne');
+    return parts.filter(Boolean).join(', ');
+  }
+
+  const isGenericStreet =
+    !stInfo.sokak ||
+    stInfo.sokak.includes('Belirtilmemiş') ||
+    stInfo.sokak.includes('Mahalle İçi') ||
+    stInfo.sokak.toLowerCase() === cleanMahalle.toLowerCase();
+
+  let streetPart = '';
+  if (!isGenericStreet) {
+    streetPart = toTitleCaseTurkish(stInfo.sokak)
+      .replace(/\bCad(?:\.|\b)/gi, 'Caddesi')
+      .replace(/\bSok(?:\.|\b)/gi, 'Sokak')
+      .replace(/\bBlv(?:\.|\b)/gi, 'Bulvarı');
+
+    // Sokak adının başında mahalle adı mükerrer varsa temizle
+    if (cleanMahalle) {
+      const lowerCleanMah = toExactTurkishLower(cleanMahalle);
+      const lowerStreet = toExactTurkishLower(streetPart);
+      if (lowerStreet.startsWith(lowerCleanMah)) {
+        streetPart = streetPart.slice(cleanMahalle.length).replace(/^[,\s.-]+/, '').trim();
+      }
+    }
+  }
+
+  // Geçerli sokak ve kapı no varsa nokta atışı adresi oluştur
+  if (streetPart) {
+    const parts = [cleanMahalle, streetPart + (doorStr ? ' ' + doorStr : ''), 'Edirne'];
+    return parts.filter(Boolean).join(', ');
+  }
+
+  // Sokak parse edilemediyse açık adresten mükerrer mahalle ve Edirne kalıntılarını temizle
+  let rawAddr = (record.acik_adres || '').toString().trim();
+  if (cleanMahalle) {
+    const lowerAddr = toExactTurkishLower(rawAddr);
+    const lowerMah = toExactTurkishLower(cleanMahalle)
+      .replace(/\s+(?:mahallesi|mah\.?|mh\.?|köyü|koyu|köy)$/i, '')
+      .trim();
+    if (lowerAddr.startsWith(lowerMah)) {
+      rawAddr = rawAddr.slice(lowerMah.length).trim();
+      rawAddr = rawAddr.replace(/^(?:mahallesi|mah\.?|mh\.?|köyü|koyu|köy)[/,-]?\s*/i, '').trim();
+    }
+  }
+
+  rawAddr = rawAddr.replace(/[/,-]?\s*(?:Edirne|Merkez)\s*$/i, '').trim();
+  rawAddr = rawAddr.replace(/_\d+/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+  rawAddr = rawAddr.replace(/\s*(?:Daire|İç\s*Kapı|Ic\s*Kapi|Kat)\s*[:.]?\s*\d+/gi, '').trim();
+
+  if (rawAddr && hasValidDoor && !/no[:\s.]/i.test(rawAddr)) {
+    rawAddr += ' ' + doorStr;
+  }
+
+  const parts = [cleanMahalle, rawAddr, 'Edirne'];
+  return parts.filter(Boolean).join(', ');
+}
+
+/**
+ * Yandex Navigasyon ve Yandex Haritalar için doğrudan adrese rota oluşturan link.
+ * Mobil cihazlarda Yandex Navigasyon veya Yandex Haritalar uygulaması yüklüyse doğrudan
+ * uygulamayı açar; yüklü değilse Yandex Haritalar web arayüzünde nokta atışı bina ve kapıyı gösterir.
+ */
+export function getYandexNaviUrl(record: Record<string, any> | null | undefined): string {
+  const address = getCleanNavigationAddress(record);
+  return `https://yandex.com.tr/harita/?text=${encodeURIComponent(address)}`;
+}
+
+/**
+ * Google Haritalar için temiz arama & navigasyon bağlantısı.
+ */
+export function getGoogleMapsUrl(record: Record<string, any> | null | undefined): string {
+  const address = getCleanNavigationAddress(record);
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}
 

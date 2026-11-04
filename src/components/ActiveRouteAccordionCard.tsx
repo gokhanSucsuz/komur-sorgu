@@ -6,7 +6,7 @@ import {
   AlertTriangle, CheckCircle2, AlertCircle, Download, Navigation, ArrowUp,
   ArrowDown, XCircle, ArrowRight, UserMinus, Plus, Building2
 } from 'lucide-react';
-import { formatPhoneDisplay } from '@/lib/normalizer';
+import { formatPhoneDisplay, getYandexNaviUrl } from '@/lib/normalizer';
 
 interface ActiveRouteAccordionCardProps {
   route: any;
@@ -734,9 +734,21 @@ export default function ActiveRouteAccordionCard({
 
                     {/* Orta Satır: Adres ve Telefon */}
                     <div className="mt-2.5 space-y-1 text-xs">
-                      <div className="flex items-start gap-1.5 text-slate-600">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                        <span className="leading-snug">{stop.adres || 'Adres bilgisi girilmemiş'}</span>
+                      <div className="flex items-start justify-between gap-1.5 text-slate-600">
+                        <div className="flex items-start gap-1.5 min-w-0">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug">{stop.adres || 'Adres bilgisi girilmemiş'}</span>
+                        </div>
+                        <a
+                          href={getYandexNaviUrl({ mahalle: stop.mahalle, acik_adres: stop.adres, sokak: stop.sokak, kapi_no: stop.kapi_no })}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 text-[11px] font-bold border border-sky-200 shrink-0 transition-all active:scale-95"
+                          title="Yandex Navigasyon ile yol tarifi"
+                        >
+                          <Navigation className="w-3 h-3 text-sky-600" />
+                          <span>Yol Tarifi</span>
+                        </a>
                       </div>
                       {stop.telefon && (
                         <div className="flex items-center gap-1.5 text-slate-600 font-mono">

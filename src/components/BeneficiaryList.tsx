@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
-import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare } from '@/lib/normalizer';
+import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import BeneficiaryFilterModals from './beneficiary/BeneficiaryFilterModals';
 import type { BeneficiaryRecord, MahalleSummary, QueueTabType, ListTypeFilter, UserRoleType } from '@/types/beneficiary';
@@ -1858,17 +1858,37 @@ export default function BeneficiaryList({
                           {/* Adres & Yerleşim (Daraltılmış & Aşağı Doğru Uzayan) */}
                           <td className="col-adres">
                             <div className="text-xs text-slate-700 min-w-0 flex flex-col gap-0.5">
-                              <div className="font-bold text-sky-950 flex items-start gap-1 break-words whitespace-normal leading-snug">
-                                <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
-                                <div className="min-w-0 flex-1 break-words">
-                                  <span>{stInfo.sokak}{stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' ? ` No: ${stInfo.kapiNo}` : ''}</span>
-                                  {stInfo.daireNo > 0 && <span className="text-sky-700 ml-1">D: {stInfo.daireNo}</span>}
-                                  {person.fiili_adres_guncellendi && (
-                                    <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1 py-0.2 rounded border border-sky-300 ml-1 inline-block shrink-0" title="Fiili ikamet adresi güncellendi">
-                                      Fiili İkamet
-                                    </span>
-                                  )}
-                                </div>
+                              <div className="font-bold text-sky-950 flex items-start justify-between gap-1 break-words whitespace-normal leading-snug">
+                                <a
+                                  href={getYandexNaviUrl(person)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-start gap-1 hover:text-sky-600 group cursor-pointer min-w-0 flex-1"
+                                  title="Yandex Navigasyon ile yol tarifi al"
+                                >
+                                  <Navigation className="w-3.5 h-3.5 text-sky-600 group-hover:scale-110 shrink-0 mt-0.5 transition-transform" />
+                                  <div className="min-w-0 flex-1 break-words">
+                                    <span>{stInfo.sokak}{stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' ? ` No: ${stInfo.kapiNo}` : ''}</span>
+                                    {stInfo.daireNo > 0 && <span className="text-sky-700 ml-1">D: {stInfo.daireNo}</span>}
+                                    {person.fiili_adres_guncellendi && (
+                                      <span className="text-[10px] font-black text-sky-800 bg-sky-100 px-1 py-0.2 rounded border border-sky-300 ml-1 inline-block shrink-0" title="Fiili ikamet adresi güncellendi">
+                                        Fiili İkamet
+                                      </span>
+                                    )}
+                                  </div>
+                                </a>
+                                <a
+                                  href={getYandexNaviUrl(person)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 shrink-0 shadow-2xs transition-all active:scale-95"
+                                  title="Yandex Navigasyon ile adresi haritada aç"
+                                >
+                                  <Navigation className="w-3 h-3 text-sky-600" />
+                                  <span>Yol Tarifi</span>
+                                </a>
                               </div>
                               {person.acik_adres && (
                                 <span
@@ -2415,6 +2435,32 @@ export default function BeneficiaryList({
                       </button>
                     )}
 
+                    {/* 5.1 YANDEX NAVİGASYON BUTONU (Telefon gibi doğrudan görünür, nokta atışı yol tarifi) */}
+                    <a
+                      href={getYandexNaviUrl(person)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-sky-50/90 hover:bg-sky-100 active:bg-sky-200 border-2 border-sky-300 text-sky-950 font-bold text-xs transition-all active:scale-[0.98] shadow-2xs group"
+                      title="Yandex Navigasyon ile kapıya kadar nokta atışı yol tarifi al"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                          <Navigation className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="text-left truncate">
+                          <span className="text-[10px] text-sky-700 font-extrabold uppercase tracking-wider block">Yandex Navigasyon</span>
+                          <span className="font-semibold text-xs text-sky-950 tracking-tight block truncate">
+                            {getCleanNavigationAddress(person)}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-xs font-black text-white bg-sky-600 hover:bg-sky-700 px-3 py-1.5 rounded-lg border border-sky-600 shadow-2xs group-hover:bg-sky-700 transition-colors shrink-0">
+                        <Navigation className="w-3.5 h-3.5" />
+                        <span>Yol Tarifi</span>
+                      </span>
+                    </a>
+
                     {/* 6. HIZLI İŞLEM BUTON IZGARASI (4 Düzenli & Ergonomik Buton) */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 border-t border-slate-100">
                       {/* 1. Açık Adres Butonu */}
@@ -2491,17 +2537,29 @@ export default function BeneficiaryList({
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Resmi Açık Adres</span>
                             <p className="font-semibold text-slate-900 mt-0.5 leading-relaxed">{person.acik_adres}</p>
                           </div>
-                          <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${person.mahalle} ${person.acik_adres || ''} Edirne`)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-xs active:scale-95 shrink-0 transition-all"
-                            title="Google Haritalar ile yol tarifi al"
-                          >
-                            <Navigation className="w-3.5 h-3.5 text-white" />
-                            <span>Navigasyon</span>
-                          </a>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <a
+                              href={getYandexNaviUrl(person)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-xs active:scale-95 shrink-0 transition-all"
+                              title="Yandex Navigasyon ile nokta atışı yol tarifi al"
+                            >
+                              <Navigation className="w-3.5 h-3.5 text-white" />
+                              <span>Yandex</span>
+                            </a>
+                            <a
+                              href={getGoogleMapsUrl(person)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300 active:scale-95 shrink-0 transition-all"
+                              title="Google Haritalar ile yol tarifi al"
+                            >
+                              <span>Google</span>
+                            </a>
+                          </div>
                         </div>
                         {person.fiili_adres_guncellendi && (
                           <div className="text-[11px] font-bold text-sky-800 flex items-center gap-1 bg-sky-50 p-2 rounded-lg border border-sky-200">

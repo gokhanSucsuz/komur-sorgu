@@ -1,7 +1,7 @@
 'use client';
 
-import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool } from 'lucide-react';
-import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation } from '@/lib/normalizer';
+import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool, Navigation } from 'lucide-react';
+import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, getYandexNaviUrl } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { useState } from 'react';
 
@@ -202,14 +202,26 @@ export default function HouseholdModal({
           })()}
 
           <div className="pt-2 border-t border-slate-200 text-xs space-y-1">
-            <div className="flex items-center gap-1.5 text-slate-600 font-medium">
-              <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span className="font-bold text-slate-900">{person.mahalle}</span>
-              {person.hane_no && (
-                <span className="bg-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-700">
-                  Hane No: {person.hane_no}
-                </span>
-              )}
+            <div className="flex items-center justify-between gap-1.5 text-slate-600 font-medium">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="font-bold text-slate-900">{person.mahalle}</span>
+                {person.hane_no && (
+                  <span className="bg-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-700">
+                    Hane No: {person.hane_no}
+                  </span>
+                )}
+              </div>
+              <a
+                href={getYandexNaviUrl(person)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-bold text-xs shrink-0 transition-all shadow-xs"
+                title="Yandex Navigasyon ile kapıya yol tarifi al"
+              >
+                <Navigation className="w-3.5 h-3.5" />
+                <span>Yol Tarifi</span>
+              </a>
             </div>
             <p className="text-slate-800 bg-white p-3 rounded-xl border border-slate-200 leading-relaxed font-semibold">
               {person.acik_adres}
