@@ -260,7 +260,8 @@ export default function ExcelImportPage({
   const [signatureData, setSignatureData] = useState<{
     pendingCount: number;
     pendingMahalleCount: number;
-    pendingMahalleler: { mahalle: string; count: number }[];
+    pendingMahalleler: { mahalle: string; count: number; alreadyGenerated?: boolean }[];
+    generatedMahalleler?: string[];
     totalCount: number;
     assignedCount: number;
     nextListNo: number;
@@ -274,6 +275,7 @@ export default function ExcelImportPage({
     pendingCount: 0,
     pendingMahalleCount: 0,
     pendingMahalleler: [],
+    generatedMahalleler: [],
     totalCount: 0,
     assignedCount: 0,
     nextListNo: 1,
@@ -284,6 +286,7 @@ export default function ExcelImportPage({
     ekKomurVerilenTorba: 0,
     ekKomurVerilenBeneficiaries: [],
   });
+  const [selectedMahalleForSignature, setSelectedMahalleForSignature] = useState<string>('ALL');
   const [isLoadingSignatureData, setIsLoadingSignatureData] = useState<boolean>(false);
   const [isGeneratingSignatureList, setIsGeneratingSignatureList] = useState<boolean>(false);
   const [isRollingBackListId, setIsRollingBackListId] = useState<string | null>(null);
@@ -315,6 +318,7 @@ export default function ExcelImportPage({
           pendingCount: data.pendingCount || 0,
           pendingMahalleCount: data.pendingMahalleCount || 0,
           pendingMahalleler: data.pendingMahalleler || [],
+          generatedMahalleler: data.generatedMahalleler || [],
           totalCount: data.totalCount || 0,
           assignedCount: data.assignedCount || 0,
           nextListNo: data.nextListNo || 1,
@@ -337,6 +341,33 @@ export default function ExcelImportPage({
     if (signatureData.pendingCount === 0 || isGeneratingSignatureList) return;
 
     // Islak imza listesi çıktısı almadan önce adresi eksik kayıt kontrolü - ZORUNLU GÜNCELLEME
+    const isSingle = selectedMahalleForSignature !== 'ALL';
+    const targetPm = signatureData.pendingMahalleler.find((p) => p.mahalle === selectedMahalleForSignature);
+    const availablePendingMahalles = signatureData.pendingMahalleler.filter((p) => !p.alreadyGenerated);
+    const eligibleCount = isSingle
+      ? (targetPm?.count || 0)
+      : availablePendingMahalles.reduce((sum, p) => sum + p.count, 0);
+
+    if (isSingle && targetPm?.alreadyGenerated) {
+      await showAlert({
+        title: '⚠️ Liste Daha Önce Çıkarıldı',
+        message: `"${selectedMahalleForSignature}" mahallesi/köyü için daha önce ıslak imza listesi çıkarılmıştır!\n\nSistem kuralı gereğince bir mahalle veya köyün ıslak imza listesi sadece 1 kez çıkarılabilir.`,
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (eligibleCount === 0) {
+      await showAlert({
+        title: '⚠️ Bekleyen Kayıt Bulunamadı',
+        message: isSingle
+          ? `"${selectedMahalleForSignature}" için imza listesi çıkarılacak bekleyen hak sahibi bulunmamaktadır.`
+          : 'İmza listesi çıkarılacak yeni mahalle bulunamadı. Bekleyen kayıtların mahalleleri için daha önce imza listesi çıkarılmıştır.',
+        type: 'warning',
+      });
+      return;
+    }
+
     if (signatureData.missingAddressCount && signatureData.missingAddressCount > 0) {
       await showAlert({
         title: '⚠️ Islak İmza Listesi Oluşturulamaz!',
@@ -347,14 +378,15 @@ export default function ExcelImportPage({
       return;
     }
 
-    const isFirstList = signatureData.lists.length === 0;
-    const confirmTitle = isFirstList
-      ? 'Toplu Islak İmza Listesi Oluşturulsun mu?'
-      : `${signatureData.nextListNo}. Islak İmza Listesi (Yeni Eklenenler) Oluşturulsun mu?`;
+    const confirmTitle = isSingle
+      ? `🏘️ ${selectedMahalleForSignature} Islak İmza Listesi Oluşturulsun mu?`
+      : signatureData.lists.length === 0
+      ? '📋 Toplu Islak İmza Listesi Oluşturulsun mu?'
+      : `${signatureData.nextListNo}. Islak İmza Listesi (Toplu) Oluşturulsun mu?`;
 
-    const confirmMessage = isFirstList
-      ? `Sistemde kayıtlı henüz imza listesi çıkarılmamış ${signatureData.pendingCount} hak sahibi (${signatureData.pendingMahalleCount} mahalle) için resmi A4 yatay baskı formatında, adres A'dan Z'ye sıralı ve boş ıslak imza kutucuklu "1. Dağıtım Islak İmza Listesi" oluşturulacaktır.\n\nKURAL: Bir kayıt sadece tek bir imza listesinde yer alabilir; bu ${signatureData.pendingCount} hane oluşturulan listeye kilitlenecektir. Onaylıyor musunuz?`
-      : `Daha önce imza listesi çıkarıldıktan sonra sisteme sonradan eklenen ${signatureData.pendingCount} YENİ hak sahibi (${signatureData.pendingMahalleCount} mahalle) için "${signatureData.nextListNo}. Dağıtım Islak İmza Listesi (Yeni Eklenen Kayıtlar)" oluşturulacaktır.\n\nÖnceki listelerde yer alan kayıtlar bu listeye dahil edilmez. Onaylıyor musunuz?`;
+    const confirmMessage = isSingle
+      ? `"${selectedMahalleForSignature}" mahallesi/köyü için toplam ${eligibleCount} hak sahibini kapsayan resmi ıslak imza listesi oluşturulacak ve kayıtlara kilitlenecektir.\n\n⚠️ KURAL: Bir mahalle veya köyün ıslak imza listesi dönem boyunca sadece 1 KEZ çıkarılabilir.\n\nOnaylıyor musunuz?`
+      : `Henüz listesi çıkarılmamış mahallelerdeki toplam ${eligibleCount} hak sahibi için resmi A4 yatay baskı formatında ıslak imza listesi oluşturulacaktır.\n\nKURAL: Bir mahalle veya köyün ıslak imza listesi sadece 1 kez çıkarılabilir. Onaylıyor musunuz?`;
 
     const confirmed = await showConfirm({
       title: confirmTitle,
@@ -377,6 +409,7 @@ export default function ExcelImportPage({
         body: JSON.stringify({
           action: 'GENERATE_NEW_LIST',
           donem_kodu: selectedSeasonView,
+          mahalle: isSingle ? selectedMahalleForSignature : undefined,
         }),
         signal: abortCtrl.signal,
       });
@@ -426,6 +459,7 @@ export default function ExcelImportPage({
       link.click();
       document.body.removeChild(link);
 
+      setSelectedMahalleForSignature('ALL');
       await fetchSignatureData();
       onRefreshAll();
     } catch (err: any) {
@@ -1834,51 +1868,154 @@ export default function ExcelImportPage({
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleGenerateSignatureList}
-                disabled={isGeneratingSignatureList}
-                className={`px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm text-white flex items-center justify-center gap-2 shadow-sm transition-all shrink-0 active:scale-95 disabled:opacity-50 ${
-                  signatureData.lists.length === 0
-                    ? 'bg-emerald-700 hover:bg-emerald-800'
-                    : 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-500/30'
-                }`}
-              >
-                {isGeneratingSignatureList ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>İmza Listesi Hazırlanıyor...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    <span>
-                      {signatureData.missingAddressCount && signatureData.missingAddressCount > 0
-                        ? `⚠️ Önce Eksik Adresleri Tamamlayınız (${signatureData.missingAddressCount} Hane)`
-                        : signatureData.lists.length === 0
-                        ? `Toplu Islak İmza Listesi Oluştur ve İndir (${signatureData.pendingCount} Hane)`
-                        : `Yeni Kayıtlar İçin İmza Listesi Oluştur ve İndir (Liste #${signatureData.nextListNo})`}
-                    </span>
-                  </>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleGenerateSignatureList}
+                  disabled={isGeneratingSignatureList}
+                  className={`px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm text-white flex items-center justify-center gap-2 shadow-sm transition-all shrink-0 active:scale-95 disabled:opacity-50 ${
+                    selectedMahalleForSignature !== 'ALL'
+                      ? 'bg-indigo-700 hover:bg-indigo-800 ring-2 ring-indigo-500/30'
+                      : signatureData.lists.length === 0
+                      ? 'bg-emerald-700 hover:bg-emerald-800'
+                      : 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-500/30'
+                  }`}
+                >
+                  {isGeneratingSignatureList ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>İmza Listesi Hazırlanıyor...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>
+                        {signatureData.missingAddressCount && signatureData.missingAddressCount > 0
+                          ? `⚠️ Önce Eksik Adresleri Tamamlayınız (${signatureData.missingAddressCount} Hane)`
+                          : selectedMahalleForSignature !== 'ALL'
+                          ? `${selectedMahalleForSignature} İmza Listesi Oluştur ve İndir (${signatureData.pendingMahalleler.find(p => p.mahalle === selectedMahalleForSignature)?.count || 0} Hane)`
+                          : signatureData.lists.length === 0
+                          ? `Toplu Islak İmza Listesi Oluştur ve İndir (${signatureData.pendingMahalleler.filter(p => !p.alreadyGenerated).reduce((s, p) => s + p.count, 0)} Hane)`
+                          : `Yeni Mahalleler İçin İmza Listesi Oluştur ve İndir (Liste #${signatureData.nextListNo})`}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* TEK MAHALLE VEYA TOPLU LİSTE SEÇİM ALANI */}
+            <div className="pt-2.5 border-t border-amber-200/60 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="font-extrabold text-slate-800 flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>Liste Türü:</span>
+                </span>
+
+                <div className="inline-flex items-center gap-1 bg-white/90 p-1 rounded-xl border border-slate-300 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMahalleForSignature('ALL')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      selectedMahalleForSignature === 'ALL'
+                        ? 'bg-indigo-700 text-white shadow-2xs'
+                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    Tüm Mahalleler (Toplu)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedMahalleForSignature === 'ALL') {
+                        const firstEligible = signatureData.pendingMahalleler.find(p => !p.alreadyGenerated);
+                        if (firstEligible) setSelectedMahalleForSignature(firstEligible.mahalle);
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      selectedMahalleForSignature !== 'ALL'
+                        ? 'bg-indigo-700 text-white shadow-2xs'
+                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    Tek Mahalle / Köy
+                  </button>
+                </div>
+
+                {selectedMahalleForSignature !== 'ALL' && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <select
+                      value={selectedMahalleForSignature}
+                      onChange={(e) => setSelectedMahalleForSignature(e.target.value)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white border border-indigo-500 text-indigo-950 focus:ring-2 focus:ring-indigo-500 shadow-2xs outline-none"
+                    >
+                      {signatureData.pendingMahalleler.map((pm, idx) => (
+                        <option
+                          key={`opt_pm_${idx}`}
+                          value={pm.mahalle}
+                          disabled={pm.alreadyGenerated}
+                        >
+                          {pm.alreadyGenerated
+                            ? `🔒 ${pm.mahalle} (${pm.count} hane) - Daha önce liste çıkarıldı`
+                            : `📍 ${pm.mahalle} (${pm.count} bekleyen hane)`}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMahalleForSignature('ALL')}
+                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 underline"
+                      title="Toplu seçime geri dön"
+                    >
+                      Topluya Dön
+                    </button>
+                  </div>
                 )}
-              </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-950 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-300 shadow-2xs shrink-0">
+                <CheckCircle2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>Kural: Bir mahalle veya köyün ıslak imza listesi sadece <strong>1 kez</strong> çıkarılabilir.</span>
+              </div>
             </div>
 
             {/* Yeni Eklenen Mahallelerin Dağılım Çipleri */}
             {signatureData.pendingMahalleler.length > 0 && (
               <div className="pt-2 border-t border-amber-200/60 flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-extrabold text-slate-700">İmza Listesi Bekleyen Mahalleler:</span>
-                {signatureData.pendingMahalleler.slice(0, 10).map((pm, idx) => (
-                  <span
-                    key={`pm_${idx}`}
-                    className="px-2 py-0.5 rounded-md bg-white border border-slate-300 text-[10px] font-bold text-slate-800 shadow-2xs"
-                  >
-                    {pm.mahalle}: <strong className="text-amber-700 font-extrabold">{pm.count}</strong>
-                  </span>
-                ))}
-                {signatureData.pendingMahalleler.length > 10 && (
+                <span className="text-[11px] font-extrabold text-slate-700">İmza Listesi Bekleyen Mahalleler (Tıklayarak Seçebilirsiniz):</span>
+                {signatureData.pendingMahalleler.slice(0, 15).map((pm, idx) => {
+                  const isSelected = selectedMahalleForSignature === pm.mahalle;
+                  return (
+                    <button
+                      type="button"
+                      key={`pm_${idx}`}
+                      disabled={pm.alreadyGenerated}
+                      onClick={() => {
+                        if (!pm.alreadyGenerated) {
+                          setSelectedMahalleForSignature(pm.mahalle);
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
+                        pm.alreadyGenerated
+                          ? 'bg-slate-100 border border-slate-300 text-slate-400 opacity-60 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-indigo-700 text-white border border-indigo-800 shadow-2xs scale-105'
+                          : 'bg-white hover:bg-indigo-50 border border-slate-300 hover:border-indigo-400 text-slate-800 shadow-2xs cursor-pointer'
+                      }`}
+                      title={pm.alreadyGenerated ? 'Bu mahalle/köy için daha önce imza listesi çıkarılmıştır' : `${pm.mahalle} imza listesini seçmek için tıklayın`}
+                    >
+                      {pm.alreadyGenerated && <span>🔒</span>}
+                      <span>{pm.mahalle}:</span>
+                      <strong className={isSelected ? 'text-white' : pm.alreadyGenerated ? 'text-slate-400' : 'text-amber-700'}>
+                        {pm.count}
+                      </strong>
+                    </button>
+                  );
+                })}
+                {signatureData.pendingMahalleler.length > 15 && (
                   <span className="text-[10px] font-bold text-slate-500">
-                    +{signatureData.pendingMahalleler.length - 10} mahalle daha
+                    +{signatureData.pendingMahalleler.length - 15} mahalle daha
                   </span>
                 )}
               </div>
@@ -2033,6 +2170,11 @@ export default function ExcelImportPage({
                         <strong className="text-xs sm:text-sm font-extrabold text-slate-900">
                           {item.liste_adi}
                         </strong>
+                        {item.is_single_mahalle && (
+                          <span className="px-1.5 py-0.5 rounded bg-teal-100 border border-teal-300 text-teal-800 text-[9.5px] font-extrabold">
+                            Tek Mahalle / Köy
+                          </span>
+                        )}
                         <span className="text-[11px] text-slate-500 font-medium">
                           • {item.created_at || 'Tarih yok'}
                         </span>

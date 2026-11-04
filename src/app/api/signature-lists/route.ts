@@ -121,13 +121,52 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const pendingMahalleler = Array.from(pendingMahalleMap.entries())
-      .map(([mahalle, count]) => ({ mahalle, count }))
-      .sort((a, b) => b.count - a.count);
-
     // Kayıtlı imza listelerini çek
     const rawLists = await signatureLists.find({}).sort({ liste_no: -1 }).toArray();
     const lists = mapDocs(rawLists);
+
+    // KURAL: Bir mahalle veya köyün ıslak imza listesi sadece 1 kez çıkarılabilir.
+    // Daha önce herhangi bir imza listesi çıkarılmış olan mahalleleri topla:
+    const generatedMahalleSet = new Set<string>();
+
+    for (const l of lists) {
+      if (l.mahalle) {
+        const norm = normalizeMahalleName(l.mahalle);
+        if (norm) generatedMahalleSet.add(norm);
+        generatedMahalleSet.add(l.mahalle);
+      }
+      if (l.mahalle_dagilimi && typeof l.mahalle_dagilimi === 'object') {
+        for (const m of Object.keys(l.mahalle_dagilimi)) {
+          const norm = normalizeMahalleName(m);
+          if (norm) generatedMahalleSet.add(norm);
+          generatedMahalleSet.add(m);
+        }
+      }
+    }
+
+    for (const rawB of rawBeneficiaries) {
+      const isAssigned = Boolean(rawB.imza_listesi_id && String(rawB.imza_listesi_id).trim().length > 0);
+      if (isAssigned) {
+        const m = rawB.imza_listesi_mahalle || rawB.mahalle;
+        if (m) {
+          const norm = normalizeMahalleName(m);
+          if (norm) generatedMahalleSet.add(norm);
+          generatedMahalleSet.add(m);
+        }
+      }
+    }
+
+    const pendingMahalleler = Array.from(pendingMahalleMap.entries())
+      .map(([mahalle, count]) => {
+        const norm = normalizeMahalleName(mahalle);
+        const alreadyGenerated = generatedMahalleSet.has(norm) || generatedMahalleSet.has(mahalle);
+        return {
+          mahalle,
+          count,
+          alreadyGenerated,
+        };
+      })
+      .sort((a, b) => b.count - a.count);
 
     const maxNo = lists.reduce((max: number, l: any) => Math.max(max, Number(l.liste_no || 0)), 0);
     const nextListNo = maxNo + 1;
@@ -145,6 +184,7 @@ export async function GET(request: NextRequest) {
       ekKomurVerilenBeneficiaries,
       pendingMahalleCount: pendingMahalleMap.size,
       pendingMahalleler,
+      generatedMahalleler: Array.from(generatedMahalleSet),
       missingAddressCount: missingAddressBeneficiaries.length,
       missingAddressBeneficiaries,
       nextListNo,
@@ -245,10 +285,101 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // KURAL: Islak imza listesi çıkarılmadan önce TÜM bekleyen kayıtların adresi ve mahallesi tam olmalıdır!
-      // Adresi olmayanlar listesi oluşturulmaz; adresi eksik kayıtların adreslerinin güncellenmesi ZORUNLUDUR.
+      // KURAL: Bir mahalle veya köyün ıslak imza listesi sadece 1 kez çıkarılabilir!
+      const targetMahalle = asString(body.mahalle, 128)?.trim();
+      const isSingleMahalle = Boolean(targetMahalle && targetMahalle !== 'ALL');
+
+      // Daha önce imza listesi çıkarılmış olan mahalleleri topla
+      const existingLists = await signatureLists.find({}).toArray();
+      const generatedMahalleSet = new Set<string>();
+
+      for (const l of existingLists) {
+        if (l.mahalle) {
+          const norm = normalizeMahalleName(l.mahalle);
+          if (norm) generatedMahalleSet.add(norm);
+          generatedMahalleSet.add(l.mahalle);
+        }
+        if (l.mahalle_dagilimi && typeof l.mahalle_dagilimi === 'object') {
+          for (const m of Object.keys(l.mahalle_dagilimi)) {
+            const norm = normalizeMahalleName(m);
+            if (norm) generatedMahalleSet.add(norm);
+            generatedMahalleSet.add(m);
+          }
+        }
+      }
+
+      const assignedMahalles = await benCol
+        .find({
+          imza_listesi_id: { $ne: null, $exists: true },
+        })
+        .project({ mahalle: 1, imza_listesi_mahalle: 1, imza_listesi_id: 1 })
+        .toArray();
+
+      for (const ab of assignedMahalles) {
+        if (ab.imza_listesi_id && String(ab.imza_listesi_id).trim().length > 0) {
+          const m = ab.imza_listesi_mahalle || ab.mahalle;
+          if (m) {
+            const norm = normalizeMahalleName(m);
+            if (norm) generatedMahalleSet.add(norm);
+            generatedMahalleSet.add(m);
+          }
+        }
+      }
+
+      // 1 KEZ ÇIKARILABİLİR KONTROLÜ:
+      if (isSingleMahalle) {
+        const normTarget = normalizeMahalleName(targetMahalle);
+        if (generatedMahalleSet.has(normTarget) || generatedMahalleSet.has(targetMahalle)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `"${targetMahalle}" için daha önce ıslak imza listesi çıkarılmıştır! Sistem kuralı gereğince bir mahalle veya köyün ıslak imza listesi sadece 1 kez çıkarılabilir.`,
+              code: 'MAHALLE_ALREADY_GENERATED',
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      let docsToAssign: any[] = [];
+      if (isSingleMahalle) {
+        const normTarget = normalizeMahalleName(targetMahalle);
+        docsToAssign = eligibleDocs.filter((doc: any) => {
+          const docMah = normalizeMahalleName(doc.mahalle) || doc.mahalle;
+          return docMah === normTarget || doc.mahalle === targetMahalle;
+        });
+
+        if (docsToAssign.length === 0) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `"${targetMahalle}" mahallesi/köyü için bekleyen yeni kayıt bulunamadı.`,
+            },
+            { status: 400 }
+          );
+        }
+      } else {
+        // Toplu oluşturmada daha önce imza listesi çıkarılmış mahalleler elenir
+        docsToAssign = eligibleDocs.filter((doc: any) => {
+          const norm = normalizeMahalleName(doc.mahalle) || doc.mahalle;
+          return !generatedMahalleSet.has(norm) && !generatedMahalleSet.has(doc.mahalle);
+        });
+
+        if (docsToAssign.length === 0) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'İmza listesi çıkarılacak yeni mahalle bulunamadı. Bekleyen tüm kayıtların mahalleleri için daha önce ıslak imza listesi çıkarılmıştır. Sistem kuralı gereği bir mahalle veya köy için imza listesi sadece 1 kez çıkarılabilir.',
+              code: 'ALL_MAHALLELER_ALREADY_GENERATED',
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      // KURAL: Islak imza listesi çıkarılmadan önce atanacak kayıtların adresi ve mahallesi tam olmalıdır!
       const missingRecords: any[] = [];
-      for (const doc of eligibleDocs) {
+      for (const doc of docsToAssign) {
         const decrypted = decryptBeneficiary(doc);
         if (isBeneficiaryAddressMissing(decrypted)) {
           missingRecords.push({
@@ -263,10 +394,11 @@ export async function POST(request: NextRequest) {
       }
 
       if (missingRecords.length > 0) {
+        const prefix = isSingleMahalle ? `"${targetMahalle}" için` : 'Islak imza listesi oluşturulamaz!';
         return NextResponse.json(
           {
             success: false,
-            error: `Islak imza listesi oluşturulamaz! Mahallesi veya açık adresi eksik olan ${missingRecords.length} hane bulunmaktadır. Islak imza listesi çıkarılmadan önce tüm kayıtların mahalle ve adres bilgilerinin sisteme girilmesi ZORUNLUDUR.`,
+            error: `${prefix} Mahallesi veya açık adresi eksik olan ${missingRecords.length} hane bulunmaktadır. Islak imza listesi çıkarılmadan önce tüm kayıtların mahalle ve adres bilgilerinin sisteme girilmesi ZORUNLUDUR.`,
             code: 'MISSING_ADDRESSES_MANDATORY_UPDATE',
             missingAddressCount: missingRecords.length,
             missingAddressBeneficiaries: missingRecords,
@@ -276,23 +408,23 @@ export async function POST(request: NextRequest) {
       }
 
       // Sıradaki Liste No hesapla
-      const existingLists = await signatureLists.find({}).toArray();
       const maxNo = existingLists.reduce((max: number, l: any) => Math.max(max, Number(l.liste_no || 0)), 0);
       const nextNo = maxNo + 1;
 
       const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
       const listId = `IMZA-${Date.now().toString(36).toUpperCase()}-${String(nextNo).padStart(3, '0')}-${randomSuffix}`;
-      const listName =
-        nextNo === 1
-          ? '1. Dağıtım Islak İmza Listesi (Genel)'
-          : `${nextNo}. Dağıtım Islak İmza Listesi (Yeni Eklenen Kayıtlar)`;
+      const listName = isSingleMahalle
+        ? `${nextNo}. Dağıtım Islak İmza Listesi (${targetMahalle})`
+        : nextNo === 1
+        ? '1. Dağıtım Islak İmza Listesi (Genel)'
+        : `${nextNo}. Dağıtım Islak İmza Listesi (Yeni Eklenen Kayıtlar)`;
 
       // Mahalle bazında dağılımı ve güncellenecek ID'leri topla
       const unassignedRawIds: any[] = [];
       const unassignedStringIds: string[] = [];
       const mahalleCounts: Record<string, number> = {};
 
-      for (const item of eligibleDocs) {
+      for (const item of docsToAssign) {
         if (item._id) unassignedRawIds.push(item._id);
         if (item.id) unassignedStringIds.push(String(item.id));
         const m = normalizeMahalleName(item.mahalle) || item.mahalle || 'Genel';
@@ -300,9 +432,7 @@ export async function POST(request: NextRequest) {
       }
       const mahalleSayisi = Object.keys(mahalleCounts).length;
 
-      // TÜM BEKLEYEN KAYITLARI ATOMİK TOPLU GÜNCELLEME İLE KİLİTLE (updateMany):
-      // Tek tek for döngüsüyle updateOne çağırmak binlerce kayıt için yüzlerce ağ turuna ve
-      // dakikalarca donmaya/zaman aşımına neden oluyordu. Tek sorguda ~20ms içinde güncellenir.
+      // TÜM ATANACAK KAYITLARI ATOMİK TOPLU GÜNCELLEME İLE KİLİTLE (updateMany):
       const updateFilter: any = {};
       if (unassignedRawIds.length > 0 && unassignedStringIds.length > 0) {
         updateFilter.$or = [
@@ -333,9 +463,11 @@ export async function POST(request: NextRequest) {
         donem_kodu: activeSeason,
         calisma_modu: calismaModu,
         is_sandbox: isSandboxMode,
-        toplam_kayit: eligibleDocs.length,
+        toplam_kayit: docsToAssign.length,
         mahalle_sayisi: mahalleSayisi,
         mahalle_dagilimi: mahalleCounts,
+        mahalle: isSingleMahalle ? targetMahalle : null,
+        is_single_mahalle: isSingleMahalle,
         olusturan_personel: adminName,
         created_at: nowStr,
         tarih_iso: nowIso,
@@ -349,13 +481,15 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: 'ADMIN',
         islem_tipi: 'IMZA_LISTESI_OLUSTURMA',
         baslik: `${isSandboxMode ? '[DENEME MODU] ' : ''}Resmi Islak İmza Listesi Oluşturuldu (${listName})`,
-        detay: `${isSandboxMode ? '[DENEME / TEST ALANI] ' : ''}"${listName}" kapsamında ${eligibleDocs.length} hak sahibi (${mahalleSayisi} Mahalle) için yeni ıslak imza listesi oluşturuldu ve kayıtlara kilitlendi. Bir kayıt sadece tek bir imza listesinde yer alabilir kuralı uygulandı.`,
+        detay: `${isSandboxMode ? '[DENEME / TEST ALANI] ' : ''}"${listName}" kapsamında ${docsToAssign.length} hak sahibi (${isSingleMahalle ? `Tek Mahalle: ${targetMahalle}` : `${mahalleSayisi} Mahalle`}) için ıslak imza listesi oluşturuldu ve kayıtlara kilitlendi. Bir mahalle veya köyün ıslak imza listesi sadece 1 kez çıkarılabilir kuralı uygulandı.`,
         ek_bilgi: {
           listId,
           listName,
           listeNo: nextNo,
-          toplamKayit: eligibleDocs.length,
+          toplamKayit: docsToAssign.length,
           mahalleSayisi,
+          isSingleMahalle,
+          mahalle: isSingleMahalle ? targetMahalle : null,
           calisma_modu: calismaModu,
         },
       });
@@ -364,12 +498,14 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `"${listName}" başarıyla oluşturuldu! ${eligibleDocs.length} hane listeye kilitlendi.`,
+        message: `"${listName}" başarıyla oluşturuldu! ${docsToAssign.length} hane listeye kilitlendi.`,
         listId,
         listName,
         listeNo: nextNo,
-        count: eligibleDocs.length,
+        count: docsToAssign.length,
         mahalleSayisi,
+        isSingleMahalle,
+        mahalle: isSingleMahalle ? targetMahalle : null,
       });
     }
 

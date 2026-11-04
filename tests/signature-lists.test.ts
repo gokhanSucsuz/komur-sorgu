@@ -7,6 +7,7 @@ process.env.ENCRYPTION_MASTER_KEY = crypto.randomBytes(32).toString('hex');
 process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 
 import { getDbCollections } from '@/lib/mongodb';
+import { InMemoryCollection } from '@/lib/inMemoryDb';
 import { encryptBeneficiary, decryptBeneficiary } from '@/lib/crypto';
 import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing, isBeneficiaryCancelled } from '@/lib/normalizer';
 
@@ -815,5 +816,113 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
     assert.ok(String(tahsisCell.value).startsWith('Tahsis Kömür Miktarı:'), '5. hücre Tahsis Kömür Miktarı içermelidir');
     assert.equal(tahsisCell.alignment?.wrapText, true, 'Tahsis Kömür Miktarı hücresi metni kaydır (wrapText: true) özelliğine sahip olmalıdır');
     assert.ok(summaryRow.height >= 28, 'Alt toplam satır yüksekliği metin kaydırma için en az 28pt olmalıdır');
+  });
+
+  it('19. Tek mahalle veya köy için ıslak imza listesi oluşturulduğunda yalnızca o mahalleye ait hak sahipleri listeye kilitlenir', async () => {
+    const memory = new InMemoryCollection('signature_test_collection');
+    const records = [
+      { tc_no: '10000000001', ad_soyad: 'Fatma Fatih', mahalle: 'Fatih Mah.', acik_adres: 'Gül Sok. No: 1', hedef_torba: 34 },
+      { tc_no: '10000000002', ad_soyad: 'Ahmet Fatih', mahalle: 'Fatih Mah.', acik_adres: 'Lale Sok. No: 2', hedef_torba: 34 },
+      { tc_no: '20000000001', ad_soyad: 'Kemal Sukru', mahalle: 'Şükrüpaşa Mah.', acik_adres: 'Barış Sok. No: 3', hedef_torba: 34 },
+      { tc_no: '30000000001', ad_soyad: 'Hasan Koylu', mahalle: 'Kemal Köyü', acik_adres: 'Köy İçi No: 4', hedef_torba: 34 },
+    ];
+
+    for (const r of records) {
+      await memory.insertOne(encryptBeneficiary(r));
+    }
+
+    const targetMahalle = 'Fatih Mah.';
+    const normTarget = normalizeMahalleName(targetMahalle);
+
+    // Tek mahalle seçimiyle filtreleme
+    const allDocs = await memory.find({}).toArray();
+    const mahalleEligible = allDocs.filter((d: any) => {
+      const dec = decryptBeneficiary(d);
+      const isCancelled = isBeneficiaryCancelled(dec);
+      const m = normalizeMahalleName(dec.mahalle);
+      return !isCancelled && !dec.imza_listesi_id && m === normTarget;
+    });
+
+    assert.equal(mahalleEligible.length, 2, 'Fatih Mahallesine ait 2 hak sahibi seçilmelidir');
+
+    const listId = 'IMZA-TEST-SINGLE-001';
+    const rawIds = mahalleEligible.map((d: any) => d._id);
+    await memory.updateMany(
+      { _id: { $in: rawIds } },
+      {
+        $set: {
+          imza_listesi_id: listId,
+          imza_listesi_no: 1,
+          imza_listesi_adi: '1. Dağıtım Islak İmza Listesi (Fatih Mah.)',
+        },
+      }
+    );
+
+    const decryptedAfter = (await memory.find({}).toArray()).map(decryptBeneficiary);
+    const fatih1 = decryptedAfter.find((r: any) => r.tc_no === '10000000001');
+    const fatih2 = decryptedAfter.find((r: any) => r.tc_no === '10000000002');
+    const sukru = decryptedAfter.find((r: any) => r.tc_no === '20000000001');
+    const kemal = decryptedAfter.find((r: any) => r.tc_no === '30000000001');
+
+    assert.equal(fatih1.imza_listesi_id, listId, 'Fatih Mahallesindeki hane 1 listeye kilitlenmelidir');
+    assert.equal(fatih2.imza_listesi_id, listId, 'Fatih Mahallesindeki hane 2 listeye kilitlenmelidir');
+    assert.ok(!sukru.imza_listesi_id, 'Şükrüpaşa Mahallesindeki hane henüz listeye kilitlenmemelidir');
+    assert.ok(!kemal.imza_listesi_id, 'Kemal Köyündeki hane henüz listeye kilitlenmemelidir');
+  });
+
+  it('20. KURAL: Bir mahalle veya köy için ıslak imza listesi sadece 1 kez çıkarılabilir; ikinci kez çıkarılmak istendiğinde engellenir', () => {
+    // Daha önce çıkarılan listeler
+    const existingLists = [
+      {
+        id: 'IMZA-001',
+        liste_no: 1,
+        liste_adi: '1. Dağıtım Islak İmza Listesi (Fatih Mah.)',
+        mahalle: 'Fatih Mah.',
+        is_single_mahalle: true,
+        mahalle_dagilimi: { 'Fatih Mah.': 2 },
+      },
+    ];
+
+    const generatedMahalleSet = new Set<string>();
+    for (const l of existingLists) {
+      if (l.mahalle) {
+        generatedMahalleSet.add(normalizeMahalleName(l.mahalle));
+        generatedMahalleSet.add(l.mahalle);
+      }
+    }
+
+    // Fatih Mah. için tekrar liste çıkarılmak istendiğinde
+    const tryTarget = 'Fatih Mah.';
+    const normTry = normalizeMahalleName(tryTarget);
+    const isAlreadyGenerated = generatedMahalleSet.has(normTry) || generatedMahalleSet.has(tryTarget);
+
+    assert.equal(isAlreadyGenerated, true, 'Fatih Mahallesi daha önce çıkarıldığı için kural gereği tekrar çıkarılamaz');
+
+    // Henüz çıkarılmamış bir mahalle için
+    const tryNewTarget = 'Şükrüpaşa Mah.';
+    const normNew = normalizeMahalleName(tryNewTarget);
+    const isNewGenerated = generatedMahalleSet.has(normNew) || generatedMahalleSet.has(tryNewTarget);
+
+    assert.equal(isNewGenerated, false, 'Şükrüpaşa Mahallesi henüz çıkarılmadığı için liste çıkarılabilir');
+  });
+
+  it('21. Islak imza listesi Excel dışa aktarımında mahalle parametresi verildiğinde yalnızca seçilen mahalle/köy filtrelenir', () => {
+    const allRecords = [
+      { tc_no: '1', ad_soyad: 'Ahmet', mahalle: 'Fatih Mah.', hedef_torba: 34 },
+      { tc_no: '2', ad_soyad: 'Mehmet', mahalle: 'Fatih Mah.', hedef_torba: 34 },
+      { tc_no: '3', ad_soyad: 'Ayşe', mahalle: 'Şükrüpaşa Mah.', hedef_torba: 34 },
+      { tc_no: '4', ad_soyad: 'Fatma', mahalle: 'Kemal Köyü', hedef_torba: 34 },
+    ];
+
+    const filterMahalle = 'Fatih Mah.';
+    const normFilter = normalizeMahalleName(filterMahalle);
+
+    const filtered = allRecords.filter((r) => {
+      const m = normalizeMahalleName(getBeneficiaryEffectiveListMahalle(r));
+      return m === normFilter;
+    });
+
+    assert.equal(filtered.length, 2, 'Sadece Fatih Mahallesine ait 2 kayıt gelmelidir');
+    assert.ok(filtered.every((r) => r.mahalle === 'Fatih Mah.'));
   });
 });

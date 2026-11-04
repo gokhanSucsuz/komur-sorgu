@@ -2052,6 +2052,7 @@ export async function GET(request: NextRequest) {
     if (type === 'signature_list') {
       const listId = (searchParams.get('listId') || '').trim();
       const donemKodu = (searchParams.get('donem_kodu') || '').trim();
+      const mahalleParam = (searchParams.get('mahalle') || '').trim();
 
       let targetListDoc: any = null;
       if (listId && listId !== 'ALL' && listId !== 'PENDING') {
@@ -2097,6 +2098,25 @@ export async function GET(request: NextRequest) {
       let records = mapDocs(rawRecords);
       // Şifresi çözülmüş nesneler üzerinde ek güvence filtresi (Kömür İptal olanlar elenir)
       records = records.filter((r) => !isBeneficiaryCancelled(r));
+
+      // TEK MAHALLE / KÖY FİLTRESİ (URL parametresinden veya tek mahallelik listeden)
+      const effectiveMahalleFilter = mahalleParam || (targetListDoc?.is_single_mahalle ? targetListDoc.mahalle : '');
+      if (effectiveMahalleFilter) {
+        const normTarget = normalizeMahalleName(effectiveMahalleFilter);
+        records = records.filter((r) => {
+          const listMah = getBeneficiaryEffectiveListMahalle(r);
+          const norm = normalizeMahalleName(listMah) || listMah;
+          return norm === normTarget || listMah === effectiveMahalleFilter;
+        });
+
+        if (targetListDoc?.liste_adi) {
+          listTitle = targetListDoc.is_single_mahalle
+            ? targetListDoc.liste_adi
+            : `${targetListDoc.liste_adi} (${effectiveMahalleFilter})`;
+        } else {
+          listTitle = `Islak İmza Listesi (${effectiveMahalleFilter})`;
+        }
+      }
 
       if (records.length === 0) {
         const emptySheet = workbook.addWorksheet('Bilgi', {
