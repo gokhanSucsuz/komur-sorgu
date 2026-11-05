@@ -421,6 +421,139 @@ export async function GET(request: NextRequest) {
       .toArray();
     const signedBeneficiaries = mapDocs(pendingSignedDocs).sort(compareByAddressAsc);
 
+    // 4. Build comprehensive Route vs Direct Delivery Map for All Signed & Delivered Records
+    const routeBeneficiaryMap = new Map<string, {
+      routeId: string;
+      routeName: string;
+      routeStatus: string;
+      stopDurum: string;
+      deliveryDate?: string;
+      deliveredBags?: number;
+      staff?: string;
+    }>();
+
+    // Iterate through archived and active routes so active routes take precedence
+    const allKnownRoutes = [...uniqueArchived, ...activeRoutes];
+    for (const r of allKnownRoutes) {
+      const rId = String(r.id || r._id);
+      const rName = r.rota_adi || 'Dağıtım Rotası';
+      const rStatus = r.durum || 'AKTIF';
+      for (const s of (r.duraklar || [])) {
+        const bId = String(s.beneficiary_id || '');
+        const tc = String(s.tc_no || '').trim();
+        const info = {
+          routeId: rId,
+          routeName: rName,
+          routeStatus: rStatus,
+          stopDurum: s.durum || 'BEKLIYOR',
+          deliveryDate: s.teslim_tarihi || undefined,
+          deliveredBags: Number(s.teslim_edilen_torba) || 0,
+          staff: s.teslim_eden_personel || undefined
+        };
+        if (bId) {
+          routeBeneficiaryMap.set(bId, info);
+        }
+        if (tc) {
+          routeBeneficiaryMap.set(tc, info);
+        }
+      }
+    }
+
+    // Query all records with signature taken OR coal delivered (excluding cancelled ones)
+    const trackingDocs = await benCol
+      .find({
+        $or: [
+          { imza_durumu: 'IMZALANDI' },
+          { teslimat_durumu: { $in: ['TAMAMLANDI', 'TESLIM_EDILDI'] } }
+        ],
+        komur_verilmeyecek: { $ne: true }
+      })
+      .toArray();
+    const mappedTracking = mapDocs(trackingDocs);
+
+    let totalSigned = 0;
+    let signedUndelivered = 0;
+    let signedDelivered = 0;
+    let directDelivered = 0;
+    let routeDelivered = 0;
+    let waitingInActiveRoute = 0;
+    let waitingInPool = 0;
+    let totalDeliveredBags = 0;
+    let totalWaitingBags = 0;
+
+    const signedTrackingRecords = mappedTracking.map((b: any) => {
+      const bId = String(b.id || b._id);
+      const bTc = String(b.tc_no || '').trim();
+      const routeInfo = routeBeneficiaryMap.get(bId) || (bTc ? routeBeneficiaryMap.get(bTc) : undefined);
+      const isInRoute = !!routeInfo;
+      const isDelivered = b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI';
+      const isSigned = b.imza_durumu === 'IMZALANDI';
+      const isDirectDelivery = isDelivered && !isInRoute;
+      const targetBags = Number(b.hedef_torba) || 34;
+      const deliveredBags = Number(b.torba_sayisi) || (isDelivered ? targetBags : 0);
+
+      if (isSigned) {
+        totalSigned++;
+        if (isDelivered) {
+          signedDelivered++;
+          totalDeliveredBags += deliveredBags;
+        } else {
+          signedUndelivered++;
+          totalWaitingBags += targetBags;
+          if (isInRoute && (routeInfo?.routeStatus === 'AKTIF' || routeInfo?.routeStatus === 'DURAKLATILDI')) {
+            waitingInActiveRoute++;
+          } else {
+            waitingInPool++;
+          }
+        }
+      }
+
+      if (isDelivered) {
+        if (isInRoute) {
+          routeDelivered++;
+        } else {
+          directDelivered++;
+          if (!isSigned) {
+            totalDeliveredBags += deliveredBags;
+          }
+        }
+      }
+
+      let teslimatSekli: 'ROTA_TESLIMATI' | 'DOGRUDAN_TESLIMAT' | 'ROTADA_BEKLIYOR' | 'HAVUZDA_BEKLIYOR' = 'HAVUZDA_BEKLIYOR';
+      if (isDelivered) {
+        teslimatSekli = isInRoute ? 'ROTA_TESLIMATI' : 'DOGRUDAN_TESLIMAT';
+      } else {
+        teslimatSekli = isInRoute ? 'ROTADA_BEKLIYOR' : 'HAVUZDA_BEKLIYOR';
+      }
+
+      return {
+        ...b,
+        rotada_var_mi: isInRoute,
+        rota_id: routeInfo?.routeId || null,
+        rota_adi: routeInfo?.routeName || null,
+        rota_durumu: routeInfo?.routeStatus || null,
+        rota_durak_durumu: routeInfo?.stopDurum || null,
+        teslimat_sekli: teslimatSekli,
+        dogrudan_teslimat: isDirectDelivery,
+        is_signed: isSigned,
+        is_delivered: isDelivered,
+        hesaplanan_torba: deliveredBags,
+        hedef_torba: targetBags
+      };
+    }).sort(compareByAddressAsc);
+
+    const signedTrackingStats = {
+      totalSigned,
+      signedUndelivered,
+      signedDelivered,
+      directDelivered,
+      routeDelivered,
+      waitingInActiveRoute,
+      waitingInPool,
+      totalDeliveredBags,
+      totalWaitingBags
+    };
+
     return NextResponse.json(
       {
         success: true,
@@ -429,7 +562,9 @@ export async function GET(request: NextRequest) {
         activeCount: activeRoutes.length,
         archivedRoutes,
         signedBeneficiaries,
-        signedCount: signedBeneficiaries.length
+        signedCount: signedBeneficiaries.length,
+        signedTrackingRecords,
+        signedTrackingStats
       },
       {
         headers: {

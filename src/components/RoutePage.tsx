@@ -1,7 +1,32 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Route as RouteIcon, Navigation, CheckCircle2, Plus, Truck, Trash2, Archive, RefreshCw, ChevronDown, ChevronUp, PenTool, Download, Printer, Play, Pause } from 'lucide-react';
+import {
+  Route as RouteIcon,
+  Navigation,
+  CheckCircle2,
+  Plus,
+  Truck,
+  Trash2,
+  Archive,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  PenTool,
+  Download,
+  Printer,
+  Play,
+  Pause,
+  Clock,
+  Zap,
+  Building2,
+  Phone,
+  Search,
+  Filter,
+  FileCheck,
+  MapPin,
+  X
+} from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
 import ActiveRouteAccordionCard from './ActiveRouteAccordionCard';
@@ -10,7 +35,17 @@ const RouteCreationModals = dynamic(() => import('./route/RouteCreationModals'))
 const RouteActionModals = dynamic(() => import('./route/RouteActionModals'));
 const RoutePrintReportModal = dynamic(() => import('./route/RoutePrintReportModal'));
 const RouteModeCockpitModal = dynamic(() => import('./route/RouteModeCockpitModal'));
-import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
+import {
+  formatPhoneDisplay,
+  getRecordStreetInfo,
+  compareByAddressAsc,
+  isBirebirBeneficiaryMatch,
+  extractUniquePersonnelList,
+  getYandexNaviUrl,
+  getGoogleMapsUrl,
+  getParselSorguSearchSummary,
+  PARSEL_SORGU_URL
+} from '@/lib/normalizer';
 import { formatTrDate } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';
 import { saveOfflineDelivery } from '@/lib/offlineSync';
@@ -47,11 +82,28 @@ export default function RoutePage({
   userUsername,
   userTeam,
   userPartners,
+  onCompleteHousehold,
   onRefreshAll,
   onNavigateToSearch
 }: RoutePageProps) {
   const [currentClientId] = useState<string>(() => getOrCreateClientId());
-  const [activeTab, setActiveTab] = useState<'ACTIVE_ROUTE' | 'ARCHIVE'>('ACTIVE_ROUTE');
+  const [activeTab, setActiveTab] = useState<'ACTIVE_ROUTE' | 'SIGNED_RECORDS' | 'ARCHIVE'>('ACTIVE_ROUTE');
+  const [signedTrackingRecords, setSignedTrackingRecords] = useState<any[]>([]);
+  const [signedTrackingStats, setSignedTrackingStats] = useState<{
+    totalSigned: number;
+    signedUndelivered: number;
+    signedDelivered: number;
+    directDelivered: number;
+    routeDelivered: number;
+    waitingInActiveRoute: number;
+    waitingInPool: number;
+    totalDeliveredBags: number;
+    totalWaitingBags: number;
+  } | null>(null);
+
+  const [signedSubFilter, setSignedSubFilter] = useState<'ALL' | 'UNDELIVERED' | 'DELIVERED' | 'DIRECT_DELIVERED'>('ALL');
+  const [signedSearchQuery, setSignedSearchQuery] = useState<string>('');
+  const [signedSelectedMahalle, setSignedSelectedMahalle] = useState<string>('ALL');
   const [printRoute, setPrintRoute] = useState<any | null>(null);
 
   // Rota tutanağında görev alan tüm personellerin listesi
@@ -285,6 +337,12 @@ export default function RoutePage({
         });
         setArchivedRoutes(data.archivedRoutes || []);
         setSignedBeneficiaries(data.signedBeneficiaries || []);
+        if (data.signedTrackingRecords) {
+          setSignedTrackingRecords(data.signedTrackingRecords);
+        }
+        if (data.signedTrackingStats) {
+          setSignedTrackingStats(data.signedTrackingStats);
+        }
       }
     } catch (err) {
       console.error('Error fetching routes:', err);
@@ -410,6 +468,12 @@ export default function RoutePage({
       const data = await res.json();
       if (data.success && data.signedBeneficiaries) {
         setSignedBeneficiaries(data.signedBeneficiaries);
+        if (data.signedTrackingRecords) {
+          setSignedTrackingRecords(data.signedTrackingRecords);
+        }
+        if (data.signedTrackingStats) {
+          setSignedTrackingStats(data.signedTrackingStats);
+        }
         // Exclude beneficiaries that are already assigned to an ongoing active route or already delivered
         const availableSigned = (data.signedBeneficiaries || []).filter(
           (b: any) =>
@@ -2210,6 +2274,79 @@ export default function RoutePage({
     setSelectedBeneficiaryIds((prev) => [...prev].reverse());
   };
 
+  // Distinct neighborhood list for Signed Records tab
+  const signedMahalleList = useMemo(() => {
+    const set = new Set<string>();
+    (signedTrackingRecords || []).forEach((r) => {
+      if (r.mahalle) set.add(r.mahalle.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr-TR'));
+  }, [signedTrackingRecords]);
+
+  // Filtered list of signed tracking records with sub-filter, neighborhood, and search query
+  const filteredSignedRecords = useMemo(() => {
+    let list = signedTrackingRecords || [];
+
+    // Category / Sub Filter
+    if (signedSubFilter === 'UNDELIVERED') {
+      list = list.filter((r) => r.is_signed && !r.is_delivered);
+    } else if (signedSubFilter === 'DELIVERED') {
+      list = list.filter((r) => r.is_signed && r.is_delivered);
+    } else if (signedSubFilter === 'DIRECT_DELIVERED') {
+      list = list.filter((r) => r.dogrudan_teslimat);
+    }
+
+    // Mahalle Filter
+    if (signedSelectedMahalle !== 'ALL') {
+      list = list.filter((r) => (r.mahalle || '').trim() === signedSelectedMahalle);
+    }
+
+    // Search query (Name, TC, street, door no, phone, staff, notes, route name)
+    if (signedSearchQuery.trim()) {
+      const q = signedSearchQuery.trim().toLowerCase();
+      list = list.filter((r) => {
+        const name = (r.ad_soyad || '').toLowerCase();
+        const tc = (r.tc_no || '').toLowerCase();
+        const mah = (r.mahalle || '').toLowerCase();
+        const sok = (r.sokak || '').toLowerCase();
+        const addr = (r.acik_adres || '').toLowerCase();
+        const tel = (r.telefon || '').toLowerCase();
+        const staff = (r.teslim_eden_personel || r.imza_alan_personel || '').toLowerCase();
+        const rName = (r.rota_adi || '').toLowerCase();
+        const note = (r.teslimat_notu || '').toLowerCase();
+        return (
+          name.includes(q) ||
+          tc.includes(q) ||
+          mah.includes(q) ||
+          sok.includes(q) ||
+          addr.includes(q) ||
+          tel.includes(q) ||
+          staff.includes(q) ||
+          rName.includes(q) ||
+          note.includes(q)
+        );
+      });
+    }
+
+    return list;
+  }, [signedTrackingRecords, signedSubFilter, signedSelectedMahalle, signedSearchQuery]);
+
+  // Quick action: Add an undelivered signed beneficiary to an active route
+  const handleQuickAddToRoute = (record: any) => {
+    if (!activeRoutes || activeRoutes.length === 0) {
+      showAlert({
+        title: 'Aktif Dağıtım Rotası Bulunamadı',
+        message: 'Şu anda açık bir aktif dağıtım rotası bulunmamaktadır. Lütfen önce "Aktif Rotalar" sekmesinden yeni bir dağıtım rotası oluşturunuz.',
+        type: 'warning'
+      });
+      return;
+    }
+    const rId = String(activeRoutes[0].id || activeRoutes[0]._id);
+    setAddToRouteTargetId(rId);
+    setAddToRouteSelectedIds([String(record.id || record._id)]);
+    setShowAddToExistingModal(true);
+  };
+
   return (
     <div className="space-y-4 pb-20">
       {/* Top Header & Tab Navigation */}
@@ -2240,35 +2377,48 @@ export default function RoutePage({
           </button>
         </div>
 
-        {/* 2-Way Tab Bar: Aktif Rota vs Günlük Rota Arşivi */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 mt-3">
+        {/* 3-Way Tab Bar: Aktif Rotalar vs İmzalı Kayıtlar Takibi vs Günlük Rota Arşivi */}
+        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 mt-3">
           <button
             type="button"
             onClick={() => setActiveTab('ACTIVE_ROUTE')}
-            className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            className={`py-2 px-2 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               activeTab === 'ACTIVE_ROUTE'
                 ? 'bg-white text-slate-900 shadow-sm border border-slate-300/80 font-black'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Navigation className="w-4 h-4 text-sky-600" />
-            <span>Aktif Rotalar ({activeRoutes.length})</span>
+            <Navigation className="w-4 h-4 text-sky-600 shrink-0" />
+            <span className="truncate">Aktif Rotalar ({activeRoutes.length})</span>
             {activeRoutes.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5 shrink-0" />
             )}
           </button>
 
           <button
             type="button"
+            onClick={() => setActiveTab('SIGNED_RECORDS')}
+            className={`py-2 px-2 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeTab === 'SIGNED_RECORDS'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-300/80 font-black'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <PenTool className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="truncate">İmzalı Kayıtlar ({signedTrackingStats?.totalSigned ?? signedBeneficiaries.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('ARCHIVE')}
-            className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            className={`py-2 px-2 sm:px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               activeTab === 'ARCHIVE'
                 ? 'bg-white text-slate-900 shadow-sm border border-slate-300/80 font-black'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Archive className="w-4 h-4 text-amber-600" />
-            <span>Günlük Rota Arşivi ({archivedRoutes.length})</span>
+            <Archive className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">Rota Arşivi ({archivedRoutes.length})</span>
           </button>
         </div>
       </div>
@@ -2614,7 +2764,483 @@ export default function RoutePage({
       )}
 
       {/* ======================================================== */}
-      {/* TAB 2: GÜNLÜK ROTA ARŞİVİ                                */}
+      {/* TAB 2: SADECE İMZASI ALINAN KAYITLAR & DAĞITIM TAKİBİ    */}
+      {/* ======================================================== */}
+      {activeTab === 'SIGNED_RECORDS' && (
+        <div className="space-y-4">
+          {/* Header Card with Stats Overview */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100/80 flex items-center justify-center text-emerald-700 shrink-0">
+                  <PenTool className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>İmzası Alınan Hak Sahipleri</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Rotalardan Bağımsız Takip
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Resmi ıslak imzası alınan hak sahiplerinin rotalı, rotasız ve doğrudan kapı teslimat durumları
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                  {signedTrackingStats?.totalDeliveredBags || 0} Torba Teslim Edildi
+                </span>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                  {signedTrackingStats?.totalWaitingBags || 0} Torba Dağıtım Bekliyor
+                </span>
+              </div>
+            </div>
+
+            {/* 4 KPI Summary Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mt-4">
+              {/* Card 1: Toplam İmzası Alınan */}
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('ALL')}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  signedSubFilter === 'ALL'
+                    ? 'bg-indigo-50/80 border-indigo-400 ring-2 ring-indigo-200 shadow-xs'
+                    : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-600">Toplam İmzalı</span>
+                  <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
+                    <FileCheck className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-slate-900">
+                    {signedTrackingStats?.totalSigned ?? signedBeneficiaries.length}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500">Hane</span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium mt-1 truncate">
+                  Tüm ıslak imzalı kayıtlar
+                </p>
+              </button>
+
+              {/* Card 2: İmzası Alınıp Teslim Edilmeyen */}
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('UNDELIVERED')}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  signedSubFilter === 'UNDELIVERED'
+                    ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-200 shadow-xs'
+                    : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-900">İmzalı & Teslim Edilmeyen</span>
+                  <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-amber-900">
+                    {signedTrackingStats?.signedUndelivered || 0}
+                  </span>
+                  <span className="text-[11px] font-bold text-amber-700">Bekliyor</span>
+                </div>
+                <p className="text-[11px] text-amber-800 font-medium mt-1 truncate">
+                  {signedTrackingStats?.waitingInActiveRoute || 0} rotada • {signedTrackingStats?.waitingInPool || 0} havuzda
+                </p>
+              </button>
+
+              {/* Card 3: İmzası Alınıp Teslim Edilen */}
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('DELIVERED')}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  signedSubFilter === 'DELIVERED'
+                    ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-200 shadow-xs'
+                    : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-900">İmzalı & Teslim Edilen</span>
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-emerald-900">
+                    {signedTrackingStats?.signedDelivered || 0}
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-700">Tamamlandı</span>
+                </div>
+                <p className="text-[11px] text-emerald-800 font-medium mt-1 truncate">
+                  {signedTrackingStats?.routeDelivered || 0} rotayla • {signedTrackingStats?.directDelivered || 0} rotasız
+                </p>
+              </button>
+
+              {/* Card 4: Rotaya Dahil Edilmeden Teslim Edilen */}
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('DIRECT_DELIVERED')}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  signedSubFilter === 'DIRECT_DELIVERED'
+                    ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-200 shadow-xs'
+                    : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-purple-900">Rotasız Doğrudan Teslim</span>
+                  <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700">
+                    <Zap className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-purple-900">
+                    {signedTrackingStats?.directDelivered || 0}
+                  </span>
+                  <span className="text-[11px] font-bold text-purple-700">Doğrudan</span>
+                </div>
+                <p className="text-[11px] text-purple-800 font-medium mt-1 truncate">
+                  Rotaya sokulmadan teslim edilenler
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Sub-Filter Tabs & Search Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-xs space-y-3">
+            {/* Pill Tabs */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                  signedSubFilter === 'ALL'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Tümü ({(signedTrackingRecords || []).length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('UNDELIVERED')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                  signedSubFilter === 'UNDELIVERED'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/80'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>İmzalı & Teslim Bekleyenler ({signedTrackingStats?.signedUndelivered || 0})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('DELIVERED')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                  signedSubFilter === 'DELIVERED'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/80'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>İmzalı & Teslim Edilenler ({signedTrackingStats?.signedDelivered || 0})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSignedSubFilter('DIRECT_DELIVERED')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                  signedSubFilter === 'DIRECT_DELIVERED'
+                    ? 'bg-purple-700 text-white shadow-xs'
+                    : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200/80'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Rotaya Dahil Edilmeden Teslim ({signedTrackingStats?.directDelivered || 0})</span>
+              </button>
+            </div>
+
+            {/* Search Input & Mahalle Dropdown Filter */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1 border-t border-slate-100">
+              <div className="sm:col-span-8 relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={signedSearchQuery}
+                  onChange={(e) => setSignedSearchQuery(e.target.value)}
+                  placeholder="İsim, TC, sokak, mahalle, personel, rota adı ara..."
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
+                />
+                {signedSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSignedSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="sm:col-span-4 relative">
+                <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <select
+                  value={signedSelectedMahalle}
+                  onChange={(e) => setSignedSelectedMahalle(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 bg-slate-50/50 font-medium text-slate-700 cursor-pointer"
+                >
+                  <option value="ALL">Tüm Mahalleler ({signedMahalleList.length})</option>
+                  {signedMahalleList.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Results count & clear active filters */}
+            {(signedSearchQuery || signedSelectedMahalle !== 'ALL' || signedSubFilter !== 'ALL') && (
+              <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                <span>
+                  Filtrelenen: <strong className="text-slate-800">{filteredSignedRecords.length}</strong> hane gösteriliyor
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignedSearchQuery('');
+                    setSignedSelectedMahalle('ALL');
+                    setSignedSubFilter('ALL');
+                  }}
+                  className="text-emerald-700 hover:underline font-bold text-[11px]"
+                >
+                  Filtreleri Temizle
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Records List */}
+          {filteredSignedRecords.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-white border border-slate-200 shadow-xs text-center space-y-2">
+              <FileCheck className="w-10 h-10 text-slate-400 mx-auto" />
+              <p className="text-sm font-extrabold text-slate-800">Kayıt Bulunamadı</p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Seçilen filtrelere veya arama kriterlerine uygun imzalı kayıt bulunmuyor.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredSignedRecords.map((person: any, idx: number) => {
+                const isDelivered = person.is_delivered || person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
+                const isPartial = person.teslimat_durumu === 'EKSIK';
+                const isInActiveRoute = person.rotada_var_mi && (person.rota_durumu === 'AKTIF' || person.rota_durumu === 'DURAKLATILDI');
+
+                return (
+                  <div
+                    key={person.id || person._id || idx}
+                    className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs hover:border-slate-300 transition-all"
+                  >
+                    {/* Top Row: Name, TC, Quota Badge */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-900 tracking-tight">
+                            {person.ad_soyad}
+                          </h4>
+                          <span className="text-[11px] font-semibold text-slate-500 font-mono">
+                            TC: {person.tc_no || 'Belirtilmemiş'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+                        {isDelivered ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-black text-xs border border-emerald-200">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{person.torba_sayisi || person.hedef_torba || 34} Torba Teslim Edildi</span>
+                          </span>
+                        ) : isPartial ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-50 text-orange-800 font-black text-xs border border-orange-200">
+                            <Clock className="w-3.5 h-3.5 text-orange-600" />
+                            <span>{person.torba_sayisi || 0}/{person.hedef_torba || 34} Torba (Eksik)</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 font-black text-xs border border-amber-200">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>{person.hedef_torba || 34} Torba Dağıtım Bekliyor</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Address Line */}
+                    <div className="mt-2 text-xs text-slate-700 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/70">
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold text-slate-800">
+                            {person.mahalle || ''}
+                            {person.sokak ? ` • ${person.sokak}` : ''}
+                            {person.kapi_no && person.kapi_no !== 999999 ? ` No: ${person.kapi_no}` : ''}
+                            {person.daire_no ? ` Daire: ${person.daire_no}` : ''}
+                          </span>
+                          {person.acik_adres && (
+                            <p className="text-[11px] text-slate-500 font-medium mt-0.5 line-clamp-2">
+                              {person.acik_adres}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Metadata & Status Badges */}
+                    <div className="mt-2.5 flex flex-wrap gap-1.5 text-xs">
+                      {/* Signature Badge */}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200/80">
+                        <FileCheck className="w-3 h-3 text-emerald-600" />
+                        <span>İmza Alındı</span>
+                        {person.imza_tarihi && (
+                          <span className="text-emerald-700 font-medium font-mono">({person.imza_tarihi})</span>
+                        )}
+                        {person.imza_alan_personel && (
+                          <span className="text-slate-500 font-medium">• {person.imza_alan_personel}</span>
+                        )}
+                      </span>
+
+                      {/* Route / Direct Delivery Badge */}
+                      {person.dogrudan_teslimat ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 font-bold text-[11px] border border-purple-200/80">
+                          <Zap className="w-3 h-3 text-purple-600" />
+                          <span>Rotaya Dahil Edilmeden Doğrudan Teslim Edildi</span>
+                        </span>
+                      ) : person.teslimat_sekli === 'ROTA_TESLIMATI' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 font-bold text-[11px] border border-sky-200/80">
+                          <RouteIcon className="w-3 h-3 text-sky-600" />
+                          <span>Rota İle Teslim Edildi: {person.rota_adi}</span>
+                        </span>
+                      ) : person.teslimat_sekli === 'ROTADA_BEKLIYOR' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-bold text-[11px] border border-blue-200/80">
+                          <Truck className="w-3 h-3 text-blue-600" />
+                          <span>Aktif Rotada Dağıtımda: {person.rota_adi}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[11px] border border-slate-200/80">
+                          <Clock className="w-3 h-3 text-slate-500" />
+                          <span>Dağıtım Havuzunda Bekliyor (Rotasız)</span>
+                        </span>
+                      )}
+
+                      {/* Delivery Personnel & Date */}
+                      {isDelivered && person.teslim_eden_personel && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
+                          <span>Teslim Eden: <strong>{person.teslim_eden_personel}</strong></span>
+                          {person.teslimat_tarihi && (
+                            <span className="text-slate-500 font-mono">({person.teslimat_tarihi})</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Actions Row */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      {/* Left: Navigation Buttons (Yandex 1st, Google 2nd, Parsel 3rd) */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <a
+                          href={getYandexNaviUrl(person)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-bold text-xs shrink-0 transition-all shadow-xs"
+                          title="1. Öncelik: Yandex Navigasyon ile kapıya yol tarifi al"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>Yol Tarifi</span>
+                        </a>
+
+                        <a
+                          href={getGoogleMapsUrl(person)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300 shrink-0 transition-all shadow-xs"
+                          title="2. Öncelik: Google Haritalar ile aç"
+                        >
+                          <span>Google</span>
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const summary = getParselSorguSearchSummary(person);
+                            if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                              navigator.clipboard.writeText(summary).catch(() => {});
+                            }
+                            window.open(PARSEL_SORGU_URL, '_blank', 'noopener,noreferrer');
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-bold text-xs border border-indigo-200 shrink-0 transition-all shadow-xs cursor-pointer"
+                          title="3. Öncelik: TKGM Parsel Sorgu"
+                        >
+                          <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Parsel</span>
+                        </button>
+
+                        {person.telefon && (
+                          <a
+                            href={`tel:${person.telefon}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs border border-emerald-200 shrink-0 transition-all shadow-xs"
+                            title={`Ara: ${formatPhoneDisplay(person.telefon)}`}
+                          >
+                            <Phone className="w-3 h-3 text-emerald-600" />
+                            <span>{formatPhoneDisplay(person.telefon)}</span>
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Right: Add to Route or Direct Delivery Action if undelivered */}
+                      {!isDelivered && (
+                        <div className="flex items-center gap-1.5">
+                          {!isInActiveRoute && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickAddToRoute(person)}
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 font-bold text-xs border border-sky-300 transition-all active:scale-95 shadow-xs cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Rotaya Ekle</span>
+                            </button>
+                          )}
+
+                          {onCompleteHousehold && (
+                            <button
+                              type="button"
+                              onClick={() => onCompleteHousehold(person)}
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-all active:scale-95 shadow-xs cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Teslim Et</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 3: GÜNLÜK ROTA ARŞİVİ                                */}
       {/* ======================================================== */}
       {activeTab === 'ARCHIVE' && (
         <div className="space-y-3">

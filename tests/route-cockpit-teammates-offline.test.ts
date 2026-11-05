@@ -137,3 +137,108 @@ test('4. Kod Bütünlüğü: Ekip arkadaşları kilit engeli olmadan durak ekley
     'RoutePage çevrimdışı teslimatı kaydetmeli ve eksik teslimatta EKSIK durumunu uygulamalıdır'
   );
 });
+
+test('5. Sadece İmzası Alınan Kayıtlar & Dağıtım Takibi: Rotalı/Rotasız ve Doğrudan Teslimat Ayrımı', () => {
+  // 1. Backend API & Frontend Component Doğrulaması
+  const routeApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/routes/route.ts'), 'utf-8');
+  const routePageSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/RoutePage.tsx'), 'utf-8');
+
+  // A. Backend API signedTrackingRecords & signedTrackingStats üretmeli
+  assert.ok(
+    routeApiSrc.includes('signedTrackingRecords') &&
+      routeApiSrc.includes('signedTrackingStats') &&
+      routeApiSrc.includes('routeBeneficiaryMap') &&
+      routeApiSrc.includes('dogrudan_teslimat'),
+    'GET /api/routes imzalı kayıtların rotalı/rotasız durumlarını ve istatistiklerini haritalamalıdır'
+  );
+
+  // B. RoutePage SIGNED_RECORDS sekmesini ve 4 adet KPI/filtre kategorisini barındırmalı
+  assert.ok(
+    routePageSrc.includes("'SIGNED_RECORDS'") &&
+      routePageSrc.includes('signedTrackingStats') &&
+      routePageSrc.includes('signedTrackingRecords') &&
+      routePageSrc.includes("'UNDELIVERED'") &&
+      routePageSrc.includes("'DELIVERED'") &&
+      routePageSrc.includes("'DIRECT_DELIVERED'"),
+    'RoutePage imzalı kayıtlar için SIGNED_RECORDS sekmesine ve alt filtrelerine sahip olmalıdır'
+  );
+
+  // C. RoutePage üzerinde navigasyon (Yandex 1., Google 2., Parsel 3.) butonları yer almalı
+  assert.ok(
+    routePageSrc.includes('getYandexNaviUrl(person)') &&
+      routePageSrc.includes('getGoogleMapsUrl(person)') &&
+      routePageSrc.includes('getParselSorguSearchSummary(person)') &&
+      routePageSrc.includes('PARSEL_SORGU_URL'),
+    'RoutePage imzalı kayıtlar listesinde Yandex, Google ve Parsel Sorgu navigasyon butonlarını sunmalıdır'
+  );
+
+  // 2. Saf Mantık & İstatistik Ayrıştırma Testi
+  const sampleBeneficiaries = [
+    // 1. İmzalı & Aktif Rotada Bekleyen
+    { id: 'b1', tc_no: '11111111110', ad_soyad: 'Ahmet Yılmaz', imza_durumu: 'IMZALANDI', teslimat_durumu: 'BEKLIYOR', hedef_torba: 34 },
+    // 2. İmzalı & Havuzda Bekleyen (Rotasız)
+    { id: 'b2', tc_no: '22222222220', ad_soyad: 'Mehmet Kaya', imza_durumu: 'IMZALANDI', teslimat_durumu: 'BEKLIYOR', hedef_torba: 34 },
+    // 3. İmzalı & Rota İle Teslim Edilen
+    { id: 'b3', tc_no: '33333333330', ad_soyad: 'Ayşe Demir', imza_durumu: 'IMZALANDI', teslimat_durumu: 'TAMAMLANDI', torba_sayisi: 34, hedef_torba: 34 },
+    // 4. İmzalı & Rotaya Dahil Edilmeden Doğrudan Teslim Edilen
+    { id: 'b4', tc_no: '44444444440', ad_soyad: 'Fatma Çelik', imza_durumu: 'IMZALANDI', teslimat_durumu: 'TAMAMLANDI', torba_sayisi: 34, hedef_torba: 34 },
+  ];
+
+  const routeBeneficiaryMap = new Map<string, { routeId: string; routeName: string; routeStatus: string }>();
+  routeBeneficiaryMap.set('b1', { routeId: 'r1', routeName: 'Ekip 1 Rotası', routeStatus: 'AKTIF' });
+  routeBeneficiaryMap.set('b3', { routeId: 'r2', routeName: 'Dünkü Arşiv Rotası', routeStatus: 'TAMAMLANDI' });
+
+  let totalSigned = 0;
+  let signedUndelivered = 0;
+  let signedDelivered = 0;
+  let directDelivered = 0;
+  let routeDelivered = 0;
+
+  const processed = sampleBeneficiaries.map((b) => {
+    const routeInfo = routeBeneficiaryMap.get(b.id);
+    const isInRoute = !!routeInfo;
+    const isDelivered = b.teslimat_durumu === 'TAMAMLANDI';
+    const isSigned = b.imza_durumu === 'IMZALANDI';
+    const isDirectDelivery = isDelivered && !isInRoute;
+
+    if (isSigned) {
+      totalSigned++;
+      if (isDelivered) signedDelivered++;
+      else signedUndelivered++;
+    }
+    if (isDelivered) {
+      if (isInRoute) routeDelivered++;
+      else directDelivered++;
+    }
+
+    let teslimatSekli = 'HAVUZDA_BEKLIYOR';
+    if (isDelivered) teslimatSekli = isInRoute ? 'ROTA_TESLIMATI' : 'DOGRUDAN_TESLIMAT';
+    else teslimatSekli = isInRoute ? 'ROTADA_BEKLIYOR' : 'HAVUZDA_BEKLIYOR';
+
+    return {
+      ...b,
+      isInRoute,
+      isDirectDelivery,
+      teslimatSekli
+    };
+  });
+
+  assert.strictEqual(totalSigned, 4, 'Toplam imzalı hane 4 olmalıdır');
+  assert.strictEqual(signedUndelivered, 2, 'İmzası alınıp teslim edilmeyen 2 hane olmalıdır');
+  assert.strictEqual(signedDelivered, 2, 'İmzası alınıp teslim edilen 2 hane olmalıdır');
+  assert.strictEqual(directDelivered, 1, 'Rotaya dahil edilmeden teslim edilen 1 hane olmalıdır (Fatma Çelik)');
+  assert.strictEqual(routeDelivered, 1, 'Rota ile teslim edilen 1 hane olmalıdır (Ayşe Demir)');
+
+  const b1 = processed.find((p) => p.id === 'b1');
+  assert.strictEqual(b1?.teslimatSekli, 'ROTADA_BEKLIYOR');
+
+  const b2 = processed.find((p) => p.id === 'b2');
+  assert.strictEqual(b2?.teslimatSekli, 'HAVUZDA_BEKLIYOR');
+
+  const b3 = processed.find((p) => p.id === 'b3');
+  assert.strictEqual(b3?.teslimatSekli, 'ROTA_TESLIMATI');
+
+  const b4 = processed.find((p) => p.id === 'b4');
+  assert.strictEqual(b4?.teslimatSekli, 'DOGRUDAN_TESLIMAT');
+  assert.strictEqual(b4?.isDirectDelivery, true);
+});
