@@ -26,6 +26,7 @@ import {
   Minimize2,
   Navigation,
   Building2,
+  Trash2,
 } from 'lucide-react';
 import { showToast } from '@/components/GlobalAlertManager';
 import { formatPhoneDisplay, getBeneficiaryListTypeInfo, getRecordPhones, getYandexNaviUrl, getGoogleMapsUrl, getParselSorguSearchSummary, PARSEL_SORGU_URL } from '@/lib/normalizer';
@@ -63,6 +64,7 @@ export interface RouteModeCockpitModalProps {
   handleRouteModeSubmit: (submitKind: 'COMPLETE' | 'DEFER_LATER') => Promise<void>;
   handleSkipCurrentStop: () => void;
   setCancelStopTarget: Dispatch<SetStateAction<any | null>>;
+  onRemoveStop?: (stopIndex: number, stop: any) => Promise<void> | void;
   userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
@@ -97,10 +99,12 @@ export default function RouteModeCockpitModal({
   handleRouteModeSubmit,
   handleSkipCurrentStop,
   setCancelStopTarget,
+  onRemoveStop,
   userRole = 'PERSONEL',
 }: RouteModeCockpitModalProps) {
   const stops: any[] = activeRoute?.duraklar || [];
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showCompletedSection, setShowCompletedSection] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   useEffect(() => {
@@ -133,7 +137,19 @@ export default function RouteModeCockpitModal({
   const currentStop = stops[safeIndex] || null;
   const currentStopListInfo = getBeneficiaryListTypeInfo(currentStop);
   const currentStopPhones = getRecordPhones(currentStop);
-  const nextStopInOrder = safeIndex + 1 < totalStops ? stops[safeIndex + 1] : null;
+
+  // Kömür teslimi tamamlanmış ve teslimatı henüz tamamlanmamış kayıtları ayır
+  const completedStops = stops
+    .map((s, idx) => ({ ...s, originalIndex: idx }))
+    .filter((s) => s.durum === 'TAMAMLANDI');
+
+  const incompleteStops = stops
+    .map((s, idx) => ({ ...s, originalIndex: idx }))
+    .filter((s) => s.durum !== 'TAMAMLANDI');
+
+  // Sıradaki eksik/bekleyen durak
+  const nextIncompleteStop = incompleteStops.find((s) => s.originalIndex > safeIndex) || (incompleteStops.length > 1 ? incompleteStops[0] : null);
+  const nextStopInOrder = nextIncompleteStop ? stops[nextIncompleteStop.originalIndex] : null;
 
   // Canlı Eşzamanlı Operatörler (Aynı rotayı şu anda açık tutan diğer ekip arkadaşları)
   const localClientId =
@@ -146,7 +162,7 @@ export default function RouteModeCockpitModal({
     return Date.now() - Number(op.timestamp || 0) < 90 * 1000;
   });
 
-  const completedCount = stops.filter((s) => s.durum === 'TAMAMLANDI').length;
+  const completedCount = completedStops.length;
   const deferredStops = stops
     .map((s, idx) => ({ stop: s, index: idx }))
     .filter(({ stop }) => stop.durum === 'EKSIK' || stop.durum === 'TESLIM_EDILEMEDI');
@@ -162,11 +178,8 @@ export default function RouteModeCockpitModal({
     totalStops > 0 ? Math.min(100, Math.round((completedCount / totalStops) * 100)) : 0;
 
   const isLastStopInRoute = safeIndex >= totalStops - 1;
-  const hasRemainingStopsAfterCurrent = stops.some(
-    (s, idx) => idx > safeIndex && s.durum !== 'TAMAMLANDI'
-  );
-  const isOnlyRemainingStop =
-    stops.filter((s, idx) => idx !== safeIndex && s.durum !== 'TAMAMLANDI').length === 0;
+  const hasRemainingStopsAfterCurrent = incompleteStops.some((s) => s.originalIndex > safeIndex);
+  const isOnlyRemainingStop = incompleteStops.length <= 1;
 
   const hedefTorba = Number(currentStop?.hedef_torba) || 34;
   const prevDeliveredTorba = Number(currentStop?.teslim_edilen_torba) || 0;
@@ -226,14 +239,20 @@ export default function RouteModeCockpitModal({
 
     if (dt > 600 || Math.abs(dx) < 70 || Math.abs(dy) > 45) return;
 
-    if (dx < -70 && safeIndex + 1 < totalStops) {
-      const nextIdx = safeIndex + 1;
-      setRouteModeIndex(nextIdx);
-      syncRouteModeInputsForStop(stops[nextIdx]);
-    } else if (dx > 70 && safeIndex > 0) {
-      const prevIdx = safeIndex - 1;
-      setRouteModeIndex(prevIdx);
-      syncRouteModeInputsForStop(stops[prevIdx]);
+    if (dx < -70) {
+      // Sonraki eksik hane
+      const nextTarget = incompleteStops.find((s) => s.originalIndex > safeIndex) || (incompleteStops.length > 0 ? incompleteStops[0] : null);
+      if (nextTarget) {
+        setRouteModeIndex(nextTarget.originalIndex);
+        syncRouteModeInputsForStop(stops[nextTarget.originalIndex]);
+      }
+    } else if (dx > 70) {
+      // Önceki eksik hane
+      const prevTarget = [...incompleteStops].reverse().find((s) => s.originalIndex < safeIndex) || (incompleteStops.length > 0 ? incompleteStops[incompleteStops.length - 1] : null);
+      if (prevTarget) {
+        setRouteModeIndex(prevTarget.originalIndex);
+        syncRouteModeInputsForStop(stops[prevTarget.originalIndex]);
+      }
     }
   };
 
@@ -243,11 +262,6 @@ export default function RouteModeCockpitModal({
       role="dialog"
       aria-modal="true"
       aria-label={`Rota Modu: ${activeRoute.rota_adi || 'Dağıtım Rotası'}`}
-      onPointerDown={() => {
-        if (!isAppFullscreen()) {
-          requestAppFullscreen();
-        }
-      }}
     >
       {/* 1. SADE & NET ÜST KOKPİT BARI */}
       <div className="route-mode-topbar">
@@ -301,8 +315,25 @@ export default function RouteModeCockpitModal({
               </div>
             </div>
 
-            {/* Sağ Üst Aksiyonlar: Liste (Sıra Seç), Tam Ekran, Çıkış */}
+            {/* Sağ Üst Aksiyonlar: Tamamlananlar, Liste (Sıra Seç), Tam Ekran, Çıkış */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Teslimatı Tamamlanan Rota Kayıtları Butonu */}
+              <button
+                type="button"
+                onClick={() => setShowCompletedSection(true)}
+                className="min-h-[38px] px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95"
+                style={{
+                  background: 'rgba(16, 185, 129, 0.22)',
+                  border: '1px solid rgba(16, 185, 129, 0.6)',
+                  color: '#6ee7b7',
+                }}
+                title="Kömür teslimi yapılmış tamamlanan rota kayıtlarını görüntüle"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline">Tamamlanan</span>
+                <span>({completedStops.length})</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -996,22 +1027,34 @@ export default function RouteModeCockpitModal({
                         </div>
                       </div>
 
-                      {/* ANA TESLİMAT BUTONU (TEK DOKUNUŞLA TAMAMLA & SIRADAKİNE GEÇ) */}
-                      <button
-                        type="button"
-                        onClick={() => handleRouteModeSubmit('COMPLETE')}
-                        disabled={isActionLoading}
-                        className="w-full min-h-[56px] py-4 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md active:scale-[0.99] transition-all cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-5 h-5 shrink-0" />
-                        <span>
-                          {isActionLoading
-                            ? 'Kaydediliyor...'
-                            : isOnlyRemainingStop
-                            ? `🎉 ${routeModeTorba || hedefTorba} TORBA TESLİM ET & ROTAYI BİTİR`
-                            : `✓ ${routeModeTorba || hedefTorba} TORBA TESLİM ET & SIRADAKİNE GEÇ →`}
-                        </span>
-                      </button>
+                      {/* ANA TESLİMAT BUTONU (TEK DOKUNUŞLA TAMAMLA / EKSİK TESLİM ET & SIRADAKİNE GEÇ) */}
+                      {(() => {
+                        const parsedInputTorba = parseInt(routeModeTorba, 10);
+                        const isPartialDelivery = !isNaN(parsedInputTorba) && parsedInputTorba > 0 && parsedInputTorba < remainingForStop;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleRouteModeSubmit('COMPLETE')}
+                            disabled={isActionLoading}
+                            className={`w-full min-h-[56px] py-4 px-5 rounded-2xl text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md active:scale-[0.99] transition-all cursor-pointer ${
+                              isPartialDelivery
+                                ? 'bg-amber-600 hover:bg-amber-700'
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-5 h-5 shrink-0" />
+                            <span>
+                              {isActionLoading
+                                ? 'Kaydediliyor...'
+                                : isPartialDelivery
+                                ? `⚠️ ${routeModeTorba} TORBA EKSİK TESLİM ET & SIRADAKİNE GEÇ →`
+                                : isOnlyRemainingStop
+                                ? `🎉 ${routeModeTorba || hedefTorba} TORBA TESLİM ET & ROTAYI BİTİR`
+                                : `✓ ${routeModeTorba || hedefTorba} TORBA TESLİM ET & SIRADAKİNE GEÇ →`}
+                            </span>
+                          </button>
+                        );
+                      })()}
 
                       {/* İKİNCİL HIZLI SAHA AKSİYONLARI (EKSİK / EVDE YOK vs ŞİMDİLİK ATLA) */}
                       <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1043,6 +1086,20 @@ export default function RouteModeCockpitModal({
                           <span>Şimdilik Atla →</span>
                         </button>
                       </div>
+
+                      {/* Rotadan Çıkar Butonu (Yanlışlıkla eklenen veya çıkarılmak istenen durak) */}
+                      {onRemoveStop && currentStop.durum !== 'TAMAMLANDI' && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveStop(safeIndex, currentStop)}
+                          disabled={isActionLoading}
+                          className="w-full min-h-[38px] py-2 px-3 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 mt-1"
+                          title="Bu haneyi mevcut rotadan çıkarıp boşa alır"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Rotadan Çıkar (Hatalı Eklendi)</span>
+                        </button>
+                      )}
                     </div>
                   ) : (
                     /* MOD 2: EKSİK BIRAK / EVDE YOK (DAHA SONRA TAMAMLANACAK) */
@@ -1211,11 +1268,14 @@ export default function RouteModeCockpitModal({
                 setRouteModePausedNotice(false);
                 return;
               }
-              const prevIdx = Math.max(0, safeIndex - 1);
-              setRouteModeIndex(prevIdx);
-              syncRouteModeInputsForStop(stops[prevIdx]);
+              if (incompleteStops.length === 0) return;
+              const prevTarget = [...incompleteStops].reverse().find((s) => s.originalIndex < safeIndex) || incompleteStops[incompleteStops.length - 1];
+              if (prevTarget) {
+                setRouteModeIndex(prevTarget.originalIndex);
+                syncRouteModeInputsForStop(stops[prevTarget.originalIndex]);
+              }
             }}
-            disabled={!routeModePausedNotice && safeIndex === 0}
+            disabled={!routeModePausedNotice && incompleteStops.length <= 1}
             className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-black flex items-center gap-1 border border-slate-300 shrink-0 active:scale-95"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -1227,7 +1287,7 @@ export default function RouteModeCockpitModal({
             {nextStopInOrder ? (
               <div className="truncate">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400 block">
-                  SIRADAKİ (#{nextStopInOrder.sira || safeIndex + 2})
+                  SIRADAKİ BEKLEYEN (#{nextStopInOrder.sira || (nextIncompleteStop?.originalIndex || 0) + 1})
                 </span>
                 <span className="text-xs font-black text-slate-800 truncate block">
                   {nextStopInOrder.ad_soyad}
@@ -1250,32 +1310,16 @@ export default function RouteModeCockpitModal({
           <button
             type="button"
             onClick={() => {
-              if (safeIndex + 1 < totalStops) {
-                const nextIdx = safeIndex + 1;
-                setRouteModeIndex(nextIdx);
-                syncRouteModeInputsForStop(stops[nextIdx]);
-              } else {
-                const earliestIncomplete = stops.findIndex(
-                  (s: any, idx: number) => idx < safeIndex && s.durum !== 'TAMAMLANDI'
-                );
-                if (earliestIncomplete !== -1) {
-                  setRouteModeIndex(earliestIncomplete);
-                  syncRouteModeInputsForStop(stops[earliestIncomplete]);
-                  showToast({
-                    type: 'info',
-                    title: 'Önceki Eksik / Bekleyen Haneye Dönüldü',
-                    message: `#${stops[earliestIncomplete].sira || earliestIncomplete + 1}. sıradaki haneye dönüldü: ${stops[earliestIncomplete].ad_soyad}`,
-                    durationMs: 3500,
-                  });
-                } else if (deferredStops.length > 0) {
-                  setRouteModePausedNotice(true);
-                }
+              if (incompleteStops.length === 0) return;
+              const nextTarget = incompleteStops.find((s) => s.originalIndex > safeIndex) || incompleteStops[0];
+              if (nextTarget) {
+                setRouteModeIndex(nextTarget.originalIndex);
+                syncRouteModeInputsForStop(stops[nextTarget.originalIndex]);
+              } else if (deferredStops.length > 0) {
+                setRouteModePausedNotice(true);
               }
             }}
-            disabled={
-              safeIndex >= totalStops - 1 &&
-              !stops.some((s: any, idx: number) => idx < safeIndex && s.durum !== 'TAMAMLANDI')
-            }
+            disabled={incompleteStops.length <= 1}
             className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-black flex items-center gap-1 border border-slate-300 shrink-0 active:scale-95"
           >
             <span>Sonraki</span>
@@ -1283,6 +1327,129 @@ export default function RouteModeCockpitModal({
           </button>
         </div>
       </div>
+
+      {/* 3.5. TESLİMATI TAMAMLANAN ROTA KAYITLARI MODALI / BÖLÜMÜ */}
+      {showCompletedSection && (
+        <div
+          className="fixed inset-0 z-[100000] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setShowCompletedSection(false)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[88vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-black truncate">
+                    Teslimatı Tamamlanan Rota Kayıtları ({completedStops.length})
+                  </h3>
+                  <p className="text-xs text-slate-300 truncate">
+                    Bu rotada kömür teslimi başarıyla yapılan haneler
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCompletedSection(false)}
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-colors"
+                title="Kapat"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {completedStops.length === 0 ? (
+                <div className="p-8 text-center text-slate-500">
+                  <CheckCircle2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-slate-700">Henüz tamamlanan teslimat yok</p>
+                  <p className="text-xs text-slate-500 mt-1">Kömür teslimatı yapıldıkça tamamlanan kayıtlar burada arşivlenir.</p>
+                </div>
+              ) : (
+                completedStops.map((stop) => {
+                  const targetBenId = String(stop.beneficiary_id || stop.id || '');
+                  return (
+                    <div
+                      key={targetBenId || stop.originalIndex}
+                      className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-200 flex flex-col gap-2 hover:bg-emerald-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                            #{stop.sira || stop.originalIndex + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate">
+                              {stop.ad_soyad}
+                            </h4>
+                            <span className="text-[11px] font-mono font-bold text-slate-500">
+                              TC: {stop.tc_no || '—'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-xl bg-emerald-600 text-white text-xs font-black shrink-0 shadow-2xs">
+                          ✓ {stop.teslim_edilen_torba || stop.hedef_torba || 34} Torba
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 font-medium">
+                        <span>{stop.mahalle}</span>
+                        {stop.sokak && <span> • {stop.sokak}</span>}
+                        {stop.kapi_no && <span> No:{stop.kapi_no}</span>}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-emerald-100 text-[11px] text-slate-500">
+                        <div className="flex items-center gap-1 truncate">
+                          <span>Teslim Alan:</span>
+                          <strong className="text-slate-800">{stop.teslim_alan || stop.ad_soyad}</strong>
+                          {stop.teslim_eden_personel && (
+                            <>
+                              <span>•</span>
+                              <span>{stop.teslim_eden_personel}</span>
+                            </>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRouteModePausedNotice(false);
+                            setRouteModeIndex(stop.originalIndex);
+                            syncRouteModeInputsForStop(stops[stop.originalIndex]);
+                            setShowCompletedSection(false);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px] shrink-0"
+                        >
+                          İncele / Aç
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
+              <span className="text-xs font-bold text-slate-600">
+                Toplam: <strong className="text-emerald-700">{completedStops.length} Hane</strong> (
+                {completedStops.reduce((sum, s) => sum + (Number(s.teslim_edilen_torba) || Number(s.hedef_torba) || 34), 0)} Torba)
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCompletedSection(false)}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-xs active:scale-95 transition-all"
+              >
+                Geri Dön
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 4. ROTADAKİ TÜM HANELER / SERBEST SIRA SEÇİCİ MODALI */}
       {showStopPickerModal && (
@@ -1450,7 +1617,22 @@ export default function RouteModeCockpitModal({
                         </div>
                       </div>
 
-                      <ArrowRight className="w-4 h-4 text-sky-600 shrink-0" />
+                      <div className="flex items-center gap-1 shrink-0">
+                        {onRemoveStop && !isDone && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveStop(pIdx, pStop);
+                            }}
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="Rotadan Çıkar"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <ArrowRight className="w-4 h-4 text-sky-600 shrink-0" />
+                      </div>
                     </button>
                   );
                 })

@@ -148,9 +148,27 @@ export default function Home() {
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMahalleler, setSelectedMahalleler] = useState<string[]>([]);
+  const [selectedMahalleler, setSelectedMahalleler] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('komur_filter_mahalleler');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL'>('PENDING_AND_PARTIAL');
   const [selectedDurumFilter, setSelectedDurumFilter] = useState<string>('HEPSI');
+  const [activeRoutes, setActiveRoutes] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('komur_filter_mahalleler', JSON.stringify(selectedMahalleler));
+    } catch {}
+  }, [selectedMahalleler]);
 
   // Data states
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
@@ -694,6 +712,13 @@ export default function Home() {
       const res = await fetch('/api/routes');
       const data = await res.json();
       if (data.success) {
+        if (Array.isArray(data.activeRoutes)) {
+          setActiveRoutes(data.activeRoutes);
+        } else if (data.activeRoute) {
+          setActiveRoutes([data.activeRoute]);
+        } else {
+          setActiveRoutes([]);
+        }
         if (Array.isArray(data.activeRoutes) && data.activeRoutes.length > 0) {
           let totalPending = 0;
           data.activeRoutes.forEach((r: any) => {
@@ -1253,6 +1278,7 @@ export default function Home() {
             <BeneficiaryList
               records={beneficiaries}
               mahalleler={mahalleler}
+              activeRoutes={activeRoutes}
               userRole={userRole}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}

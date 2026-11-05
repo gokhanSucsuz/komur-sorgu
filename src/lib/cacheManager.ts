@@ -28,7 +28,9 @@ const EXACT_PROTECTED_KEYS = new Set([
   'komur_active_route_session_last',
   'komur_lite_mode',
   'pwa_banner_dismissed',
-  'komur_app_version'
+  'komur_app_version',
+  'komur_filter_mahalleler',
+  'komur_filter_sokak'
 ]);
 
 /**

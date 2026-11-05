@@ -13,6 +13,7 @@ const RouteModeCockpitModal = dynamic(() => import('./route/RouteModeCockpitModa
 import { formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';
+import { saveOfflineDelivery } from '@/lib/offlineSync';
 
 function getOrCreateClientId(): string {
   if (typeof window === 'undefined') return '';
@@ -115,7 +116,7 @@ export default function RoutePage({
   // Check if current user is authorized to deliver / resume / manage this route (Admin, Operator, or Team Partner)
   const isUserTeamAuthorized = useCallback((route: any): boolean => {
     if (!route) return true;
-    if (userRole === 'ADMIN' || userRole === 'MUDUR') return true;
+    if (userRole === 'ADMIN' || userRole === 'MUDUR' || userRole === 'PERSONEL') return true;
 
     const GENERIC_NAMES = ['personel', 'saha personeli', 'dağıtım personeli', 'dagitim personeli', 'dağıtım ekibi', 'dagitim ekibi', 'ekip', 'admin', 'kullanıcı', 'kullanici', 'user'];
     const isGeneric = (str: string) => !str || str.length < 3 || GENERIC_NAMES.includes(str.trim().toLowerCase());
@@ -621,7 +622,6 @@ export default function RoutePage({
   useEffect(() => {
     if (isRouteModeOpen) {
       requestWakeLock();
-      requestAppFullscreen();
     } else {
       releaseWakeLock();
       exitAppFullscreen();
@@ -855,8 +855,11 @@ export default function RoutePage({
       return;
     }
 
-    // Kullanıcı dokunuşu (user gesture) anında senkron tam ekran isteği gönder (Mobil Chrome/Safari uyumu)
-    requestAppFullscreen();
+    // Mobil Android Chrome sistem uyarısının ("Tam ekrandan çıkmak için...") alt butonları kapatmaması için
+    // CSS 100dvh arayüzü kullanılır; otomatik donanımsal requestAppFullscreen() çağrılmaz.
+    if (false) {
+      requestAppFullscreen();
+    }
 
     const routeId = routeToUse.id || routeToUse._id;
     const stops = routeToUse.duraklar;
@@ -1292,18 +1295,20 @@ export default function RoutePage({
     if (submitKind === 'COMPLETE') {
       const prevDelivered = Number(currentStop.teslim_edilen_torba) || 0;
       const parsed = parseInt(routeModeTorba, 10);
-      if (!isNaN(parsed) && parsed > 0) {
-        if (parsed >= hedef) {
-          targetTorba = parsed;
-        } else if (prevDelivered > 0) {
-          targetTorba = Math.max(hedef, prevDelivered + parsed);
-        } else {
-          targetTorba = hedef;
-        }
+      const effectiveInput = !isNaN(parsed) && parsed > 0 ? parsed : (prevDelivered > 0 ? Math.max(0, hedef - prevDelivered) : hedef);
+      const totalDelivered = prevDelivered > 0 ? prevDelivered + effectiveInput : effectiveInput;
+
+      if (totalDelivered >= hedef) {
+        targetTorba = totalDelivered;
+        targetDurum = 'TAMAMLANDI';
       } else {
-        targetTorba = hedef;
+        // Eksik kömür teslimatı yapıldı (Örn: 34 yerine 20 torba teslim edildi)
+        targetTorba = totalDelivered;
+        targetDurum = 'EKSIK';
+        if (!targetNote) {
+          targetNote = `Kısmi teslimat yapıldı (${targetTorba}/${hedef} torba teslim edildi, ${hedef - targetTorba} torba eksik).`;
+        }
       }
-      targetDurum = 'TAMAMLANDI';
     } else {
       // DEFER_LATER ("Daha Sonra Tamamlanacak")
       if (routeModeDeferType === 'PARTIAL') {
@@ -1505,11 +1510,73 @@ export default function RoutePage({
       await fetchRoutes();
       if (onRefreshAll) onRefreshAll();
     } catch (err: any) {
-      showAlert({
-        title: 'Bağlantı Hatası',
-        message: 'Bağlantı hatası: ' + err.message,
-        type: 'error'
-      });
+      // Çevrimdışı Mod Koruması: İnternet kesildiğinde veya ağ hatasında teslimatı yerel kuyruğa kaydet ve teslimata devam et
+      try {
+        saveOfflineDelivery({
+          beneficiary_id: String(currentStop.beneficiary_id || currentStop.id || ''),
+          route_id: String(activeRoute.id || activeRoute._id),
+          stop_index: routeModeIndex,
+          durum: targetDurum,
+          tc_no: currentStop.tc_no,
+          ad_soyad: currentStop.ad_soyad,
+          torba_sayisi: targetTorba,
+          eklenen_torba: targetTorba,
+          teslim_alan: routeModeRecipient.trim() || currentStop.ad_soyad,
+          personel: userName || 'Dağıtım Personeli',
+          notlar: targetNote
+        });
+
+        showToast({
+          type: 'warning',
+          title: '📶 Çevrimdışı Kaydedildi',
+          message: `${currentStop.ad_soyad} teslimatı cihaz hafızasına kaydedildi. Bağlantı kurulduğunda otomatik aktarılacak.`
+        });
+
+        const fallbackUpdatedStops = stops.map((s: any, idx: number) =>
+          idx === routeModeIndex
+            ? {
+                ...s,
+                durum: targetDurum,
+                teslim_edilen_torba: targetTorba,
+                teslim_alan: routeModeRecipient.trim() || currentStop.ad_soyad,
+                teslimat_notu: targetNote,
+                daha_sonra_tamamlanacak: targetDurum !== 'TAMAMLANDI'
+              }
+            : s
+        );
+
+        setActiveRoutes((prev) =>
+          prev.map((r) =>
+            String(r.id || r._id) === String(activeRoute.id || activeRoute._id)
+              ? { ...r, duraklar: fallbackUpdatedStops }
+              : r
+          )
+        );
+
+        const nextIncomplete = fallbackUpdatedStops.findIndex(
+          (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
+        );
+        if (nextIncomplete !== -1) {
+          setRouteModeIndex(nextIncomplete);
+          syncRouteModeInputsForStop(fallbackUpdatedStops[nextIncomplete]);
+          return;
+        }
+
+        const anyIncomplete = fallbackUpdatedStops.findIndex((s: any) => s.durum !== 'TAMAMLANDI');
+        if (anyIncomplete !== -1) {
+          setRouteModeIndex(anyIncomplete);
+          syncRouteModeInputsForStop(fallbackUpdatedStops[anyIncomplete]);
+          return;
+        }
+
+        setIsRouteModeOpen(false);
+      } catch (localErr) {
+        showAlert({
+          title: 'Bağlantı Hatası',
+          message: 'Bağlantı hatası: ' + err.message,
+          type: 'error'
+        });
+      }
     } finally {
       isSubmittingStopRef.current = false;
       setIsActionLoading(false);
@@ -1611,7 +1678,7 @@ export default function RoutePage({
       return;
     }
 
-    if (startInRouteMode) {
+    if (false && startInRouteMode) {
       requestAppFullscreen();
     }
 
@@ -1847,16 +1914,17 @@ export default function RoutePage({
 
   // Remove Stop from active route
   const handleRemoveStop = async (index: number, stop: any) => {
-    if (isRouteLockedByOther) {
+    if (!activeRoute) return;
+
+    if (stop?.durum === 'TAMAMLANDI') {
       showAlert({
-        title: '🔒 Rota Kullanımda & Kilitli',
-        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
-        type: 'lock',
-        badge: routeLockedByName || undefined
+        title: 'Teslim Edilmiş Durak',
+        message: 'Kömür teslimi yapılmış duraklar doğrudan rotadan çıkarılamaz. Önce teslimatı iptal ediniz.',
+        type: 'warning'
       });
       return;
     }
-    if (!activeRoute) return;
+
     const confirmMsg = `"${stop.ad_soyad}" (${stop.mahalle || ''}) hanesini bu rotadan çıkarmak istiyor musunuz?\n\nBu hane genel listede teslimat bekliyor olarak kalacaktır. Kalan hanelerin teslimatı bittiğinde rota tamamlanabilir.`;
     const confirmed = await showConfirm({
       title: 'Durağı Rotadan Çıkar',
@@ -1877,8 +1945,9 @@ export default function RoutePage({
         },
         body: JSON.stringify({
           action: 'REMOVE_STOP',
-          route_id: activeRoute.id,
+          route_id: activeRoute.id || activeRoute._id,
           stop_index: index,
+          beneficiary_id: stop.beneficiary_id || stop.id,
           personel: userName || 'Personel',
           client_id: currentClientId
         })
@@ -2824,6 +2893,7 @@ export default function RoutePage({
         handleRouteModeSubmit={handleRouteModeSubmit}
         handleSkipCurrentStop={handleSkipCurrentStop}
         setCancelStopTarget={setCancelStopTarget}
+        onRemoveStop={handleRemoveStop}
         userRole={userRole}
       />
     </div>

@@ -231,6 +231,11 @@ export async function checkRouteTeamAuthorization(
     return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
   }
 
+  // Saha personeli ve ekip arkadaşları birbirlerinin rotalarını kontrol edebilir ve birlikte işletebilir
+  if (session.rol === 'PERSONEL') {
+    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
+  }
+
   // Yetkisiz: Başka personele ve ekibine ait rota!
   return {
     authorized: false,
@@ -271,7 +276,64 @@ export async function GET(request: NextRequest) {
     const autoArchivedRoutes: any[] = [];
 
     for (const route of rawActiveRoutes) {
-      const stops = Array.isArray(route.duraklar) ? route.duraklar : [];
+      let stops = Array.isArray(route.duraklar) ? route.duraklar : [];
+
+      // Auto-cleanup ghost stops: İmzası geri alınmış veya kömürü iptal edilmiş olup rotada takılı kalan kayıtları rotadan çıkar
+      const pendingStops = stops.filter((s: any) => !s.durum || s.durum === 'BEKLIYOR');
+      if (pendingStops.length > 0) {
+        try {
+          const benIds = pendingStops.map((s: any) => s.beneficiary_id).filter(Boolean);
+          const objIds: ObjectId[] = [];
+          const strIds: string[] = [];
+          const numIds: number[] = [];
+          benIds.forEach((id: any) => {
+            const s = String(id).trim();
+            if (ObjectId.isValid(s) && s.length === 24) objIds.push(new ObjectId(s));
+            strIds.push(s);
+            const num = Number(s);
+            if (!isNaN(num) && num > 0) numIds.push(num);
+          });
+          const orClauses: any[] = [{ id: { $in: strIds } }];
+          if (objIds.length > 0) orClauses.push({ _id: { $in: objIds } });
+          if (numIds.length > 0) orClauses.push({ id: { $in: numIds } });
+
+          const activeBenDocs = await benCol.find({ $or: orClauses }).toArray();
+          const benMap = new Map<string, any>();
+          activeBenDocs.forEach((b: any) => {
+            if (b.id) benMap.set(String(b.id), b);
+            if (b._id) benMap.set(String(b._id), b);
+          });
+
+          const validStops: any[] = [];
+          let ghostFound = false;
+          stops.forEach((s: any) => {
+            const bDoc = benMap.get(String(s.beneficiary_id));
+            const isPending = !s.durum || s.durum === 'BEKLIYOR';
+            if (isPending && bDoc && (bDoc.imza_durumu !== 'IMZALANDI' || bDoc.komur_verilmeyecek)) {
+              ghostFound = true;
+            } else {
+              validStops.push(s);
+            }
+          });
+
+          if (ghostFound) {
+            stops = validStops.map((s: any, idx: number) => ({ ...s, sira: idx + 1 }));
+            route.duraklar = stops;
+            route.toplam_hane = stops.length;
+            route.bekleyen_hane = stops.filter((s: any) => !s.durum || s.durum === 'BEKLIYOR').length;
+            await routeCol.updateOne(buildIdFilter(route.id || route._id), {
+              $set: {
+                duraklar: stops.map(encryptRouteStop),
+                toplam_hane: route.toplam_hane,
+                bekleyen_hane: route.bekleyen_hane,
+                updated_at: localNow
+              }
+            });
+          }
+        } catch (err) {
+          console.error('Error auto-cleaning ghost stops in route:', err);
+        }
+      }
       const isCompleteStop = (s: any) =>
         s.durum === 'TAMAMLANDI' ||
         s.durum === 'TESLIM_EDILDI' ||
@@ -681,8 +743,7 @@ export async function POST(request: NextRequest) {
       const {
         route_id,
         beneficiary_ids = [],
-        personel = 'Personel',
-        client_id
+        personel = 'Personel'
       } = body;
 
       if (!route_id) {
@@ -705,19 +766,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: authCheck.error }, { status: 403 });
       }
 
-      // Kilit kontrolü
-      const headerClientId = request.headers.get('x-client-id') || '';
-      const effectiveClientId = (client_id || headerClientId || '').trim();
-      const lockCheck = checkRouteLock(targetRouteDoc, personel, effectiveClientId);
-      if (lockCheck.isLocked) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Bu rota şu anda "${lockCheck.lockedBy}" personeli tarafından kullanımda ve kilitlidir.`
-          },
-          { status: 423 }
-        );
-      }
+      // Saha işbirliği: Yetkili ekip arkadaşları aktif veya kilitli bir rotaya yeni imzalı haneleri
+      // rotayı kullanan personelin ekranını bozmadan güvenle kuyruğa ekleyebilir (append).
+      // Bu nedenle ADD_STOPS_TO_ROUTE işleminde kokpit kilidi ekip arkadaşlarına engel oluşturmaz.
 
       // Haneleri çek
       const objectIds: ObjectId[] = [];
@@ -1160,11 +1211,16 @@ export async function POST(request: NextRequest) {
 
       let deliveredBags = 0;
 
+      let effectiveDurum = durum;
       if (durum === 'TAMAMLANDI') {
         const parsed = parseInt(torba_sayisi || String(hedef), 10);
         deliveredBags = !isNaN(parsed) && parsed > 0 ? parsed : hedef;
         if (deliveredBags < hedef && previousDelivered > 0) {
           deliveredBags = Math.min(hedef, previousDelivered + deliveredBags);
+        }
+        // Eğer girilen veya teslim edilen torba hedef kotanın altındaysa otomatik EKSIK durumuna çevir!
+        if (deliveredBags < hedef) {
+          effectiveDurum = 'EKSIK';
         }
       } else if (durum === 'EKSIK') {
         deliveredBags = parseInt(torba_sayisi || '0', 10);
@@ -1174,6 +1230,9 @@ export async function POST(request: NextRequest) {
             error: 'Eksik teslimat için teslim edilen torba miktarı en az 1 olmalıdır. Hiç kömür teslim edilemediyse "Daha Sonra Tamamlanacak (0 Torba)" veya "Teslim Edilemedi" seçeneğini kullanınız.'
           }, { status: 400 });
         }
+        if (deliveredBags >= hedef) {
+          effectiveDurum = 'TAMAMLANDI';
+        }
       } else {
         deliveredBags = 0;
       }
@@ -1182,21 +1241,21 @@ export async function POST(request: NextRequest) {
       const note = notlar.trim();
 
       // Update stop data
-      targetStop.durum = durum;
+      targetStop.durum = effectiveDurum;
       targetStop.teslim_edilen_torba = deliveredBags;
-      targetStop.teslim_tarihi = durum !== 'BEKLIYOR' ? localTimeStr : null;
-      targetStop.teslim_eden_personel = durum !== 'BEKLIYOR' ? staffName : null;
+      targetStop.teslim_tarihi = effectiveDurum !== 'BEKLIYOR' ? localTimeStr : null;
+      targetStop.teslim_eden_personel = effectiveDurum !== 'BEKLIYOR' ? staffName : null;
       targetStop.teslimat_notu = note;
       targetStop.teslim_alan = recipient;
-      if (durum === 'TAMAMLANDI' || durum === 'EKSIK') {
+      if (effectiveDurum === 'TAMAMLANDI' || effectiveDurum === 'EKSIK') {
         targetStop.imza_durumu = 'IMZALANDI';
         targetStop.imza_tarihi = localTimeStr;
         targetStop.imza_alan_personel = staffName;
       }
       targetStop.daha_sonra_tamamlanacak =
-        durum === 'TAMAMLANDI'
+        effectiveDurum === 'TAMAMLANDI'
           ? false
-          : Boolean(daha_sonra_tamamlanacak || durum === 'EKSIK' || durum === 'TESLIM_EDILEMEDI');
+          : Boolean(daha_sonra_tamamlanacak || effectiveDurum === 'EKSIK' || effectiveDurum === 'TESLIM_EDILEMEDI');
 
       // Recalculate route stats
       let completedCount = 0;
@@ -1857,9 +1916,9 @@ export async function POST(request: NextRequest) {
     // ACTION 4.5: REMOVE_STOP (Durak Rotadan Çıkar)
     // ==========================================
     if (action === 'REMOVE_STOP') {
-      const { route_id, stop_index, personel = 'Personel' } = body;
-      if (!route_id || stop_index === undefined) {
-        return NextResponse.json({ success: false, error: 'Rota ID ve durak sırası zorunludur' }, { status: 400 });
+      const { route_id, stop_index, beneficiary_id, personel = 'Personel' } = body;
+      if (!route_id || (stop_index === undefined && !beneficiary_id)) {
+        return NextResponse.json({ success: false, error: 'Rota ID ve durak sırası veya hak sahibi ID zorunludur' }, { status: 400 });
       }
 
       const rawRoute = await routeCol.findOne(buildIdFilter(route_id));
@@ -1867,28 +1926,47 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rota bulunamadı' }, { status: 404 });
       }
 
-      const headerClientId = request.headers.get('x-client-id') || '';
-      const effectiveClientId = (body.client_id || headerClientId || '').trim();
       const route = mapDoc(rawRoute);
-      const staffName = (session.ad_soyad || session.username || personel || 'Personel').trim();
-      const lockCheck = checkRouteLock(route, staffName, effectiveClientId);
-
-      if (lockCheck.isLocked && session.rol !== 'ADMIN') {
-        return NextResponse.json({
-          success: false,
-          locked: true,
-          lockedBy: lockCheck.lockedBy,
-          error: `Bu rota şu anda "${lockCheck.lockedBy}" personeli tarafından Rota Modunda kullanılmaktadır.`
-        }, { status: 409 });
+      const stops = [...(route.duraklar || [])];
+      let idx = stop_index !== undefined ? parseInt(String(stop_index), 10) : -1;
+      if (idx === -1 && beneficiary_id) {
+        idx = stops.findIndex(
+          (s: any) =>
+            String(s.beneficiary_id) === String(beneficiary_id) ||
+            String(s.tc_no) === String(beneficiary_id) ||
+            String(s.id) === String(beneficiary_id)
+        );
       }
 
-      const stops = [...(route.duraklar || [])];
-      const idx = parseInt(String(stop_index), 10);
       if (isNaN(idx) || idx < 0 || idx >= stops.length) {
-        return NextResponse.json({ success: false, error: 'Geçersiz durak indeksi' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Geçersiz durak veya durak bu rotada bulunamadı' }, { status: 400 });
+      }
+
+      if (stops[idx].durum === 'TAMAMLANDI') {
+        return NextResponse.json({
+          success: false,
+          error: 'Kömür teslimatı yapılmış duraklar doğrudan silinemez. Önce teslimatın iptal edilmesi gereklidir.'
+        }, { status: 400 });
       }
 
       const [removed] = stops.splice(idx, 1);
+
+      // Hak sahibinin durum açıklamasını temizle
+      if (removed && (removed.beneficiary_id || removed.tc_no)) {
+        try {
+          const benFilter: any = removed.beneficiary_id
+            ? buildIdFilter(removed.beneficiary_id)
+            : { tc_no: removed.tc_no };
+          await benCol.updateOne(benFilter, {
+            $set: {
+              durum_aciklama: '',
+              updated_at: localTimeStr
+            }
+          });
+        } catch (err) {
+          console.error('Error clearing beneficiary status after stop removal:', err);
+        }
+      }
 
       // Kalan durakları yeniden numaralandır
       const reindexedStops = stops.map((s: any, i: number) => ({

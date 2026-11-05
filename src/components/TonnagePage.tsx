@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, UserCheck, Check, Save } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
 import { formatTrDateTime, formatTrDateWithDay } from '@/lib/dateUtils';

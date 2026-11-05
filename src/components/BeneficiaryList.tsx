@@ -27,6 +27,7 @@ interface BeneficiaryListProps {
   onToggleSignature?: (person: BeneficiaryRecord) => void;
   onNavigateToRoute?: () => void;
   onOpenAddHousehold?: (initialQuery?: string) => void;
+  activeRoutes?: any[];
   defaultQuota?: number;
   isLoading?: boolean;
   userRole?: UserRoleType;
@@ -51,6 +52,7 @@ export default function BeneficiaryList({
   onToggleSignature,
   onNavigateToRoute,
   onOpenAddHousehold,
+  activeRoutes,
   defaultQuota = 34,
   isLoading = false,
   userRole = 'PERSONEL'
@@ -68,8 +70,27 @@ export default function BeneficiaryList({
     setSortOrder(newSort);
     setCurrentPage(1);
   };
-  const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
+  const [selectedSokak, setSelectedSokak] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'HEPSI';
+    try {
+      const saved = localStorage.getItem('komur_filter_sokak');
+      if (saved) return saved;
+    } catch {}
+    return 'HEPSI';
+  });
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
+  const [routeRevokeTarget, setRouteRevokeTarget] = useState<{
+    person: any;
+    inActiveRoute?: any;
+    routeName: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('komur_filter_sokak', selectedSokak);
+    } catch {}
+  }, [selectedSokak]);
 
   // Sayfalama Durumu (Eski model Android / Hafif modda 25, normal mobilde 50, masaüstünde 250 kayıt)
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -219,12 +240,11 @@ export default function BeneficiaryList({
     }
   };
 
-  const handleToggleSignature = async (person: any) => {
+  const executeSignatureToggle = async (person: any, nextSigned: boolean, removeFromRouteId?: string) => {
     const personId = String(person.id);
     const currentSigned = localSignatures[personId] !== undefined
       ? localSignatures[personId]
       : person.imza_durumu === 'IMZALANDI';
-    const nextSigned = !currentSigned;
 
     // Optimistic local UI update (0ms instant state change for unlock)
     setLocalSignatures((prev) => ({ ...prev, [personId]: nextSigned }));
@@ -235,6 +255,29 @@ export default function BeneficiaryList({
         title: 'Kapıda İmza Onaylandı',
         message: `${person.ad_soyad} için ıslak imza alındı. Kömür teslimat butonu aktifleşti.`
       });
+    }
+
+    if (removeFromRouteId) {
+      try {
+        await fetch('/api/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'REMOVE_STOP',
+            route_id: removeFromRouteId,
+            beneficiary_id: personId,
+            personel: 'Personel'
+          })
+        });
+        person.durum_aciklama = '';
+        showToast({
+          type: 'info',
+          title: 'Rotadan Çıkarıldı',
+          message: `${person.ad_soyad} rotadan çıkarıldı ve ıslak imzası geri alındı.`
+        });
+      } catch (err) {
+        console.error('Error removing stop during signature revoke:', err);
+      }
     }
 
     if (onToggleSignature) {
@@ -257,6 +300,33 @@ export default function BeneficiaryList({
       // Revert on error
       setLocalSignatures((prev) => ({ ...prev, [personId]: currentSigned }));
     }
+  };
+
+  const handleToggleSignature = async (person: any) => {
+    const personId = String(person.id);
+    const currentSigned = localSignatures[personId] !== undefined
+      ? localSignatures[personId]
+      : person.imza_durumu === 'IMZALANDI';
+
+    // Eğer imza geri alınıyorsa ve bu hane aktif bir rotadaysa kullanıcıya sor
+    if (currentSigned) {
+      const inActiveRoute = (activeRoutes || []).find((r: any) =>
+        (r.durum === 'AKTIF' || r.durum === 'DURAKLATILDI') &&
+        (r.duraklar || []).some((s: any) => String(s.beneficiary_id) === personId || s.tc_no === person.tc_no)
+      );
+      const inRouteName = inActiveRoute?.rota_adi || (person.durum_aciklama?.includes('Rotaya Eklendi') ? person.durum_aciklama.replace('Rotaya Eklendi:', '').trim() : '');
+
+      if (inActiveRoute || inRouteName) {
+        setRouteRevokeTarget({
+          person,
+          inActiveRoute,
+          routeName: inRouteName || inActiveRoute?.rota_adi || 'Aktif Rota'
+        });
+        return;
+      }
+    }
+
+    await executeSignatureToggle(person, !currentSigned);
   };
 
   const toggleAddress = (id: number) => {
@@ -366,7 +436,7 @@ export default function BeneficiaryList({
       };
       return rank(a) - rank(b);
     });
-  }, [records, isSearching, searchQuery, sortOrder]);
+  }, [records, isSearching, searchQuery]);
 
   // Arama yapıldığında her sekmede kaç adet eşleşme olduğunu gösteren dinamik sayılar
   const tabSearchCounts = useMemo(() => {
@@ -3127,6 +3197,74 @@ export default function BeneficiaryList({
         phoneSelectTarget={phoneSelectTarget}
         onClosePhoneSelectModal={() => setPhoneSelectTarget(null)}
       />
+
+      {/* İMZA GERİ ALMA VE AKTİF ROTADAN ÇIKARMA ONAY MODALI */}
+      {routeRevokeTarget && (
+        <div
+          className="fixed inset-0 z-[100000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setRouteRevokeTarget(null)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 space-y-4 border border-amber-200 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-slate-900">
+                  Aktif Rota ve İmza Uyarısı
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  <strong>{routeRevokeTarget.person.ad_soyad}</strong> hanesi şu anda aktif <strong>&ldquo;{routeRevokeTarget.routeName}&rdquo;</strong> rotasında yer almaktadır.
+                </p>
+                <p className="text-xs font-semibold text-slate-800 mt-2">
+                  İmzası geri alınırken bu kayıt <u>rotadan da çıkarılsın mı</u>?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = routeRevokeTarget;
+                  setRouteRevokeTarget(null);
+                  executeSignatureToggle(
+                    target.person,
+                    false,
+                    target.inActiveRoute?.id || target.inActiveRoute?._id
+                  );
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Evet, Rotadan Çıkar ve İmzayı Geri Al</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const target = routeRevokeTarget;
+                  setRouteRevokeTarget(null);
+                  executeSignatureToggle(target.person, false);
+                }}
+                className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Yalnızca İmzayı Geri Al (Rotada Kalsın)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRouteRevokeTarget(null)}
+                className="w-full py-2 px-4 rounded-xl text-slate-500 hover:text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MOBİL & MASAÜSTÜ TEK DOKUNUŞLA YUKARI ÇIK / HIZLI ARAMA BUTONU */}
       {showScrollTop && (

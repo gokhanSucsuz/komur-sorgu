@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { getSecureItem } from './secureStorage';
 
@@ -6,6 +6,9 @@ export interface OfflineDeliveryItem {
   client_uuid: string;
   timestamp: number;
   beneficiary_id: string;
+  route_id?: string;
+  stop_index?: number;
+  durum?: 'TAMAMLANDI' | 'EKSIK' | 'TESLIM_EDILEMEDI';
   tc_no: string;
   ad_soyad: string;
   torba_sayisi?: number;
@@ -182,20 +185,38 @@ export async function syncOfflineDeliveries(
   for (let i = 0; i < pending.length; i++) {
     const item = pending[i];
     try {
-      const res = await fetch('/api/delivery', {
+      const isRouteStop = Boolean(item.route_id && item.stop_index !== undefined);
+      const url = isRouteStop ? '/api/routes' : '/api/delivery';
+      const bodyPayload = isRouteStop
+        ? {
+            action: 'UPDATE_STOP',
+            route_id: item.route_id,
+            stop_index: item.stop_index,
+            durum: item.durum || 'TAMAMLANDI',
+            torba_sayisi: item.torba_sayisi,
+            teslim_alan: item.teslim_alan,
+            personel: item.personel,
+            notlar: item.notlar
+              ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
+              : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
+            daha_sonra_tamamlanacak: item.durum !== 'TAMAMLANDI',
+          }
+        : {
+            action: 'TESLIMAT',
+            beneficiary_id: item.beneficiary_id,
+            eklenen_torba: item.eklenen_torba,
+            torba_sayisi: item.torba_sayisi,
+            teslim_alan: item.teslim_alan,
+            personel: item.personel,
+            notlar: item.notlar
+              ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
+              : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
+          };
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'TESLIMAT',
-          beneficiary_id: item.beneficiary_id,
-          eklenen_torba: item.eklenen_torba,
-          torba_sayisi: item.torba_sayisi,
-          teslim_alan: item.teslim_alan,
-          personel: item.personel,
-          notlar: item.notlar
-            ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
-            : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
 
       const data = await res.json();
