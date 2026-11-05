@@ -399,16 +399,20 @@ export default function TonnagePage({
     }
   };
 
-  // ESC key listener to close report modal
+  // ESC key listener to close report and template modals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showReportModal) {
-        setShowReportModal(false);
+      if (e.key === 'Escape') {
+        if (showTemplateModal && !isSavingTemplates) {
+          setShowTemplateModal(false);
+        } else if (showReportModal) {
+          setShowReportModal(false);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showReportModal]);
+  }, [showReportModal, showTemplateModal, isSavingTemplates]);
 
   // Filtered trucks for report (%100 Türkçe karakter uyumlu arama)
   const filteredReportTrucks = useMemo(() => {
@@ -2587,25 +2591,35 @@ export default function TonnagePage({
       {/* Rapor Formatı ve Başlık Ayarları Modalı (Sadece Yönetici) */}
       {showTemplateModal && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
+          className="modal-overlay report-modal-overlay fixed inset-0 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs overscroll-contain"
+          style={{ zIndex: 1050 }}
           onClick={(e) => {
             if (e.target === e.currentTarget && !isSavingTemplates) {
               setShowTemplateModal(false);
             }
           }}
+          role="dialog"
+          aria-modal="true"
         >
-          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden">
+          <div
+            className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-3xl flex flex-col shadow-2xl border border-slate-300 overflow-hidden relative z-10"
+            style={{
+              height: 'min(860px, calc(100dvh - 24px))',
+              maxHeight: 'calc(100dvh - 24px)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
-            <div className="shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+            <div className="shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100 z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
                   <SlidersHorizontal className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-slate-900">
+                <div className="truncate">
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
                     Rapor Şablonları ve Başlık Ayarları
                   </h3>
-                  <p className="text-[11px] text-slate-500 font-medium">
+                  <p className="text-[11px] text-slate-500 font-medium truncate">
                     Format 1 ve Format 2 başlıklarını, kurum ve imza bilgilerini özelleştirin
                   </p>
                 </div>
@@ -2614,15 +2628,15 @@ export default function TonnagePage({
                 type="button"
                 onClick={() => setShowTemplateModal(false)}
                 disabled={isSavingTemplates}
-                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition-colors"
-                title="Kapat"
+                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition-colors shrink-0"
+                title="Kapat (ESC)"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Tab selector */}
-            <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <div className="shrink-0 p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2 z-10">
               <button
                 type="button"
                 onClick={() => setTemplateModalTab('FORMAT1')}
@@ -2633,7 +2647,7 @@ export default function TonnagePage({
                 }`}
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>Format 1: Tesellüm İzleme Tablosu (Valilik)</span>
+                <span className="truncate">Format 1: Tesellüm İzleme Tablosu (Valilik)</span>
               </button>
               <button
                 type="button"
@@ -2645,12 +2659,12 @@ export default function TonnagePage({
                 }`}
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>Format 2: TKİ Dağıtım Listesi (Resmi)</span>
+                <span className="truncate">Format 2: TKİ Dağıtım Listesi (Resmi)</span>
               </button>
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs overscroll-contain">
               {templateModalTab === 'FORMAT1' ? (
                 <div className="space-y-4">
                   <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
@@ -3013,7 +3027,7 @@ export default function TonnagePage({
             </div>
 
             {/* Footer */}
-            <div className="shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 gap-2">
+            <div className="shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 gap-2 z-10">
               <button
                 type="button"
                 onClick={handleResetTemplates}
