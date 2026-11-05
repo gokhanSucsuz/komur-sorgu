@@ -291,10 +291,14 @@ test('Yandex Navigasyon & Clean Address: deduplicated neighborhood, exterior doo
     getParselSorguSearchSummary(villagePerson),
     'Edirne / Merkez / Kayapa Köyü / No: 48'
   );
+    assert.ok(
+    beneficiaryListSrc.includes('getYandexNaviUrl(person)') &&
+      beneficiaryListSrc.includes('getGoogleMapsUrl(person)'),
+    'BeneficiaryList must provide direct Yandex and Google navigation'
+  );
   assert.ok(
-    beneficiaryListSrc.includes('PARSEL_SORGU_URL') &&
-      beneficiaryListSrc.includes('getParselSorguSearchSummary'),
-    'BeneficiaryList must integrate TKGM Parsel Sorgu helper'
+    !beneficiaryListSrc.includes('PARSEL_SORGU_URL'),
+    'BeneficiaryList must not include parsel button per user request'
   );
   assert.ok(
     cockpitSrc.includes('PARSEL_SORGU_URL') &&
