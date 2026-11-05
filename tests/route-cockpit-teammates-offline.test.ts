@@ -550,3 +550,37 @@ test('9. Filtrelenen Sokak Gösterimi Tıklanabilirliği ve Mobil Sokak Seçimi'
     'Vatandaş kartlarındaki sokak rozetine tıklandığında o sokağa göre filtreleme yapılmalıdır'
   );
 });
+
+test('10. Tek Hane Ekle: Mobil Uyarı Gizleme & Dokunmatik Mahalle/Sokak Modalları', () => {
+  const addPageSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/SingleHouseholdAddPage.tsx'),
+    'utf8'
+  );
+
+  // A. Üst başlıktaki uzun açıklama metni mobilde gizlenmelidir
+  assert.ok(
+    addPageSrc.includes('className="hidden sm:block text-xs text-emerald-50 font-medium mt-0.5 leading-relaxed"'),
+    'SingleHouseholdAddPage.tsx üst bilgi paragrafı mobilde gizlenmelidir'
+  );
+
+  // B. Mahalle ve sokak seçimi için mobil modallar bulunmalıdır
+  assert.ok(
+    addPageSrc.includes('showMahalleModal') && addPageSrc.includes('showSokakModal'),
+    'SingleHouseholdAddPage.tsx showMahalleModal ve showSokakModal durumlarına sahip olmalıdır'
+  );
+
+  // C. Sokak seçildiğinde sorgu ekranındaki gibi filtrelenen/seçilen sokak barı görüntülenmelidir
+  assert.ok(
+    addPageSrc.includes('Seçilen Sokak / Cadde:') &&
+      addPageSrc.includes('onClick={() => setShowSokakModal(true)}') &&
+      addPageSrc.includes('Diğer Sokaklar'),
+    'SingleHouseholdAddPage.tsx seçilen sokak barını sorgu ekranı stiliyle dokunmatik olarak sunmalıdır'
+  );
+
+  // D. Mahalle seçiminde dokunmatik bar ve modal tetikleyici bulunmalıdır
+  assert.ok(
+    addPageSrc.includes('onClick={() => setShowMahalleModal(true)}') &&
+      addPageSrc.includes('Seçilen Mahalle / Köy:'),
+    'SingleHouseholdAddPage.tsx mahalle seçiminde dokunmatik bar ve modal tetikleyici sunmalıdır'
+  );
+});
