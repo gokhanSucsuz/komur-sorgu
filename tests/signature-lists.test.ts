@@ -988,4 +988,89 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
       'Adrese göre sıralama sokak adına ve kapı numarasına göre doğal sırada olmalıdır'
     );
   });
+
+  it('24. İstatistik ve icmal hesaplamalarında kömür yardımı iptal edilmiş haneler dağıtım yapılacak hanelerden ve hedef torba kotasından düşülür, bekleyen haneye dahil edilmez', () => {
+    const rawBeneficiaries = [
+      { id: '1', ad_soyad: 'Ahmet Yılmaz', teslimat_durumu: 'TAMAMLANDI', torba_sayisi: 34, hedef_torba: 34 },
+      { id: '2', ad_soyad: 'Mehmet Demir', teslimat_durumu: 'EKSIK', torba_sayisi: 20, hedef_torba: 34 },
+      { id: '3', ad_soyad: 'Ayşe Kaya', teslimat_durumu: 'BEKLIYOR', torba_sayisi: 0, hedef_torba: 34 },
+      { id: '4', ad_soyad: 'Fatma Şahin', komur_verilmeyecek: true, komur_iptal_nedeni: 'Doğalgaza Geçti', teslimat_durumu: 'BEKLIYOR', torba_sayisi: 0, hedef_torba: 34 },
+      { id: '5', ad_soyad: 'Ali Öztürk', teslimat_durumu: 'IPTAL', komur_iptal_nedeni: 'Vefat Etti', torba_sayisi: 0, hedef_torba: 34 },
+    ];
+
+    const toplamKayitliHane = rawBeneficiaries.length;
+    let dagitimYapilacakHane = 0;
+    let komurVerilmeyecekHane = 0;
+    let tamHane = 0;
+    let eksikHane = 0;
+    let bekleyenHane = 0;
+    let toplamDagitilanTorba = 0;
+    let toplamHedefTorba = 0;
+
+    for (const b of rawBeneficiaries) {
+      if (isBeneficiaryCancelled(b)) {
+        komurVerilmeyecekHane += 1;
+        continue; // İptal edilenler dağıtım yapılacak hedef, bekleyen hane ve torba toplamına dahil edilmez!
+      }
+      dagitimYapilacakHane += 1;
+      const d = b.teslimat_durumu;
+      if (d === 'TAMAMLANDI') {
+        tamHane += 1;
+      } else if (d === 'EKSIK') {
+        eksikHane += 1;
+      } else {
+        bekleyenHane += 1;
+      }
+      toplamDagitilanTorba += Number(b.torba_sayisi || 0);
+      toplamHedefTorba += Number(b.hedef_torba || 34);
+    }
+
+    assert.equal(toplamKayitliHane, 5, 'Kayıtlı toplam hane 5 olmalıdır');
+    assert.equal(komurVerilmeyecekHane, 2, 'Kömür iptal edilen hane 2 olmalıdır (Fatma Şahin & Ali Öztürk)');
+    assert.equal(dagitimYapilacakHane, 3, 'Kömür dağıtımı yapılacak hane 3 olmalıdır');
+    assert.equal(tamHane, 1, 'Tam teslimat 1 hane olmalıdır');
+    assert.equal(eksikHane, 1, 'Eksik teslimat 1 hane olmalıdır');
+    assert.equal(bekleyenHane, 1, 'Bekleyen hane 1 olmalıdır (İptal edilenler bekleyen haneye dahil edilmez)');
+    assert.equal(toplamHedefTorba, 102, 'Hedef torba 3 hane * 34 = 102 torba olmalıdır (İptallerin hedefi eklenmez)');
+    assert.equal(toplamDagitilanTorba, 54, 'Dağıtılan torba 34 + 20 = 54 torba olmalıdır');
+  });
+
+  it('25. Kömür iptal edilmiş kayıt daha sonra tekrar verileceklere çevrildiğinde (iptal geri alındığında) otomatik olarak toplam kömür teslimatı yapılacak hane sayısına ve hedef kömüre dahil edilir', () => {
+    const beneficiary: any = {
+      id: '4',
+      ad_soyad: 'Fatma Şahin',
+      komur_verilmeyecek: true,
+      komur_iptal_nedeni: 'Doğalgaza Geçti',
+      teslimat_durumu: 'BEKLIYOR',
+      torba_sayisi: 0,
+      hedef_torba: 34
+    };
+
+    assert.equal(isBeneficiaryCancelled(beneficiary), true, 'Önce iptal durumundadır');
+
+    // İptal geri alındığında (KOMUR_IPTAL_GERI_AL işlemi):
+    beneficiary.komur_verilmeyecek = false;
+    delete beneficiary.komur_iptal_nedeni;
+    delete beneficiary.komur_iptal_aciklama;
+
+    assert.equal(isBeneficiaryCancelled(beneficiary), false, 'İptal geri alındığında artık iptal değildir');
+
+    // Yeniden hesaplanan istatistikte yer alır
+    const eligibleRecords = [beneficiary].filter((b) => !isBeneficiaryCancelled(b));
+    assert.equal(eligibleRecords.length, 1, 'Otomatik olarak dağıtım yapılacak haneler listesine geri döner');
+    const targetQuota = eligibleRecords.reduce((acc, curr) => acc + curr.hedef_torba, 0);
+    assert.equal(targetQuota, 34, 'Hedef torba kotasına 34 torba olarak yeniden dahil olur');
+  });
+
+  it('26. İptal edilen hanelerin listesi filtrelendiğinde sadece iptal olan haneler gelir', () => {
+    const allRecords = [
+      { id: '1', ad_soyad: 'Ahmet Yılmaz', mahalle: 'Fatih Mah.', komur_verilmeyecek: false },
+      { id: '2', ad_soyad: 'Zeynep Kaya', mahalle: 'Fatih Mah.', komur_verilmeyecek: true, komur_iptal_nedeni: 'Taşındı' },
+      { id: '3', ad_soyad: 'Ali Demir', mahalle: 'Fatih Mah.', teslimat_durumu: 'IPTAL', komur_iptal_nedeni: 'Vefat' },
+    ];
+
+    const cancelledOnly = allRecords.filter((r) => isBeneficiaryCancelled(r));
+    assert.equal(cancelledOnly.length, 2, 'Sadece 2 iptal hane filtrelenmelidir');
+    assert.deepEqual(cancelledOnly.map((c) => c.ad_soyad), ['Zeynep Kaya', 'Ali Demir']);
+  });
 });

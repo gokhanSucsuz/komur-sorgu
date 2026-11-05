@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, reconcileArchivedSeasonImports } from '@/lib/mongodb';
 import { verifySession } from '@/lib/auth';
-import { normalizeToTon, calculateCoalStockMetrics } from '@/lib/normalizer';
+import { normalizeToTon, calculateCoalStockMetrics, isBeneficiaryCancelled } from '@/lib/normalizer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,14 +29,15 @@ export async function GET(request: NextRequest) {
     const settingDoc = sandboxQuotaDoc || (await settingsCol.findOne({ key: 'varsayilan_hedef_torba' }));
     const varsayilanHedefTorba = settingDoc ? parseInt(settingDoc.value, 10) : 34;
 
-    let toplamVatandas = 0;
+    let toplamVatandas = 0; // Kayıtlı Toplam Hane
+    let dagitimYapilacakHane = 0; // Kömür Dağıtımı Yapılacak Hane (İptaller Hariç)
+    let komurVerilmeyecekHane = 0; // Kömür Dağıtımı İptal Edilen Hane
     let tamHane = 0;
     let eksikHane = 0;
     let bekleyenHane = 0;
     let toplamDagitilanTorba = 0;
-    let toplamHedefTorba = 0;
+    let toplamHedefTorba = 0; // Sadece dağıtım yapılacak hanelerin hedef torbaları
     let iptalSayisi = 0;
-    let komurVerilmeyecekHane = 0;
     let toplamTirSayisi = 0;
     let gelenNetTonaj = 0;
     let gelenBrutTonaj = 0;
@@ -45,6 +46,21 @@ export async function GET(request: NextRequest) {
     let ekKomurVerilenTorba = 0;
 
     if (!isFallback && typeof benCol.aggregate === 'function') {
+      const cancelledCond = {
+        $or: [
+          { $eq: ['$komur_verilmeyecek', true] },
+          { $eq: ['$komur_verilmeyecek', 'true'] },
+          { $eq: ['$teslimat_durumu', 'IPTAL'] },
+          {
+            $and: [
+              { $ne: ['$komur_iptal_nedeni', null] },
+              { $ne: ['$komur_iptal_nedeni', ''] }
+            ]
+          }
+        ]
+      };
+      const activeEligibleCond = { $not: [cancelledCond] };
+
       // High-performance MongoDB Atlas native aggregation pipelines
       const [benAggResult, truckAggResult, iptalCount, hataCount] = await Promise.all([
         benCol.aggregate([
@@ -54,37 +70,74 @@ export async function GET(request: NextRequest) {
               toplamVatandas: { $sum: 1 },
               komurVerilmeyecekHane: {
                 $sum: {
-                  $cond: [{ $eq: ['$komur_verilmeyecek', true] }, 1, 0]
+                  $cond: [cancelledCond, 1, 0]
+                }
+              },
+              dagitimYapilacakHane: {
+                $sum: {
+                  $cond: [activeEligibleCond, 1, 0]
                 }
               },
               tamHane: {
                 $sum: {
-                  $cond: [{ $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI']] }, 1, 0]
-                }
-              },
-              eksikHane: {
-                $sum: {
-                  $cond: [{ $eq: ['$teslimat_durumu', 'EKSIK'] }, 1, 0]
-                }
-              },
-              bekleyenHane: {
-                $sum: {
                   $cond: [
                     {
-                      $not: [{ $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }]
+                      $and: [
+                        activeEligibleCond,
+                        { $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI']] }
+                      ]
                     },
                     1,
                     0
                   ]
                 }
               },
-              toplamDagitilanTorba: { $sum: { $ifNull: ['$torba_sayisi', 0] } },
-              toplamHedefTorba: { $sum: { $ifNull: ['$hedef_torba', varsayilanHedefTorba] } },
+              eksikHane: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        activeEligibleCond,
+                        { $eq: ['$teslimat_durumu', 'EKSIK'] }
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              },
+              bekleyenHane: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        activeEligibleCond,
+                        {
+                          $not: [{ $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }]
+                        }
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              },
+              toplamDagitilanTorba: {
+                $sum: {
+                  $cond: [cancelledCond, 0, { $ifNull: ['$torba_sayisi', 0] }]
+                }
+              },
+              toplamHedefTorba: {
+                $sum: {
+                  $cond: [cancelledCond, 0, { $ifNull: ['$hedef_torba', varsayilanHedefTorba] }]
+                }
+              },
               ekKomurVerilenHane: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
+                        activeEligibleCond,
                         { $or: [{ $eq: ['$ek_komur_verildi', true] }, { $eq: ['$manuel_ek_liste_imzasi', true] }] },
                         { $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }
                       ]
@@ -99,6 +152,7 @@ export async function GET(request: NextRequest) {
                   $cond: [
                     {
                       $and: [
+                        activeEligibleCond,
                         { $or: [{ $eq: ['$ek_komur_verildi', true] }, { $eq: ['$manuel_ek_liste_imzasi', true] }] },
                         { $in: ['$teslimat_durumu', ['TAMAMLANDI', 'TESLIM_EDILDI', 'EKSIK']] }
                       ]
@@ -145,6 +199,7 @@ export async function GET(request: NextRequest) {
         const b = benAggResult[0];
         toplamVatandas = b.toplamVatandas || 0;
         komurVerilmeyecekHane = b.komurVerilmeyecekHane || 0;
+        dagitimYapilacakHane = b.dagitimYapilacakHane || Math.max(0, toplamVatandas - komurVerilmeyecekHane);
         tamHane = b.tamHane || 0;
         eksikHane = b.eksikHane || 0;
         bekleyenHane = b.bekleyenHane || 0;
@@ -166,10 +221,13 @@ export async function GET(request: NextRequest) {
     } else {
       // In-Memory Fallback
       const allBeneficiaries = await benCol.find({}).toArray();
+      toplamVatandas = allBeneficiaries.length;
       for (const b of allBeneficiaries) {
-        if (b.komur_verilmeyecek) {
+        if (isBeneficiaryCancelled(b)) {
           komurVerilmeyecekHane += 1;
+          continue; // Kömür iptal edilmiş kayıtlar dağıtım yapılacak hedef, bekleyen hane ve torba toplamına dahil edilmez!
         }
+        dagitimYapilacakHane += 1;
         const d = b.teslimat_durumu;
         if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
           tamHane += 1;
@@ -188,7 +246,6 @@ export async function GET(request: NextRequest) {
           ekKomurVerilenTorba += Number(b.torba_sayisi || 0);
         }
       }
-      toplamVatandas = allBeneficiaries.length;
 
       iptalSayisi = await histCol.countDocuments({ islem_tipi: 'IPTAL' });
 
@@ -233,8 +290,11 @@ export async function GET(request: NextRequest) {
       success: true,
       stats: {
         varsayilanHedefTorba,
+        toplamKayitliHane: toplamVatandas,
         toplamVatandas,
+        dagitimYapilacakHane,
         komurVerilmeyecekHane,
+        iptalHane: komurVerilmeyecekHane,
         tamHane,
         eksikHane,
         bekleyenHane,

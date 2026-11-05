@@ -1272,6 +1272,97 @@ export async function GET(request: NextRequest) {
       const buf = await workbook.xlsx.writeBuffer();
       return buildExcelResponse(buf, 'Edirne_SYDV_Iptal_Edilen_Teslimatlar_Listesi.xlsx', session, type);
     }
+
+    // 2.3. Kömür Yardımı İptal Edilen Haneler Resmi Listesi (Hak Sahipleri Kömür İptal Kayıtları)
+    if (type === 'cancelled_beneficiaries' || type === 'komur_iptal_listesi' || type === 'cancelled_households') {
+      const mahalleParam = searchParams.get('mahalle');
+      const donemKoduParam = searchParams.get('donem_kodu');
+
+      const filter: any = {};
+      if (mahalleParam && mahalleParam !== 'HEPSI') {
+        filter.mahalle = mahalleParam;
+      }
+      if (donemKoduParam && donemKoduParam !== 'HEPSI' && donemKoduParam !== 'AKTIF_DONEM') {
+        filter.donem_kodu = donemKoduParam;
+      }
+
+      const rawRecords = await benCol.find(filter).toArray();
+      const records = mapDocs(rawRecords);
+      const cancelledList = records
+        .filter((r: any) => isBeneficiaryCancelled(r))
+        .sort((a: any, b: any) => {
+          const mc = String(a.mahalle || '').localeCompare(String(b.mahalle || ''), 'tr');
+          if (mc !== 0) return mc;
+          return String(a.ad_soyad || '').localeCompare(String(b.ad_soyad || ''), 'tr');
+        });
+
+      let totalCancelledBags = 0;
+      const exportData = cancelledList.map((r: any, idx: number) => {
+        const bag = Number(r.hedef_torba || 34);
+        totalCancelledBags += bag;
+        const phones = extractPhoneNumbers(r.telefon, r.telefon2);
+        const rawDate = r.komur_iptal_tarihi || r.iptal_tarihi || r.updated_at || '';
+        const dateOnlyStr = formatTrDate(rawDate) || (rawDate ? String(rawDate).split(' ')[0].split('T')[0] : '-');
+        return {
+          'Sıra': idx + 1,
+          'TC Kimlik No': r.tc_no || '-',
+          'Adı Soyadı': r.ad_soyad || '-',
+          'Telefon': phones[0] || r.telefon || '-',
+          'Mahalle / Köy': r.mahalle || '-',
+          'Açık Adres': formatSignatureListAddress(r),
+          'İptal Edilen Kota (Torba)': bag,
+          'İptal Edilen Tonaj': Number((bag * 0.025).toFixed(2)),
+          'İptal Gerekçesi': r.komur_iptal_nedeni || r.iptal_nedeni || 'Kömür Dağıtımı İptal Edildi',
+          'İptal Açıklaması / Not': r.komur_iptal_aciklama || r.iptal_aciklama || '-',
+          'İptal Tarihi': dateOnlyStr,
+          'İşlemi Yapan Yetkili': normalizeStaffName(r.komur_iptal_eden || r.iptal_eden || r.teslim_eden_personel) || r.komur_iptal_eden || r.iptal_eden || 'Yetkili Personel',
+        };
+      });
+
+      if (exportData.length > 0) {
+        exportData.push({
+          'Sıra': '' as any,
+          'TC Kimlik No': 'TOPLAM:',
+          'Adı Soyadı': `${cancelledList.length} İptal Edilen Hane`,
+          'Telefon': '',
+          'Mahalle / Köy': '',
+          'Açık Adres': '',
+          'İptal Edilen Kota (Torba)': `${totalCancelledBags} Torba` as any,
+          'İptal Edilen Tonaj': `${(totalCancelledBags * 0.025).toFixed(2)} Ton` as any,
+          'İptal Gerekçesi': '',
+          'İptal Açıklaması / Not': '',
+          'İptal Tarihi': '',
+          'İşlemi Yapan Yetkili': '',
+        });
+      }
+
+      const colWidths = [
+        { wch: 6 },  // Sıra
+        { wch: 16 }, // TC
+        { wch: 26 }, // Ad Soyad
+        { wch: 16 }, // Telefon
+        { wch: 22 }, // Mahalle
+        { wch: 40 }, // Açık Adres
+        { wch: 18 }, // Torba
+        { wch: 16 }, // Tonaj
+        { wch: 26 }, // İptal Gerekçesi
+        { wch: 32 }, // İptal Açıklaması
+        { wch: 16 }, // İptal Tarihi
+        { wch: 24 }, // Yetkili
+      ];
+
+      addStyledWorksheet(
+        workbook,
+        'KÖMÜR YARDIMI İPTAL EDİLEN HANELER RESMİ LİSTESİ VE TUTANAĞI',
+        `Kapsam: Kömür Dağıtım Kapsamı Dışına Çıkarılan / İptal Edilen Hak Sahipleri | Toplam İptal: ${cancelledList.length} Hane | Toplam İptal Kömür: ${totalCancelledBags} Torba (${(totalCancelledBags * 0.025).toFixed(2)} Ton)`,
+        'İptal Edilen Haneler',
+        exportData,
+        colWidths
+      );
+
+      const buf = await workbook.xlsx.writeBuffer();
+      return buildExcelResponse(buf, 'Edirne_SYDV_Komur_Yardimi_Iptal_Edilen_Haneler_Listesi.xlsx', session, type);
+    }
     if (type === 'shifts') {
       const month = searchParams.get('month') || 'ALL'; // 'YYYY-MM' or 'ALL'
       const personel = searchParams.get('personel') || 'ALL';
@@ -2476,6 +2567,7 @@ export async function GET(request: NextRequest) {
 
       const mahalleGroups = new Map<string, any[]>();
       const eksikList: any[] = [];
+      const iptalList: any[] = [];
 
       for (const r of records) {
         const m = normalizeMahalleName(r.mahalle) || r.mahalle || 'Genel';
@@ -2484,7 +2576,9 @@ export async function GET(request: NextRequest) {
         }
         mahalleGroups.get(m)!.push(r);
 
-        if (r.teslimat_durumu === 'EKSIK') {
+        if (isBeneficiaryCancelled(r)) {
+          iptalList.push(r);
+        } else if (r.teslimat_durumu === 'EKSIK') {
           eksikList.push(r);
         }
       }
@@ -2498,7 +2592,9 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
       const sortedMahalles = [...onlyMahalles, ...onlyKoys];
 
-      let totalHane = 0;
+      let totalKayitliHane = 0;
+      let totalDagitilacakHane = 0;
+      let totalIptalHane = 0;
       let totalTargetBags = 0;
       let totalDeliveredBags = 0;
       let totalTamamlanan = 0;
@@ -2514,8 +2610,15 @@ export async function GET(request: NextRequest) {
         let mEksik = 0;
         let mBekleyen = 0;
         let mImzali = 0;
+        let mIptal = 0;
+        let mDagitilacak = 0;
 
         for (const item of group) {
+          if (isBeneficiaryCancelled(item)) {
+            mIptal++;
+            continue;
+          }
+          mDagitilacak++;
           const t = Number(item.hedef_torba || 34);
           const d = Number(item.torba_sayisi || 0);
           mTarget += t;
@@ -2530,7 +2633,9 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        totalHane += group.length;
+        totalKayitliHane += group.length;
+        totalDagitilacakHane += mDagitilacak;
+        totalIptalHane += mIptal;
         totalTargetBags += mTarget;
         totalDeliveredBags += mDelivered;
         totalTamamlanan += mTamamlanan;
@@ -2539,13 +2644,15 @@ export async function GET(request: NextRequest) {
         totalImzali += mImzali;
 
         const isKoy = /(?:Köyü|Koy|Koyu)$/i.test(mahName);
-        const ratio = group.length > 0 ? Math.round((mTamamlanan / group.length) * 100) : 0;
+        const ratio = mDagitilacak > 0 ? Math.round((mTamamlanan / mDagitilacak) * 100) : 0;
 
         return {
           'Sıra': idx + 1,
           'Mahalle / Köy Adı': mahName,
           'Yerleşim Tipi': isKoy ? 'KÖY' : 'MAHALLE',
-          'Toplam Hane': group.length,
+          'Kayıtlı Toplam Hane': group.length,
+          'Dağıtım Yapılacak Hane': mDagitilacak,
+          'İptal Edilen Hane': mIptal,
           'İmzalı Hane': mImzali,
           'Tamamlanan Hane': mTamamlanan,
           'Eksik Alan Hane': mEksik,
@@ -2560,12 +2667,14 @@ export async function GET(request: NextRequest) {
       });
 
       if (icmalRows.length > 0) {
-        const totalRatio = totalHane > 0 ? Math.round((totalTamamlanan / totalHane) * 100) : 0;
+        const totalRatio = totalDagitilacakHane > 0 ? Math.round((totalTamamlanan / totalDagitilacakHane) * 100) : 0;
         icmalRows.push({
           'Sıra': '' as any,
           'Mahalle / Köy Adı': 'GENEL TOPLAM:',
           'Yerleşim Tipi': `${sortedMahalles.length} Yerleşim`,
-          'Toplam Hane': totalHane,
+          'Kayıtlı Toplam Hane': totalKayitliHane,
+          'Dağıtım Yapılacak Hane': totalDagitilacakHane,
+          'İptal Edilen Hane': totalIptalHane,
           'İmzalı Hane': totalImzali,
           'Tamamlanan Hane': totalTamamlanan,
           'Eksik Alan Hane': totalEksik,
@@ -2582,14 +2691,16 @@ export async function GET(request: NextRequest) {
       addStyledWorksheet(
         workbook,
         'KÖMÜR YARDIMI GENEL İSTATİSTİK VE MAHALLE/KÖY İCMAL RAPORU',
-        `Toplam Yerleşim: ${sortedMahalles.length} | Toplam Hane: ${totalHane} | Dağıtılan: ${totalDeliveredBags} Torba (${(totalDeliveredBags * 0.025).toFixed(2)} Ton)`,
+        `Toplam Yerleşim: ${sortedMahalles.length} | Kayıtlı Hane: ${totalKayitliHane} | Dağıtılacak Hane: ${totalDagitilacakHane} | İptal: ${totalIptalHane} | Dağıtılan: ${totalDeliveredBags} Torba (${(totalDeliveredBags * 0.025).toFixed(2)} Ton)`,
         sanitizeSheetName('Genel İcmal Analizi', seenSheetNames),
         icmalRows,
         [
           { wch: 6 },
           { wch: 24 },
           { wch: 14 },
-          { wch: 14 },
+          { wch: 18 },
+          { wch: 22 },
+          { wch: 18 },
           { wch: 14 },
           { wch: 16 },
           { wch: 16 },
@@ -2688,6 +2799,65 @@ export async function GET(request: NextRequest) {
           { wch: 20 },
         ]
       );
+
+      if (iptalList.length > 0) {
+        let totalIptalBags = 0;
+        const iptalRows = iptalList.map((h: any, idx: number) => {
+          const bag = Number(h.hedef_torba || 34);
+          totalIptalBags += bag;
+          const rawDate = h.komur_iptal_tarihi || h.iptal_tarihi || h.updated_at || '';
+          return {
+            'Sıra': idx + 1,
+            'TC Kimlik No': h.tc_no || '-',
+            'Adı Soyadı': h.ad_soyad || '-',
+            'Telefon': h.telefon || '-',
+            'Mahalle / Köy': h.mahalle || '-',
+            'Açık Adres': formatSignatureListAddress(h),
+            'İptal Edilen Kota (Torba)': bag,
+            'İptal Gerekçesi': h.komur_iptal_nedeni || h.iptal_nedeni || 'Kömür Dağıtımı İptal Edildi',
+            'İptal Açıklaması': h.komur_iptal_aciklama || h.iptal_aciklama || '-',
+            'İptal Tarihi': formatTrDate(rawDate) || (rawDate ? String(rawDate).split(' ')[0].split('T')[0] : '-'),
+            'İşlemi Yapan Yetkili': normalizeStaffName(h.komur_iptal_eden || h.iptal_eden || h.teslim_eden_personel) || h.komur_iptal_eden || h.iptal_eden || 'Yetkili Personel',
+          };
+        });
+
+        if (iptalRows.length > 0) {
+          iptalRows.push({
+            'Sıra': '' as any,
+            'TC Kimlik No': 'TOPLAM:',
+            'Adı Soyadı': `${iptalList.length} İptal Hane`,
+            'Telefon': '',
+            'Mahalle / Köy': '',
+            'Açık Adres': '',
+            'İptal Edilen Kota (Torba)': `${totalIptalBags} Torba (${(totalIptalBags * 0.025).toFixed(2)} Ton)` as any,
+            'İptal Gerekçesi': '',
+            'İptal Açıklaması': '',
+            'İptal Tarihi': '',
+            'İşlemi Yapan Yetkili': '',
+          });
+        }
+
+        addStyledWorksheet(
+          workbook,
+          'KÖMÜR YARDIMI İPTAL EDİLEN HANELER LİSTESİ',
+          `Toplam Kömür Dağıtımı İptal Edilen Hane: ${iptalList.length} Hane | Toplam Torba: ${totalIptalBags} Torba (${(totalIptalBags * 0.025).toFixed(2)} Ton)`,
+          sanitizeSheetName('İptal Edilen Haneler', seenSheetNames),
+          iptalRows,
+          [
+            { wch: 6 },
+            { wch: 16 },
+            { wch: 24 },
+            { wch: 16 },
+            { wch: 20 },
+            { wch: 38 },
+            { wch: 18 },
+            { wch: 24 },
+            { wch: 30 },
+            { wch: 16 },
+            { wch: 22 },
+          ]
+        );
+      }
 
       const buf = await workbook.xlsx.writeBuffer();
       const todayStr = new Date().toLocaleDateString('en-CA');

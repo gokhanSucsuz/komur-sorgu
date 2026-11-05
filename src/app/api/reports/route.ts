@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { getRecordStreetInfo, normalizeToTon, normalizeStaffName, calculateCoalStockMetrics } from '@/lib/normalizer';
+import { getRecordStreetInfo, normalizeToTon, normalizeStaffName, calculateCoalStockMetrics, isBeneficiaryCancelled } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { decryptField, isEncrypted } from '@/lib/crypto';
 
@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
       mahalle && mahalle !== 'HEPSI'
         ? allBeneficiaries.filter((b: any) => b.mahalle === mahalle)
         : allBeneficiaries;
-    const toplamHane = filteredBeneficiaries.length;
+    const toplamKayitliHane = filteredBeneficiaries.length;
+    let dagitimYapilacakHane = 0;
+    let komurVerilmeyecekHane = 0;
     let tamHane = 0;
     let eksikHane = 0;
     let bekleyenHane = 0;
@@ -45,6 +47,11 @@ export async function GET(request: NextRequest) {
     let ekKomurVerilenTorba = 0;
 
     for (const b of filteredBeneficiaries) {
+      if (isBeneficiaryCancelled(b)) {
+        komurVerilmeyecekHane += 1;
+        continue; // İptal edilen kayıtlar dağıtım yapılacak hedefe, bekleyen haneye ve hedef torbaya dahil edilmez!
+      }
+      dagitimYapilacakHane += 1;
       const d = b.teslimat_durumu;
       const isDelivered = d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI';
       const isEkKomur = Boolean(b.ek_komur_verildi || b.manuel_ek_liste_imzasi);
@@ -68,6 +75,7 @@ export async function GET(request: NextRequest) {
       dagitilanTorba += Number(b.torba_sayisi || 0);
       hedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
     }
+    const toplamHane = dagitimYapilacakHane;
 
     const ekKomurVerilenTonaj = parseFloat((ekKomurVerilenTorba * 0.025).toFixed(3));
 
@@ -118,7 +126,7 @@ export async function GET(request: NextRequest) {
 
     // 4. Incomplete Households Detailed List (bellekte çözülmüş listeden, ek DB sorgusu yok)
     const eksikHaneler = filteredBeneficiaries
-      .filter((m: any) => m.teslimat_durumu === 'EKSIK')
+      .filter((m: any) => m.teslimat_durumu === 'EKSIK' && !isBeneficiaryCancelled(m))
       .sort((a: any, b: any) => {
         const mc = String(a.mahalle || '').localeCompare(String(b.mahalle || ''), 'tr');
         if (mc !== 0) return mc;
@@ -138,6 +146,8 @@ export async function GET(request: NextRequest) {
         mahMap.set(m, {
           mahalle: m,
           toplamHane: 0,
+          dagitimYapilacak: 0,
+          iptalHane: 0,
           tamHane: 0,
           eksikHane: 0,
           bekleyenHane: 0,
@@ -147,17 +157,22 @@ export async function GET(request: NextRequest) {
       }
       const item = mahMap.get(m)!;
       item.toplamHane += 1;
-      const d = b.teslimat_durumu;
-      if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
-        item.tamHane += 1;
-      } else if (d === 'EKSIK') {
-        item.eksikHane += 1;
+      if (isBeneficiaryCancelled(b)) {
+        item.iptalHane += 1;
       } else {
-        item.bekleyenHane += 1;
-      }
+        item.dagitimYapilacak += 1;
+        const d = b.teslimat_durumu;
+        if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
+          item.tamHane += 1;
+        } else if (d === 'EKSIK') {
+          item.eksikHane += 1;
+        } else {
+          item.bekleyenHane += 1;
+        }
 
-      item.dagitilanTorba += Number(b.torba_sayisi || 0);
-      item.hedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
+        item.dagitilanTorba += Number(b.torba_sayisi || 0);
+        item.hedefTorba += Number(b.hedef_torba || varsayilanHedefTorba);
+      }
     }
 
     const mahalleStats = Array.from(mahMap.values())
@@ -165,6 +180,8 @@ export async function GET(request: NextRequest) {
       .map((m: any) => ({
         ...m,
         toplamKayit: m.toplamHane,
+        dagitimYapilacak: m.dagitimYapilacak || 0,
+        iptalHane: m.iptalHane || 0,
         teslimEdilen: m.tamHane,
         teslimEdilmeyen: m.bekleyenHane + m.eksikHane,
         kalanTorba: Math.max(0, m.hedefTorba - m.dagitilanTorba),
@@ -179,6 +196,8 @@ export async function GET(request: NextRequest) {
       mahalle: string;
       sokak: string;
       toplamKayit: number;
+      dagitimYapilacak: number;
+      iptal: number;
       teslimEdilen: number;
       teslimEdilmeyen: number;
       eksik: number;
@@ -206,6 +225,8 @@ export async function GET(request: NextRequest) {
           mahalle: m,
           sokak: sName,
           toplamKayit: 0,
+          dagitimYapilacak: 0,
+          iptal: 0,
           teslimEdilen: 0,
           teslimEdilmeyen: 0,
           eksik: 0,
@@ -215,16 +236,21 @@ export async function GET(request: NextRequest) {
 
       const sItem = sokakMap.get(key)!;
       sItem.toplamKayit += 1;
-      const d = b.teslimat_durumu;
-      if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
-        sItem.teslimEdilen += 1;
-      } else if (d === 'EKSIK') {
-        sItem.eksik += 1;
-        sItem.teslimEdilmeyen += 1;
+      if (isBeneficiaryCancelled(b)) {
+        sItem.iptal += 1;
       } else {
-        sItem.teslimEdilmeyen += 1;
+        sItem.dagitimYapilacak += 1;
+        const d = b.teslimat_durumu;
+        if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
+          sItem.teslimEdilen += 1;
+        } else if (d === 'EKSIK') {
+          sItem.eksik += 1;
+          sItem.teslimEdilmeyen += 1;
+        } else {
+          sItem.teslimEdilmeyen += 1;
+        }
+        sItem.dagitilanTorba += Number(b.torba_sayisi || 0);
       }
-      sItem.dagitilanTorba += Number(b.torba_sayisi || 0);
     }
 
     const sokakStats = Array.from(sokakMap.values())
@@ -233,9 +259,11 @@ export async function GET(request: NextRequest) {
         if (mComp !== 0) return mComp;
         return a.sokak.localeCompare(b.sokak, 'tr');
       })
-      .map((item) => ({
+      .map((item: any) => ({
         ...item,
-        yuzde: item.toplamKayit > 0 ? parseFloat(((item.teslimEdilen / item.toplamKayit) * 100).toFixed(1)) : 0,
+        yuzde: (item.dagitimYapilacak || item.toplamKayit) > 0
+          ? parseFloat(((item.teslimEdilen / (item.dagitimYapilacak || item.toplamKayit)) * 100).toFixed(1))
+          : 0,
       }));
 
     // 7. Uploaded Excel Batches Breakdown (Her dosya yükleme ve ek liste işlemi ayrı ayrı)
@@ -279,6 +307,7 @@ export async function GET(request: NextRequest) {
 
       let batchDelivered = 0;
       let batchPending = 0;
+      let batchCancelled = 0;
 
       for (const b of list) {
         const m = b.mahalle || 'Belirtilmemiş';
@@ -299,6 +328,12 @@ export async function GET(request: NextRequest) {
         mItem.toplamKayit += 1;
         if (b.sira_no) mItem.siraNoList.push(b.sira_no);
 
+        if (isBeneficiaryCancelled(b)) {
+          (mItem as any).iptal = ((mItem as any).iptal || 0) + 1;
+          batchCancelled += 1;
+          continue;
+        }
+
         const d = b.teslimat_durumu;
         if (d === 'TAMAMLANDI' || d === 'TESLIM_EDILDI') {
           mItem.teslimEdilen += 1;
@@ -313,7 +348,7 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const mahalleler = Array.from(mBatchMap.values()).map((m) => {
+      const mahalleler = Array.from(mBatchMap.values()).map((m: any) => {
         let siraAraligi = '';
         if (m.siraNoList.length > 0) {
           const first = m.siraNoList[0];
@@ -322,28 +357,34 @@ export async function GET(request: NextRequest) {
         } else {
           siraAraligi = m.ekListeNo === 0 ? `1 - ${m.toplamKayit}` : `Ek${m.ekListeNo} - 1'den Ek${m.ekListeNo} - ${m.toplamKayit}'e`;
         }
+        const activeCount = Math.max(0, m.toplamKayit - (m.iptal || 0));
         return {
           mahalle: m.mahalle,
           ekListeAdi: m.ekListeAdi,
           ekListeNo: m.ekListeNo,
           siraAraligi,
           toplamKayit: m.toplamKayit,
+          dagitimYapilacak: activeCount,
+          iptal: m.iptal || 0,
           teslimEdilen: m.teslimEdilen,
           bekleyen: m.bekleyen,
           eksik: m.eksik,
-          yuzde: m.toplamKayit > 0 ? parseFloat(((m.teslimEdilen / m.toplamKayit) * 100).toFixed(1)) : 0,
+          yuzde: activeCount > 0 ? parseFloat(((m.teslimEdilen / activeCount) * 100).toFixed(1)) : 0,
         };
       });
 
+      const activeBatchTotal = Math.max(0, list.length - batchCancelled);
       batchStats.push({
         batchId: bId,
         dosyaAdi: batch.dosya_adi || 'Excel Dosyası',
         yuklemeTarihi: batch.created_at || 'Tarih Belirtilmedi',
         toplamSatir: batch.toplam_satir || list.length,
         eklenenKisi: list.length,
+        dagitimYapilacakKisi: activeBatchTotal,
+        iptalSayisi: batchCancelled,
         teslimEdilen: batchDelivered,
         bekleyen: batchPending,
-        yuzde: list.length > 0 ? parseFloat(((batchDelivered / list.length) * 100).toFixed(1)) : 0,
+        yuzde: activeBatchTotal > 0 ? parseFloat(((batchDelivered / activeBatchTotal) * 100).toFixed(1)) : 0,
         mahalleler,
       });
     }
@@ -540,13 +581,43 @@ export async function GET(request: NextRequest) {
         ek_liste_imza_tarihi: b.ek_liste_imza_tarihi,
       }));
 
+    const iptalHaneler = filteredBeneficiaries
+      .filter((b: any) => isBeneficiaryCancelled(b))
+      .sort((a: any, b: any) => {
+        const mc = String(a.mahalle || '').localeCompare(String(b.mahalle || ''), 'tr');
+        if (mc !== 0) return mc;
+        return String(a.ad_soyad || '').localeCompare(String(b.ad_soyad || ''), 'tr');
+      })
+      .map((b: any) => ({
+        id: b.id || b._id,
+        tc_no: b.tc_no,
+        ad_soyad: b.ad_soyad,
+        telefon: b.telefon || b.telefon2 || '-',
+        mahalle: b.mahalle || 'Belirtilmemiş',
+        adres: b.adres || b.acik_adres || '-',
+        sokak: b.sokak || '-',
+        kapi_no: b.kapi_no || '-',
+        daire_no: b.daire_no || '-',
+        hedef_torba: Number(b.hedef_torba || varsayilanHedefTorba),
+        torba_sayisi: Number(b.torba_sayisi || 0),
+        teslimat_durumu: b.teslimat_durumu || 'IPTAL',
+        iptal_nedeni: b.komur_iptal_nedeni || b.iptal_nedeni || 'Kömür Dağıtımı İptal Edildi',
+        iptal_aciklama: b.komur_iptal_aciklama || b.iptal_aciklama || '',
+        iptal_tarihi: b.komur_iptal_tarihi || b.iptal_tarihi || b.updated_at || '',
+        iptal_eden: b.komur_iptal_eden || b.iptal_eden || b.teslim_eden_personel || 'Yetkili Personel',
+      }));
+
     return NextResponse.json({
       success: true,
       reportData: {
         filters: { startDate, endDate, mahalle },
         varsayilanHedefTorba,
         summary: {
+          toplamKayitliHane,
           toplamHane,
+          dagitimYapilacakHane,
+          komurVerilmeyecekHane,
+          iptalHane: komurVerilmeyecekHane,
           tamHane,
           eksikHane,
           bekleyenHane,
@@ -582,6 +653,7 @@ export async function GET(request: NextRequest) {
         dailyBreakdown,
         eksikHaneler,
         ekKomurListesi,
+        iptalHaneler,
         mahalleStats,
         sokakStats,
         batchStats,

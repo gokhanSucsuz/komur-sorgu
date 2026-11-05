@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck, Eye, Phone, MapPin, Copy, Check, Users, Building2, Trees, ChevronDown, FlaskConical, Play, RotateCcw, Loader2, Printer, PenLine, FileCheck, Sparkles } from 'lucide-react';
+import { FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck, Eye, Phone, MapPin, Copy, Check, Users, Building2, Trees, ChevronDown, FlaskConical, Play, RotateCcw, Loader2, Printer, PenLine, FileCheck, Sparkles, UserX } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
@@ -263,6 +263,8 @@ export default function ExcelImportPage({
     pendingMahalleler: { mahalle: string; count: number; alreadyGenerated?: boolean }[];
     generatedMahalleler?: string[];
     totalCount: number;
+    eligibleTotalCount?: number;
+    cancelledCount?: number;
     assignedCount: number;
     nextListNo: number;
     lists: any[];
@@ -277,6 +279,8 @@ export default function ExcelImportPage({
     pendingMahalleler: [],
     generatedMahalleler: [],
     totalCount: 0,
+    eligibleTotalCount: 0,
+    cancelledCount: 0,
     assignedCount: 0,
     nextListNo: 1,
     lists: [],
@@ -1672,6 +1676,16 @@ export default function ExcelImportPage({
               <PenLine className="w-3.5 h-3.5 text-indigo-700" />
               <span>Toplu Islak İmza Listesi İndir</span>
             </a>
+            <span className="text-slate-300">•</span>
+            <a
+              href={`/api/export?type=cancelled_beneficiaries&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+              download="Edirne_SYDV_Iptal_Edilen_Haneler_Listesi.xlsx"
+              className="flex items-center gap-1 text-rose-700 hover:text-rose-900 font-extrabold underline"
+              title="Kömür dağıtımı iptal edilen hanelerin listesini indirin"
+            >
+              <UserX className="w-3.5 h-3.5 text-rose-600" />
+              <span>İptal Edilen Haneler Listesi İndir</span>
+            </a>
           </div>
         </div>
       </div>
@@ -1716,8 +1730,20 @@ export default function ExcelImportPage({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
             <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase">Toplam Hak Sahibi</span>
-              <p className="text-xl font-black text-slate-900">{signatureData.totalCount}</p>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Dağıtım Kapsamı / Kayıtlı</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-xl font-black text-slate-900">
+                  {signatureData.eligibleTotalCount !== undefined ? signatureData.eligibleTotalCount : Math.max(0, signatureData.totalCount - (signatureData.cancelledCount || 0))}
+                </span>
+                <span className="text-xs font-bold text-slate-400">
+                  / {signatureData.totalCount} Hane
+                </span>
+              </div>
+              {(signatureData.cancelledCount || 0) > 0 && (
+                <span className="text-[10px] font-bold text-rose-600 block mt-0.5">
+                  ({signatureData.cancelledCount} Hane İptal Edildi)
+                </span>
+              )}
             </div>
             <Users className="w-7 h-7 text-slate-400" />
           </div>
@@ -2196,6 +2222,17 @@ export default function ExcelImportPage({
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Ek Kömür Listesi İndir ({signatureData.ekKomurVerilenCount} Hane)</span>
+                  </a>
+                )}
+                {(signatureData.cancelledCount || 0) > 0 && (
+                  <a
+                    href={`/api/export?type=cancelled_beneficiaries&donem_kodu=${encodeURIComponent(selectedSeasonView)}`}
+                    download="Edirne_SYDV_Iptal_Edilen_Haneler_Listesi.xlsx"
+                    className="text-[11px] font-extrabold text-rose-700 hover:text-rose-900 hover:underline flex items-center gap-1"
+                    title="Kömür yardımı iptal edilen hanelerin listesini Excel olarak indir"
+                  >
+                    <UserX className="w-3.5 h-3.5 text-rose-600" />
+                    <span>İptal Edilenler ({signatureData.cancelledCount} Hane)</span>
                   </a>
                 )}
                 {signatureData.lists.length > 1 && (

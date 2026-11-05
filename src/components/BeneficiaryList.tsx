@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
-import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl } from '@/lib/normalizer';
+import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled } from '@/lib/normalizer';
 import { formatTrAuto } from '@/lib/dateUtils';
 import BeneficiaryFilterModals from './beneficiary/BeneficiaryFilterModals';
 import type { BeneficiaryRecord, MahalleSummary, QueueTabType, ListTypeFilter, UserRoleType } from '@/types/beneficiary';
@@ -305,7 +305,7 @@ export default function BeneficiaryList({
   const allPendingRecords = useMemo(() => {
     return records.filter((r) => {
       const isComplete = r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI';
-      const isExcluded = Boolean(r.komur_verilmeyecek);
+      const isExcluded = isBeneficiaryCancelled(r);
       return !isComplete && !isExcluded;
     });
   }, [records]);
@@ -322,14 +322,14 @@ export default function BeneficiaryList({
   const deliveredRecords = useMemo(() => {
     return records.filter((r) => {
       const isComplete = r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI';
-      const isExcluded = Boolean(r.komur_verilmeyecek);
+      const isExcluded = isBeneficiaryCancelled(r);
       return isComplete && !isExcluded;
     });
   }, [records]);
 
   // Kömür Verilmeyecekler (İptal Edilen Hak Sahipleri)
   const excludedRecords = useMemo(() => {
-    return records.filter((r) => Boolean(r.komur_verilmeyecek));
+    return records.filter((r) => isBeneficiaryCancelled(r));
   }, [records]);
 
   // Aktif sekmenin temel kayıt listesi:

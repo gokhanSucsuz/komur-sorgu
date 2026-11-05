@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
 
     let pendingCount = 0;
     let assignedCount = 0;
+    let cancelledCount = 0;
     const pendingMahalleMap = new Map<string, number>();
     const missingAddressBeneficiaries: any[] = [];
     let ekKomurVerilenCount = 0;
@@ -92,17 +93,17 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      // KÖMÜR İPTAL KONTROLÜ:
+      // Kömür verilmeyecek / iptal edilmiş olanlar imza listesi havuzuna dahil edilmez!
+      if (isBeneficiaryCancelled(rawB)) {
+        cancelledCount++;
+        continue;
+      }
+
       const isAssigned = Boolean(rawB.imza_listesi_id && String(rawB.imza_listesi_id).trim().length > 0);
       if (isAssigned) {
         assignedCount++;
       } else {
-        // KÖMÜR İPTAL KONTROLÜ:
-        // İmza listesi yazdırılmamış kayıtlardan kömür verilmeyecek / iptal edilmiş olanlar
-        // imza listesi bekleyen havuzuna dahil edilmez!
-        if (isBeneficiaryCancelled(rawB)) {
-          continue;
-        }
-
         pendingCount++;
         const b = decryptBeneficiary(rawB);
         const isMissing = isBeneficiaryAddressMissing(b);
@@ -177,6 +178,8 @@ export async function GET(request: NextRequest) {
       calismaModu,
       isSandbox: isSandboxMode,
       totalCount: rawBeneficiaries.length,
+      eligibleTotalCount: Math.max(0, rawBeneficiaries.length - cancelledCount),
+      cancelledCount,
       pendingCount,
       assignedCount,
       ekKomurVerilenCount,
