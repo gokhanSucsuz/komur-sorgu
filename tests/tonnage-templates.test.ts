@@ -9,6 +9,8 @@ import { parseTonnageTemplates, DEFAULT_TONNAGE_TEMPLATES } from '@/lib/tonnageT
 import { normalizeToTon } from '@/lib/normalizer';
 import { encryptTruck } from '@/lib/crypto';
 import { mapDoc } from '@/lib/mongodb';
+import { formatDottedTrDate, buildReportPdfTitle } from '@/lib/dateUtils';
+import fs from 'node:fs';
 
 describe('Tonaj Rapor Şablonları & Tır Filtreleme-Sıralama Testleri', () => {
   it('1. parseTonnageTemplates null/undefined/boş girdide varsayılan resmi şablonları döndürür', () => {
@@ -147,6 +149,59 @@ describe('Tonaj Rapor Şablonları & Tır Filtreleme-Sıralama Testleri', () => 
       decrypted.tutanak_no.startsWith('ENC:GCM:'),
       false,
       'mapDoc sonrasında tutanak_no kesinlikle ENC:GCM içermemelidir'
+    );
+  });
+
+  it('6. PDF Rapor Çıktısı Dosya İsimlendirmesi: "DD.MM.YYYY - <Rapor Başlığı>" kuralını eksiksiz sağlar', () => {
+    // 1. formatDottedTrDate testleri
+    assert.equal(formatDottedTrDate('2026-11-05'), '05.11.2026');
+    assert.equal(formatDottedTrDate('2026-01-09'), '09.01.2026');
+    assert.equal(formatDottedTrDate('05.11.2026'), '05.11.2026');
+    assert.equal(formatDottedTrDate('2026-11-05T14:30:00.000Z'), '05.11.2026');
+
+    // 2. buildReportPdfTitle testleri
+    const title1 = buildReportPdfTitle('Günlük Kömür Dağıtım ve Teslimat Tutanağı', '2026-11-05');
+    assert.equal(title1, '05.11.2026 - Günlük Kömür Dağıtım ve Teslimat Tutanağı');
+
+    const title2 = buildReportPdfTitle('Toplu Kömür Dağıtım ve Teslimat Tutanağı', '2026-11-05');
+    assert.equal(title2, '05.11.2026 - Toplu Kömür Dağıtım ve Teslimat Tutanağı');
+
+    const title3 = buildReportPdfTitle('İptal Edilen Kömür Teslimatları Resmi Tutanağı', '2026-11-05');
+    assert.equal(title3, '05.11.2026 - İptal Edilen Kömür Teslimatları Resmi Tutanağı');
+
+    const title4 = buildReportPdfTitle('Tesellümleri İzleme Tablosu', '2026-11-05');
+    assert.equal(title4, '05.11.2026 - Tesellümleri İzleme Tablosu');
+
+    const title5 = buildReportPdfTitle('TKİ Kömür Dağıtım Listesi', '2026-11-05');
+    assert.equal(title5, '05.11.2026 - TKİ Kömür Dağıtım Listesi');
+
+    const title6 = buildReportPdfTitle('Dağıtım Rotası Teslimat Tutanağı - Doğu Ekip 1', '2026-11-05');
+    assert.equal(title6, '05.11.2026 - Dağıtım Rotası Teslimat Tutanağı - Doğu Ekip 1');
+
+    // Tarih belirtilmezse günün tarihi ile başlar
+    const titleDefault = buildReportPdfTitle('Personel Çalışma Saatleri ve Saha Mesai Takip Cetveli');
+    assert.match(titleDefault, /^\d{2}\.\d{2}\.\d{4} - Personel Çalışma Saatleri ve Saha Mesai Takip Cetveli$/);
+  });
+
+  it('7. Yeni Tır Girişi ve Tonaj Sayfasında Alan Adı "Mühür No" Olarak Güncellenmiştir', () => {
+    const tonnagePageContent = fs.readFileSync('src/components/TonnagePage.tsx', 'utf-8');
+    assert.ok(
+      tonnagePageContent.includes('Mühür No (Opsiyonel)'),
+      'Yeni tır giriş modalında etiket "Mühür No (Opsiyonel)" olmalıdır'
+    );
+    assert.ok(
+      tonnagePageContent.includes('<th className="p-3">Mühür No</th>'),
+      'Tır listesi tablosunda sütun başlığı "Mühür No" olmalıdır'
+    );
+    assert.ok(
+      tonnagePageContent.includes('Mühür: {t.tutanak_no}'),
+      'Mobil kart görünümünde "Mühür: ..." etiketi bulunmalıdır'
+    );
+
+    const exportRouteContent = fs.readFileSync('src/app/api/export/route.ts', 'utf-8');
+    assert.ok(
+      exportRouteContent.includes("'MÜHÜR NO': t.tutanak_no || '-'"),
+      'Excel dışa aktarımında sütun adı "MÜHÜR NO" olmalıdır'
     );
   });
 });

@@ -196,3 +196,68 @@ export function formatTrAuto(val: any): string {
   const hasTime = str.includes(':') || (str.includes('T') && str.length > 10);
   return hasTime ? formatTrDateTime(val) : formatTrDate(val);
 }
+
+/**
+ * Formats a date strictly as "DD.MM.YYYY" (e.g. "05.11.2026")
+ * for official PDF filenames and official document headings.
+ */
+export function formatDottedTrDate(val?: any): string {
+  if (!val) {
+    const { fullStr } = getIstanbulDate();
+    return fullStr.split(' ')[0]; // DD.MM.YYYY
+  }
+  const str = String(val).trim();
+  // If already DD.MM.YYYY
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(str)) {
+    return str;
+  }
+  // If starts with YYYY-MM-DD
+  const ymdMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (ymdMatch) {
+    const [, y, m, d] = ymdMatch;
+    return `${d.padStart(2, '0')}.${m.padStart(2, '0')}.${y}`;
+  }
+  // Fallback to parseDateSafely
+  const d = parseDateSafely(val);
+  if (d) {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(d.getFullYear());
+    return `${dd}.${mm}.${yyyy}`;
+  }
+  const { fullStr } = getIstanbulDate();
+  return fullStr.split(' ')[0];
+}
+
+/**
+ * Creates the official PDF filename / document title strictly formatted as:
+ * "DD.MM.YYYY - <Rapor Başlığı>" (e.g. "05.11.2026 - Günlük Kömür Dağıtım ve Teslimat Tutanağı")
+ */
+export function buildReportPdfTitle(reportTitle: string, customDate?: any): string {
+  const dateStr = formatDottedTrDate(customDate);
+  const cleanTitle = (reportTitle || 'Resmi Rapor').trim();
+  return `${dateStr} - ${cleanTitle}`;
+}
+
+/**
+ * Sets document.title to "DD.MM.YYYY - <Rapor Başlığı>", invokes window.print()
+ * so the browser defaults the saved PDF filename to this exact title, and restores original title.
+ */
+export function printReportWithTitle(reportTitle: string, customDate?: any): void {
+  if (typeof window === 'undefined') return;
+  const originalTitle = document.title;
+  const pdfTitle = buildReportPdfTitle(reportTitle, customDate);
+  document.title = pdfTitle;
+
+  const restore = () => {
+    document.title = originalTitle;
+    window.removeEventListener('afterprint', restore);
+  };
+  window.addEventListener('afterprint', restore);
+
+  try {
+    window.print();
+  } finally {
+    setTimeout(restore, 2000);
+  }
+}

@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
-import { formatTrDate, formatTrAuto, formatTrTime, parseDateSafely, isPastDeliveryDate } from '@/lib/dateUtils';
+import { formatTrDate, formatTrAuto, formatTrTime, parseDateSafely, isPastDeliveryDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -50,6 +50,31 @@ export default function DeliveryArchive({
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
+  }, [printDayGroup, printCancelGroup]);
+
+  // PDF dosya adı / tarayıcı sekme başlığını "DD.MM.YYYY - <Rapor Başlığı>" olarak ayarla
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (printDayGroup) {
+      const isBulk = printDayGroup.tarih === 'TOPLU_TUM_TESLIMATLAR';
+      const repTitle = isBulk ? 'Toplu Kömür Dağıtım ve Teslimat Tutanağı' : 'Günlük Kömür Dağıtım ve Teslimat Tutanağı';
+      const repDate = isBulk ? undefined : printDayGroup.tarih;
+      const prevTitle = document.title;
+      document.title = buildReportPdfTitle(repTitle, repDate);
+      return () => {
+        document.title = prevTitle;
+      };
+    }
+    if (printCancelGroup) {
+      const isBulk = printCancelGroup.tarih === 'TOPLU_IPTALLER';
+      const repTitle = 'İptal Edilen Kömür Teslimatları Resmi Tutanağı';
+      const repDate = isBulk ? undefined : printCancelGroup.tarih;
+      const prevTitle = document.title;
+      document.title = buildReportPdfTitle(repTitle, repDate);
+      return () => {
+        document.title = prevTitle;
+      };
+    }
   }, [printDayGroup, printCancelGroup]);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
@@ -899,7 +924,12 @@ export default function DeliveryArchive({
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const isBulk = printDayGroup?.tarih === 'TOPLU_TUM_TESLIMATLAR';
+                    const repTitle = isBulk ? 'Toplu Kömür Dağıtım ve Teslimat Tutanağı' : 'Günlük Kömür Dağıtım ve Teslimat Tutanağı';
+                    const repDate = isBulk ? undefined : printDayGroup?.tarih;
+                    printReportWithTitle(repTitle, repDate);
+                  }}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
                   title="Yazıcıdan çıktı al veya PDF olarak kaydet"
                 >
@@ -1098,7 +1128,12 @@ export default function DeliveryArchive({
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const isBulk = printCancelGroup?.tarih === 'TOPLU_IPTALLER';
+                    const repTitle = 'İptal Edilen Kömür Teslimatları Resmi Tutanağı';
+                    const repDate = isBulk ? undefined : printCancelGroup?.tarih;
+                    printReportWithTitle(repTitle, repDate);
+                  }}
                   className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
                   title="Yazıcıdan çıktı al veya PDF olarak kaydet"
                 >

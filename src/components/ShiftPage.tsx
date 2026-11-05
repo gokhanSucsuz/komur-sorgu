@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Calendar, Plus, Trash2, Edit3, RefreshCw, CheckCircle2, AlertTriangle, MapPin, Printer, X, History, Sparkles, Download, FileText } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
-import { formatTrDate } from '@/lib/dateUtils';
+import { formatTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 interface ShiftPageProps {
   userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
@@ -154,6 +154,18 @@ export default function ShiftPage({
       document.body.style.overflow = '';
     };
   }, [showReportModal]);
+
+  // Sayfa başlığını (PDF dosya adı) "DD.MM.YYYY - <Rapor Başlığı>" olarak ayarla
+  useEffect(() => {
+    if (!showReportModal || typeof document === 'undefined') return;
+    const repTitle = 'Personel Çalışma Saatleri ve Saha Mesai Takip Cetveli';
+    const repDate = reportTargetDate !== 'ALL' ? reportTargetDate : undefined;
+    const prevTitle = document.title;
+    document.title = buildReportPdfTitle(repTitle, repDate);
+    return () => {
+      document.title = prevTitle;
+    };
+  }, [showReportModal, reportTargetDate]);
 
   // Handle Form Submit: Add Work Hours (Same Day or Retrospective)
   const handleCreateWorkHours = async (e: React.FormEvent) => {
@@ -1389,7 +1401,11 @@ export default function ShiftPage({
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const repTitle = 'Personel Çalışma Saatleri ve Saha Mesai Takip Cetveli';
+                    const repDate = reportTargetDate !== 'ALL' ? reportTargetDate : undefined;
+                    printReportWithTitle(repTitle, repDate);
+                  }}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95"
                   title="Yazıcıdan çıktı al veya PDF olarak kaydet"
                 >

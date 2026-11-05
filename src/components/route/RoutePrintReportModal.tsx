@@ -1,10 +1,11 @@
 'use client';
 
+import { useEffect } from 'react';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { Route as RouteIcon, X, Download, Printer } from 'lucide-react';
 import { getBeneficiaryListTypeInfo } from '@/lib/normalizer';
-import { formatTrDate } from '@/lib/dateUtils';
+import { formatTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 export interface RoutePrintReportModalProps {
   printRoute: any | null;
@@ -17,6 +18,16 @@ export default function RoutePrintReportModal({
   routeStaffList,
   onClose,
 }: RoutePrintReportModalProps) {
+  useEffect(() => {
+    if (!printRoute || typeof document === 'undefined') return;
+    const repTitle = `Dağıtım Rotası Teslimat Tutanağı - ${printRoute.rota_adi || 'Saha Rotası'}`;
+    const prevTitle = document.title;
+    document.title = buildReportPdfTitle(repTitle, printRoute.tarih);
+    return () => {
+      document.title = prevTitle;
+    };
+  }, [printRoute]);
+
   if (!printRoute || typeof document === 'undefined') return null;
 
   return createPortal(
@@ -405,7 +416,10 @@ export default function RoutePrintReportModal({
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() => {
+                const repTitle = `Dağıtım Rotası Teslimat Tutanağı - ${printRoute.rota_adi || 'Saha Rotası'}`;
+                printReportWithTitle(repTitle, printRoute.tarih);
+              }}
               className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all active:scale-95"
             >
               <Printer className="w-4 h-4" />

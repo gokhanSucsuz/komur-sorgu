@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
-import { formatTrDateTime, formatTrDateWithDay } from '@/lib/dateUtils';
+import { formatTrDateTime, formatTrDateWithDay, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 import { parseTonnageTemplates, DEFAULT_TONNAGE_TEMPLATES, TonnageReportTemplates } from '@/lib/tonnageTemplates';
 import dynamic from 'next/dynamic';
 const InstitutionTonnageModal = dynamic(() => import('./InstitutionTonnageModal'));
@@ -413,6 +413,20 @@ export default function TonnagePage({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showReportModal, showTemplateModal, isSavingTemplates]);
+
+  // Sayfa başlığını (PDF dosya adı) "DD.MM.YYYY - <Rapor Başlığı>" olarak ayarla
+  useEffect(() => {
+    if (!showReportModal || typeof document === 'undefined') return;
+    const repTitle = reportFormat === 'TESELLUM'
+      ? (tonnageTemplates.format1?.title || 'Tesellümleri İzleme Tablosu')
+      : (tonnageTemplates.format2?.anaBaslik || 'TKİ Kömür Dağıtım Listesi');
+    const repDate = reportEndDate || reportStartDate || undefined;
+    const prevTitle = document.title;
+    document.title = buildReportPdfTitle(repTitle, repDate);
+    return () => {
+      document.title = prevTitle;
+    };
+  }, [showReportModal, reportFormat, tonnageTemplates, reportStartDate, reportEndDate]);
 
   // Filtered trucks for report (%100 Türkçe karakter uyumlu arama)
   const filteredReportTrucks = useMemo(() => {
@@ -964,7 +978,7 @@ export default function TonnagePage({
               type="text"
               value={mainSearchQuery}
               onChange={(e) => setMainSearchQuery(e.target.value)}
-              placeholder="Tır plakası, tutanak no, irsaliye no, şoför adı veya açıklama ara..."
+              placeholder="Tır plakası, mühür no, irsaliye no, şoför adı veya açıklama ara..."
               className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
             />
             {mainSearchQuery && (
@@ -1332,7 +1346,7 @@ export default function TonnagePage({
                     </div>
                   </th>
                   <th className="p-3">İrsaliye No</th>
-                  <th className="p-3">Tutanak No</th>
+                  <th className="p-3">Mühür No</th>
                   {userRole === 'ADMIN' && <th className="p-3 text-center w-28">İşlemler</th>}
                 </tr>
               </thead>
@@ -1464,9 +1478,9 @@ export default function TonnagePage({
                     {t.tutanak_no && (
                       <div
                         className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 font-mono font-bold tracking-wider text-xs"
-                        title="Tutanak Numarası"
+                        title="Mühür Numarası"
                       >
-                        Tutanak: {t.tutanak_no}
+                        Mühür: {t.tutanak_no}
                       </div>
                     )}
                   </div>
@@ -1597,7 +1611,7 @@ export default function TonnagePage({
                   <p className="text-xs text-slate-500">
                     {editingTruckId
                       ? 'Mevcut tır sevkiyatı, plaka, tarih ve tonaj bilgilerini güncelleyin'
-                      : 'Kömür sevkiyatı, tutanak no ve tonaj girişi'}
+                      : 'Kömür sevkiyatı, mühür no ve tonaj girişi'}
                   </p>
                 </div>
               </div>
@@ -1660,7 +1674,7 @@ export default function TonnagePage({
                                 isSelected ? 'bg-amber-700 text-white' : 'bg-indigo-50 text-indigo-900 border border-indigo-200'
                               }`}
                             >
-                              Tutanak: {t.tutanak_no}
+                              Mühür: {t.tutanak_no}
                             </span>
                           )}
                         </div>
@@ -1697,7 +1711,7 @@ export default function TonnagePage({
                       return (
                         <option key={tid} value={tid}>
                           #{t.tir_sirasi} | {t.plaka}
-                          {t.tutanak_no ? ` (Tutanak: ${t.tutanak_no})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({t.tarih})
+                          {t.tutanak_no ? ` (Mühür: ${t.tutanak_no})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({t.tarih})
                         </option>
                       );
                     })}
@@ -1783,7 +1797,7 @@ export default function TonnagePage({
                 </div>
               </div>
 
-              {/* Tır Plakası & Tutanak No */}
+              {/* Tır Plakası & Mühür No */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
@@ -1801,13 +1815,13 @@ export default function TonnagePage({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Tutanak No (Opsiyonel)
+                    Mühür No (Opsiyonel)
                   </label>
                   <input
                     type="text"
                     value={tutanakNo}
                     onChange={(e) => setTutanakNo(e.target.value.toLocaleUpperCase('tr-TR'))}
-                    placeholder="Örn: 2025/1 veya TUT-01"
+                    placeholder="Örn: 2025/1 veya MHR-01"
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono uppercase font-bold focus:outline-none focus:border-amber-500 focus:bg-white text-sm"
                   />
                 </div>
@@ -2111,7 +2125,7 @@ export default function TonnagePage({
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Plaka / İrsaliye / Şoför / Tutanak Ara
+                      Plaka / İrsaliye / Şoför / Mühür Ara
                     </label>
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
@@ -2119,7 +2133,7 @@ export default function TonnagePage({
                         type="text"
                         value={reportSearchQuery}
                         onChange={(e) => setReportSearchQuery(e.target.value)}
-                        placeholder="Örn: 17 ACJ, Uğurlu, TUT-01..."
+                        placeholder="Örn: 17 ACJ, Uğurlu, MHR-01..."
                         className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
                       />
                     </div>
@@ -2356,7 +2370,7 @@ export default function TonnagePage({
                           <th className="p-2 w-28">TESELLÜM FİŞ NO veya ( Kantar tartı no)</th>
                           <th className="p-2 text-right w-32">TESLİM ALINAN MİKTAR (kg / Ton)</th>
                           <th className="p-2 text-right w-32">FARK (İşl.Yüklenen) ( Teslim Alınan) kg.</th>
-                          <th className="p-2 w-24">TUTANAK NO</th>
+                          <th className="p-2 w-24">MÜHÜR NO</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -2438,7 +2452,7 @@ export default function TonnagePage({
                           <th className="p-2 w-28">TESLİM TARİHİ</th>
                           <th className="p-2 text-right w-32">TESLİM MİKTARI(KG / TON)</th>
                           <th className="p-2 w-28">İRSALİYE NO</th>
-                          <th className="p-2 w-24">TUTANAK NO</th>
+                          <th className="p-2 w-24">MÜHÜR NO</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -2562,7 +2576,13 @@ export default function TonnagePage({
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const repTitle = reportFormat === 'TESELLUM'
+                      ? (tonnageTemplates.format1?.title || 'Tesellümleri İzleme Tablosu')
+                      : (tonnageTemplates.format2?.anaBaslik || 'TKİ Kömür Dağıtım Listesi');
+                    const repDate = reportEndDate || reportStartDate || undefined;
+                    printReportWithTitle(repTitle, repDate);
+                  }}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all active:scale-95"
                 >
                   <Printer className="w-4 h-4" />

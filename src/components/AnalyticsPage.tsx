@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart3, Calendar, Printer, AlertTriangle, Clock, Truck, Target, TrendingUp, Users, Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, ChevronDown, Archive, X, Download, UserX } from 'lucide-react';
 import { formatTonnage, normalizeToTon } from '@/lib/normalizer';
-import { formatTrDate, formatTrDateTime, formatTrAuto } from '@/lib/dateUtils';
+import { formatTrDate, formatTrDateTime, formatTrAuto, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 interface AnalyticsPageProps {
   onRefreshAll?: () => void;
@@ -106,6 +106,18 @@ export default function AnalyticsPage({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showPrintModal]);
+
+  // Sayfa başlığını (PDF dosya adı) "DD.MM.YYYY - <Rapor Başlığı>" olarak ayarla
+  useEffect(() => {
+    if (!showPrintModal || typeof document === 'undefined') return;
+    const repTitle = 'Kömür Dağıtım İstatistik ve Analiz Raporu';
+    const repDate = endDate || startDate || undefined;
+    const prevTitle = document.title;
+    document.title = buildReportPdfTitle(repTitle, repDate);
+    return () => {
+      document.title = prevTitle;
+    };
+  }, [showPrintModal, startDate, endDate]);
 
   const summary = reportData?.summary;
   const donemStats = reportData?.donemStats;
@@ -2076,7 +2088,11 @@ export default function AnalyticsPage({
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const repTitle = 'Kömür Dağıtım İstatistik ve Analiz Raporu';
+                    const repDate = endDate || startDate || undefined;
+                    printReportWithTitle(repTitle, repDate);
+                  }}
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all active:scale-95"
                 >
                   <Printer className="w-4 h-4" />

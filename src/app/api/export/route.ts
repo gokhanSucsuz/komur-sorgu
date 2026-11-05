@@ -1579,7 +1579,7 @@ export async function GET(request: NextRequest) {
           'TESELLÜM FİŞ NO veya ( Kantar tartı no)': t.irsaliye_no || '-',
           'TESLİM ALINAN MİKTAR(kg)': teslimFmt,
           'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': farkFmt,
-          'TUTANAK NO': t.tutanak_no || '-'
+          'MÜHÜR NO': t.tutanak_no || '-'
         };
       });
 
@@ -1598,7 +1598,7 @@ export async function GET(request: NextRequest) {
           'TESLİM TARİHİ': t.tarih ? formatTrDateWithDay(t.tarih) : '-',
           'TESLİM MİKTARI(KG)': teslimFmt,
           'İRSALİYE NO': t.irsaliye_no || '-',
-          'TUTANAK NO': t.tutanak_no || '-'
+          'MÜHÜR NO': t.tutanak_no || '-'
         };
       });
 
@@ -1618,7 +1618,7 @@ export async function GET(request: NextRequest) {
           'TESELLÜM FİŞ NO veya ( Kantar tartı no)': '',
           'TESLİM ALINAN MİKTAR(kg)': totalTeslimFmt,
           'FARK (İşl.Yüklenen) ( Teslim Alınan) kg.': totalFarkFmt,
-          'TUTANAK NO': ''
+          'MÜHÜR NO': ''
         });
 
         exportDataTki.push({
@@ -1631,7 +1631,7 @@ export async function GET(request: NextRequest) {
           'TESLİM TARİHİ': 'Toplam',
           'TESLİM MİKTARI(KG)': totalTeslimFmt,
           'İRSALİYE NO': `${records.length} Tır`,
-          'TUTANAK NO': ''
+          'MÜHÜR NO': ''
         });
       }
 
