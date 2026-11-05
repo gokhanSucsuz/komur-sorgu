@@ -5,6 +5,7 @@ import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeTo
 import { formatTrDateWithDay, formatTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
+import { parseTonnageTemplates } from '@/lib/tonnageTemplates';
 
 /**
  * Neutralizes Excel formula injection (CSV/XLSX DDE attacks).
@@ -1088,7 +1089,9 @@ export async function GET(request: NextRequest) {
       archivedBeneficiaries: archBenCol,
       workShifts: shiftsCol,
       truckDeliveries: trucksCol,
-      signatureLists: sigCol
+      signatureLists: sigCol,
+      systemSettings: settingsCol,
+      isSandboxMode
     } = await getDbCollections();
 
     // 2. Günlük / Tarih Bazlı Teslimat Listesi
@@ -1477,6 +1480,10 @@ export async function GET(request: NextRequest) {
       const endDate = searchParams.get('endDate');
       const formatParam = (searchParams.get('format') || 'all').toLowerCase();
 
+      const templateKey = isSandboxMode ? 'sandbox_tonnage_report_templates' : 'tonnage_report_templates';
+      const tplDoc = await settingsCol.findOne({ key: templateKey });
+      const tpl = parseTonnageTemplates(tplDoc?.value);
+
       const filter: any = {};
       if (startDate && endDate) {
         filter.tarih = { $gte: startDate, $lte: endDate };
@@ -1515,7 +1522,7 @@ export async function GET(request: NextRequest) {
 
         return {
           'Sıra': t.tir_sirasi || idx + 1,
-          'YÜKLEMEYİ YAPAN İŞLETME': t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü',
+          'YÜKLEMEYİ YAPAN İŞLETME': t.isletme_adi || tpl.format1.isletmeAdi || 'Çan Linyit İşletmesi Müdürlüğü',
           'ÇIKIŞ TARİHİ': t.ocak_cikis_tarihi || t.tarih ? formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih) : '-',
           'VAGON Veya PLAKA NO / Şoför Adı': `${t.plaka || '-'}${t.sofor_adi ? ` - ${t.sofor_adi}` : ''}`,
           'İŞLETMEDEN YÜKLENEN MİKTAR (kg)': yuklenenFmt,
@@ -1534,8 +1541,8 @@ export async function GET(request: NextRequest) {
 
         return {
           'SIRA NO': t.tir_sirasi || idx + 1,
-          'İL': t.il || 'EDİRNE',
-          'İLÇE': t.ilce || 'MERKEZ',
+          'İL': t.il || tpl.format2.il || 'EDİRNE',
+          'İLÇE': t.ilce || tpl.format2.ilce || 'MERKEZ',
           'PLAKA NO': t.plaka || '-',
           'SEVK TARİHİ': t.ocak_cikis_tarihi || t.tarih ? formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih) : '-',
           'SEVK MİKTAR (KG)': sevkFmt,
@@ -1581,12 +1588,24 @@ export async function GET(request: NextRequest) {
 
       const dateLabel = startDate && endDate ? `${startDate} - ${endDate}` : (startDate ? `${startDate} Sonrası` : (endDate ? `${endDate} Öncesi` : 'Tüm Dönem'));
 
+      const f1Title = tpl.format1.title || 'TESELLÜMLERİ İZLEME TABLOSU';
+      const f1Subtitle = `${tpl.format1.subtitle || ''}${tpl.format1.ilIlce ? ` | ${tpl.format1.ilIlce}` : ''} | Kapsam: ${dateLabel}`;
+      const f1Sig1Name = tpl.format1.imza1_ad || 'Cem PAZAR';
+      const f1Sig1Title = `${tpl.format1.imza1_unvan || 'Sos. Yard. ve İnc. Gör.'}${tpl.format1.imza1_gorev ? ` (${tpl.format1.imza1_gorev})` : ''}`;
+      const f1Sig2Name = tpl.format1.imza2_ad || 'Tezcan FİDAN';
+      const f1Sig2Title = `${tpl.format1.imza2_unvan || 'Vakıf Müdürü'}${tpl.format1.imza2_kurum ? ` - ${tpl.format1.imza2_kurum}` : ''}`;
+
+      const f2Title = tpl.format2.ustBaslik || 'TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU';
+      const f2Subtitle = `${tpl.format2.anaBaslik || 'ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ KÖMÜR LİSTESİ'} | Kapsam: ${dateLabel}`;
+      const f2SigName = tpl.format2.imza_ad || 'Tezcan FİDAN';
+      const f2SigTitle = `${tpl.format2.imza_unvan || 'Vakıf Müdürü'}${tpl.format2.imza_kurum ? ` - ${tpl.format2.imza_kurum}` : ''}`;
+
       // Sayfa eklemeleri: İstenen formata göre veya ikisi birden
       if (formatParam === 'tesellum') {
         const sheet = addStyledWorksheet(
           workbook,
-          'TESELLÜMLERİ İZLEME TABLOSU',
-          `(GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR) | Kapsam: ${dateLabel}`,
+          f1Title,
+          f1Subtitle,
           'Tesellüm İzleme Tablosu',
           exportDataTesellum,
           [
@@ -1604,15 +1623,15 @@ export async function GET(request: NextRequest) {
         );
         // İmza satırları
         sheet.addRow([]);
-        const sigRow1 = sheet.addRow(['', '', '', 'Cem PAZAR', '', '', '', 'Tezcan FİDAN']);
+        const sigRow1 = sheet.addRow(['', '', '', f1Sig1Name, '', '', '', f1Sig2Name]);
         sigRow1.font = { name: 'Segoe UI', size: 10, bold: true };
-        const sigRow2 = sheet.addRow(['', '', '', 'Sos. Yard. ve İnc. Gör.', '', '', '', 'Vakıf Müdürü']);
+        const sigRow2 = sheet.addRow(['', '', '', f1Sig1Title, '', '', '', f1Sig2Title]);
         sigRow2.font = { name: 'Segoe UI', size: 9, italic: true };
       } else if (formatParam === 'tki') {
         const sheet = addStyledWorksheet(
           workbook,
-          'TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU',
-          `ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ EDİRNE/MERKEZ İLÇESİ KÖMÜR LİSTESİ | Kapsam: ${dateLabel}`,
+          f2Title,
+          f2Subtitle,
           'TKİ Kömür Listesi',
           exportDataTki,
           [
@@ -1630,16 +1649,16 @@ export async function GET(request: NextRequest) {
         );
         // İmza satırları
         sheet.addRow([]);
-        const sigRow1 = sheet.addRow(['', '', '', '', '', '', '', '', 'Tezcan FİDAN']);
+        const sigRow1 = sheet.addRow(['', '', '', '', '', '', '', '', f2SigName]);
         sigRow1.font = { name: 'Segoe UI', size: 10, bold: true };
-        const sigRow2 = sheet.addRow(['', '', '', '', '', '', '', '', 'Vakıf Müdürü']);
+        const sigRow2 = sheet.addRow(['', '', '', '', '', '', '', '', f2SigTitle]);
         sigRow2.font = { name: 'Segoe UI', size: 9, italic: true };
       } else {
         // Her iki formatı ayrı sekmelerde sun
         const sheet1 = addStyledWorksheet(
           workbook,
-          'TESELLÜMLERİ İZLEME TABLOSU',
-          `(GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR) | Kapsam: ${dateLabel}`,
+          f1Title,
+          f1Subtitle,
           'Tesellüm İzleme Tablosu',
           exportDataTesellum,
           [
@@ -1656,15 +1675,15 @@ export async function GET(request: NextRequest) {
           ]
         );
         sheet1.addRow([]);
-        const sigRow1 = sheet1.addRow(['', '', '', 'Cem PAZAR', '', '', '', 'Tezcan FİDAN']);
+        const sigRow1 = sheet1.addRow(['', '', '', f1Sig1Name, '', '', '', f1Sig2Name]);
         sigRow1.font = { name: 'Segoe UI', size: 10, bold: true };
-        const sigRow2 = sheet1.addRow(['', '', '', 'Sos. Yard. ve İnc. Gör.', '', '', '', 'Vakıf Müdürü']);
+        const sigRow2 = sheet1.addRow(['', '', '', f1Sig1Title, '', '', '', f1Sig2Title]);
         sigRow2.font = { name: 'Segoe UI', size: 9, italic: true };
 
         const sheet2 = addStyledWorksheet(
           workbook,
-          'TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU',
-          `ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ EDİRNE/MERKEZ İLÇESİ KÖMÜR LİSTESİ | Kapsam: ${dateLabel}`,
+          f2Title,
+          f2Subtitle,
           'TKİ Kömür Listesi',
           exportDataTki,
           [
@@ -1681,9 +1700,9 @@ export async function GET(request: NextRequest) {
           ]
         );
         sheet2.addRow([]);
-        const sigRow2_1 = sheet2.addRow(['', '', '', '', '', '', '', '', 'Tezcan FİDAN']);
+        const sigRow2_1 = sheet2.addRow(['', '', '', '', '', '', '', '', f2SigName]);
         sigRow2_1.font = { name: 'Segoe UI', size: 10, bold: true };
-        const sigRow2_2 = sheet2.addRow(['', '', '', '', '', '', '', '', 'Vakıf Müdürü']);
+        const sigRow2_2 = sheet2.addRow(['', '', '', '', '', '', '', '', f2SigTitle]);
         sigRow2_2.font = { name: 'Segoe UI', size: 9, italic: true };
       }
 

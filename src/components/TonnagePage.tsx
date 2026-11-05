@@ -3,10 +3,11 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users } from 'lucide-react';
+import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, UserCheck, Check, Save } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
 import { formatTrDateTime, formatTrDateWithDay } from '@/lib/dateUtils';
+import { parseTonnageTemplates, DEFAULT_TONNAGE_TEMPLATES, TonnageReportTemplates } from '@/lib/tonnageTemplates';
 import dynamic from 'next/dynamic';
 const InstitutionTonnageModal = dynamic(() => import('./InstitutionTonnageModal'));
 
@@ -45,6 +46,22 @@ export default function TonnagePage({
   const [errorMsg, setErrorMsg] = useState('');
   const [mainViewMode, setMainViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
   const [reportFormat, setReportFormat] = useState<'TESELLUM' | 'TKI'>('TESELLUM');
+
+  // Tonnage Report Templates State (Format 1 & Format 2 customization)
+  const [tonnageTemplates, setTonnageTemplates] = useState<TonnageReportTemplates>(() =>
+    parseTonnageTemplates(stats?.tonnage_templates)
+  );
+
+  useEffect(() => {
+    if (stats?.tonnage_templates) {
+      setTonnageTemplates(parseTonnageTemplates(stats.tonnage_templates));
+    }
+  }, [stats?.tonnage_templates]);
+
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [tempTemplates, setTempTemplates] = useState<TonnageReportTemplates>(tonnageTemplates);
+  const [templateModalTab, setTemplateModalTab] = useState<'FORMAT1' | 'FORMAT2'>('FORMAT1');
+  const [isSavingTemplates, setIsSavingTemplates] = useState(false);
 
   // Unique saved truck profiles (deduplicated by plaka + sofor_adi for quick 1-click template cards)
   const uniqueTruckTemplates = useMemo(() => {
@@ -145,7 +162,27 @@ export default function TonnagePage({
   const [mainStartDate, setMainStartDate] = useState('');
   const [mainEndDate, setMainEndDate] = useState('');
   const [mainPlakaFilter, setMainPlakaFilter] = useState('ALL');
-  const [mainSortOrder, setMainSortOrder] = useState<'NEWEST' | 'OLDEST' | 'TON_DESC' | 'TON_ASC'>('NEWEST');
+  const [mainSoforFilter, setMainSoforFilter] = useState('ALL');
+
+  type MainSortOrderType =
+    | 'NEWEST'
+    | 'OLDEST'
+    | 'ORDER_ASC'
+    | 'ORDER_DESC'
+    | 'EXIT_DATE_DESC'
+    | 'EXIT_DATE_ASC'
+    | 'PLAKA_ASC'
+    | 'PLAKA_DESC'
+    | 'SOFOR_ASC'
+    | 'SOFOR_DESC'
+    | 'TON_DESC'
+    | 'TON_ASC'
+    | 'SEVK_DESC'
+    | 'SEVK_ASC'
+    | 'FARK_DESC'
+    | 'FARK_ASC';
+
+  const [mainSortOrder, setMainSortOrder] = useState<MainSortOrderType>('NEWEST');
 
   const uniquePlakaList = useMemo(() => {
     const set = new Set<string>();
@@ -154,6 +191,36 @@ export default function TonnagePage({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'));
   }, [trucks]);
+
+  const uniqueSoforList = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of trucks) {
+      if (t.sofor_adi && String(t.sofor_adi).trim()) {
+        set.add(String(t.sofor_adi).trim());
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'));
+  }, [trucks]);
+
+  const handleSortColumn = (col: 'ORDER' | 'PLAKA' | 'SOFOR' | 'EXIT_DATE' | 'SEVK' | 'DELIVERY_DATE' | 'NET_TON' | 'FARK') => {
+    if (col === 'ORDER') {
+      setMainSortOrder((prev) => (prev === 'ORDER_ASC' ? 'ORDER_DESC' : 'ORDER_ASC'));
+    } else if (col === 'PLAKA') {
+      setMainSortOrder((prev) => (prev === 'PLAKA_ASC' ? 'PLAKA_DESC' : 'PLAKA_ASC'));
+    } else if (col === 'SOFOR') {
+      setMainSortOrder((prev) => (prev === 'SOFOR_ASC' ? 'SOFOR_DESC' : 'SOFOR_ASC'));
+    } else if (col === 'EXIT_DATE') {
+      setMainSortOrder((prev) => (prev === 'EXIT_DATE_DESC' ? 'EXIT_DATE_ASC' : 'EXIT_DATE_DESC'));
+    } else if (col === 'SEVK') {
+      setMainSortOrder((prev) => (prev === 'SEVK_DESC' ? 'SEVK_ASC' : 'SEVK_DESC'));
+    } else if (col === 'DELIVERY_DATE') {
+      setMainSortOrder((prev) => (prev === 'NEWEST' ? 'OLDEST' : 'NEWEST'));
+    } else if (col === 'NET_TON') {
+      setMainSortOrder((prev) => (prev === 'TON_DESC' ? 'TON_ASC' : 'TON_DESC'));
+    } else if (col === 'FARK') {
+      setMainSortOrder((prev) => (prev === 'FARK_DESC' ? 'FARK_ASC' : 'FARK_DESC'));
+    }
+  };
 
   const applyMainDatePreset = (preset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'DIFF_DATE') => {
     setMainDatePreset(preset);
@@ -186,6 +253,7 @@ export default function TonnagePage({
     setMainStartDate('');
     setMainEndDate('');
     setMainPlakaFilter('ALL');
+    setMainSoforFilter('ALL');
     setMainSortOrder('NEWEST');
   };
 
@@ -195,6 +263,7 @@ export default function TonnagePage({
     mainStartDate ||
     mainEndDate ||
     mainPlakaFilter !== 'ALL' ||
+    mainSoforFilter !== 'ALL' ||
     mainSortOrder !== 'NEWEST'
   );
 
@@ -202,6 +271,9 @@ export default function TonnagePage({
     const q = mainSearchQuery.trim();
     const list = trucks.filter((t: any) => {
       if (mainPlakaFilter !== 'ALL' && String(t.plaka || '').trim().toUpperCase() !== mainPlakaFilter) {
+        return false;
+      }
+      if (mainSoforFilter !== 'ALL' && String(t.sofor_adi || '').trim() !== mainSoforFilter) {
         return false;
       }
       if (mainDatePreset === 'DIFF_DATE') {
@@ -228,9 +300,39 @@ export default function TonnagePage({
     });
 
     return [...list].sort((a: any, b: any) => {
+      if (mainSortOrder === 'ORDER_ASC') {
+        return Number(a.tir_sirasi || 0) - Number(b.tir_sirasi || 0);
+      }
+      if (mainSortOrder === 'ORDER_DESC') {
+        return Number(b.tir_sirasi || 0) - Number(a.tir_sirasi || 0);
+      }
       if (mainSortOrder === 'OLDEST') {
         if (a.tarih !== b.tarih) return (a.tarih || '').localeCompare(b.tarih || '');
         return Number(a.tir_sirasi || 0) - Number(b.tir_sirasi || 0);
+      }
+      if (mainSortOrder === 'EXIT_DATE_DESC') {
+        const dateA = a.ocak_cikis_tarihi || a.tarih || '';
+        const dateB = b.ocak_cikis_tarihi || b.tarih || '';
+        if (dateB !== dateA) return dateB.localeCompare(dateA);
+        return Number(b.tir_sirasi || 0) - Number(a.tir_sirasi || 0);
+      }
+      if (mainSortOrder === 'EXIT_DATE_ASC') {
+        const dateA = a.ocak_cikis_tarihi || a.tarih || '';
+        const dateB = b.ocak_cikis_tarihi || b.tarih || '';
+        if (dateA !== dateB) return dateA.localeCompare(dateB);
+        return Number(a.tir_sirasi || 0) - Number(b.tir_sirasi || 0);
+      }
+      if (mainSortOrder === 'PLAKA_ASC') {
+        return String(a.plaka || '').localeCompare(String(b.plaka || ''), 'tr');
+      }
+      if (mainSortOrder === 'PLAKA_DESC') {
+        return String(b.plaka || '').localeCompare(String(a.plaka || ''), 'tr');
+      }
+      if (mainSortOrder === 'SOFOR_ASC') {
+        return String(a.sofor_adi || '').localeCompare(String(b.sofor_adi || ''), 'tr');
+      }
+      if (mainSortOrder === 'SOFOR_DESC') {
+        return String(b.sofor_adi || '').localeCompare(String(a.sofor_adi || ''), 'tr');
       }
       if (mainSortOrder === 'TON_DESC') {
         return normalizeToTon(b.net_tonaj) - normalizeToTon(a.net_tonaj);
@@ -238,11 +340,27 @@ export default function TonnagePage({
       if (mainSortOrder === 'TON_ASC') {
         return normalizeToTon(a.net_tonaj) - normalizeToTon(b.net_tonaj);
       }
+      if (mainSortOrder === 'SEVK_DESC') {
+        return normalizeToTon(b.brut_tonaj) - normalizeToTon(a.brut_tonaj);
+      }
+      if (mainSortOrder === 'SEVK_ASC') {
+        return normalizeToTon(a.brut_tonaj) - normalizeToTon(b.brut_tonaj);
+      }
+      if (mainSortOrder === 'FARK_DESC') {
+        const diffA = normalizeToTon(a.net_tonaj) - normalizeToTon(a.brut_tonaj);
+        const diffB = normalizeToTon(b.net_tonaj) - normalizeToTon(b.brut_tonaj);
+        return diffB - diffA;
+      }
+      if (mainSortOrder === 'FARK_ASC') {
+        const diffA = normalizeToTon(a.net_tonaj) - normalizeToTon(a.brut_tonaj);
+        const diffB = normalizeToTon(b.net_tonaj) - normalizeToTon(b.brut_tonaj);
+        return diffA - diffB;
+      }
       // NEWEST default
       if (b.tarih !== a.tarih) return (b.tarih || '').localeCompare(a.tarih || '');
       return Number(b.tir_sirasi || 0) - Number(a.tir_sirasi || 0);
     });
-  }, [trucks, mainSearchQuery, mainDatePreset, mainStartDate, mainEndDate, mainPlakaFilter, mainSortOrder]);
+  }, [trucks, mainSearchQuery, mainDatePreset, mainStartDate, mainEndDate, mainPlakaFilter, mainSoforFilter, mainSortOrder]);
 
   const filteredMainNetTonaj = useMemo(
     () => filteredMainTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0),
@@ -423,6 +541,94 @@ export default function TonnagePage({
         message: err.message || 'Silme işleminde hata oluştu',
         type: 'error'
       });
+    }
+  };
+
+  const handleSaveTemplates = async () => {
+    setIsSavingTemplates(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_TONNAGE_TEMPLATES',
+          tonnage_templates: tempTemplates,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTonnageTemplates(data.tonnage_templates || tempTemplates);
+        setShowTemplateModal(false);
+        showToast({
+          type: 'success',
+          title: 'Format Şablonu Kaydedildi',
+          message: 'Format 1 ve Format 2 rapor başlıkları ile imza ayarları başarıyla güncellendi.',
+        });
+        onRefresh();
+      } else {
+        showAlert({
+          title: 'Kaydetme Hatası',
+          message: data.error || 'Şablon kaydedilirken bir hata oluştu.',
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: err.message || 'Sunucuya bağlanırken bir hata oluştu.',
+        type: 'error',
+      });
+    } finally {
+      setIsSavingTemplates(false);
+    }
+  };
+
+  const handleResetTemplates = async () => {
+    const confirmed = await showConfirm({
+      title: 'Varsayılan Şablonlara Sıfırla',
+      message: 'Format 1 (Valilik Tesellüm) ve Format 2 (TKİ Dağıtım) şablon ayarları resmi varsayılan değerlere döndürülecektir. Devam etmek istiyor musunuz?',
+      type: 'warning',
+      confirmText: 'Evet, Sıfırla',
+      cancelText: 'Vazgeç',
+    });
+    if (!confirmed) return;
+
+    setIsSavingTemplates(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'RESET_TONNAGE_TEMPLATES',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const resetTpls = data.tonnage_templates || DEFAULT_TONNAGE_TEMPLATES;
+        setTonnageTemplates(resetTpls);
+        setTempTemplates(resetTpls);
+        setShowTemplateModal(false);
+        showToast({
+          type: 'success',
+          title: 'Varsayılana Sıfırlandı',
+          message: 'Rapor format şablonları resmi standartlara başarıyla sıfırlandı.',
+        });
+        onRefresh();
+      } else {
+        showAlert({
+          title: 'Sıfırlama Hatası',
+          message: data.error || 'Şablon sıfırlanırken bir hata oluştu.',
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      showAlert({
+        title: 'Bağlantı Hatası',
+        message: err.message || 'Sunucuya bağlanırken bir hata oluştu.',
+        type: 'error',
+      });
+    } finally {
+      setIsSavingTemplates(false);
     }
   };
 
@@ -746,9 +952,9 @@ export default function TonnagePage({
           </div>
         </div>
 
-        {/* Arama Kutusu + Plaka Seçimi + Sıralama */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
-          <div className="md:col-span-6 relative">
+        {/* Arama Kutusu + Plaka Seçimi + Şoför Seçimi + Sıralama */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5">
+          <div className="sm:col-span-2 lg:col-span-4 relative">
             <Search className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" />
             <input
               type="text"
@@ -769,7 +975,7 @@ export default function TonnagePage({
             )}
           </div>
 
-          <div className="md:col-span-3">
+          <div className="sm:col-span-1 lg:col-span-2.5">
             <select
               value={mainPlakaFilter}
               onChange={(e) => setMainPlakaFilter(e.target.value)}
@@ -785,20 +991,102 @@ export default function TonnagePage({
             </select>
           </div>
 
-          <div className="md:col-span-3">
+          <div className="sm:col-span-1 lg:col-span-2.5">
+            <select
+              value={mainSoforFilter}
+              onChange={(e) => setMainSoforFilter(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500 focus:bg-white"
+              title="Şoför Adına Göre Filtrele"
+            >
+              <option value="ALL">Tüm Şoförler ({uniqueSoforList.length})</option>
+              {uniqueSoforList.map((s) => (
+                <option key={s} value={s}>
+                  Şoför: {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-2 lg:col-span-3">
             <select
               value={mainSortOrder}
               onChange={(e) => setMainSortOrder(e.target.value as any)}
               className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-bold focus:outline-none focus:border-amber-500 focus:bg-white"
               title="Sıralama Ölçütü"
             >
-              <option value="NEWEST">Sıralama: En Yeni Sevkiyat</option>
-              <option value="OLDEST">Sıralama: En Eski Sevkiyat</option>
-              <option value="TON_DESC">Net Tonaj: Yüksekten Düşüğe</option>
-              <option value="TON_ASC">Net Tonaj: Düşükten Yükseğe</option>
+              <option value="NEWEST">Sıralama: Teslim Tarihi (En Yeni)</option>
+              <option value="OLDEST">Sıralama: Teslim Tarihi (En Eski)</option>
+              <option value="ORDER_ASC">Sıralama: Tır Sırası (#1&apos;den Başla)</option>
+              <option value="ORDER_DESC">Sıralama: Tır Sırası (Büyükten Küçüğe)</option>
+              <option value="EXIT_DATE_DESC">Sıralama: Çıkış Tarihi (En Yeni)</option>
+              <option value="EXIT_DATE_ASC">Sıralama: Çıkış Tarihi (En Eski)</option>
+              <option value="PLAKA_ASC">Plaka: A &rarr; Z</option>
+              <option value="PLAKA_DESC">Plaka: Z &rarr; A</option>
+              <option value="SOFOR_ASC">Şoför: A &rarr; Z</option>
+              <option value="SOFOR_DESC">Şoför: Z &rarr; A</option>
+              <option value="TON_DESC">Teslim Tonaj: Yüksekten Düşüğe</option>
+              <option value="TON_ASC">Teslim Tonaj: Düşükten Yükseğe</option>
+              <option value="SEVK_DESC">Sevk Tonajı: Yüksekten Düşüğe</option>
+              <option value="SEVK_ASC">Sevk Tonajı: Düşükten Yükseğe</option>
+              <option value="FARK_DESC">Tartı Farkı: En Yüksek Fark</option>
+              <option value="FARK_ASC">Tartı Farkı: En Düşük Fark</option>
             </select>
           </div>
         </div>
+
+        {/* Aktif Filtre Rozetleri */}
+        {hasActiveMainFilters && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-0.5 text-xs">
+            <span className="text-[11px] font-bold text-slate-400">Aktif Filtreler:</span>
+            {mainPlakaFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-300 font-bold text-[11px]">
+                <span>Plaka: <strong>{mainPlakaFilter}</strong></span>
+                <button type="button" onClick={() => setMainPlakaFilter('ALL')} className="hover:text-amber-950 p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {mainSoforFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-300 font-bold text-[11px]">
+                <span>Şoför: <strong>{mainSoforFilter}</strong></span>
+                <button type="button" onClick={() => setMainSoforFilter('ALL')} className="hover:text-indigo-950 p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {mainSearchQuery.trim() && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 border border-slate-300 font-bold text-[11px]">
+                <span>Arama: &ldquo;{mainSearchQuery}&rdquo;</span>
+                <button type="button" onClick={() => setMainSearchQuery('')} className="hover:text-slate-950 p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {mainDatePreset !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 text-teal-900 border border-teal-300 font-bold text-[11px]">
+                <span>Tarih Filtresi Aktif</span>
+                <button type="button" onClick={() => applyMainDatePreset('ALL')} className="hover:text-teal-950 p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {(mainStartDate || mainEndDate) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 text-teal-900 border border-teal-300 font-bold text-[11px]">
+                <span>{mainStartDate || '...'} &rarr; {mainEndDate || '...'}</span>
+                <button type="button" onClick={() => { setMainStartDate(''); setMainEndDate(''); }} className="hover:text-teal-950 p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={resetMainFilters}
+              className="px-2 py-0.5 text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline"
+            >
+              Hepsini Sıfırla
+            </button>
+          </div>
+        )}
 
         {/* Hızlı Tarih Butonları ve Tarih Aralığı */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 border-t border-slate-100">
@@ -926,14 +1214,119 @@ export default function TonnagePage({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-100 text-slate-800 border-b border-slate-200 font-bold uppercase text-[11px] tracking-wider">
-                  <th className="p-3 text-center w-12">Sıra</th>
-                  <th className="p-3">Tır Plakası & Şoför</th>
-                  <th className="p-3">Sevk / Çıkış Tarihi</th>
-                  <th className="p-3 text-right">Sevk Miktar (kg / Ton)</th>
-                  <th className="p-3">Teslim Tarihi</th>
-                  <th className="p-3 text-right">Teslim Miktar (kg / Ton)</th>
-                  <th className="p-3 text-right">Fark (kg / Ton)</th>
+                <tr className="bg-slate-100 text-slate-800 border-b border-slate-200 font-bold uppercase text-[11px] tracking-wider select-none">
+                  <th
+                    className="p-3 text-center w-14 cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('ORDER')}
+                    title="Tır Sırasına Göre Sırala (#1'den başla / ters çevir)"
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Sıra</span>
+                      {mainSortOrder === 'ORDER_ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'ORDER_DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3 cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('PLAKA')}
+                    title="Plakaya veya Şoföre Göre Sırala"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Tır Plakası & Şoför</span>
+                      {mainSortOrder === 'PLAKA_ASC' || mainSortOrder === 'SOFOR_ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'PLAKA_DESC' || mainSortOrder === 'SOFOR_DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3 cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('EXIT_DATE')}
+                    title="Ocak Çıkış Tarihine Göre Sırala"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Sevk / Çıkış Tarihi</span>
+                      {mainSortOrder === 'EXIT_DATE_ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'EXIT_DATE_DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3 text-right cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('SEVK')}
+                    title="İşletmeden Sevk Tonajına Göre Sırala"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Sevk Miktar (kg / Ton)</span>
+                      {mainSortOrder === 'SEVK_ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'SEVK_DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3 cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('DELIVERY_DATE')}
+                    title="Sahaya Teslim / Geliş Tarihine Göre Sırala"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Teslim Tarihi</span>
+                      {mainSortOrder === 'OLDEST' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'NEWEST' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3 text-right cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('NET_TON')}
+                    title="Teslim Alınan Net Kömür Tonajına Göre Sırala"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Teslim Miktar (kg / Ton)</span>
+                      {mainSortOrder === 'TON_ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'TON_DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3 text-right cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => handleSortColumn('FARK')}
+                    title="Kantar Tesellüm / Tartı Farkına Göre Sırala"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Fark (kg / Ton)</span>
+                      {mainSortOrder === 'FARK_ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : mainSortOrder === 'FARK_DESC' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 shrink-0" />
+                      )}
+                    </div>
+                  </th>
                   <th className="p-3">İrsaliye No</th>
                   <th className="p-3">Tutanak No</th>
                   {userRole === 'ADMIN' && <th className="p-3 text-center w-28">İşlemler</th>}
@@ -1604,7 +1997,7 @@ export default function TonnagePage({
                 {/* Rapor Formatı Seçim Sekmeleri */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 bg-white rounded-xl border border-slate-300">
                   <span className="text-[11px] font-black uppercase text-slate-700 px-2 shrink-0">Rapor Şablonu:</span>
-                  <div className="flex items-center gap-1.5 flex-1 w-full">
+                  <div className="flex items-center gap-1.5 flex-1 w-full flex-wrap">
                     <button
                       type="button"
                       onClick={() => setReportFormat('TESELLUM')}
@@ -1629,6 +2022,21 @@ export default function TonnagePage({
                       <FileSpreadsheet className="w-3.5 h-3.5" />
                       <span>Format 2: TKİ Dağıtım Listesi (Resmi / Tutanak)</span>
                     </button>
+                    {userRole === 'ADMIN' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTempTemplates(JSON.parse(JSON.stringify(tonnageTemplates)));
+                          setTemplateModalTab(reportFormat === 'TESELLUM' ? 'FORMAT1' : 'FORMAT2');
+                          setShowTemplateModal(true);
+                        }}
+                        className="py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs shrink-0"
+                        title="Format 1 ve Format 2 şablon başlıkları ile imza yetkililerini düzenle"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Şablonu Düzenle</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1732,29 +2140,29 @@ export default function TonnagePage({
                     {reportFormat === 'TESELLUM' ? (
                       <>
                         <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide">
-                          TESELLÜMLERİ İZLEME TABLOSU
+                          {tonnageTemplates.format1.title}
                         </h4>
                         <p className="text-[10px] sm:text-xs font-bold text-slate-700 uppercase mt-0.5">
-                          (GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR)
+                          {tonnageTemplates.format1.subtitle}
                         </p>
                         <div className="flex items-center justify-between text-xs font-extrabold text-slate-900 pt-1.5 mt-1 border-t border-slate-200">
-                          <span>İLİ / İLÇESİ : EDİRNE / MERKEZ</span>
+                          <span>{tonnageTemplates.format1.ilIlce ? `İLİ / İLÇESİ : ${tonnageTemplates.format1.ilIlce}` : 'İLİ / İLÇESİ : EDİRNE / MERKEZ'}</span>
                           <span>TARİH : {reportEndDate ? formatTrDateWithDay(reportEndDate) : formatTrDateWithDay(new Date())}</span>
                         </div>
                       </>
                     ) : (
                       <>
                         <p className="text-[10px] sm:text-[11px] font-black uppercase text-slate-800 tracking-wider">
-                          TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU
+                          {tonnageTemplates.format2.ustBaslik}
                         </p>
                         <h4 className="text-xs sm:text-base font-black uppercase text-slate-950 tracking-wide mt-0.5">
-                          ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ {new Date().getFullYear()} YILI EDİRNE/MERKEZ İLÇESİNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKIFLARI ARACILIĞI İLE VERİLEN KÖMÜR LİSTESİ
+                          {tonnageTemplates.format2.anaBaslik}
                         </h4>
                       </>
                     )}
                   </div>
                   <div className="w-12 sm:w-14 shrink-0 hidden sm:block text-right">
-                    <span className="text-[9px] font-mono text-slate-400 block">KOD: {reportFormat === 'TESELLUM' ? 'TSL-VALILIK' : 'TKI-DAGITIM'}</span>
+                    <span className="text-[9px] font-mono text-slate-400 block">KOD: {reportFormat === 'TESELLUM' ? (tonnageTemplates.format1.code || 'TSL-VALILIK') : (tonnageTemplates.format2.code || 'TKI-DAGITIM')}</span>
                     <span className="text-[9px] font-mono text-slate-400 block mt-0.5">{formatTrDateWithDay(new Date())}</span>
                   </div>
                 </div>
@@ -1956,7 +2364,7 @@ export default function TonnagePage({
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
                               <td className="p-2 text-center font-bold text-slate-600">#{t.tir_sirasi || index + 1}</td>
-                              <td className="p-2 text-slate-800 font-semibold">{t.isletme_adi || 'Çan Linyit İşletmesi Müdürlüğü'}</td>
+                              <td className="p-2 text-slate-800 font-semibold">{t.isletme_adi || tonnageTemplates.format1.isletmeAdi || 'Çan Linyit İşletmesi Müdürlüğü'}</td>
                               <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih)}</td>
                               <td className="p-2 font-mono font-bold text-slate-900">
                                 {t.plaka}{t.sofor_adi ? ` - ${t.sofor_adi}` : ''}
@@ -2037,8 +2445,8 @@ export default function TonnagePage({
                           return (
                             <tr key={t.id || index} className="hover:bg-slate-50 transition-colors">
                               <td className="p-2 text-center font-bold text-slate-600">{t.tir_sirasi || index + 1}</td>
-                              <td className="p-2 font-bold text-slate-800">{t.il || 'EDİRNE'}</td>
-                              <td className="p-2 font-bold text-slate-800">{t.ilce || 'MERKEZ'}</td>
+                              <td className="p-2 font-bold text-slate-800">{t.il || tonnageTemplates.format2.il || 'EDİRNE'}</td>
+                              <td className="p-2 font-bold text-slate-800">{t.ilce || tonnageTemplates.format2.ilce || 'MERKEZ'}</td>
                               <td className="p-2 font-mono font-bold text-slate-900">{t.plaka}</td>
                               <td className="p-2 text-slate-700 font-medium whitespace-nowrap">{formatTrDateWithDay(t.ocak_cikis_tarihi || t.tarih)}</td>
                               <td className="p-2 text-right whitespace-nowrap">
@@ -2091,9 +2499,9 @@ export default function TonnagePage({
                   <div className="grid grid-cols-2 gap-4 sm:gap-8 max-w-2xl mx-auto text-center text-xs text-slate-700 pt-2">
                     <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
                       <div>
-                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Cem PAZAR</p>
-                        <p className="text-[11px] font-bold text-slate-700 mt-0.5">Sos. Yard. ve İnc. Gör.</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Tesellüm Eden Görevli</p>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">{tonnageTemplates.format1.imza1_ad}</p>
+                        <p className="text-[11px] font-bold text-slate-700 mt-0.5">{tonnageTemplates.format1.imza1_unvan}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{tonnageTemplates.format1.imza1_gorev}</p>
                       </div>
                       <div className="h-10 flex items-center justify-center">
                         <span className="text-[10px] text-slate-400 italic">İmza / Tarih</span>
@@ -2102,9 +2510,9 @@ export default function TonnagePage({
 
                     <div className="space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
                       <div>
-                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Tezcan FİDAN</p>
-                        <p className="text-[11px] font-bold text-slate-800 mt-0.5">Vakıf Müdürü</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Edirne SYDV Başkanlığı</p>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">{tonnageTemplates.format1.imza2_ad}</p>
+                        <p className="text-[11px] font-bold text-slate-800 mt-0.5">{tonnageTemplates.format1.imza2_unvan}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{tonnageTemplates.format1.imza2_kurum}</p>
                       </div>
                       <div className="h-10 flex items-center justify-center">
                         <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
@@ -2116,9 +2524,9 @@ export default function TonnagePage({
                     <div className="w-72 space-y-6 sm:space-y-8 p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
                       <div>
                         <p className="text-[11px] text-slate-600 mb-1">{reportEndDate ? formatTrDateWithDay(reportEndDate) : formatTrDateWithDay(new Date())}</p>
-                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">Tezcan FİDAN</p>
-                        <p className="text-[11px] font-bold text-slate-800 mt-0.5">Vakıf Müdürü</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Edirne SYDV Başkanlığı</p>
+                        <p className="font-extrabold text-slate-900 text-xs sm:text-sm">{tonnageTemplates.format2.imza_ad}</p>
+                        <p className="text-[11px] font-bold text-slate-800 mt-0.5">{tonnageTemplates.format2.imza_unvan}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{tonnageTemplates.format2.imza_kurum}</p>
                       </div>
                       <div className="h-10 flex items-center justify-center">
                         <span className="text-[10px] text-slate-400 italic">İmza / Mühür</span>
@@ -2174,6 +2582,470 @@ export default function TonnagePage({
             setShowTahsisModal(false);
           }}
         />
+      )}
+
+      {/* Rapor Formatı ve Başlık Ayarları Modalı (Sadece Yönetici) */}
+      {showTemplateModal && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSavingTemplates) {
+              setShowTemplateModal(false);
+            }
+          }}
+        >
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden">
+            {/* Header */}
+            <div className="shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900">
+                    Rapor Şablonları ve Başlık Ayarları
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Format 1 ve Format 2 başlıklarını, kurum ve imza bilgilerini özelleştirin
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTemplateModal(false)}
+                disabled={isSavingTemplates}
+                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition-colors"
+                title="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tab selector */}
+            <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTemplateModalTab('FORMAT1')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  templateModalTab === 'FORMAT1'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Format 1: Tesellüm İzleme Tablosu (Valilik)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTemplateModalTab('FORMAT2')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  templateModalTab === 'FORMAT2'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Format 2: TKİ Dağıtım Listesi (Resmi)</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
+              {templateModalTab === 'FORMAT1' ? (
+                <div className="space-y-4">
+                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
+                    <strong>Format 1 (Tesellümleri İzleme Tablosu):</strong> Valilik ve günlük saha sevkiyat takiplerinde kullanılan resmi tablodur. Başlıklar, kurum adı ve 2 adet yetkili imza alanı içerir.
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Rapor Ana Başlığı
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format1.title}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format1: { ...tempTemplates.format1, title: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: TESELLÜMLERİ İZLEME TABLOSU"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Rapor Alt Başlığı / Yönerge Notu
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format1.subtitle}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format1: { ...tempTemplates.format1, subtitle: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: (GÜNLÜK OLARAK VALİLİK GÖREVLİSİ TARAFINDAN DOLDURULACAKTIR)"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        İl / İlçe Bilgisi
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format1.ilIlce}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format1: { ...tempTemplates.format1, ilIlce: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: EDİRNE / MERKEZ"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Belge / Form Kodu
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format1.code}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format1: { ...tempTemplates.format1, code: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: TSL-VALILIK"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Yüklemeyi Yapan İşletme Adı
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format1.isletmeAdi}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format1: { ...tempTemplates.format1, isletmeAdi: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: Çan Linyit İşletmesi Müdürlüğü"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Format 1 İmzalar */}
+                  <div className="pt-2 border-t border-slate-200">
+                    <h4 className="text-xs font-extrabold uppercase text-slate-800 mb-2">
+                      Resmi İmza Yetkilileri (Format 1)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* 1. İmza (Sol) */}
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                        <span className="text-[11px] font-black text-amber-800 uppercase block">1. İmza Yetkilisi (Sol)</span>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Adı Soyadı</label>
+                          <input
+                            type="text"
+                            value={tempTemplates.format1.imza1_ad}
+                            onChange={(e) =>
+                              setTempTemplates({
+                                ...tempTemplates,
+                                format1: { ...tempTemplates.format1, imza1_ad: e.target.value },
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                            placeholder="Örn: Cem PAZAR"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Unvanı</label>
+                          <input
+                            type="text"
+                            value={tempTemplates.format1.imza1_unvan}
+                            onChange={(e) =>
+                              setTempTemplates({
+                                ...tempTemplates,
+                                format1: { ...tempTemplates.format1, imza1_unvan: e.target.value },
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                            placeholder="Örn: Sos. Yard. ve İnc. Gör."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Görevi / Açıklama</label>
+                          <input
+                            type="text"
+                            value={tempTemplates.format1.imza1_gorev}
+                            onChange={(e) =>
+                              setTempTemplates({
+                                ...tempTemplates,
+                                format1: { ...tempTemplates.format1, imza1_gorev: e.target.value },
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                            placeholder="Örn: Tesellüm Eden Görevli"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 2. İmza (Sağ) */}
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                        <span className="text-[11px] font-black text-amber-800 uppercase block">2. İmza Yetkilisi (Sağ)</span>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Adı Soyadı</label>
+                          <input
+                            type="text"
+                            value={tempTemplates.format1.imza2_ad}
+                            onChange={(e) =>
+                              setTempTemplates({
+                                ...tempTemplates,
+                                format1: { ...tempTemplates.format1, imza2_ad: e.target.value },
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                            placeholder="Örn: Tezcan FİDAN"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Unvanı</label>
+                          <input
+                            type="text"
+                            value={tempTemplates.format1.imza2_unvan}
+                            onChange={(e) =>
+                              setTempTemplates({
+                                ...tempTemplates,
+                                format1: { ...tempTemplates.format1, imza2_unvan: e.target.value },
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                            placeholder="Örn: Vakıf Müdürü"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Kurum Adı</label>
+                          <input
+                            type="text"
+                            value={tempTemplates.format1.imza2_kurum}
+                            onChange={(e) =>
+                              setTempTemplates({
+                                ...tempTemplates,
+                                format1: { ...tempTemplates.format1, imza2_kurum: e.target.value },
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                            placeholder="Örn: Edirne SYDV Başkanlığı"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
+                    <strong>Format 2 (TKİ Resmi Dağıtım Listesi):</strong> Türkiye Kömür İşletmeleri ve Çan Linyit İşletmesi Müdürlüğü resmi tutanak bildirimlerinde kullanılan tablodur.
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Üst Kurum Başlığı
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format2.ustBaslik}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format2: { ...tempTemplates.format2, ustBaslik: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: TÜRKİYE KÖMÜR İŞLETMELERİ KURUMU"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Ana Liste Başlığı
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={tempTemplates.format2.anaBaslik}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format2: { ...tempTemplates.format2, anaBaslik: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: ÇAN LİNYİT İŞLETMESİ MÜDÜRLÜĞÜ 2026 YILI EDİRNE/MERKEZ İLÇESİNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKIFLARI ARACILIĞI İLE VERİLEN KÖMÜR LİSTESİ"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        İl
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format2.il}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format2: { ...tempTemplates.format2, il: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: EDİRNE"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        İlçe
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format2.ilce}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format2: { ...tempTemplates.format2, ilce: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: MERKEZ"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Belge / Form Kodu
+                      </label>
+                      <input
+                        type="text"
+                        value={tempTemplates.format2.code}
+                        onChange={(e) =>
+                          setTempTemplates({
+                            ...tempTemplates,
+                            format2: { ...tempTemplates.format2, code: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 text-xs font-semibold focus:outline-none focus:border-amber-500 focus:bg-white"
+                        placeholder="Örn: TKI-DAGITIM"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Format 2 İmzalar */}
+                  <div className="pt-2 border-t border-slate-200">
+                    <h4 className="text-xs font-extrabold uppercase text-slate-800 mb-2">
+                      Resmi İmza & Mühür Yetkilisi (Format 2)
+                    </h4>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 max-w-md">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Adı Soyadı</label>
+                        <input
+                          type="text"
+                          value={tempTemplates.format2.imza_ad}
+                          onChange={(e) =>
+                            setTempTemplates({
+                              ...tempTemplates,
+                              format2: { ...tempTemplates.format2, imza_ad: e.target.value },
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                          placeholder="Örn: Tezcan FİDAN"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Unvanı</label>
+                        <input
+                          type="text"
+                          value={tempTemplates.format2.imza_unvan}
+                          onChange={(e) =>
+                            setTempTemplates({
+                              ...tempTemplates,
+                              format2: { ...tempTemplates.format2, imza_unvan: e.target.value },
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                          placeholder="Örn: Vakıf Müdürü"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Kurum Adı</label>
+                        <input
+                          type="text"
+                          value={tempTemplates.format2.imza_kurum}
+                          onChange={(e) =>
+                            setTempTemplates({
+                              ...tempTemplates,
+                              format2: { ...tempTemplates.format2, imza_kurum: e.target.value },
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 text-xs font-semibold"
+                          placeholder="Örn: Edirne SYDV Başkanlığı"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 gap-2">
+              <button
+                type="button"
+                onClick={handleResetTemplates}
+                disabled={isSavingTemplates}
+                className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 text-xs font-bold transition-all"
+              >
+                Varsayılanlara Sıfırla
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateModal(false)}
+                  disabled={isSavingTemplates}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold transition-all"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveTemplates}
+                  disabled={isSavingTemplates}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingTemplates ? 'Kaydediliyor...' : 'Kaydet ve Uygula'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

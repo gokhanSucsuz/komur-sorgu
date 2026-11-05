@@ -5,6 +5,7 @@ import { getIstanbulDate } from '@/lib/dateUtils';
 import { turkishIncludes, normalizeToTon, formatTonnage, calculateCoalStockMetrics } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, isSafeId } from '@/lib/security';
+import { parseTonnageTemplates } from '@/lib/tonnageTemplates';
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,9 +93,14 @@ export async function GET(request: NextRequest) {
     const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
     const sonrakiTirSirasi = maxSira + 1;
 
+    const templateKey = isSandboxMode ? 'sandbox_tonnage_report_templates' : 'tonnage_report_templates';
+    const tplDoc = await settingsCol.findOne({ key: templateKey });
+    const tonnageTemplates = parseTonnageTemplates(tplDoc?.value);
+
     return NextResponse.json({
       success: true,
       trucks,
+      tonnage_templates: tonnageTemplates,
       stats: {
         toplamTirSayisi: allTrucks.length,
         toplamNetTonaj: parseFloat(toplamNetTonaj.toFixed(3)),
@@ -113,6 +119,7 @@ export async function GET(request: NextRequest) {
         kalanTahsisTonaj,
         tahsisTamamlanmaYuzdesi,
         varsayilanHedefTorba,
+        tonnage_templates: tonnageTemplates,
       },
     });
   } catch (error: any) {

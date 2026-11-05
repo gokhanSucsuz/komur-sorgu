@@ -3,6 +3,7 @@ import { getDbCollections, recordActivityLog, touchSyncPulse, seedSandboxFakeDat
 import { verifySession } from '@/lib/auth';
 import { normalizeToTon, formatTonnage } from '@/lib/normalizer';
 import { serverError } from '@/lib/security';
+import { parseTonnageTemplates, DEFAULT_TONNAGE_TEMPLATES } from '@/lib/tonnageTemplates';
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,6 +38,10 @@ export async function GET(request: NextRequest) {
     const activeTahsisDoc = sandboxTahsisDoc || officialTahsisDoc;
     const toplamTahsisTonaj = activeTahsisDoc && activeTahsisDoc.value ? parseFloat(activeTahsisDoc.value) : 0;
 
+    const templateKey = isSandboxMode ? 'sandbox_tonnage_report_templates' : 'tonnage_report_templates';
+    const tplDoc = await systemSettings.findOne({ key: templateKey });
+    const tonnageTemplates = parseTonnageTemplates(tplDoc?.value);
+
     const seasonDoc = await systemSettings.findOne({ key: 'aktif_donem' });
     let aktifDonem = { kod: '2026-2027', baslik: '2026-2027 Kömür Dağıtım Dönemi' };
     if (seasonDoc?.value) {
@@ -68,6 +73,7 @@ export async function GET(request: NextRequest) {
       settings: {
         varsayilan_hedef_torba: varsayilanHedefTorba,
         toplam_tahsis_tonaj: toplamTahsisTonaj,
+        tonnage_templates: tonnageTemplates,
         aktif_donem: aktifDonem,
         calisma_modu: calismaModu,
         is_sandbox_mode: isSandboxMode,
@@ -197,6 +203,7 @@ export async function POST(request: NextRequest) {
         sandboxActivityLogs.deleteMany({}),
         systemSettings.deleteOne({ key: 'sandbox_varsayilan_hedef_torba' }),
         systemSettings.deleteOne({ key: 'sandbox_toplam_tahsis_tonaj' }),
+        systemSettings.deleteOne({ key: 'sandbox_tonnage_report_templates' }),
       ]);
 
       let reseededCount = 0;
@@ -284,6 +291,63 @@ export async function POST(request: NextRequest) {
         success: true,
         message: `Kurum toplam kömür tahsisi ${fmt.combined} olarak başarıyla kaydedildi.`,
         toplam_tahsis_tonaj: tonVal,
+      });
+    }
+
+    // 2. Tonaj Rapor Format Şablonları Güncelleme (Format 1 & Format 2)
+    if (action === 'UPDATE_TONNAGE_TEMPLATES' || body.tonnage_templates !== undefined) {
+      const templateKey = isSandboxMode ? 'sandbox_tonnage_report_templates' : 'tonnage_report_templates';
+      const validated = parseTonnageTemplates(body.tonnage_templates);
+
+      await systemSettings.updateOne(
+        { key: templateKey },
+        {
+          $set: {
+            key: templateKey,
+            value: JSON.stringify(validated),
+            updated_by: adminName,
+            updated_at: new Date().toLocaleString('tr-TR'),
+          },
+        },
+        { upsert: true }
+      );
+
+      await recordActivityLog({
+        kullanici_adi: adminName,
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'TONAJ_SABLON_GUNCELLEME',
+        baslik: isSandboxMode ? '[DENEME] Tonaj Rapor Formatları Güncellendi' : 'Tonaj Rapor Format Şablonları Güncellendi',
+        detay: `Format 1 (${validated.format1.title}) ve Format 2 (${validated.format2.anaBaslik.slice(0, 45)}...) başlık ve imza ayarları güncellendi.`,
+        ek_bilgi: { tonnage_templates: validated, isSandboxMode },
+      });
+      await touchSyncPulse('SETTINGS_UPDATE');
+
+      return NextResponse.json({
+        success: true,
+        message: 'Tonaj rapor format şablonları başarıyla kaydedildi.',
+        tonnage_templates: validated,
+      });
+    }
+
+    // 2B. Tonaj Format Şablonlarını Varsayılana Sıfırlama
+    if (action === 'RESET_TONNAGE_TEMPLATES') {
+      const templateKey = isSandboxMode ? 'sandbox_tonnage_report_templates' : 'tonnage_report_templates';
+      await systemSettings.deleteOne({ key: templateKey });
+
+      await recordActivityLog({
+        kullanici_adi: adminName,
+        kullanici_rolu: 'ADMIN',
+        islem_tipi: 'TONAJ_SABLON_SIFIRLAMA',
+        baslik: isSandboxMode ? '[DENEME] Tonaj Rapor Şablonları Sıfırlandı' : 'Tonaj Rapor Şablonları Varsayılana Sıfırlandı',
+        detay: 'Tonaj Format 1 ve Format 2 rapor şablonları resmi varsayılan değerlere sıfırlandı.',
+        ek_bilgi: { isSandboxMode },
+      });
+      await touchSyncPulse('SETTINGS_UPDATE');
+
+      return NextResponse.json({
+        success: true,
+        message: 'Tonaj rapor şablonları resmi varsayılan değerlere sıfırlandı.',
+        tonnage_templates: DEFAULT_TONNAGE_TEMPLATES,
       });
     }
 
