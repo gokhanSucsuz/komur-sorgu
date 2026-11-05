@@ -30,7 +30,8 @@ const EXACT_PROTECTED_KEYS = new Set([
   'pwa_banner_dismissed',
   'komur_app_version',
   'komur_filter_mahalleler',
-  'komur_filter_sokak'
+  'komur_filter_sokak',
+  'komur_power_saver'
 ]);
 
 /**

@@ -7,6 +7,7 @@ import {
   ArrowDown, XCircle, ArrowRight, UserMinus, Plus, Building2, GripVertical
 } from 'lucide-react';
 import { formatPhoneDisplay, getYandexNaviUrl } from '@/lib/normalizer';
+import { safeVibrate } from '@/lib/batteryManager';
 
 interface ActiveRouteAccordionCardProps {
   route: any;
@@ -79,9 +80,7 @@ export default function ActiveRouteAccordionCard({
   const handleTouchStart = (originalIdx: number) => {
     if (stopFilter !== 'ALL' || userRole === 'MUDUR') return;
     setTouchDragOriginalIdx(originalIdx);
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      try { navigator.vibrate(15); } catch {}
-    }
+    safeVibrate(15);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -99,9 +98,7 @@ export default function ActiveRouteAccordionCard({
           onMoveStop(touchDragOriginalIdx, targetIdx > touchDragOriginalIdx ? 'DOWN' : 'UP');
         }
         setTouchDragOriginalIdx(targetIdx);
-        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-          try { navigator.vibrate(10); } catch {}
-        }
+        safeVibrate(10);
       }
     }
   };

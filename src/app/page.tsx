@@ -15,6 +15,7 @@ import { getPendingOfflineCount, syncOfflineDeliveries } from '@/lib/offlineSync
 import { signatureQueue } from '@/lib/signatureQueue';
 import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
 import { applySafeCachePurge, checkAndPurgeIfVersionChanged, purgeSessionStorage } from '@/lib/cacheManager';
+import { initBatteryManager, getOptimizedPollingInterval, isScreenVisible } from '@/lib/batteryManager';
 
 // Modern Skeleton loader for dynamically loaded sub-tabs
 function TabLoadingSkeleton({ text = 'Yükleniyor...' }: { text?: string }) {
@@ -159,9 +160,21 @@ export default function Home() {
     } catch {}
     return [];
   });
+  const [selectedSokak, setSelectedSokak] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'HEPSI';
+    try {
+      const saved = localStorage.getItem('komur_filter_sokak');
+      if (saved) return saved;
+    } catch {}
+    return 'HEPSI';
+  });
   const [selectedQueueTab, setSelectedQueueTab] = useState<'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL'>('PENDING_AND_PARTIAL');
   const [selectedDurumFilter, setSelectedDurumFilter] = useState<string>('HEPSI');
   const [activeRoutes, setActiveRoutes] = useState<any[]>([]);
+
+  useEffect(() => {
+    initBatteryManager();
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -169,6 +182,13 @@ export default function Home() {
       localStorage.setItem('komur_filter_mahalleler', JSON.stringify(selectedMahalleler));
     } catch {}
   }, [selectedMahalleler]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('komur_filter_sokak', selectedSokak);
+    } catch {}
+  }, [selectedSokak]);
 
   // Data states
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
@@ -401,21 +421,22 @@ export default function Home() {
     }
   }, [checkActiveSession, handleLogout]);
 
-  // Heartbeat timer & mobile foreground resume listener for single device session checking
+  // Heartbeat timer & mobile foreground resume listener for single device session checking (Battery-optimized)
   useEffect(() => {
     if (!isLoggedIn) return;
 
+    const intervalTime = getOptimizedPollingInterval('session');
     const intervalId = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (!isScreenVisible()) return;
       checkActiveSession();
-    }, 30000); // Check every 30 seconds when screen is active
+    }, intervalTime);
 
     const handleWindowFocus = () => {
       checkActiveSession();
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (isScreenVisible()) {
         checkActiveSession();
       }
     };
@@ -946,10 +967,11 @@ export default function Home() {
     };
 
     checkSyncStatus();
-    const interval = setInterval(checkSyncStatus, 10000);
+    const intervalTime = getOptimizedPollingInterval('sync');
+    const interval = setInterval(checkSyncStatus, intervalTime);
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
+      if (isScreenVisible()) {
         checkSyncStatus();
       }
     };
@@ -1303,6 +1325,8 @@ export default function Home() {
               onSearchChange={setSearchQuery}
               selectedMahalleler={selectedMahalleler}
               onMahallelerChange={setSelectedMahalleler}
+              selectedSokak={selectedSokak}
+              onSokakChange={setSelectedSokak}
               selectedQueueTab={selectedQueueTab}
               onQueueTabChange={setSelectedQueueTab}
               selectedDurumFilter={selectedDurumFilter}

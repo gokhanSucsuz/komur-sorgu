@@ -183,18 +183,22 @@ button {
   border: 1px solid var(--border-card);
 }
 
-/* Eski Model Android / Düşük Donanım Hafif & Hızlı Mod (Lite Mode) */
+/* Eski Model Android / Düşük Donanım & Mobil Pil Güç Tasarrufu Modu (Power Saver Mode) */
 html.lite-mode *,
 html.lite-mode *::before,
-html.lite-mode *::after {
+html.lite-mode *::after,
+html.power-saver-active *,
+html.power-saver-active *::before,
+html.power-saver-active *::after {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  transition-duration: 0ms !important;
-  animation-duration: 0ms !important;
+  transition-duration: 0.001ms !important;
   box-shadow: none !important;
 }
 html.lite-mode .app-header,
-html.lite-mode .glass-panel {
+html.lite-mode .glass-panel,
+html.power-saver-active .app-header,
+html.power-saver-active .glass-panel {
   background: #ffffff !important;
 }
 

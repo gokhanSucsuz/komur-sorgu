@@ -5,6 +5,7 @@ import { PackageCheck, Minus, Plus, MapPin, AlertCircle, CheckCircle2, AlertTria
 import { saveOfflineDelivery } from '@/lib/offlineSync';
 import { showAlert } from './GlobalAlertManager';
 import { getBeneficiaryListTypeInfo } from '@/lib/normalizer';
+import { safeVibrate } from '@/lib/batteryManager';
 
 interface DeliveryModalProps {
   beneficiary: any;
@@ -93,9 +94,7 @@ export default function DeliveryModal({
         notlar: notlar
       });
 
-      if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
-        navigator.vibrate([100, 50, 100]);
-      }
+      safeVibrate([100, 50, 100]);
 
       showAlert({
         title: '📶 Çevrimdışı Teslimat Kaydedildi',
@@ -140,9 +139,7 @@ export default function DeliveryModal({
         throw new Error(data.error || 'Teslimat kaydedilemedi');
       }
 
-      if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
-        navigator.vibrate([100, 50, 100]);
-      }
+      safeVibrate([100, 50, 100]);
 
       onSuccess(data.beneficiary);
     } catch (err: any) {

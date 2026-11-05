@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { showAlert, showConfirm, showToast } from '@/components/GlobalAlertManager';
+import { getOptimizedPollingInterval, isScreenVisible } from '@/lib/batteryManager';
 import ActiveRouteAccordionCard from './ActiveRouteAccordionCard';
 
 const RouteCreationModals = dynamic(() => import('./route/RouteCreationModals'));
@@ -380,9 +381,8 @@ export default function RoutePage({
     let isMounted = true;
 
     const checkPulse = async () => {
-      if (typeof window !== 'undefined') {
-        if (!navigator.onLine || document.visibilityState === 'hidden') return;
-      }
+      if (!isScreenVisible()) return;
+      if (typeof window !== 'undefined' && !navigator.onLine) return;
       try {
         const res = await fetch(`/api/sync/status?_t=${Date.now()}`, {
           cache: 'no-store',
@@ -411,11 +411,12 @@ export default function RoutePage({
       }
     };
 
-    // Smart quota-friendly poll every 4 seconds while viewing routes (pauses automatically when screen is off)
-    const interval = setInterval(checkPulse, 4000);
+    // Smart battery-optimized poll (pauses automatically when screen is off)
+    const intervalTime = getOptimizedPollingInterval('pulse');
+    const interval = setInterval(checkPulse, intervalTime);
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
+      if (isScreenVisible()) {
         checkPulse();
       }
     };
@@ -712,6 +713,42 @@ export default function RoutePage({
       exitAppFullscreen();
     };
   }, [isRouteModeOpen, requestWakeLock, releaseWakeLock]);
+
+  // Rota Modunda Pil Tasarrufu: 4 dakika boyunca dokunulmazsa ekran kilidini serbest bırak
+  const lastUserInteractionTimeRef = useRef<number>(Date.now());
+
+  const resetWakeLockActivity = useCallback(() => {
+    lastUserInteractionTimeRef.current = Date.now();
+    if (isRouteModeOpen && !wakeLockSentinelRef.current) {
+      requestWakeLock();
+    }
+  }, [isRouteModeOpen, requestWakeLock]);
+
+  useEffect(() => {
+    if (!isRouteModeOpen) return;
+
+    const checkInactivity = () => {
+      const elapsed = Date.now() - lastUserInteractionTimeRef.current;
+      if (elapsed >= 4 * 60 * 1000 && wakeLockSentinelRef.current) {
+        releaseWakeLock();
+      }
+    };
+
+    const interval = setInterval(checkInactivity, 30000);
+
+    const onUserTouch = () => {
+      resetWakeLockActivity();
+    };
+
+    window.addEventListener('touchstart', onUserTouch, { passive: true });
+    window.addEventListener('click', onUserTouch, { passive: true });
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('touchstart', onUserTouch);
+      window.removeEventListener('click', onUserTouch);
+    };
+  }, [isRouteModeOpen, releaseWakeLock, resetWakeLockActivity]);
 
   // Oturum durumunu anlık olarak localStorage'a kaydet (KVKK: vatandaş adı/notu gibi kişisel veriler localStorage'a yazılmaz)
   const saveCurrentSession = useCallback(() => {
@@ -1135,7 +1172,7 @@ export default function RoutePage({
     if (!routeId) return;
 
     const sendHeartbeat = async () => {
-      if (isSubmittingStopRef.current) return;
+      if (!isScreenVisible() || isSubmittingStopRef.current) return;
       try {
         const res = await fetch('/api/routes', {
           method: 'POST',
@@ -1246,7 +1283,8 @@ export default function RoutePage({
     };
 
     sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 4 * 1000);
+    const intervalTime = getOptimizedPollingInterval('heartbeat');
+    const interval = setInterval(sendHeartbeat, intervalTime);
 
     return () => clearInterval(interval);
     // activeRoute is intentionally tracked by id only: depending on the whole object would restart the heartbeat on every refetch.

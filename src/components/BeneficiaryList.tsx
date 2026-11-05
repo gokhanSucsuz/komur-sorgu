@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled } from '@/lib/normalizer';
@@ -15,6 +15,8 @@ interface BeneficiaryListProps {
   onSearchChange: (q: string) => void;
   selectedMahalleler: string[];
   onMahallelerChange: (m: string[]) => void;
+  selectedSokak?: string;
+  onSokakChange?: (s: string) => void;
   selectedQueueTab: QueueTabType;
   onQueueTabChange: (tab: QueueTabType) => void;
   selectedDurumFilter: string;
@@ -40,6 +42,8 @@ export default function BeneficiaryList({
   onSearchChange,
   selectedMahalleler,
   onMahallelerChange,
+  selectedSokak: propSelectedSokak,
+  onSokakChange: propOnSokakChange,
   selectedQueueTab,
   onQueueTabChange,
   selectedDurumFilter,
@@ -70,7 +74,8 @@ export default function BeneficiaryList({
     setSortOrder(newSort);
     setCurrentPage(1);
   };
-  const [selectedSokak, setSelectedSokak] = useState<string>(() => {
+
+  const [internalSelectedSokak, setInternalSelectedSokak] = useState<string>(() => {
     if (typeof window === 'undefined') return 'HEPSI';
     try {
       const saved = localStorage.getItem('komur_filter_sokak');
@@ -78,6 +83,21 @@ export default function BeneficiaryList({
     } catch {}
     return 'HEPSI';
   });
+
+  const selectedSokak = propSelectedSokak !== undefined ? propSelectedSokak : internalSelectedSokak;
+
+  const setSelectedSokak = useCallback((newSokak: string) => {
+    if (propOnSokakChange) {
+      propOnSokakChange(newSokak);
+    }
+    setInternalSelectedSokak(newSokak);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('komur_filter_sokak', newSokak);
+      } catch {}
+    }
+  }, [propOnSokakChange]);
+
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
   const [routeRevokeTarget, setRouteRevokeTarget] = useState<{
     person: any;
@@ -85,19 +105,14 @@ export default function BeneficiaryList({
     routeName: string;
   } | null>(null);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem('komur_filter_sokak', selectedSokak);
-    } catch {}
-  }, [selectedSokak]);
-
-  // Sayfalama Durumu (Eski model Android / Hafif modda 25, normal mobilde 50, masaüstünde 250 kayıt)
+  // Sayfalama Durumu (Eski model Android / Hafif / Güç Tasarrufu modunda 25, normal mobilde 50, masaüstünde 250 kayıt)
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       try {
-        if (localStorage.getItem('komur_lite_mode') === 'true') return 25;
+        if (localStorage.getItem('komur_lite_mode') === 'true' || localStorage.getItem('komur_power_saver') === 'true') {
+          return 25;
+        }
       } catch {}
       if (window.innerWidth < 768) {
         return 50;
@@ -500,12 +515,21 @@ export default function BeneficiaryList({
       .sort((a, b) => a.sokak.localeCompare(b.sokak, 'tr'));
   }, [mahalleFilteredList]);
 
-  // If selected street is no longer present, reset to HEPSI
+  // If selected street is no longer present in available streets, reset ONLY when records are fully loaded
+  // and availableStreets has been computed. NEVER reset while loading or on initial render!
   useEffect(() => {
-    if (selectedSokak !== 'HEPSI' && !availableStreets.some((s) => s.sokak === selectedSokak)) {
-      setSelectedSokak('HEPSI');
+    if (isLoading || records.length === 0) return;
+    if (availableStreets.length === 0) return;
+
+    if (selectedSokak !== 'HEPSI') {
+      const exists = availableStreets.some(
+        (s) => s.sokak === selectedSokak || normalizeStreetForCompare(s.sokak) === normalizeStreetForCompare(selectedSokak)
+      );
+      if (!exists) {
+        setSelectedSokak('HEPSI');
+      }
     }
-  }, [availableStreets, selectedSokak]);
+  }, [availableStreets, selectedSokak, isLoading, records.length, setSelectedSokak]);
 
   const totalSignedCount = useMemo(() => {
     return mahalleFilteredList.filter((r) => {

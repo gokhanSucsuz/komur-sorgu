@@ -2,11 +2,12 @@
 
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
-import { User, Shield, KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle, LogOut, X, Smartphone, Check, RefreshCw, QrCode, Copy, ShieldCheck, ShieldOff, Building2 } from 'lucide-react';
+import { User, Shield, KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle, LogOut, X, Smartphone, Check, RefreshCw, QrCode, Copy, ShieldCheck, ShieldOff, Building2, BatteryCharging } from 'lucide-react';
 import { formatTrAuto } from '@/lib/dateUtils';
 import { showToast } from './GlobalAlertManager';
 import { applySafeCachePurge } from '@/lib/cacheManager';
 import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
+import { isPowerSaverActive, setPowerSaverMode } from '@/lib/batteryManager';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -67,7 +68,21 @@ export default function ProfileModal({
   const [disableCode, setDisableCode] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
   const [isPurgingCache, setIsPurgingCache] = useState(false);
+  const [isPowerSaver, setIsPowerSaver] = useState<boolean>(() => isPowerSaverActive());
   const appVersion = typeof window !== 'undefined' ? (localStorage.getItem('komur_app_version') || process.env.NEXT_PUBLIC_APP_VERSION || '') : '';
+
+  const handleTogglePowerSaver = () => {
+    const next = !isPowerSaver;
+    setIsPowerSaver(next);
+    setPowerSaverMode(next);
+    showToast({
+      type: next ? 'success' : 'info',
+      title: next ? '🔋 Güç Tasarrufu Modu Açıldı' : '⚡ Standart Mod Aktif',
+      message: next
+        ? 'Ağ yoklamaları seyrekleştirildi, ekran kapandığında arka plan trafiği durduruldu ve batarya tüketimi minimuma indirildi.'
+        : 'Standart performans moduna dönüldü.',
+    });
+  };
 
   const handleManualCachePurge = async () => {
     setIsPurgingCache(true);
@@ -879,6 +894,30 @@ export default function ProfileModal({
             </button>
           </div>
         </form>
+
+        {/* Mobil Pil & Güç Tasarrufu Modu */}
+        <div className="mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+              <BatteryCharging className="w-4 h-4 text-emerald-600" />
+              Mobil Pil Güç Tasarrufu
+            </span>
+            <button
+              type="button"
+              onClick={handleTogglePowerSaver}
+              className={`px-3 py-1 rounded-xl text-xs font-black transition-all active:scale-95 shadow-xs ${
+                isPowerSaver
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+              }`}
+            >
+              {isPowerSaver ? 'Açık (Tasarruf)' : 'Kapalı (Standart)'}
+            </button>
+          </div>
+          <p className="text-[10.5px] text-slate-500 leading-relaxed font-medium">
+            Ekran kapandığında arka plan ağ trafiğini durdurur, yoklamaları seyrekleştirir ve GPU efektlerini kapatarak telefon şarjını azami düzeyde korur.
+          </p>
+        </div>
 
         {/* Sürüm & Cihaz Önbelleği Temizleme */}
         <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">

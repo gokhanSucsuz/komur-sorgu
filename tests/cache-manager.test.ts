@@ -21,6 +21,9 @@ test('CacheManager: isProtectedStorageKey correctly protects sensitive and essen
   assert.equal(isProtectedStorageKey('komur_app_version'), true, 'komur_app_version must be protected');
 
   // 2. Pattern matches for device token, offline queue, or active Route Mode session
+  assert.equal(isProtectedStorageKey('komur_filter_mahalleler'), true);
+  assert.equal(isProtectedStorageKey('komur_filter_sokak'), true);
+  assert.equal(isProtectedStorageKey('komur_power_saver'), true);
   assert.equal(isProtectedStorageKey('user_device_token_xyz'), true);
   assert.equal(isProtectedStorageKey('my_offline_queue_backup'), true);
   assert.equal(isProtectedStorageKey('custom_session_token'), true);
@@ -119,4 +122,37 @@ test('CacheManager: checkAndPurgeIfVersionChanged detects version upgrades prope
 test('Version: getAppVersion returns valid commit hash or version identifier', () => {
   const ver = getAppVersion();
   assert.ok(ver && ver.length >= 4, `App version must be valid string: got "${ver}"`);
+});
+
+test('BatteryManager & Filter Kalıcılığı: Polling aralıkları, güç tasarrufu modu ve filtrelerin korunması', async () => {
+  const {
+    getOptimizedPollingInterval,
+    setPowerSaverMode,
+    isPowerSaverActive,
+    isManualPowerSaver,
+    safeVibrate
+  } = await import('../src/lib/batteryManager');
+
+  // 1. Standart Mod Yoklama Aralıkları
+  setPowerSaverMode(false);
+  assert.equal(isManualPowerSaver(), false);
+  assert.equal(getOptimizedPollingInterval('pulse'), 8000, 'Standart modda rota pulse yoklaması 8000ms olmalı');
+  assert.equal(getOptimizedPollingInterval('sync'), 12000, 'Standart modda genel sync yoklaması 12000ms olmalı');
+  assert.equal(getOptimizedPollingInterval('heartbeat'), 15000, 'Standart modda rota kilit heartbeat 15000ms olmalı');
+  assert.equal(getOptimizedPollingInterval('session'), 45000, 'Standart modda oturum kontrolü 45000ms olmalı');
+
+  // 2. Güç Tasarrufu Modu Yoklama Aralıkları (Bataryayı korumak için 4G/5G modem uykuda kalır)
+  setPowerSaverMode(true);
+  assert.equal(isPowerSaverActive(), true);
+  assert.equal(getOptimizedPollingInterval('pulse'), 16000, 'Güç tasarrufunda rota pulse yoklaması 16000ms olmalı');
+  assert.equal(getOptimizedPollingInterval('sync'), 25000, 'Güç tasarrufunda genel sync yoklaması 25000ms olmalı');
+  assert.equal(getOptimizedPollingInterval('heartbeat'), 25000, 'Güç tasarrufunda kilit heartbeat 25000ms olmalı');
+  assert.equal(getOptimizedPollingInterval('session'), 90000, 'Güç tasarrufunda oturum kontrolü 90000ms olmalı');
+
+  // 3. safeVibrate Fonksiyonu: Hata fırlatmadan güvenle çalışmalı
+  const vibrated = safeVibrate([100, 50, 100]);
+  assert.equal(typeof vibrated, 'boolean');
+
+  // 4. Reset
+  setPowerSaverMode(false);
 });
