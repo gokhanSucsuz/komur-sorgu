@@ -115,6 +115,20 @@ export async function POST(request: NextRequest) {
       if (currentStatus === 'TAMAMLANDI') {
         const staffName = beneficiary.teslim_eden_personel || 'başka bir personel';
         const dateStr = beneficiary.teslimat_tarihi || '';
+        const isOfflineSync = Boolean(body.is_offline_sync || request.headers.get('x-offline-sync') === 'true');
+        if (isOfflineSync) {
+          return NextResponse.json(
+            {
+              success: true,
+              alreadyCompletedByPartner: true,
+              already_completed: true,
+              completedBy: staffName,
+              message: `Bu hak sahibine (${beneficiary.ad_soyad}) ekip arkadaşınız (${staffName}) tarafından daha önce teslimat yapılmıştır. Mükerrer teslimat engellendi ve yerel kuyruk eşitlendi.`,
+              beneficiary,
+            },
+            { status: 200 }
+          );
+        }
         return NextResponse.json(
           {
             success: false,
@@ -223,6 +237,20 @@ export async function POST(request: NextRequest) {
       if (updateResult.matchedCount === 0) {
         const freshRaw = await benCol.findOne(buildIdFilter(beneficiary.id));
         const freshBen = mapDoc(freshRaw);
+        const isOfflineSync = Boolean(body.is_offline_sync || request.headers.get('x-offline-sync') === 'true');
+        if (isOfflineSync && freshBen && (freshBen.teslimat_durumu === 'TAMAMLANDI' || (freshBen.torba_sayisi && freshBen.torba_sayisi >= hedef))) {
+          return NextResponse.json(
+            {
+              success: true,
+              alreadyCompletedByPartner: true,
+              already_completed: true,
+              completedBy: freshBen.teslim_eden_personel || 'Ekip Arkadaşı',
+              message: `Bu hak sahibine (${freshBen.ad_soyad}) ekip arkadaşınız (${freshBen.teslim_eden_personel || 'ekip arkadaşı'}) tarafından az önce teslimat tamamlanmıştır. Mükerrer işlem engellendi.`,
+              beneficiary: freshBen,
+            },
+            { status: 200 }
+          );
+        }
         return NextResponse.json(
           {
             success: false,

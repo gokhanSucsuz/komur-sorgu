@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * SignatureQueueManager
@@ -11,6 +11,8 @@
  * 5. Sunucudan dönen `syncTime` kaydedilir, böylece sync pulse kendi cihazımızı gereksiz yere tetiklemez.
  * 6. Ağ ve veritabanı (MongoDB Atlas) kotalarını maksimum düzeyde korur.
  */
+
+import { saveOfflineDelivery } from './offlineSync';
 
 export interface QueuedSignatureItem {
   beneficiary_id: string;
@@ -111,10 +113,32 @@ class SignatureQueueManager {
               this.errorCallback?.(item, new Error(data.error || 'Toplu imza kaydedilemedi'));
             });
           }
-        } catch (err) {
-          signedItems.forEach((item) => {
-            this.errorCallback?.(item, err);
-          });
+        } catch (err: any) {
+          const isOffline =
+            (typeof navigator !== 'undefined' && !navigator.onLine) ||
+            err?.name === 'TypeError' ||
+            String(err?.message || '').toLowerCase().includes('failed to fetch') ||
+            String(err?.message || '').toLowerCase().includes('network');
+
+          if (isOffline) {
+            // Çevrimdışı koruması: İmzaları yerel depolamaya aktar, ekrandaki imzayı geri alma!
+            signedItems.forEach((item) => {
+              saveOfflineDelivery({
+                beneficiary_id: item.beneficiary_id,
+                tc_no: '',
+                ad_soyad: 'Hak Sahibi',
+                teslim_alan: '',
+                personel: item.imza_alan_personel || 'İmza Ekibi',
+                notlar: item.notlar || '',
+                action_type: 'SIGN_BENEFICIARY',
+                imza_durumu: 'IMZALANDI'
+              });
+            });
+          } else {
+            signedItems.forEach((item) => {
+              this.errorCallback?.(item, err);
+            });
+          }
         }
       } else if (signedItems.length === 1) {
         // Tekil İmza (SIGN_BENEFICIARY)
@@ -137,8 +161,27 @@ class SignatureQueueManager {
           } else if (!data.success) {
             this.errorCallback?.(single, new Error(data.error || 'İmza kaydedilemedi'));
           }
-        } catch (err) {
-          this.errorCallback?.(single, err);
+        } catch (err: any) {
+          const isOffline =
+            (typeof navigator !== 'undefined' && !navigator.onLine) ||
+            err?.name === 'TypeError' ||
+            String(err?.message || '').toLowerCase().includes('failed to fetch') ||
+            String(err?.message || '').toLowerCase().includes('network');
+
+          if (isOffline) {
+            saveOfflineDelivery({
+              beneficiary_id: single.beneficiary_id,
+              tc_no: '',
+              ad_soyad: 'Hak Sahibi',
+              teslim_alan: '',
+              personel: single.imza_alan_personel || 'İmza Ekibi',
+              notlar: single.notlar || '',
+              action_type: 'SIGN_BENEFICIARY',
+              imza_durumu: 'IMZALANDI'
+            });
+          } else {
+            this.errorCallback?.(single, err);
+          }
         }
       }
 
@@ -162,8 +205,27 @@ class SignatureQueueManager {
           } else if (!data.success) {
             this.errorCallback?.(item, new Error(data.error || 'İmza durumu sıfırlanamadı'));
           }
-        } catch (err) {
-          this.errorCallback?.(item, err);
+        } catch (err: any) {
+          const isOffline =
+            (typeof navigator !== 'undefined' && !navigator.onLine) ||
+            err?.name === 'TypeError' ||
+            String(err?.message || '').toLowerCase().includes('failed to fetch') ||
+            String(err?.message || '').toLowerCase().includes('network');
+
+          if (isOffline) {
+            saveOfflineDelivery({
+              beneficiary_id: item.beneficiary_id,
+              tc_no: '',
+              ad_soyad: 'Hak Sahibi',
+              teslim_alan: '',
+              personel: item.imza_alan_personel || 'İmza Ekibi',
+              notlar: '',
+              action_type: 'SIGN_BENEFICIARY',
+              imza_durumu: 'BEKLIYOR'
+            });
+          } else {
+            this.errorCallback?.(item, err);
+          }
         }
       }
     } finally {

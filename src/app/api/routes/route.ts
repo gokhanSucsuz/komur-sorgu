@@ -1576,7 +1576,28 @@ export async function POST(request: NextRequest) {
       }
 
       const stops = route.duraklar || [];
-      const targetStop = stops[stop_index];
+      let resolvedIndex = typeof stop_index === 'number' ? stop_index : -1;
+      const benIdSearch = String(body.beneficiary_id || '').trim();
+      const tcSearch = String(body.tc_no || '').trim();
+      const tcHashSearch = String(body.tc_hash || '').trim();
+
+      if (benIdSearch || tcSearch || tcHashSearch) {
+        const matchIdx = stops.findIndex((s: any) => {
+          const sBenId = String(s.beneficiary_id || s.id || '').trim();
+          const sTc = String(s.tc_no || '').trim();
+          const sTcHash = String(s.tc_hash || '').trim();
+          return (
+            (benIdSearch && sBenId && benIdSearch === sBenId) ||
+            (tcSearch && sTc && tcSearch === sTc) ||
+            (tcHashSearch && sTcHash && tcHashSearch === sTcHash)
+          );
+        });
+        if (matchIdx !== -1) {
+          resolvedIndex = matchIdx;
+        }
+      }
+
+      const targetStop = stops[resolvedIndex];
 
       if (!targetStop) {
         return NextResponse.json({ success: false, error: 'Belirtilen durak rotada bulunamadı' }, { status: 404 });
@@ -1602,22 +1623,47 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Atomik Çift Teslimat Koruması: Aynı ekip içinden iki personel aynı anda aynı durağa "Teslim Et" basarsa
-      // ikinci basışı mükerrer torba / mükerrer teslimat geçmişi oluşturmadan güvenle yakala ve senkronize et.
+      // Atomik Çift Teslimat ve Çevrimdışı Çakışma Koruması:
+      // Ekip üyeleri internet yokken aynı haneye teslimat yaptıysa veya aynı anda butona bastıysa
+      // mükerrer torba / mükerrer teslimat geçmişi oluşturmadan güvenle yakala ve senkronize et.
+      const benDoc = await benCol.findOne(buildIdFilter(targetStop.beneficiary_id));
+      const isBenAlreadyCompleted =
+        benDoc && (benDoc.teslimat_durumu === 'TAMAMLANDI' || (benDoc.torba_sayisi && benDoc.torba_sayisi >= hedef));
+
       if (
         durum === 'TAMAMLANDI' &&
-        targetStop.durum === 'TAMAMLANDI' &&
-        previousDelivered >= hedef
+        (targetStop.durum === 'TAMAMLANDI' ||
+          targetStop.durum === 'TESLIM_EDILDI' ||
+          previousDelivered >= hedef ||
+          isBenAlreadyCompleted)
       ) {
+        const completedPersonel =
+          targetStop.teslim_eden_personel || benDoc?.teslim_eden_personel || 'Ekip Arkadaşı';
         return NextResponse.json({
           success: true,
           alreadyCompletedByPartner: true,
-          completedBy: targetStop.teslim_eden_personel || 'Ekip Arkadaşı',
-          message: `${targetStop.sira}. Durak (${targetStop.ad_soyad}) az önce ${targetStop.teslim_eden_personel || 'ekip arkadaşınız'} tarafından zaten teslim edildi.`,
+          already_completed: true,
+          completedBy: completedPersonel,
+          message: `${targetStop.sira || 1}. Durak (${targetStop.ad_soyad}) ekip arkadaşınız (${completedPersonel}) tarafından daha önce teslim edildi. Mükerrer teslimat engellendi.`,
           stop: targetStop,
           duraklar: stops,
           route,
-          routeStatus: route.durum
+          routeStatus: route.durum,
+        });
+      }
+
+      // Tamamlanmış bir durağın eski çevrimdışı eksik kayıt ile düşürülmesini engelle:
+      if (durum === 'EKSIK' && (targetStop.durum === 'TAMAMLANDI' || isBenAlreadyCompleted)) {
+        return NextResponse.json({
+          success: true,
+          alreadyCompletedByPartner: true,
+          already_completed: true,
+          completedBy: targetStop.teslim_eden_personel || benDoc?.teslim_eden_personel || 'Ekip Arkadaşı',
+          message: `${targetStop.sira || 1}. Durak (${targetStop.ad_soyad}) daha önce tam teslim edildiği için eski eksik aktarım mükerrer işleme alınmadı.`,
+          stop: targetStop,
+          duraklar: stops,
+          route,
+          routeStatus: route.durum,
         });
       }
 

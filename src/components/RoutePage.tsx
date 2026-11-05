@@ -876,6 +876,40 @@ export default function RoutePage({
     setRouteModePausedNotice(false);
   }, []);
 
+  // Ekip arkadaşı eş zamanlı veya çevrimdışı senkronizasyonu ile mevcut durağı teslim ettiyse otomatik sıradaki durağa geç
+  useEffect(() => {
+    if (!isRouteModeOpen || !activeRoute || !activeRoute.duraklar) return;
+    const stops = activeRoute.duraklar;
+    const currentStop = stops[routeModeIndex];
+    if (!currentStop) return;
+
+    const isCurrentDone =
+      currentStop.durum === 'TAMAMLANDI' ||
+      currentStop.durum === 'TESLIM_EDILDI' ||
+      (Number(currentStop.teslim_edilen_torba) > 0 &&
+        Number(currentStop.teslim_edilen_torba) >= Number(currentStop.hedef_torba || 34));
+
+    if (isCurrentDone && !isSubmittingStopRef.current) {
+      const nextIdx = stops.findIndex(
+        (s: any, idx: number) =>
+          idx > routeModeIndex &&
+          s.durum !== 'TAMAMLANDI' &&
+          s.durum !== 'TESLIM_EDILDI' &&
+          Number(s.teslim_edilen_torba || 0) < Number(s.hedef_torba || 34)
+      );
+      if (nextIdx !== -1) {
+        setRouteModeIndex(nextIdx);
+        syncRouteModeInputsForStop(stops[nextIdx]);
+        showToast({
+          type: 'info',
+          title: '🔄 Ekip Arkadaşınız Bu Haneyi Teslim Etti',
+          message: `${currentStop.sira}. Durak (${currentStop.ad_soyad}) ekip arkadaşınız tarafından tamamlandığı için sıradaki #${stops[nextIdx].sira} nolu haneye geçildi.`,
+          durationMs: 4000,
+        });
+      }
+    }
+  }, [activeRoute, isRouteModeOpen, routeModeIndex, syncRouteModeInputsForStop]);
+
   // Rota Modunda Sıradaki Haneyi Şimdilik Atla (Sonraki Haneye Geç)
   const handleSkipCurrentStop = () => {
     if (!activeRoute || !activeRoute.duraklar) return;

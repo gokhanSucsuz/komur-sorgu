@@ -421,3 +421,100 @@ test('7. Teslimat Geri Alma & İmza İptali, Mobil Dokunmatik Rota Sıralama ve 
     'RoutePage rota duraklarının sıralamasını güncelleyen handleReorderStops fonksiyonunu barındırmalıdır'
   );
 });
+
+test('8. Çevrimdışı Çakışma Önleme & Eşzamanlı Saha Senkronizasyonu (Idempotent Sync)', () => {
+  // A. Yerel Kuyruk De-duplication: Aynı hane için çevrimdışıyken iki kez teslimat kaydedilirse tekilleştirilmelidir
+  const storage: Record<string, string> = {};
+  (globalThis as any).window = {
+    dispatchEvent: () => true,
+  };
+  (globalThis as any).localStorage = {
+    getItem: (key: string) => storage[key] || null,
+    setItem: (key: string, val: string) => { storage[key] = val; },
+    removeItem: (key: string) => { delete storage[key]; },
+  };
+
+  setOfflineQueueActiveMode('DENEME');
+  clearSandboxOfflineQueue();
+
+  saveOfflineDelivery({
+    beneficiary_id: 'ben_duplicate_check',
+    tc_no: '11111111111',
+    ad_soyad: 'Test Vatandaş',
+    torba_sayisi: 20,
+    eklenen_torba: 20,
+    teslim_alan: 'Test Vatandaş',
+    personel: 'Personel 1',
+    notlar: 'İlk çevrimdışı tıklama'
+  });
+
+  // İkinci kez basıldığında (örneğin 34 torba ile güncellendiğinde) kuyrukta mükerrer eleman açılmamalı, güncellenmelidir
+  saveOfflineDelivery({
+    beneficiary_id: 'ben_duplicate_check',
+    tc_no: '11111111111',
+    ad_soyad: 'Test Vatandaş',
+    torba_sayisi: 34,
+    eklenen_torba: 34,
+    teslim_alan: 'Test Vatandaş',
+    personel: 'Personel 1',
+    notlar: 'Düzeltilen çevrimdışı tıklama'
+  });
+
+  const queue = getOfflineQueue();
+  assert.equal(queue.length, 1, 'Aynı hane için çevrimdışı kuyrukta tekilleştirme yapılmalı, mükerrer kuyruk kaydı oluşmamalı');
+  assert.equal(queue[0].torba_sayisi, 34, 'Son girilen 34 torba miktarı güncellenmiş olmalı');
+  assert.equal(queue[0].notlar, 'Düzeltilen çevrimdışı tıklama');
+
+  clearSandboxOfflineQueue();
+
+  // B. Kod Bütünlüğü Kontrolleri: UPDATE_STOP durak sırası kaymalarına karşı beneficiary_id ile eşleştirme yapmalı
+  const routeApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/routes/route.ts'), 'utf8');
+  assert.ok(
+    routeApiSrc.includes('benIdSearch') &&
+      routeApiSrc.includes('tcSearch') &&
+      routeApiSrc.includes('matchIdx'),
+    'routes/route.ts UPDATE_STOP durak indeksi kaymalarına karşı beneficiary_id/tc_no ile hedef durağı çözümlemelidir'
+  );
+
+  // C. routes/route.ts: Ekip arkadaşı tarafından önceden teslim edilmişse mükerrer teslimat engellenmeli ve 200 dönmeli
+  assert.ok(
+    routeApiSrc.includes('alreadyCompletedByPartner: true') &&
+      routeApiSrc.includes('isBenAlreadyCompleted') &&
+      routeApiSrc.includes('Mükerrer teslimat engellendi'),
+    'routes/route.ts UPDATE_STOP ekip arkadaşı zaten teslim ettiyse durumu idempotent onaylamalıdır'
+  );
+
+  // D. delivery/route.ts: Çevrimdışı senkronizasyonda TAMAMLANDI olan hane için 200 idempotent başarı dönmeli
+  const deliveryApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/delivery/route.ts'), 'utf8');
+  assert.ok(
+    deliveryApiSrc.includes('isOfflineSync') &&
+      deliveryApiSrc.includes('alreadyCompletedByPartner: true') &&
+      deliveryApiSrc.includes('already_completed: true'),
+    'delivery/route.ts çevrimdışı senkronizasyonda mükerrer teslimatı idempotent olarak onaylamalıdır'
+  );
+
+  // E. offlineSync.ts: Çakışma veya partner teslimatı tespit edildiğinde sonsuz döngü engellenmeli ve kuyruktan çıkarılmalıdır
+  const offlineSyncSrc = fs.readFileSync(path.join(process.cwd(), 'src/lib/offlineSync.ts'), 'utf8');
+  assert.ok(
+    offlineSyncSrc.includes('alreadyCompletedByPartner || data.already_completed') &&
+      offlineSyncSrc.includes('updatedQueue.splice(idx, 1)'),
+    'offlineSync.ts partner tarafından tamamlanan veya çakışan teslimatları kuyruktan temizlemelidir'
+  );
+
+  // F. signatureQueue.ts: Çevrimdışıyken hata durumunda ekrandaki imza geri alınmamalı, yerel kuyruğa aktarılmalıdır
+  const sigQueueSrc = fs.readFileSync(path.join(process.cwd(), 'src/lib/signatureQueue.ts'), 'utf8');
+  assert.ok(
+    sigQueueSrc.includes('isOffline') &&
+      sigQueueSrc.includes('saveOfflineDelivery') &&
+      sigQueueSrc.includes('action_type: \'SIGN_BENEFICIARY\''),
+    'signatureQueue.ts internet kesildiğinde imzaları yerel kuyruğa almalı ve ekrandan düşürmemelidir'
+  );
+
+  // G. RoutePage.tsx: Ekip arkadaşı haneyi tamamladığında Rota Modunda otomatik sıradaki durağa geçiş
+  const routePageSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/RoutePage.tsx'), 'utf8');
+  assert.ok(
+    routePageSrc.includes('Ekip arkadaşınız bu haneyi az önce teslim etti') ||
+      routePageSrc.includes('ekip arkadaşınız tarafından tamamlandığı için sıradaki'),
+    'RoutePage.tsx ekip arkadaşı haneyi teslim ettiğinde otomatik sıradaki bekleyen durağa geçmelidir'
+  );
+});

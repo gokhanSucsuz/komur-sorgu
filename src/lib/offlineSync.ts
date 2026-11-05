@@ -19,6 +19,8 @@ export interface OfflineDeliveryItem {
   status: 'PENDING' | 'SYNCED' | 'CONFLICT';
   conflictMessage?: string;
   created_at_formatted: string;
+  action_type?: 'DELIVERY' | 'SIGN_BENEFICIARY';
+  imza_durumu?: 'IMZALANDI' | 'BEKLIYOR';
 }
 
 const STORAGE_KEY_OFFICIAL = 'komur_offline_queue';
@@ -125,9 +127,38 @@ export function saveOfflineDelivery(
   item: Omit<OfflineDeliveryItem, 'client_uuid' | 'timestamp' | 'status' | 'created_at_formatted'>
 ): OfflineDeliveryItem {
   const queue = getOfflineQueue();
+  const maskedTc = maskTcForStorage(item.tc_no);
+
+  // Yerel cihaz kuyruğunda aynı hane için mükerrer işlem oluşmasını engelle (De-duplication)
+  const existingIdx = queue.findIndex(
+    (q) =>
+      q.status === 'PENDING' &&
+      q.beneficiary_id &&
+      item.beneficiary_id &&
+      String(q.beneficiary_id) === String(item.beneficiary_id) &&
+      (q.action_type || 'DELIVERY') === (item.action_type || 'DELIVERY')
+  );
+
+  if (existingIdx !== -1) {
+    const existing = queue[existingIdx];
+    const updatedItem: OfflineDeliveryItem = {
+      ...existing,
+      ...item,
+      tc_no: maskedTc || existing.tc_no,
+      timestamp: Date.now(),
+      created_at_formatted: new Date().toLocaleString('tr-TR'),
+    };
+    queue[existingIdx] = updatedItem;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(getActiveStorageKey(), encodeStoragePayload(queue));
+      window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: queue.length } }));
+    }
+    return updatedItem;
+  }
+
   const newItem: OfflineDeliveryItem = {
     ...item,
-    tc_no: maskTcForStorage(item.tc_no),
+    tc_no: maskedTc,
     client_uuid: 'off_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
     timestamp: Date.now(),
     status: 'PENDING',
@@ -185,57 +216,90 @@ export async function syncOfflineDeliveries(
   for (let i = 0; i < pending.length; i++) {
     const item = pending[i];
     try {
-      const isRouteStop = Boolean(item.route_id && item.stop_index !== undefined);
-      const url = isRouteStop ? '/api/routes' : '/api/delivery';
-      const bodyPayload = isRouteStop
-        ? {
-            action: 'UPDATE_STOP',
-            route_id: item.route_id,
-            stop_index: item.stop_index,
-            durum: item.durum || 'TAMAMLANDI',
-            torba_sayisi: item.torba_sayisi,
-            teslim_alan: item.teslim_alan,
-            personel: item.personel,
-            notlar: item.notlar
-              ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
-              : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
-            daha_sonra_tamamlanacak: item.durum !== 'TAMAMLANDI',
-          }
-        : {
-            action: 'TESLIMAT',
-            beneficiary_id: item.beneficiary_id,
-            eklenen_torba: item.eklenen_torba,
-            torba_sayisi: item.torba_sayisi,
-            teslim_alan: item.teslim_alan,
-            personel: item.personel,
-            notlar: item.notlar
-              ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
-              : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
-          };
+      let url = '/api/delivery';
+      let bodyPayload: any = {};
+
+      if (item.action_type === 'SIGN_BENEFICIARY') {
+        url = '/api/routes';
+        bodyPayload = {
+          action: 'SIGN_BENEFICIARY',
+          beneficiary_id: item.beneficiary_id,
+          imza_durumu: item.imza_durumu || 'IMZALANDI',
+          imza_alan_personel: item.personel || 'İmza Ekibi',
+          notlar: item.notlar
+            ? `[Çevrimdışı İmza ${item.created_at_formatted}] ${item.notlar}`
+            : `[Çevrimdışı İmza ${item.created_at_formatted}]`,
+          is_offline_sync: true,
+        };
+      } else {
+        const isRouteStop = Boolean(item.route_id && (item.stop_index !== undefined || item.beneficiary_id));
+        url = isRouteStop ? '/api/routes' : '/api/delivery';
+        bodyPayload = isRouteStop
+          ? {
+              action: 'UPDATE_STOP',
+              route_id: item.route_id,
+              stop_index: item.stop_index,
+              beneficiary_id: item.beneficiary_id,
+              tc_no: item.tc_no,
+              durum: item.durum || 'TAMAMLANDI',
+              torba_sayisi: item.torba_sayisi,
+              teslim_alan: item.teslim_alan,
+              personel: item.personel,
+              notlar: item.notlar
+                ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
+                : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
+              daha_sonra_tamamlanacak: item.durum !== 'TAMAMLANDI',
+              is_offline_sync: true,
+            }
+          : {
+              action: 'TESLIMAT',
+              beneficiary_id: item.beneficiary_id,
+              eklenen_torba: item.eklenen_torba,
+              torba_sayisi: item.torba_sayisi,
+              teslim_alan: item.teslim_alan,
+              personel: item.personel,
+              notlar: item.notlar
+                ? `[Çevrimdışı Aktarım ${item.created_at_formatted}] ${item.notlar}`
+                : `[Çevrimdışı Aktarım ${item.created_at_formatted}]`,
+              is_offline_sync: true,
+            };
+      }
 
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-offline-sync': 'true',
+        },
         body: JSON.stringify(bodyPayload),
       });
 
       const data = await res.json();
 
-      if (res.status === 409 || res.status === 423 || data.conflict) {
-        // Double delivery or active route lock conflict prevented!
+      if (data.alreadyCompletedByPartner || data.already_completed) {
+        // Ekip arkadaşı tarafından daha önce tamamlanmış veya çakışma güvenle önlenmiş!
+        synced++;
+        const partnerName = data.completedBy || 'ekip arkadaşınız';
+        messages.push(`🔄 ${item.ad_soyad}: ${partnerName} tarafından daha önce teslim edildi (Mükerrer teslimat engellendi).`);
+
+        // Kuyruktan güvenle temizle
+        const idx = updatedQueue.findIndex((q) => q.client_uuid === item.client_uuid);
+        if (idx !== -1) updatedQueue.splice(idx, 1);
+      } else if (res.status === 409 || res.status === 423 || data.conflict) {
+        // Mükerrer teslimat veya aktif rota kilit çakışması yakalandı ve engellendi
         conflicts++;
         const conflictMsg =
           data.error || `${item.ad_soyad} kaydı başka bir personel tarafından işlem görmüş veya kilitli.`;
         messages.push(`⚠️ Çakışma Önleme: ${conflictMsg}`);
 
-        // Remove from queue so it does not loop
+        // Sonsuz döngüye girmemesi için kuyruktan çıkar
         const idx = updatedQueue.findIndex((q) => q.client_uuid === item.client_uuid);
         if (idx !== -1) updatedQueue.splice(idx, 1);
       } else if (data.success) {
         synced++;
-        messages.push(`✅ ${item.ad_soyad}: ${data.message || 'Teslimat aktarıldı'}`);
+        messages.push(`✅ ${item.ad_soyad}: ${data.message || 'İşlem aktarıldı'}`);
 
-        // Remove from queue
+        // Kuyruktan kaldır
         const idx = updatedQueue.findIndex((q) => q.client_uuid === item.client_uuid);
         if (idx !== -1) updatedQueue.splice(idx, 1);
       } else {
@@ -245,7 +309,7 @@ export async function syncOfflineDeliveries(
 
       onProgress?.(synced + conflicts, pending.length);
     } catch (netErr: any) {
-      // Network still offline; abort further items
+      // Ağ hala çevrimdışı; sonraki adımları beklet
       failed++;
       messages.push(`📶 Ağ bağlantısı kesintili: Kalan ${pending.length - i} işlem çevrimdışı kuyrukta bekletiliyor.`);
       break;
@@ -256,7 +320,7 @@ export async function syncOfflineDeliveries(
   window.dispatchEvent(new CustomEvent('komur_offline_queue_changed', { detail: { count: updatedQueue.length } }));
 
   return {
-    success: synced > 0,
+    success: synced > 0 || conflicts > 0,
     synced,
     conflicts,
     failed,

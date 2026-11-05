@@ -834,6 +834,25 @@ export default function Home() {
       setPendingSyncCount(getPendingOfflineCount());
       if (result.synced > 0 || result.conflicts > 0) {
         handleRefreshAll();
+        if (result.synced > 0 && result.conflicts === 0) {
+          showToast({
+            type: 'success',
+            title: '📶 Çevrimdışı İşlemler Senkronize Edildi',
+            message: `${result.synced} adet çevrimdışı işlem başarıyla sunucuya aktarıldı ve rotanız güncellendi.`,
+          });
+        } else if (result.synced > 0 && result.conflicts > 0) {
+          showToast({
+            type: 'info',
+            title: '🔄 Çevrimdışı Eşitleme Tamamlandı',
+            message: `${result.synced} işlem aktarıldı, ${result.conflicts} işlem ekip arkadaşınız tarafından daha önce tamamlandığı için mükerrer kayıt engellendi.`,
+          });
+        } else if (result.conflicts > 0 && result.synced === 0) {
+          showToast({
+            type: 'info',
+            title: '🔄 Çevrimdışı Çakışma Önleme',
+            message: `Bekleyen ${result.conflicts} işlem siz çevrimdışıyken ekip arkadaşınız tarafından sisteme kaydedilmiş. Tüm liste güncellendi.`,
+          });
+        }
       }
     } catch (e) {
       console.error('Offline queue sync error:', e);
