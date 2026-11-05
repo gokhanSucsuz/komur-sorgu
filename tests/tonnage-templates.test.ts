@@ -7,6 +7,8 @@ process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 
 import { parseTonnageTemplates, DEFAULT_TONNAGE_TEMPLATES } from '@/lib/tonnageTemplates';
 import { normalizeToTon } from '@/lib/normalizer';
+import { encryptTruck } from '@/lib/crypto';
+import { mapDoc } from '@/lib/mongodb';
 
 describe('Tonaj Rapor Şablonları & Tır Filtreleme-Sıralama Testleri', () => {
   it('1. parseTonnageTemplates null/undefined/boş girdide varsayılan resmi şablonları döndürür', () => {
@@ -116,5 +118,35 @@ describe('Tonaj Rapor Şablonları & Tır Filtreleme-Sıralama Testleri', () => 
     // TON_ASC (Net tonaj düşükten yükseğe)
     const sortedTonAsc = [...mockTrucks].sort((a, b) => normalizeToTon(a.net_tonaj) - normalizeToTon(b.net_tonaj));
     assert.deepEqual(sortedTonAsc.map((t) => t.net_tonaj), [25.0, 28.5, 29.2]);
+  });
+
+  it('5. Tır tutanak_no alanı şifreli kaydedildikten sonra mapDoc tarafından şeffafça deşifre edilir ve ENC:GCM görünmez', () => {
+    const rawTruck = {
+      tir_sirasi: 1,
+      plaka: '22 AA 111',
+      irsaliye_no: 'IRS-2026-999',
+      tutanak_no: 'TUT-2026/888',
+      tarih: '2026-11-05',
+      net_tonaj: 27.5,
+      sofor_adi: 'Kemal Sunal',
+    };
+
+    const encrypted = encryptTruck(rawTruck);
+    assert.ok(
+      typeof encrypted.tutanak_no === 'string' && encrypted.tutanak_no.startsWith('ENC:GCM:v1:'),
+      'encryptTruck tutanak_no alanını AES-256-GCM ile şifrelemelidir'
+    );
+
+    const decrypted = mapDoc(encrypted);
+    assert.equal(
+      decrypted.tutanak_no,
+      'TUT-2026/888',
+      'mapDoc şifrelenmiş tutanak_no alanını şeffafça çözmeli ve düz metin olarak döndürmelidir'
+    );
+    assert.equal(
+      decrypted.tutanak_no.startsWith('ENC:GCM:'),
+      false,
+      'mapDoc sonrasında tutanak_no kesinlikle ENC:GCM içermemelidir'
+    );
   });
 });

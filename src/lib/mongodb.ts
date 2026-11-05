@@ -143,6 +143,7 @@ export function mapDoc<T = any>(doc: any): T {
     'plaka',
     'dorse_plaka',
     'irsaliye_no',
+    'tutanak_no',
     'personel_adi',
     'ek_liste_imza_notu',
     'adres_guncelleme_notu',
