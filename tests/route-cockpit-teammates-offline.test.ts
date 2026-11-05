@@ -341,3 +341,83 @@ test('6. Teslimat Arşivi: İptal edilen teslimatların ve imzası geri alınan 
   assert.strictEqual(validTorba, 68, 'Geçerli toplam torba 68 olmalıdır');
   assert.strictEqual(cancelledDeliveries, 2, 'İptal / geçersiz sayılan teslimat kaydı 2 olmalıdır');
 });
+
+test('7. Teslimat Geri Alma & İmza İptali, Mobil Dokunmatik Rota Sıralama ve Kronolojik Tutanak', () => {
+  const cancelModalSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/CancelModal.tsx'), 'utf-8');
+  const deliveryApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/delivery/route.ts'), 'utf-8');
+  const deliveryArchiveSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/DeliveryArchive.tsx'), 'utf-8');
+  const exportApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/export/route.ts'), 'utf-8');
+  const dateUtilsSrc = fs.readFileSync(path.join(process.cwd(), 'src/lib/dateUtils.ts'), 'utf-8');
+  const routeCreationSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/route/RouteCreationModals.tsx'), 'utf-8');
+  const activeRouteCardSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/ActiveRouteAccordionCard.tsx'), 'utf-8');
+  const routePageSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/RoutePage.tsx'), 'utf-8');
+
+  // A. CancelModal ve Delivery API: Teslimat geri alınırken hak sahibinin imzasını da geri çekme seçimi
+  assert.ok(
+    cancelModalSrc.includes('revokeSignature') &&
+      cancelModalSrc.includes('Hak sahibinin imzasını da geri çekmek ister misiniz?') &&
+      cancelModalSrc.includes('revoke_signature: revokeSignature'),
+    'CancelModal hak sahibinin imzasını da geri çekme seçeneği sunmalı ve API body sine eklemelidir'
+  );
+
+  assert.ok(
+    deliveryApiSrc.includes('revoke_signature') &&
+      deliveryApiSrc.includes("benUpdateFields.imza_durumu = 'BEKLIYOR'") &&
+      deliveryApiSrc.includes("s.imza_durumu = 'BEKLIYOR'"),
+    'Delivery API (IPTAL) revoke_signature true olduğunda hak sahibinin ve aktif rota duraklarındaki imzasını BEKLİYOR yapmalıdır'
+  );
+
+  // B. Resmi tutanaklarda iptal edilen teslimatların gizlenmesi ve saat bilgisi
+  assert.ok(
+    deliveryArchiveSrc.includes('sortedPrintItems = useMemo') &&
+      deliveryArchiveSrc.includes('!r.iptal_edildi') &&
+      deliveryArchiveSrc.includes("r.islem_tipi !== 'IPTAL'") &&
+      deliveryArchiveSrc.includes('formatTrTime'),
+    'DeliveryArchive resmi tutanakta iptal edilenleri eleyerek saat bilgisini formatTrTime ile göstermelidir'
+  );
+
+  assert.ok(
+    dateUtilsSrc.includes('export function formatTrTime'),
+    'dateUtils formatTrTime fonksiyonunu dışa aktarmalıdır'
+  );
+
+  // C. Kronolojik saat sırasına göre sıralama (TIME_ASC)
+  assert.ok(
+    deliveryArchiveSrc.includes('printSortMode') &&
+      deliveryArchiveSrc.includes('TIME_ASC') &&
+      deliveryArchiveSrc.includes('parseDateSafely'),
+    'DeliveryArchive tutanak yazdırma modunda ilk teslim edilenden son teslim edilene doğru TIME_ASC kronolojik sıralamayı desteklemelidir'
+  );
+
+  assert.ok(
+    exportApiSrc.includes('Teslim Saati') &&
+      exportApiSrc.includes('sortParam') &&
+      exportApiSrc.includes('TIME_ASC'),
+    'Export API günlük teslimat listesinde Teslim Saati kolonunu ve TIME_ASC sıralamasını içermelidir'
+  );
+
+  // D. Mobil telefonda sürükle bırak şeklinde rota sıralaması değiştirme
+  assert.ok(
+    routeCreationSrc.includes('handleTouchStart') &&
+      routeCreationSrc.includes('handleTouchMove') &&
+      routeCreationSrc.includes('handleTouchEnd') &&
+      routeCreationSrc.includes('GripVertical') &&
+      routeCreationSrc.includes('data-create-stop-index'),
+    'RouteCreationModals dokunmatik sürükle-bırak tutamacı ve touch eventleri ile durak sıralama desteği sağlamalıdır'
+  );
+
+  assert.ok(
+    activeRouteCardSrc.includes('handleTouchStart') &&
+      activeRouteCardSrc.includes('handleTouchMove') &&
+      activeRouteCardSrc.includes('handleTouchEnd') &&
+      activeRouteCardSrc.includes('GripVertical') &&
+      activeRouteCardSrc.includes('onReorderStops'),
+    'ActiveRouteAccordionCard aktif rota durakları için dokunmatik sürükle-bırak ve GripVertical desteği sağlamalıdır'
+  );
+
+  assert.ok(
+    routePageSrc.includes('handleReorderStops') &&
+      routePageSrc.includes('handleReorderCreateStops'),
+    'RoutePage rota duraklarının sıralamasını güncelleyen handleReorderStops fonksiyonunu barındırmalıdır'
+  );
+});

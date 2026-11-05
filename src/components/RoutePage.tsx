@@ -1668,6 +1668,7 @@ export default function RoutePage({
           (isRouteModeOpen && idx === routeModeIndex);
 
         if (isMatch) {
+          const isSigRevoked = updatedBeneficiary?.imza_durumu === 'BEKLIYOR';
           return {
             ...s,
             durum: 'BEKLIYOR',
@@ -1676,7 +1677,10 @@ export default function RoutePage({
             teslim_eden_personel: null,
             teslim_alan: '',
             teslimat_notu: '',
-            daha_sonra_tamamlanacak: false
+            daha_sonra_tamamlanacak: false,
+            imza_durumu: isSigRevoked ? 'BEKLIYOR' : s.imza_durumu,
+            imza_tarihi: isSigRevoked ? null : s.imza_tarihi,
+            imza_alan_personel: isSigRevoked ? null : s.imza_alan_personel
           };
         }
         return s;
@@ -1844,6 +1848,54 @@ export default function RoutePage({
           action: 'REORDER_STOPS',
           route_id: activeRoute.id || activeRoute._id,
           duraklar: updatedStops,
+          client_id: currentClientId,
+          personel: userName || 'Personel'
+        })
+      });
+    } catch (err) {
+      console.error('Error reordering stops:', err);
+    }
+  };
+
+  // Reorder Stops Arbitrarily (Mobil dokunmatik sürükle-bırak veya masaüstü drag-drop)
+  const handleReorderStops = async (fromIndex: number, toIndex: number) => {
+    if (isRouteLockedByOther) {
+      showAlert({
+        title: '🔒 Rota Kullanımda & Kilitli',
+        message: `Bu rota şu anda "${routeLockedByName}" tarafından Rota Modunda kullanılmaktadır.\n\nMükerrer teslimatları önlemek için aynı anda yalnızca bir personel bir rotayı kullanabilir.`,
+        type: 'lock',
+        badge: routeLockedByName || undefined
+      });
+      return;
+    }
+    if (!activeRoute || !activeRoute.duraklar) return;
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= activeRoute.duraklar.length || toIndex >= activeRoute.duraklar.length) return;
+
+    const updatedStops = [...activeRoute.duraklar];
+    const [moved] = updatedStops.splice(fromIndex, 1);
+    updatedStops.splice(toIndex, 0, moved);
+
+    const reindexedStops = updatedStops.map((s, idx) => ({ ...s, sira: idx + 1 }));
+    setActiveRoutes((prev) =>
+      prev.map((r) => {
+        if (String(r.id || r._id) === String(activeRoute.id || activeRoute._id)) {
+          return { ...r, duraklar: reindexedStops };
+        }
+        return r;
+      })
+    );
+
+    try {
+      await fetch('/api/routes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': currentClientId
+        },
+        body: JSON.stringify({
+          action: 'REORDER_STOPS',
+          route_id: activeRoute.id || activeRoute._id,
+          duraklar: reindexedStops,
           client_id: currentClientId,
           personel: userName || 'Personel'
         })
@@ -2258,6 +2310,23 @@ export default function RoutePage({
     nextList[index] = nextList[targetIndex];
     nextList[targetIndex] = temp;
     setSelectedBeneficiaryIds(nextList);
+  };
+
+  const handleReorderCreateStops = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= selectedBeneficiaryIds.length ||
+      toIndex >= selectedBeneficiaryIds.length
+    )
+      return;
+    setSelectedBeneficiaryIds((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
   };
 
   const handleRemoveCreateStop = (id: string) => {
@@ -2743,6 +2812,10 @@ export default function RoutePage({
                     onMoveStop={(index, direction) => {
                       setSelectedRouteId(routeIdStr);
                       handleMoveStop(index, direction);
+                    }}
+                    onReorderStops={(from, to) => {
+                      setSelectedRouteId(routeIdStr);
+                      handleReorderStops(from, to);
                     }}
                     onOpenStopModal={(index, stop, mode) => {
                       setSelectedRouteId(routeIdStr);
@@ -3448,6 +3521,7 @@ export default function RoutePage({
         handleSortCreateStopsByAddress={handleSortCreateStopsByAddress}
         handleReverseCreateStops={handleReverseCreateStops}
         handleMoveCreateStop={handleMoveCreateStop}
+        handleReorderCreateStops={handleReorderCreateStops}
         handleRemoveCreateStop={handleRemoveCreateStop}
         handleCreateRouteSubmit={handleCreateRouteSubmit}
         isActionLoading={isActionLoading}

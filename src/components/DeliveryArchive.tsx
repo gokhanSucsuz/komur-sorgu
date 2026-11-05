@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
-import { formatTrDate, formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
+import { formatTrDate, formatTrAuto, formatTrTime, parseDateSafely, isPastDeliveryDate } from '@/lib/dateUtils';
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -30,6 +30,7 @@ export default function DeliveryArchive({
   const [printDayGroup, setPrintDayGroup] = useState<any | null>(null);
   const [printCancelGroup, setPrintCancelGroup] = useState<any | null>(null);
   const [cumulativeDate, setCumulativeDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
+  const [printSortMode, setPrintSortMode] = useState<'TIME_ASC' | 'TIME_DESC' | 'ADDRESS' | 'NAME'>('TIME_ASC');
 
   // ESC tuşu ve overlay ile yazdırma modalını güvenli kapatma (ekran kilitlenmesini önler)
   useEffect(() => {
@@ -76,6 +77,48 @@ export default function DeliveryArchive({
       : [];
     return extractUniquePersonnelList([...(printDayGroup.items || []), ...sameDayRecords]);
   }, [printDayGroup, allRecords]);
+
+  // Resmi tutanak için filtrelenmiş ve kronolojik / özel sıralanmış teslimat kayıtları
+  const sortedPrintItems = useMemo(() => {
+    if (!printDayGroup || !Array.isArray(printDayGroup.items)) return [];
+    // İptal edilen, geri alınan veya teslimatı yapılmamış kayıtlar resmi tutanakta KESİNLİKLE yer almaz
+    const cleanList = printDayGroup.items.filter(
+      (r: any) =>
+        r &&
+        !r.iptal_edildi &&
+        r.islem_tipi !== 'IPTAL' &&
+        r.teslimat_durumu !== 'IPTAL' &&
+        (r.torba_sayisi === undefined || r.torba_sayisi > 0)
+    );
+
+    if (printSortMode === 'TIME_ASC') {
+      return [...cleanList].sort((a: any, b: any) => {
+        const tA = parseDateSafely(a.tarih || a.teslim_tarihi || a.created_at)?.getTime() || 0;
+        const tB = parseDateSafely(b.tarih || b.teslim_tarihi || b.created_at)?.getTime() || 0;
+        return tA - tB;
+      });
+    }
+    if (printSortMode === 'TIME_DESC') {
+      return [...cleanList].sort((a: any, b: any) => {
+        const tA = parseDateSafely(a.tarih || a.teslim_tarihi || a.created_at)?.getTime() || 0;
+        const tB = parseDateSafely(b.tarih || b.teslim_tarihi || b.created_at)?.getTime() || 0;
+        return tB - tA;
+      });
+    }
+    if (printSortMode === 'ADDRESS') {
+      return [...cleanList].sort((a: any, b: any) => {
+        const mComp = String(a.mahalle || '').localeCompare(String(b.mahalle || ''), 'tr');
+        if (mComp !== 0) return mComp;
+        return String(a.acik_adres || '').localeCompare(String(b.acik_adres || ''), 'tr');
+      });
+    }
+    if (printSortMode === 'NAME') {
+      return [...cleanList].sort((a: any, b: any) =>
+        String(a.ad_soyad || '').localeCompare(String(b.ad_soyad || ''), 'tr')
+      );
+    }
+    return cleanList;
+  }, [printDayGroup, printSortMode]);
 
   // Filter cancelled items (Sadece iptal edilen teslimat kayıtları)
   const cancelledItems = useMemo(() => {
@@ -639,9 +682,9 @@ export default function DeliveryArchive({
                   <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
                     <span>Tarih: <strong className="text-slate-800">{formatTrDate(printDayGroup.gun_tarihi)}</strong></span>
                     <span>•</span>
-                    <span>Toplam: <strong className="text-emerald-700">{printDayGroup.items.length} Hane</strong></span>
+                    <span>Toplam: <strong className="text-emerald-700">{sortedPrintItems.length} Hane</strong></span>
                     <span>•</span>
-                    <span><strong className="text-amber-800">{(printDayGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton</strong></span>
+                    <span><strong className="text-amber-800">{(sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton</strong></span>
                     {deliveryStaffList.length > 0 && (
                       <>
                         <span>•</span>
@@ -653,6 +696,21 @@ export default function DeliveryArchive({
               </div>
 
               <div className="flex items-center gap-2 shrink-0 ml-2">
+                <div className="hidden sm:flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-2xs">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-[11px] font-bold text-slate-700">Sıralama:</span>
+                  <select
+                    value={printSortMode}
+                    onChange={(e) => setPrintSortMode(e.target.value as any)}
+                    className="text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
+                  >
+                    <option value="TIME_ASC">🕒 Teslim Saatine Göre (İlk Teslimden Sona)</option>
+                    <option value="TIME_DESC">🕒 Teslim Saatine Göre (Son Teslimden İlke)</option>
+                    <option value="ADDRESS">📍 Mahalle & Adrese Göre</option>
+                    <option value="NAME">👤 İsim Soyisim Sırasına Göre</option>
+                  </select>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setPrintDayGroup(null)}
@@ -671,6 +729,24 @@ export default function DeliveryArchive({
               id="printableDeliveryReport"
               style={{ overscrollBehavior: 'contain' }}
             >
+              {/* Mobile Sort Controls (no-print) */}
+              <div className="sm:hidden flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100 border border-slate-200 no-print">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  Sıralama:
+                </span>
+                <select
+                  value={printSortMode}
+                  onChange={(e) => setPrintSortMode(e.target.value as any)}
+                  className="text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2 py-1 focus:outline-none"
+                >
+                  <option value="TIME_ASC">🕒 Teslim Saatine Göre (İlk Teslimden Sona)</option>
+                  <option value="TIME_DESC">🕒 Teslim Saatine Göre (Son Teslimden İlke)</option>
+                  <option value="ADDRESS">📍 Mahalle & Adrese Göre</option>
+                  <option value="NAME">👤 İsim Soyisim Sırasına Göre</option>
+                </select>
+              </div>
+
               {/* Official Institutional Header */}
               <div className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-300 text-center space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between pb-3 border-b-2 border-slate-900 gap-2">
@@ -715,12 +791,12 @@ export default function DeliveryArchive({
                       <th className="py-2 px-2">Mahalle / Açık Adres</th>
                       <th className="py-2 px-2 text-center w-14">Torba</th>
                       <th className="py-2 px-2 w-32">Teslim Alan</th>
-                      <th className="py-2 px-2 text-center w-24">Teslim Tarihi</th>
+                      <th className="py-2 px-2 text-center w-36">Teslim Zamanı (Tarih & Saat)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {printDayGroup.items.map((item: any, idx: number) => (
-                      <tr key={item.id} className="hover:bg-slate-50/80">
+                    {sortedPrintItems.map((item: any, idx: number) => (
+                      <tr key={item.id || item._id || idx} className="hover:bg-slate-50/80">
                         <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                         <td className="py-2 px-2 font-mono font-bold text-slate-800 truncate">{item.tc_no}</td>
                         <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
@@ -739,7 +815,16 @@ export default function DeliveryArchive({
                           </span>
                         </td>
                         <td className="py-2 px-2 font-medium text-slate-700 break-words">{item.teslim_alan || item.ad_soyad}</td>
-                        <td className="py-2 px-2 text-center font-semibold text-slate-800">{formatTrDate(item.gun_tarihi || (item.tarih ? item.tarih.split(' ')[0] : '')) || '-'}</td>
+                        <td className="py-2 px-2 text-center font-semibold text-slate-800">
+                          <div className="font-bold text-slate-900 text-xs whitespace-nowrap">
+                            {formatTrDate(item.gun_tarihi || (item.tarih ? item.tarih.split(' ')[0] : '')) || '-'}
+                          </div>
+                          {formatTrTime(item.tarih || item.teslim_tarihi) ? (
+                            <div className="text-[10px] font-mono font-bold text-amber-900 bg-amber-50 rounded px-1.5 py-0.5 inline-block mt-0.5 border border-amber-200 whitespace-nowrap">
+                              🕒 {formatTrTime(item.tarih || item.teslim_tarihi)}
+                            </div>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -795,13 +880,13 @@ export default function DeliveryArchive({
             {/* Modal Footer: Daima alt kısımda sabit kalır */}
             <div className="report-modal-footer shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-t border-slate-200 bg-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-20 shadow-sm">
               <a
-                href={printDayGroup.isBulk ? `/api/export?type=daily_deliveries&endDate=${printDayGroup.gun_tarihi}` : `/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}`}
+                href={printDayGroup.isBulk ? `/api/export?type=daily_deliveries&endDate=${printDayGroup.gun_tarihi}&sort=${printSortMode}` : `/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}&sort=${printSortMode}`}
                 download={`Edirne_SYDV_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
               >
                 <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Excel Olarak İndir</span>
-                <span className="sm:hidden">Excel</span>
+                <span className="hidden sm:inline">Excel Olarak İndir ({sortedPrintItems.length} Hane)</span>
+                <span className="sm:hidden">Excel ({sortedPrintItems.length})</span>
               </a>
 
               <div className="flex items-center gap-2">

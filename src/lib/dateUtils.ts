@@ -162,6 +162,29 @@ export function formatTrDateTime(val: any): string {
 }
 
 /**
+ * Formats time as "10:22:20" or "HH:MM:SS" in Istanbul timezone.
+ */
+export function formatTrTime(val: any): string {
+  if (!val) return '';
+  const d = parseDateSafely(val);
+  if (!d) {
+    const str = String(val).trim();
+    if (str.includes(':')) {
+      const parts = str.split(' ');
+      return parts.find((p) => p.includes(':')) || '';
+    }
+    return '';
+  }
+  return new Intl.DateTimeFormat('tr-TR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'Europe/Istanbul',
+  }).format(d);
+}
+
+/**
  * Automatically determines format based on input:
  * If time components are present, formats as "18 Ekim 2026 Pazar 10:22:20".
  * Otherwise formats as "18 Ekim 2026 Pazar".

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   Truck, Users, MapPin, Phone, Printer, Trash2, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, AlertCircle, Download, Navigation, ArrowUp,
-  ArrowDown, XCircle, ArrowRight, UserMinus, Plus, Building2
+  ArrowDown, XCircle, ArrowRight, UserMinus, Plus, Building2, GripVertical
 } from 'lucide-react';
 import { formatPhoneDisplay, getYandexNaviUrl } from '@/lib/normalizer';
 
@@ -17,6 +17,7 @@ interface ActiveRouteAccordionCardProps {
   onDelete: () => void;
   onFinalize: () => void;
   onMoveStop: (index: number, direction: 'UP' | 'DOWN') => void;
+  onReorderStops?: (fromIndex: number, toIndex: number) => void;
   onOpenStopModal: (index: number, stop: any, mode: 'TAMAMLANDI' | 'EKSIK' | 'TESLIM_EDILEMEDI') => void;
   onRemoveStop: (index: number, stop: any) => void;
   onStartRouteMode?: () => void;
@@ -34,6 +35,7 @@ export default function ActiveRouteAccordionCard({
   onDelete,
   onFinalize,
   onMoveStop,
+  onReorderStops,
   onOpenStopModal,
   onRemoveStop,
   onStartRouteMode,
@@ -69,6 +71,45 @@ export default function ActiveRouteAccordionCard({
     return !hasCoal;
   });
   const canFinalize = routeStops.length > 0 && noCoalStops.length === 0;
+
+  // Mobil & Masaüstü dokunmatik sürükle-bırak durak sıralama durumu
+  const [touchDragOriginalIdx, setTouchDragOriginalIdx] = useState<number | null>(null);
+  const [hoverDropOriginalIdx, setHoverDropOriginalIdx] = useState<number | null>(null);
+
+  const handleTouchStart = (originalIdx: number) => {
+    if (stopFilter !== 'ALL' || userRole === 'MUDUR') return;
+    setTouchDragOriginalIdx(originalIdx);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try { navigator.vibrate(15); } catch {}
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchDragOriginalIdx === null || stopFilter !== 'ALL') return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const stopEl = el?.closest('[data-active-stop-idx]') as HTMLElement | null;
+    if (stopEl && stopEl.dataset.activeStopIdx !== undefined) {
+      const targetIdx = parseInt(stopEl.dataset.activeStopIdx, 10);
+      if (!isNaN(targetIdx) && targetIdx !== touchDragOriginalIdx) {
+        if (onReorderStops) {
+          onReorderStops(touchDragOriginalIdx, targetIdx);
+        } else {
+          onMoveStop(touchDragOriginalIdx, targetIdx > touchDragOriginalIdx ? 'DOWN' : 'UP');
+        }
+        setTouchDragOriginalIdx(targetIdx);
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try { navigator.vibrate(10); } catch {}
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchDragOriginalIdx(null);
+    setHoverDropOriginalIdx(null);
+  };
 
   // Filtrelenmiş durak listesi
   const displayedStops = routeStops
@@ -665,8 +706,33 @@ export default function ActiveRouteAccordionCard({
                 return (
                   <div
                     key={stop.beneficiary_id || stop.originalIndex}
+                    data-active-stop-idx={stop.originalIndex}
+                    onDragOver={(e) => {
+                      if (stopFilter === 'ALL' && userRole !== 'MUDUR') {
+                        e.preventDefault();
+                        setHoverDropOriginalIdx(stop.originalIndex);
+                      }
+                    }}
+                    onDragLeave={() => setHoverDropOriginalIdx(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                      if (!isNaN(fromIdx) && fromIdx !== stop.originalIndex) {
+                        if (onReorderStops) {
+                          onReorderStops(fromIdx, stop.originalIndex);
+                        } else {
+                          onMoveStop(fromIdx, stop.originalIndex > fromIdx ? 'DOWN' : 'UP');
+                        }
+                      }
+                      setTouchDragOriginalIdx(null);
+                      setHoverDropOriginalIdx(null);
+                    }}
                     className={`p-3.5 rounded-2xl border transition-all shadow-xs ${
-                      isTamam
+                      touchDragOriginalIdx === stop.originalIndex
+                        ? 'opacity-50 ring-2 ring-sky-500 scale-[1.01] bg-sky-50'
+                        : hoverDropOriginalIdx === stop.originalIndex
+                        ? 'ring-2 ring-emerald-500 bg-emerald-50/50'
+                        : isTamam
                         ? 'bg-emerald-50/40 border-emerald-300'
                         : isEksik
                         ? 'bg-amber-50/60 border-amber-400 ring-1 ring-amber-300/50'
@@ -677,7 +743,29 @@ export default function ActiveRouteAccordionCard({
                   >
                     {/* Üst Satır: Durak No, İsim ve Reorder Butonları */}
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="flex items-start gap-2 min-w-0">
+                        {/* Dokunmatik Sürükle Bırak Tutamacı (Mobil & Masaüstü) */}
+                        {userRole !== 'MUDUR' && stopFilter === 'ALL' && (
+                          <div
+                            className="touch-none cursor-grab active:cursor-grabbing p-1.5 -ml-1 text-slate-400 hover:text-slate-700 active:text-sky-600 rounded-lg flex items-center justify-center shrink-0 self-center"
+                            title="Mobil dokunmatik veya fare ile sürükleyip bırakarak sıralamayı değiştirin"
+                            onTouchStart={() => handleTouchStart(stop.originalIndex)}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', String(stop.originalIndex));
+                              setTouchDragOriginalIdx(stop.originalIndex);
+                            }}
+                            onDragEnd={() => {
+                              setTouchDragOriginalIdx(null);
+                              setHoverDropOriginalIdx(null);
+                            }}
+                          >
+                            <GripVertical className="w-4 h-4 stroke-[2.5]" />
+                          </div>
+                        )}
+
                         {/* Sıra Numarası Rozeti */}
                         <div
                           className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 border ${
@@ -714,7 +802,7 @@ export default function ActiveRouteAccordionCard({
                             type="button"
                             onClick={() => onMoveStop(stop.originalIndex, 'UP')}
                             disabled={stop.originalIndex === 0 || stopFilter !== 'ALL'}
-                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
+                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600 cursor-pointer"
                             title={stopFilter !== 'ALL' ? "Sıralama değiştirmek için 'Tümü' filtresini seçiniz" : "Yukarı Taşı"}
                           >
                             <ArrowUp className="w-3.5 h-3.5" />
@@ -723,7 +811,7 @@ export default function ActiveRouteAccordionCard({
                             type="button"
                             onClick={() => onMoveStop(stop.originalIndex, 'DOWN')}
                             disabled={stop.originalIndex === routeStops.length - 1 || stopFilter !== 'ALL'}
-                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600"
+                            className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600 cursor-pointer"
                             title={stopFilter !== 'ALL' ? "Sıralama değiştirmek için 'Tümü' filtresini seçiniz" : "Aşağı Taşı"}
                           >
                             <ArrowDown className="w-3.5 h-3.5" />

@@ -1,6 +1,6 @@
 'use client';
 
-import { Dispatch, SetStateAction } from 'react';
+import { Dispatch, SetStateAction, useState } from 'react';
 import {
   Route as RouteIcon,
   Plus,
@@ -14,6 +14,7 @@ import {
   ArrowRight,
   ArrowUpDown,
   Play,
+  GripVertical
 } from 'lucide-react';
 import { getRecordStreetInfo, getBeneficiaryListTypeInfo } from '@/lib/normalizer';
 
@@ -49,6 +50,7 @@ export interface RouteCreationModalsProps {
   handleSortCreateStopsByAddress: () => void;
   handleReverseCreateStops: () => void;
   handleMoveCreateStop: (index: number, direction: 'UP' | 'DOWN') => void;
+  handleReorderCreateStops?: (fromIndex: number, toIndex: number) => void;
   handleRemoveCreateStop: (id: string) => void;
   handleCreateRouteSubmit: (startRouteModeImmediately?: boolean) => Promise<void>;
   isActionLoading: boolean;
@@ -86,10 +88,64 @@ export default function RouteCreationModals({
   handleSortCreateStopsByAddress,
   handleReverseCreateStops,
   handleMoveCreateStop,
+  handleReorderCreateStops,
   handleRemoveCreateStop,
   handleCreateRouteSubmit,
   isActionLoading,
 }: RouteCreationModalsProps) {
+  const [touchDragIndex, setTouchDragIndex] = useState<number | null>(null);
+  const [hoverDropIndex, setHoverDropIndex] = useState<number | null>(null);
+
+  const reorderCreateStops = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= orderedCreateStops.length ||
+      toIndex >= orderedCreateStops.length
+    )
+      return;
+    if (handleReorderCreateStops) {
+      handleReorderCreateStops(fromIndex, toIndex);
+    } else {
+      handleMoveCreateStop(fromIndex, toIndex > fromIndex ? 'DOWN' : 'UP');
+    }
+  };
+
+  const handleTouchStart = (index: number) => {
+    setTouchDragIndex(index);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(15);
+      } catch {}
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchDragIndex === null) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const stopEl = el?.closest('[data-create-stop-index]') as HTMLElement | null;
+    if (stopEl && stopEl.dataset.createStopIndex !== undefined) {
+      const targetIdx = parseInt(stopEl.dataset.createStopIndex, 10);
+      if (!isNaN(targetIdx) && targetIdx !== touchDragIndex) {
+        reorderCreateStops(touchDragIndex, targetIdx);
+        setTouchDragIndex(targetIdx);
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate(10);
+          } catch {}
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchDragIndex(null);
+    setHoverDropIndex(null);
+  };
+
   return (
     <>
       {/* ======================================================== */}
@@ -555,7 +611,7 @@ export default function RouteCreationModals({
                         <span>Kamyon Dağıtım Sırası</span>
                       </h4>
                       <p className="text-[11px] text-sky-800">
-                        Sırayı telefonunuzdan{' '}
+                        Sırayı tutamaçtan (⠿) sürükleyip bırakarak veya{' '}
                         <strong className="font-extrabold">▲ / ▼</strong> butonlarıyla
                         belirleyin.
                       </p>
@@ -594,10 +650,51 @@ export default function RouteCreationModals({
                     return (
                       <div
                         key={person.id}
-                        className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2 shadow-2xs hover:border-sky-300 transition-all"
+                        data-create-stop-index={index}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setHoverDropIndex(index);
+                        }}
+                        onDragLeave={() => setHoverDropIndex(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                          if (!isNaN(fromIdx) && fromIdx !== index) {
+                            reorderCreateStops(fromIdx, index);
+                          }
+                          setTouchDragIndex(null);
+                          setHoverDropIndex(null);
+                        }}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                          touchDragIndex === index
+                            ? 'opacity-50 ring-2 ring-sky-500 scale-[1.01] bg-sky-50 shadow-md'
+                            : hoverDropIndex === index
+                            ? 'ring-2 ring-emerald-500 bg-emerald-50/50'
+                            : 'bg-white border-slate-200 shadow-2xs hover:border-sky-300'
+                        }`}
                       >
-                        {/* Sol Taraf: Sıra Numarası & Hane Bilgisi */}
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {/* Sol Taraf: Sürükle Tutamacı, Sıra Numarası & Hane Bilgisi */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          {/* Mobil Dokunmatik & Masaüstü Tutamaç */}
+                          <div
+                            className="touch-none cursor-grab active:cursor-grabbing p-1.5 -ml-1 text-slate-400 hover:text-slate-700 active:text-sky-600 rounded-lg flex items-center justify-center shrink-0 self-center"
+                            title="Mobil dokunmatik veya fare ile sürükleyip bırakarak sıralamayı değiştirin"
+                            onTouchStart={() => handleTouchStart(index)}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', String(index));
+                              setTouchDragIndex(index);
+                            }}
+                            onDragEnd={() => {
+                              setTouchDragIndex(null);
+                              setHoverDropIndex(null);
+                            }}
+                          >
+                            <GripVertical className="w-4 h-4 stroke-[2.5]" />
+                          </div>
+
                           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-sky-600 text-white font-black text-xs sm:text-sm flex items-center justify-center shrink-0 shadow-xs">
                             #{index + 1}
                           </div>
@@ -675,7 +772,7 @@ export default function RouteCreationModals({
                           <button
                             type="button"
                             onClick={() => handleRemoveCreateStop(String(person.id))}
-                            className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-all ml-0.5"
+                            className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-all ml-0.5 cursor-pointer"
                             title="Listeden Kaldır"
                             aria-label="Listeden kaldır"
                           >

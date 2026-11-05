@@ -20,8 +20,10 @@ export default function CancelModal({
   onClose,
   onSuccess
 }: CancelModalProps) {
+  const isSigned = beneficiary?.imza_durumu === 'IMZALANDI' || Boolean(beneficiary?.imza_tarihi);
   const [iptalNedeni, setIptalNedeni] = useState('');
   const [personel, setPersonel] = useState(currentStaff || 'Personel');
+  const [revokeSignature, setRevokeSignature] = useState(isSigned);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -59,7 +61,8 @@ export default function CancelModal({
           beneficiary_id: beneficiary.beneficiary_id || beneficiary.id,
           tc_no: beneficiary.tc_no,
           personel: personel,
-          iptal_nedeni: iptalNedeni
+          iptal_nedeni: iptalNedeni,
+          revoke_signature: revokeSignature
         })
       });
 
@@ -161,6 +164,62 @@ export default function CancelModal({
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Hak Sahibi İmza Durumu & Geri Çekme Seçimi */}
+          <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-300 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                <span>✍️</span>
+                <span>Hak Sahibi Kapıda İmza Durumu</span>
+              </span>
+              <span
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                  isSigned
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-slate-100 text-slate-600 border-slate-300'
+                }`}
+              >
+                {isSigned ? '✓ Islak İmza Alınmış' : '⏳ İmza Yok / Bekliyor'}
+              </span>
+            </div>
+
+            <p className="text-xs text-amber-950 font-semibold leading-relaxed">
+              Hak sahibinin imzasını da geri çekmek ister misiniz?
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setRevokeSignature(true)}
+                className={`px-3 py-2.5 rounded-xl text-xs font-black border text-left transition-all flex items-center gap-2 cursor-pointer ${
+                  revokeSignature
+                    ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span className="text-sm">✓</span>
+                <span>Evet, İmzayı da Geri Çek</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRevokeSignature(false)}
+                className={`px-3 py-2.5 rounded-xl text-xs font-bold border text-left transition-all flex items-center gap-2 cursor-pointer ${
+                  !revokeSignature
+                    ? 'bg-slate-800 text-white border-slate-900 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span className="text-sm">✕</span>
+                <span>Hayır, İmza Kalsın</span>
+              </button>
+            </div>
+
+            <p className="text-[11px] text-amber-900/80 font-medium leading-tight pt-0.5">
+              {revokeSignature
+                ? 'ℹ️ Teslimat geri alınırken hak sahibinin kapıda alınan ıslak imzası da iptal edilecek ve imza durumu "BEKLİYOR" yapılacaktır.'
+                : 'ℹ️ Kömür teslimatı iptal edilecek ancak vatandaşın daha önce verdiği imza sistemde geçerli kalacaktır.'}
+            </p>
           </div>
 
           <div>

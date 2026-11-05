@@ -306,6 +306,11 @@ export default function RoutePrintReportModal({
                             BEKLİYOR
                           </span>
                         )}
+                        {(isTamam || isEksik) && stop.teslim_tarihi && (
+                          <div className="text-[9px] font-mono font-bold text-amber-900 bg-amber-50 rounded px-1 py-0.5 mt-1 border border-amber-200 whitespace-nowrap">
+                            🕒 {stop.teslim_tarihi}
+                          </div>
+                        )}
                       </td>
                       <td className="p-2.5 text-center text-[10px] text-slate-700">
                         <div className="font-semibold text-slate-900">

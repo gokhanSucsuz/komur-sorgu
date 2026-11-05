@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress, isBeneficiaryCancelled } from '@/lib/normalizer';
-import { formatTrDateWithDay, formatTrDate } from '@/lib/dateUtils';
+import { formatTrDateWithDay, formatTrDate, formatTrTime, parseDateSafely } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 import { parseTonnageTemplates } from '@/lib/tonnageTemplates';
@@ -1138,15 +1138,43 @@ export async function GET(request: NextRequest) {
         return true;
       });
 
+      // Sort records (Varsayılan: Teslim anına göre kronolojik ilk teslimden sona doğru)
+      const sortParam = searchParams.get('sort') || 'TIME_ASC';
+      if (sortParam === 'TIME_ASC') {
+        validRecords.sort((a: any, b: any) => {
+          const tA = parseDateSafely(a.tarih || a.teslim_tarihi || a.created_at)?.getTime() || 0;
+          const tB = parseDateSafely(b.tarih || b.teslim_tarihi || b.created_at)?.getTime() || 0;
+          return tA - tB;
+        });
+      } else if (sortParam === 'TIME_DESC') {
+        validRecords.sort((a: any, b: any) => {
+          const tA = parseDateSafely(a.tarih || a.teslim_tarihi || a.created_at)?.getTime() || 0;
+          const tB = parseDateSafely(b.tarih || b.teslim_tarihi || b.created_at)?.getTime() || 0;
+          return tB - tA;
+        });
+      } else if (sortParam === 'ADDRESS') {
+        validRecords.sort((a: any, b: any) => {
+          const mComp = String(a.mahalle || '').localeCompare(String(b.mahalle || ''), 'tr');
+          if (mComp !== 0) return mComp;
+          return String(a.acik_adres || '').localeCompare(String(b.acik_adres || ''), 'tr');
+        });
+      } else if (sortParam === 'NAME') {
+        validRecords.sort((a: any, b: any) =>
+          String(a.ad_soyad || '').localeCompare(String(b.ad_soyad || ''), 'tr')
+        );
+      }
+
       let totalBags = 0;
       const exportData = validRecords.map((r: any, idx: number) => {
         const bag = r.torba_sayisi || 0;
         totalBags += bag;
         const rawDate = r.gun_tarihi || (r.tarih ? String(r.tarih).split(' ')[0].split('T')[0] : '');
         const dateOnlyStr = formatTrDate(rawDate) || rawDate || '-';
+        const timeOnlyStr = formatTrTime(r.tarih || r.teslim_tarihi || r.created_at) || '-';
         return {
           'Sıra': idx + 1,
           'Teslim Tarihi': dateOnlyStr,
+          'Teslim Saati': timeOnlyStr,
           'TC Kimlik No': r.tc_no,
           'Adı Soyadı': r.ad_soyad,
           'Mahalle': r.mahalle,
@@ -1165,6 +1193,7 @@ export async function GET(request: NextRequest) {
         exportData.push({
           'Sıra': '' as any,
           'Teslim Tarihi': 'TOPLAM:',
+          'Teslim Saati': '',
           'TC Kimlik No': `${exportData.length} Hane`,
           'Adı Soyadı': '',
           'Mahalle': '',
@@ -1179,6 +1208,7 @@ export async function GET(request: NextRequest) {
       const colWidths = [
         { wch: 6 },  // Sıra
         { wch: 16 }, // Teslim Tarihi
+        { wch: 14 }, // Teslim Saati
         { wch: 16 }, // TC
         { wch: 24 }, // Ad Soyad
         { wch: 18 }, // Mahalle

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     const { beneficiaries: benCol, deliveryHistory: histCol, deliveryRoutes: routeCol, users: usersCol, signatureLists: sigCol } = await getDbCollections();
     const body = await request.json();
-    const { action, beneficiary_id, tc_no, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni } = body;
+    const { action, beneficiary_id, tc_no, torba_sayisi, eklenen_torba, teslim_alan, notlar, iptal_nedeni, revoke_signature } = body;
 
     if (!beneficiary_id && !tc_no) {
       return NextResponse.json({ success: false, error: 'Kayıt ID veya TC Kimlik No zorunludur' }, { status: 400 });
@@ -426,20 +426,29 @@ export async function POST(request: NextRequest) {
       }
 
       // Revert beneficiary status to BEKLIYOR
+      const benUpdateFields: Record<string, any> = {
+        teslimat_durumu: 'BEKLIYOR',
+        teslimat_tarihi: null,
+        torba_sayisi: 0,
+        teslim_alan: null,
+        teslim_eden_personel: null,
+        teslimat_notu: null,
+        manuel_ek_liste_imzasi: false,
+        ek_komur_verildi: false,
+        ek_liste_imza_tarihi: null,
+        ek_liste_imza_notu: null,
+        updated_at: localTimeStr,
+      };
+
+      if (revoke_signature === true) {
+        benUpdateFields.imza_durumu = 'BEKLIYOR';
+        benUpdateFields.imza_tarihi = null;
+        benUpdateFields.imza_alan_personel = null;
+        benUpdateFields.imza_notu = null;
+      }
+
       await benCol.updateOne(buildIdFilter(beneficiary.id), {
-        $set: {
-          teslimat_durumu: 'BEKLIYOR',
-          teslimat_tarihi: null,
-          torba_sayisi: 0,
-          teslim_alan: null,
-          teslim_eden_personel: null,
-          teslimat_notu: null,
-          manuel_ek_liste_imzasi: false,
-          ek_komur_verildi: false,
-          ek_liste_imza_tarihi: null,
-          ek_liste_imza_notu: null,
-          updated_at: localTimeStr,
-        },
+        $set: benUpdateFields,
       });
 
       // Sync any active/completed/paused routes containing this beneficiary
@@ -466,6 +475,11 @@ export async function POST(request: NextRequest) {
             s.ek_komur_verildi = false;
             s.ek_liste_imza_notu = null;
             s.daha_sonra_tamamlanacak = false;
+            if (revoke_signature === true) {
+              s.imza_durumu = 'BEKLIYOR';
+              s.imza_tarihi = null;
+              s.imza_alan_personel = null;
+            }
             modified = true;
           }
         });
@@ -569,6 +583,9 @@ export async function POST(request: NextRequest) {
           teslimat_durumu: 'BEKLIYOR',
           torba_sayisi: 0,
           kalan_torba: beneficiary.hedef_torba || 34,
+          imza_durumu: revoke_signature === true ? 'BEKLIYOR' : (beneficiary.imza_durumu || 'BEKLIYOR'),
+          imza_tarihi: revoke_signature === true ? null : beneficiary.imza_tarihi,
+          imza_alan_personel: revoke_signature === true ? null : beneficiary.imza_alan_personel,
         },
       });
     }

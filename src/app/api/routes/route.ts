@@ -1264,7 +1264,8 @@ export async function POST(request: NextRequest) {
         torba_sayisi,
         teslim_alan,
         notlar = '',
-        daha_sonra_tamamlanacak = false
+        daha_sonra_tamamlanacak = false,
+        revoke_signature = false
       } = body;
 
       if (!route_id || stop_index === undefined) {
@@ -1610,16 +1611,28 @@ export async function POST(request: NextRequest) {
           gun_tarihi: localToday
         }));
       } else if (durum === 'BEKLIYOR') {
+        const benSetFields: Record<string, any> = {
+          teslimat_durumu: 'BEKLIYOR',
+          teslimat_tarihi: null,
+          torba_sayisi: 0,
+          teslim_alan: null,
+          teslim_eden_personel: null,
+          teslimat_notu: null,
+          updated_at: localTimeStr
+        };
+
+        if (revoke_signature === true) {
+          benSetFields.imza_durumu = 'BEKLIYOR';
+          benSetFields.imza_tarihi = null;
+          benSetFields.imza_alan_personel = null;
+          benSetFields.imza_notu = null;
+          targetStop.imza_durumu = 'BEKLIYOR';
+          targetStop.imza_tarihi = null;
+          targetStop.imza_alan_personel = null;
+        }
+
         await benCol.updateOne(benIdFilter, {
-          $set: {
-            teslimat_durumu: 'BEKLIYOR',
-            teslimat_tarihi: null,
-            torba_sayisi: 0,
-            teslim_alan: null,
-            teslim_eden_personel: null,
-            teslimat_notu: null,
-            updated_at: localTimeStr
-          }
+          $set: benSetFields
         });
 
         await histCol.updateMany(
