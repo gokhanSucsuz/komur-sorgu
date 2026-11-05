@@ -63,6 +63,11 @@ export default function BeneficiaryList({
   const [phoneSelectTarget, setPhoneSelectTarget] = useState<BeneficiaryRecord | null>(null);
   const [desktopViewMode, setDesktopViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
   const [sortOrder, setSortOrder] = useState<'SIRA_ASC' | 'ADDRESS_ASC' | 'NAME_ASC'>('SIRA_ASC');
+
+  const handleSortChange = (newSort: 'SIRA_ASC' | 'ADDRESS_ASC' | 'NAME_ASC') => {
+    setSortOrder(newSort);
+    setCurrentPage(1);
+  };
   const [selectedSokak, setSelectedSokak] = useState<string>('HEPSI');
   const [sokakSearchTerm, setSokakSearchTerm] = useState('');
 
@@ -361,7 +366,7 @@ export default function BeneficiaryList({
       };
       return rank(a) - rank(b);
     });
-  }, [records, isSearching, searchQuery]);
+  }, [records, isSearching, searchQuery, sortOrder]);
 
   // Arama yapıldığında her sekmede kaç adet eşleşme olduğunu gösteren dinamik sayılar
   const tabSearchCounts = useMemo(() => {
@@ -490,17 +495,44 @@ export default function BeneficiaryList({
     return { ana, ek, sig, ekKomur, total: mahalleFilteredList.length };
   }, [mahalleFilteredList]);
 
+  // TÜM KAYITLARI SAYFALAMADAN ÖNCE SIRALA (Adrese, İsme veya İmza Sırasına Göre)
+  const sortedFilteredList = useMemo(() => {
+    const list = [...streetFilteredList];
+    list.sort((a, b) => {
+      // 1. Çoklu mahalle seçiliyse mahalle bütünlüğünü koru (A'dan Z'ye)
+      const mahA = String(a.mahalle || '');
+      const mahB = String(b.mahalle || '');
+      const mahComp = mahA.localeCompare(mahB, 'tr', { sensitivity: 'base' });
+      if (mahComp !== 0) return mahComp;
+
+      // 2. Mahalle içerisinde seçilen sıralama kuralını işlet:
+      if (sortOrder === 'SIRA_ASC') {
+        return compareBySiraNo(a, b);
+      }
+      if (sortOrder === 'ADDRESS_ASC') {
+        return compareByAddressAsc(a, b);
+      }
+      if (sortOrder === 'NAME_ASC') {
+        const nameA = String(a.ad_soyad || '').trim();
+        const nameB = String(b.ad_soyad || '').trim();
+        return nameA.localeCompare(nameB, 'tr', { sensitivity: 'base' });
+      }
+      return 0;
+    });
+    return list;
+  }, [streetFilteredList, sortOrder]);
+
   // Sayfalama Hesaplamaları (Sayfa başına varsayılan 250 kayıt)
-  const totalFilteredRecords = streetFilteredList.length;
+  const totalFilteredRecords = sortedFilteredList.length;
   const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(totalFilteredRecords / pageSize)) : 1;
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
   const startIndex = pageSize > 0 ? (safeCurrentPage - 1) * pageSize : 0;
   const endIndex = pageSize > 0 ? Math.min(startIndex + pageSize, totalFilteredRecords) : totalFilteredRecords;
 
   const pagedList = useMemo(() => {
-    if (pageSize <= 0) return streetFilteredList;
-    return streetFilteredList.slice(startIndex, endIndex);
-  }, [streetFilteredList, startIndex, endIndex, pageSize]);
+    if (pageSize <= 0) return sortedFilteredList;
+    return sortedFilteredList.slice(startIndex, endIndex);
+  }, [sortedFilteredList, startIndex, endIndex, pageSize]);
 
   // Group active records of CURRENT PAGE by mahalle / village
   const groupedByMahalle = useMemo(() => {
@@ -869,24 +901,72 @@ export default function BeneficiaryList({
 
         {/* ARAMA AKTİFKEN TEK SATIRLIK SADE SONUÇ ÖZETİ (Gereksiz menü/buton olmadan doğrudan kayıtların üstünde) */}
         {isSearching && (
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-amber-50/95 border border-amber-200 text-xs font-bold text-amber-950">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-              <span className="truncate">
-                {searchInputMode === 'TC' ? 'TC Kimlik No Araması:' : 'Ad Soyad Araması:'}{' '}
-                <strong className="text-slate-900 font-black">{totalFilteredRecords} Kayıt Bulundu</strong>
-              </span>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-amber-50/95 border border-amber-200 text-xs font-bold text-amber-950">
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                <span className="truncate">
+                  {searchInputMode === 'TC' ? 'TC Kimlik No Araması:' : 'Ad Soyad Araması:'}{' '}
+                  <strong className="text-slate-900 font-black">{totalFilteredRecords} Kayıt Bulundu</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchWarning(null);
+                  onSearchChange('');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-black shrink-0 active:scale-95 transition-all"
+              >
+                Aramayı Kapat ✕
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSearchWarning(null);
-                onSearchChange('');
-              }}
-              className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-black shrink-0 active:scale-95 transition-all"
-            >
-              Aramayı Kapat ✕
-            </button>
+
+            {searchFilteredRecords.length > 1 && (
+              <div className="flex items-center justify-between gap-2 p-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                <span className="text-slate-500 font-bold text-xs pl-1">Arama Sıralaması:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSortChange('NAME_ASC')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all flex items-center gap-1 ${
+                      sortOrder === 'NAME_ASC'
+                        ? 'bg-sky-600 text-white shadow-2xs font-black'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Arama sonuçlarını isme göre alfabetik sırala (A'dan Z'ye)"
+                  >
+                    <ArrowUpDown className="w-3 h-3 shrink-0" />
+                    <span>İsme Göre (A→Z)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSortChange('ADDRESS_ASC')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all flex items-center gap-1 ${
+                      sortOrder === 'ADDRESS_ASC'
+                        ? 'bg-emerald-600 text-white shadow-2xs font-black'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Arama sonuçlarını adrese göre sırala"
+                  >
+                    <Navigation className="w-3 h-3 shrink-0" />
+                    <span>Adrese Göre</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSortChange('SIRA_ASC')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+                      sortOrder === 'SIRA_ASC'
+                        ? 'bg-amber-500 text-white shadow-2xs font-black'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Varsayılan sıra no"
+                  >
+                    <span>Sıra No</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -998,6 +1078,49 @@ export default function BeneficiaryList({
             </button>
           </div>
 
+          {/* MOBİL HIZLI SIRALAMA ŞERİDİ (İmza Sırası, Adrese Göre, İsme Göre) */}
+          <div className="sm:hidden grid grid-cols-3 gap-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200/90 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => handleSortChange('SIRA_ASC')}
+              className={`py-2 px-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                sortOrder === 'SIRA_ASC'
+                  ? 'bg-amber-500 text-white font-black shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 bg-white/70'
+              }`}
+              title="İmza listesi sırasına göre sırala"
+            >
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">İmza Sırası</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSortChange('ADDRESS_ASC')}
+              className={`py-2 px-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                sortOrder === 'ADDRESS_ASC'
+                  ? 'bg-emerald-600 text-white font-black shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 bg-white/70'
+              }`}
+              title="Adrese göre sırala (Sokak adı ve kapı numarası)"
+            >
+              <Navigation className={`w-3.5 h-3.5 shrink-0 ${sortOrder === 'ADDRESS_ASC' ? 'fill-white' : 'text-emerald-700'}`} />
+              <span className="truncate">Adrese Göre</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSortChange('NAME_ASC')}
+              className={`py-2 px-1 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                sortOrder === 'NAME_ASC'
+                  ? 'bg-sky-600 text-white font-black shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 bg-white/70'
+              }`}
+              title="İsme göre alfabetik sırala (A'dan Z'ye)"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">İsme Göre</span>
+            </button>
+          </div>
+
           {/* DETAYLI FİLTRE VE GÖRÜNÜM KONTROL PANELİ (Masaüstünde her zaman açık, Mobilde yalnızca "Filtreler" seçildiğinde açılır) */}
           <div
             className={`${
@@ -1048,24 +1171,26 @@ export default function BeneficiaryList({
               <button
                 type="button"
                 onClick={() => {
-                  setSortOrder((prev) => {
-                    if (prev === 'SIRA_ASC') return 'ADDRESS_ASC';
-                    if (prev === 'ADDRESS_ASC') return 'NAME_ASC';
-                    return 'SIRA_ASC';
-                  });
+                  handleSortChange(
+                    sortOrder === 'SIRA_ASC' ? 'ADDRESS_ASC' : sortOrder === 'ADDRESS_ASC' ? 'NAME_ASC' : 'SIRA_ASC'
+                  );
                 }}
                 className={`w-full py-2.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs active:scale-95 min-h-[44px] ${
                   sortOrder === 'SIRA_ASC'
                     ? 'bg-amber-500 border-amber-600 text-white font-black'
                     : sortOrder === 'ADDRESS_ASC'
-                    ? 'bg-emerald-50 hover:bg-emerald-100/80 border-emerald-300 text-emerald-950 font-black'
-                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                    ? 'bg-emerald-600 border-emerald-700 text-white font-black'
+                    : 'bg-sky-600 border-sky-700 text-white font-black'
                 }`}
-                title="İmza listesi sırası, kapı numarası veya isme göre sıralayın"
+                title="İmza sırası, adrese göre veya isme göre sıralayın"
               >
-                <ArrowUpDown className="w-4 h-4 text-emerald-700 shrink-0" />
+                <ArrowUpDown className="w-4 h-4 shrink-0" />
                 <span className="truncate">
-                  {sortOrder === 'SIRA_ASC' ? 'İmza Sırası (1→99)' : sortOrder === 'ADDRESS_ASC' ? 'Kapı No (1→99)' : 'İsim (A→Z)'}
+                  {sortOrder === 'SIRA_ASC'
+                    ? 'İmza Sırası (1→99)'
+                    : sortOrder === 'ADDRESS_ASC'
+                    ? 'Adrese Göre (Sokak/No)'
+                    : 'İsme Göre (A→Z)'}
                 </span>
               </button>
 
@@ -1137,39 +1262,41 @@ export default function BeneficiaryList({
                 <span className="text-slate-500 font-bold">Kayıt Sıralaması:</span>
                 <button
                   type="button"
-                  onClick={() => setSortOrder('SIRA_ASC')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                  onClick={() => handleSortChange('SIRA_ASC')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
                     sortOrder === 'SIRA_ASC'
                       ? 'bg-amber-500 text-white border-amber-600 font-black shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                   title="İmza listesi sırası: Ana liste 1, 2, 3... Ek listeler Ek1 - 1, Ek1 - 2..."
                 >
-                  İmza Sırası (1→99 / Ek)
+                  İmza Sırası (1→99)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSortOrder('ADDRESS_ASC')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                  onClick={() => handleSortChange('ADDRESS_ASC')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
                     sortOrder === 'ADDRESS_ASC'
                       ? 'bg-emerald-600 text-white border-emerald-700 font-black shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
-                  title="Sokak ve kapı numarasına göre sırala"
+                  title="Adrese göre sırala: Sokak adı (A→Z) ve kapı numarası (1→99)"
                 >
-                  Kapı No (1→99)
+                  <Navigation className={`w-3 h-3 shrink-0 ${sortOrder === 'ADDRESS_ASC' ? 'fill-white' : 'text-emerald-600'}`} />
+                  <span>Adrese Göre (Sokak/No)</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSortOrder('NAME_ASC')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                  onClick={() => handleSortChange('NAME_ASC')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
                     sortOrder === 'NAME_ASC'
                       ? 'bg-sky-600 text-white border-sky-700 font-black shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
-                  title="İsme göre alfabetik sırala"
+                  title="Hak sahibi adına göre alfabetik sırala (A'dan Z'ye)"
                 >
-                  İsim (A→Z)
+                  <ArrowUpDown className={`w-3 h-3 shrink-0 ${sortOrder === 'NAME_ASC' ? 'text-white' : 'text-sky-600'}`} />
+                  <span>İsme Göre (A→Z)</span>
                 </button>
               </div>
             </div>
@@ -1725,11 +1852,46 @@ export default function BeneficiaryList({
                 <table className="desktop-compact-table">
                   <thead>
                     <tr>
-                      <th className="w-[84px] text-center">Sıra</th>
-                      <th className="col-hak-sahibi">Hak Sahibi</th>
+                      <th
+                        onClick={() => handleSortChange('SIRA_ASC')}
+                        className="w-[84px] text-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                        title="İmza listesi sırasına göre sırala"
+                      >
+                        <span className="inline-flex items-center gap-1 justify-center">
+                          <span>Sıra</span>
+                          {sortOrder === 'SIRA_ASC' && <span className="text-amber-600 font-black">#</span>}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleSortChange('NAME_ASC')}
+                        className="col-hak-sahibi cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                        title="İsme göre alfabetik sırala (A'dan Z'ye)"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>Hak Sahibi (İsim)</span>
+                          {sortOrder === 'NAME_ASC' ? (
+                            <span className="text-sky-600 font-black text-[11px] bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">A→Z</span>
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                          )}
+                        </span>
+                      </th>
                       <th className="w-[110px] whitespace-nowrap">T.C. Kimlik</th>
                       <th className="w-[125px] whitespace-nowrap">Telefon</th>
-                      <th className="col-adres">Adres & Yerleşim</th>
+                      <th
+                        onClick={() => handleSortChange('ADDRESS_ASC')}
+                        className="col-adres cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                        title="Adrese göre sırala (Sokak ve Kapı No)"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>Adres & Yerleşim</span>
+                          {sortOrder === 'ADDRESS_ASC' ? (
+                            <span className="text-emerald-600 font-black text-[11px] bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">1→99</span>
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                          )}
+                        </span>
+                      </th>
                       <th className="w-[130px] whitespace-nowrap">Kömür Durumu</th>
                       <th className="text-right whitespace-nowrap">Hızlı İşlem</th>
                     </tr>

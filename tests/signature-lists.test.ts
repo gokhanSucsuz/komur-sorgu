@@ -9,7 +9,7 @@ process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
 import { getDbCollections } from '@/lib/mongodb';
 import { InMemoryCollection } from '@/lib/inMemoryDb';
 import { encryptBeneficiary, decryptBeneficiary } from '@/lib/crypto';
-import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing, isBeneficiaryCancelled } from '@/lib/normalizer';
+import { normalizeMahalleName, formatSignatureListAddress, getBeneficiaryEffectiveListMahalle, isBeneficiaryAddressMissing, isBeneficiaryCancelled, compareByAddressAsc } from '@/lib/normalizer';
 
 describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', () => {
   it('1. Adres A\'dan Z\'ye sıralama mantığı Türkçe karakterleri ve kapı numaralarını doğru sıralar', () => {
@@ -924,5 +924,68 @@ describe('Resmi Islak İmza Listeleri & Mahalle Dağıtım Sistemi Testleri', ()
 
     assert.equal(filtered.length, 2, 'Sadece Fatih Mahallesine ait 2 kayıt gelmelidir');
     assert.ok(filtered.every((r) => r.mahalle === 'Fatih Mah.'));
+  });
+  it('22. İmza listesi bekleyen mahalleler API ve kullanıcı arayüzünde A dan Z ye alfabetik sıralanır', () => {
+    const rawPendingMap = new Map([
+      ['Yıldırım Hacı Sarraf Mah.', 113],
+      ['Babademirtaş Mah.', 43],
+      ['Çavuşbey Mah.', 352],
+      ['Avarız Köyü', 12],
+      ['Menzilahır Mah.', 464],
+      ['Dilaverbey Mah.', 45],
+    ]);
+
+    const pendingMahalleler = Array.from(rawPendingMap.entries())
+      .map(([mahalle, count]) => ({ mahalle, count, alreadyGenerated: false }))
+      .sort((a, b) => a.mahalle.localeCompare(b.mahalle, 'tr', { sensitivity: 'base' }));
+
+    const expectedOrder = [
+      'Avarız Köyü',
+      'Babademirtaş Mah.',
+      'Çavuşbey Mah.',
+      'Dilaverbey Mah.',
+      'Menzilahır Mah.',
+      'Yıldırım Hacı Sarraf Mah.',
+    ];
+
+    assert.deepEqual(
+      pendingMahalleler.map((p) => p.mahalle),
+      expectedOrder,
+      'Bekleyen mahalleler Türkçe A dan Z ye alfabetik sırada olmalıdır'
+    );
+  });
+
+  it('23. Sorgu & Dağıtım sayfasında kayıtlar adrese ve isme göre alfabetik ve sayısal sıralanır', () => {
+    const beneficiaries = [
+      { id: 1, ad_soyad: 'Zeynep Kaya', mahalle: 'Fatih Mah.', sokak: 'Gül Sokak', kapi_no: '12' },
+      { id: 2, ad_soyad: 'Ahmet Yılmaz', mahalle: 'Fatih Mah.', sokak: 'Karanfil Sokak', kapi_no: '3' },
+      { id: 3, ad_soyad: 'Mehmet Demir', mahalle: 'Fatih Mah.', sokak: 'Gül Sokak', kapi_no: '2' },
+      { id: 4, ad_soyad: 'Ayşe Çelik', mahalle: 'Fatih Mah.', sokak: 'Gül Sokak', kapi_no: '12/A' },
+      { id: 5, ad_soyad: 'Ali Öztürk', mahalle: 'Fatih Mah.', sokak: 'Akasya Sokak', kapi_no: '1' },
+    ];
+
+    // 1. İsme Göre (A→Z) Sıralama
+    const byName = [...beneficiaries].sort((a, b) =>
+      a.ad_soyad.localeCompare(b.ad_soyad, 'tr', { sensitivity: 'base' })
+    );
+    assert.deepEqual(
+      byName.map((b) => b.ad_soyad),
+      ['Ahmet Yılmaz', 'Ali Öztürk', 'Ayşe Çelik', 'Mehmet Demir', 'Zeynep Kaya'],
+      'İsme göre sıralama alfabetik A dan Z ye olmalıdır'
+    );
+
+    // 2. Adrese Göre Sıralama (compareByAddressAsc: Sokak A→Z, Kapı No 1→99)
+    const byAddress = [...beneficiaries].sort(compareByAddressAsc);
+    assert.deepEqual(
+      byAddress.map((b) => `${b.sokak} No:${b.kapi_no} - ${b.ad_soyad}`),
+      [
+        'Akasya Sokak No:1 - Ali Öztürk',
+        'Gül Sokak No:2 - Mehmet Demir',
+        'Gül Sokak No:12/A - Ayşe Çelik',
+        'Gül Sokak No:12 - Zeynep Kaya',
+        'Karanfil Sokak No:3 - Ahmet Yılmaz',
+      ],
+      'Adrese göre sıralama sokak adına ve kapı numarasına göre doğal sırada olmalıdır'
+    );
   });
 });

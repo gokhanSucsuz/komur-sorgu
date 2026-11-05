@@ -337,6 +337,13 @@ export default function ExcelImportPage({
     }
   };
 
+  // İmza listesi bekleyen mahalleleri A'dan Z'ye alfabetik sıralı liste
+  const sortedPendingMahalleler = useMemo(() => {
+    return [...signatureData.pendingMahalleler].sort((a, b) =>
+      a.mahalle.localeCompare(b.mahalle, 'tr', { sensitivity: 'base' })
+    );
+  }, [signatureData.pendingMahalleler]);
+
   const handleGenerateSignatureList = async () => {
     if (signatureData.pendingCount === 0 || isGeneratingSignatureList) return;
 
@@ -1928,7 +1935,7 @@ export default function ExcelImportPage({
                     type="button"
                     onClick={() => {
                       if (selectedMahalleForSignature === 'ALL') {
-                        const firstEligible = signatureData.pendingMahalleler.find(p => !p.alreadyGenerated);
+                        const firstEligible = sortedPendingMahalleler.find(p => !p.alreadyGenerated);
                         if (firstEligible) setSelectedMahalleForSignature(firstEligible.mahalle);
                       }
                     }}
@@ -1959,7 +1966,7 @@ export default function ExcelImportPage({
                       onChange={(e) => setSelectedMahalleForSignature(e.target.value)}
                       className="flex-1 sm:flex-initial pl-3 pr-8 py-2 rounded-xl text-xs font-extrabold bg-white border-2 border-indigo-500 text-slate-900 focus:ring-2 focus:ring-indigo-300 shadow-2xs outline-none cursor-pointer min-w-0 sm:min-w-[240px] max-w-full"
                     >
-                      {signatureData.pendingMahalleler.map((pm, idx) => (
+                      {sortedPendingMahalleler.map((pm, idx) => (
                         <option
                           key={`opt_pm_${idx}`}
                           value={pm.mahalle}
@@ -2031,7 +2038,7 @@ export default function ExcelImportPage({
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap max-h-36 overflow-y-auto p-1.5 bg-slate-50/60 rounded-xl border border-slate-200">
-                  {signatureData.pendingMahalleler.map((pm, idx) => {
+                  {sortedPendingMahalleler.map((pm, idx) => {
                     const isSelected = selectedMahalleForSignature === pm.mahalle;
                     return (
                       <button

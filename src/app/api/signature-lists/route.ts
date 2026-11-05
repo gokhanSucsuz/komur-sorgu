@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
           alreadyGenerated,
         };
       })
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => a.mahalle.localeCompare(b.mahalle, 'tr', { sensitivity: 'base' }));
 
     const maxNo = lists.reduce((max: number, l: any) => Math.max(max, Number(l.liste_no || 0)), 0);
     const nextListNo = maxNo + 1;
