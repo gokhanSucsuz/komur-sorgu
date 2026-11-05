@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled } from '@/lib/normalizer';
-import { formatTrAuto } from '@/lib/dateUtils';
+import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
 import BeneficiaryFilterModals from './beneficiary/BeneficiaryFilterModals';
 import type { BeneficiaryRecord, MahalleSummary, QueueTabType, ListTypeFilter, UserRoleType } from '@/types/beneficiary';
 
@@ -2238,15 +2238,25 @@ export default function BeneficiaryList({
                                     </>
                                   )}
                                   {(isComplete || isPartial) && onOpenCancel && (
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenCancel(person)}
-                                      className="px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
-                                      title="Teslimatı Geri Al / İptal Et"
-                                    >
-                                      <Undo2 className="w-3.5 h-3.5 text-rose-600" />
-                                      <span className="hidden xl:inline">Geri Al</span>
-                                    </button>
+                                    userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
+                                      <span
+                                        className="px-2 py-1.5 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center gap-1 cursor-not-allowed select-none"
+                                        title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                                      >
+                                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                        <span className="hidden xl:inline">Kilitli</span>
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => onOpenCancel(person)}
+                                        className="px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                                        title="Teslimatı Geri Al / İptal Et"
+                                      >
+                                        <Undo2 className="w-3.5 h-3.5 text-rose-600" />
+                                        <span className="hidden xl:inline">Geri Al</span>
+                                      </button>
+                                    )
                                   )}
                                   {onOpenKomurIptal && !isComplete && (
                                     <button
@@ -2926,13 +2936,22 @@ export default function BeneficiaryList({
                             )}
 
                             {onOpenCancel && (
-                              <button
-                                onClick={() => onOpenCancel(person)}
-                                className="h-12 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs shrink-0"
-                                title="Teslimatı geri al"
-                              >
-                                <Undo2 className="w-4 h-4 text-rose-600" />
-                              </button>
+                              userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
+                                <div
+                                  className="h-12 px-3 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1 cursor-not-allowed select-none shrink-0"
+                                  title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                                >
+                                  <Lock className="w-4 h-4 text-slate-400" />
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => onOpenCancel(person)}
+                                  className="h-12 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs shrink-0"
+                                  title="Teslimatı geri al"
+                                >
+                                  <Undo2 className="w-4 h-4 text-rose-600" />
+                                </button>
+                              )
                             )}
                           </div>
                         </div>
@@ -3009,14 +3028,24 @@ export default function BeneficiaryList({
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {onOpenCancel && (
-                              <button
-                                onClick={() => onOpenCancel(person)}
-                                className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
-                                title="Bu hanenin teslimatını iptal et / geri al"
-                              >
-                                <Undo2 className="w-3.5 h-3.5 text-rose-600" />
-                                <span>Geri Al</span>
-                              </button>
+                              userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
+                                <span
+                                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center gap-1 cursor-not-allowed select-none"
+                                  title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                                >
+                                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                  <span>Kilitli</span>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => onOpenCancel(person)}
+                                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
+                                  title="Bu hanenin teslimatını iptal et / geri al"
+                                >
+                                  <Undo2 className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Geri Al</span>
+                                </button>
+                              )
                             )}
                           </div>
                         </div>

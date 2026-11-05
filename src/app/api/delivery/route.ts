@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, buildIdFilter, mapDoc, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptField, encryptDeliveryHistory, encryptRouteStop, hashTc } from '@/lib/crypto';
 import { cleanTcNo, normalizeStaffName } from '@/lib/normalizer';
-import { getIstanbulDate } from '@/lib/dateUtils';
+import { getIstanbulDate, isPastDeliveryDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { checkRouteTeamAuthorization } from '@/app/api/routes/route';
 import { serverError } from '@/lib/security';
@@ -391,6 +391,39 @@ export async function POST(request: NextRequest) {
       const cancelReason = (iptal_nedeni || 'Hatalı teslimat kaydı').trim();
       const staff = callerStaff;
       const userRole = session.rol || 'PERSONEL';
+
+      // Past delivery date check:
+      // Kömür teslimi tamamlandıktan sonraki tarihe geçildiğinde (önceki gün yapılan teslimatlar)
+      // iptal işlemini yalnızca ADMIN yapabilir. Saha personelleri sadece aynı gün teslimatlarını iptal edebilir.
+      let effectiveDeliveryDate: any = beneficiary.teslimat_tarihi;
+      if (!effectiveDeliveryDate) {
+        const lastHist = await histCol.findOne(
+          {
+            beneficiary_id: beneficiary.id,
+            islem_tipi: { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] },
+          },
+          { sort: { _id: -1 } }
+        );
+        if (lastHist) {
+          effectiveDeliveryDate = lastHist.gun_tarihi || lastHist.tarih;
+        }
+      }
+      if (!effectiveDeliveryDate && (beneficiary.teslimat_durumu === 'TAMAMLANDI' || beneficiary.teslimat_durumu === 'EKSIK')) {
+        effectiveDeliveryDate = beneficiary.updated_at;
+      }
+
+      if (effectiveDeliveryDate && isPastDeliveryDate(effectiveDeliveryDate, localToday)) {
+        if (userRole !== 'ADMIN') {
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'PAST_DELIVERY_ADMIN_ONLY',
+              error: 'Geçmiş günlere ait kömür teslimatlarının iptal ve geri alma işlemleri yalnızca Sistem Yöneticisi (ADMIN) yetkisindedir. Personel hesapları sadece aynı gün yapılan teslimatları iptal edebilir.',
+            },
+            { status: 403 }
+          );
+        }
+      }
 
       // Revert beneficiary status to BEKLIYOR
       await benCol.updateOne(buildIdFilter(beneficiary.id), {

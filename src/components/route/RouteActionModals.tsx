@@ -47,6 +47,7 @@ export interface RouteActionModalsProps {
   userName: string;
   handleCancelStopSuccess: () => Promise<void>;
   isActionLoading: boolean;
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 export default function RouteActionModals({
@@ -75,6 +76,7 @@ export default function RouteActionModals({
   userName,
   handleCancelStopSuccess,
   isActionLoading,
+  userRole = 'PERSONEL',
 }: RouteActionModalsProps) {
   return (
     <>
@@ -543,6 +545,7 @@ export default function RouteActionModals({
         <CancelModal
           beneficiary={cancelStopTarget}
           currentStaff={userName}
+          userRole={userRole}
           onClose={() => setCancelStopTarget(null)}
           onSuccess={handleCancelStopSuccess}
         />

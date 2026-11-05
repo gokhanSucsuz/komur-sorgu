@@ -4,7 +4,7 @@ import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, to
 import { encryptField, encryptDeliveryHistory, encryptRoute, encryptRouteStop } from '@/lib/crypto';
 import { compareByAddressAsc, getRecordStreetInfo, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
-import { getIstanbulDate } from '@/lib/dateUtils';
+import { getIstanbulDate, isPastDeliveryDate } from '@/lib/dateUtils';
 import { serverError } from '@/lib/security';
 
 const LOCK_TIMEOUT_MS = 25 * 60 * 1000; // 25 dakika hareketsizlik aşımı
@@ -1121,6 +1121,23 @@ export async function POST(request: NextRequest) {
 
       const hedef = targetStop.hedef_torba || 34;
       const previousDelivered = Number(targetStop.teslim_edilen_torba || 0);
+
+      // Past delivery date check:
+      // Kömür teslimi tamamlandıktan sonraki tarihe geçildiğinde (önceki gün yapılan teslimatlar)
+      // iptal işlemini yalnızca ADMIN yapabilir.
+      if (durum === 'BEKLIYOR') {
+        const wasDelivered = targetStop.durum === 'TAMAMLANDI' || targetStop.durum === 'EKSIK' || previousDelivered > 0;
+        if (wasDelivered) {
+          const stopDeliveryDate = targetStop.teslim_tarihi || targetStop.tarih;
+          if (stopDeliveryDate && isPastDeliveryDate(stopDeliveryDate, localToday) && session.rol !== 'ADMIN') {
+            return NextResponse.json({
+              success: false,
+              code: 'PAST_DELIVERY_ADMIN_ONLY',
+              error: 'Geçmiş günlere ait kömür teslimatlarının iptal ve geri alma işlemleri yalnızca Sistem Yöneticisi (ADMIN) yetkisindedir. Personel hesapları sadece aynı gün yapılan teslimatları geri alabilir.',
+            }, { status: 403 });
+          }
+        }
+      }
 
       // Atomik Çift Teslimat Koruması: Aynı ekip içinden iki personel aynı anda aynı durağa "Teslim Et" basarsa
       // ikinci basışı mükerrer torba / mükerrer teslimat geçmişi oluşturmadan güvenle yakala ve senkronize et.

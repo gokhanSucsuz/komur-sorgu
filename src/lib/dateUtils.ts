@@ -71,6 +71,47 @@ export function parseDateSafely(val: any): Date | null {
 }
 
 /**
+ * Extracts YYYY-MM-DD from various date formats (DD.MM.YYYY, YYYY-MM-DD, ISO, Date)
+ */
+export function extractDateYmd(val: any): string | null {
+  if (!val) return null;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    // Fast match: YYYY-MM-DD
+    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      const [, y, m, d] = isoMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    // Fast match: DD.MM.YYYY
+    const trMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    if (trMatch) {
+      const [, d, m, y] = trMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+  }
+  const d = parseDateSafely(val);
+  if (!d) return null;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Checks whether a delivery date occurred strictly before today (previous day/date in Istanbul time).
+ * Same-day deliveries return false.
+ * If referenceDateStr (YYYY-MM-DD) is provided, comparison is made against that date instead of today.
+ */
+export function isPastDeliveryDate(deliveryDateVal: any, referenceDateStr?: string): boolean {
+  if (!deliveryDateVal) return false;
+  const targetYmd = extractDateYmd(deliveryDateVal);
+  if (!targetYmd) return false;
+  const todayYmd = referenceDateStr || getIstanbulDate().dateStr;
+  return targetYmd < todayYmd;
+}
+
+/**
  * Formats date as "25.09.2025 Cumartesi" (DD.MM.YYYY Weekday)
  */
 export function formatTrDateWithDay(val: any): string {

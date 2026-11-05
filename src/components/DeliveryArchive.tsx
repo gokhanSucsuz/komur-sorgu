@@ -3,9 +3,9 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, PackageCheck, AlertTriangle, Undo2, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
-import { formatTrDate, formatTrAuto } from '@/lib/dateUtils';
+import { formatTrDate, formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -467,15 +467,25 @@ export default function DeliveryArchive({
                                 {item.personel && <span> • Pers: {item.personel}</span>}
                               </div>
 
-                              {/* Teslimat İptal Butonu (Müdür yetkilisi için gizli) */}
+                              {/* Teslimat İptal Butonu (Müdür yetkilisi için gizli; geçmiş günler sadece ADMIN) */}
                               {userRole !== 'MUDUR' && (
-                                <button
-                                  onClick={() => onOpenCancel(item)}
-                                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-bold shrink-0 flex items-center gap-1 active:scale-95 transition-all shadow-xs"
-                                >
-                                  <Undo2 className="w-3 h-3" />
-                                  Hatalı Teslimat İptal Et
-                                </button>
+                                userRole !== 'ADMIN' && isPastDeliveryDate(item.gun_tarihi || item.tarih || item.teslimat_tarihi) ? (
+                                  <span
+                                    className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-400 border border-slate-200 text-[11px] font-semibold shrink-0 flex items-center gap-1 cursor-not-allowed select-none"
+                                    title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                                  >
+                                    <Lock className="w-3 h-3 text-slate-400" />
+                                    <span>İptal (Kilitli)</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => onOpenCancel(item)}
+                                    className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-bold shrink-0 flex items-center gap-1 active:scale-95 transition-all shadow-xs"
+                                  >
+                                    <Undo2 className="w-3 h-3" />
+                                    Hatalı Teslimat İptal Et
+                                  </button>
+                                )
                               )}
                             </div>
                           </div>

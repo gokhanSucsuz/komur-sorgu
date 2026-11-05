@@ -2,10 +2,11 @@
 
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool, Navigation, Building2 } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, getYandexNaviUrl, getGoogleMapsUrl, getParselSorguSearchSummary, PARSEL_SORGU_URL } from '@/lib/normalizer';
-import { formatTrAuto } from '@/lib/dateUtils';
+import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
 import { useState } from 'react';
 
 interface HouseholdModalProps {
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   person: any;
   householdMembers: any[];
   onClose: () => void;
@@ -25,6 +26,7 @@ export default function HouseholdModal({
   onOpenEdit,
   onOpenKomurIptal,
   onToggleSignature,
+  userRole = 'PERSONEL',
 }: HouseholdModalProps) {
   const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
   const isPartial = person.teslimat_durumu === 'EKSIK';
@@ -361,16 +363,26 @@ export default function HouseholdModal({
           )}
 
           {(isComplete || isPartial) && onOpenCancel && (
-            <button
-              onClick={() => {
-                onClose();
-                onOpenCancel(person);
-              }}
-              className="w-full mt-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-            >
-              <Undo2 className="w-4 h-4 text-rose-600" />
-              <span>Yanlışlıkla Yapıldıysa Teslimatı Geri Al / İptal Et</span>
-            </button>
+            userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi || person.gun_tarihi || person.tarih) ? (
+              <div
+                className="w-full mt-2 py-2 px-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-not-allowed select-none"
+                title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+              >
+                <Lock className="w-4 h-4 text-slate-400" />
+                <span>Geçmiş Gün Teslimatı (Sadece Yönetici İptal Edebilir)</span>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenCancel(person);
+                }}
+                className="w-full mt-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+              >
+                <Undo2 className="w-4 h-4 text-rose-600" />
+                <span>Yanlışlıkla Yapıldıysa Teslimatı Geri Al / İptal Et</span>
+              </button>
+            )
           )}
 
           {!isComplete && !person.komur_verilmeyecek && (

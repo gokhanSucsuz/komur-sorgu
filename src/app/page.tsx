@@ -1458,6 +1458,7 @@ export default function Home() {
         <CancelModal
           beneficiary={cancelTarget}
           currentStaff={userName}
+          userRole={userRole}
           onClose={() => setCancelTarget(null)}
           onSuccess={handleCancelSuccess}
         />
@@ -1468,6 +1469,7 @@ export default function Home() {
         <HouseholdModal
           person={householdTarget}
           householdMembers={householdMembers}
+          userRole={userRole}
           onClose={() => setHouseholdTarget(null)}
           onOpenDelivery={(person) => {
             setHouseholdTarget(null);

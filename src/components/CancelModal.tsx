@@ -1,12 +1,14 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Undo2 } from 'lucide-react';
+import { AlertTriangle, Undo2, Lock } from 'lucide-react';
+import { isPastDeliveryDate } from '@/lib/dateUtils';
 
 interface CancelModalProps {
   beneficiary: any;
   currentStaff: string;
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   onClose: () => void;
   onSuccess: (updated: any) => void;
 }
@@ -14,6 +16,7 @@ interface CancelModalProps {
 export default function CancelModal({
   beneficiary,
   currentStaff,
+  userRole = 'PERSONEL',
   onClose,
   onSuccess
 }: CancelModalProps) {
@@ -21,6 +24,10 @@ export default function CancelModal({
   const [personel, setPersonel] = useState(currentStaff || 'Personel');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const deliveryDate = beneficiary?.teslimat_tarihi || beneficiary?.gun_tarihi || beneficiary?.tarih;
+  const isPastDelivery = isPastDeliveryDate(deliveryDate);
+  const isBlockedByRole = isPastDelivery && userRole !== 'ADMIN';
 
   const quickReasons = [
     'Yanlış kişiye tıklandı (Hatalı Giriş)',
@@ -31,6 +38,10 @@ export default function CancelModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isBlockedByRole) {
+      setErrorMsg('Geçmiş günlere ait kömür teslimatlarının iptal işlemi yalnızca Sistem Yöneticisi (ADMIN) yetkisindedir. Personel sadece aynı gün teslimatlarını iptal edebilir.');
+      return;
+    }
     if (!iptalNedeni.trim()) {
       setErrorMsg('Lütfen iptal gerekçesini belirtiniz');
       return;
@@ -107,6 +118,18 @@ export default function CancelModal({
           </div>
         </div>
 
+        {isBlockedByRole && (
+          <div className="p-3 mb-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-semibold flex items-start gap-2 shadow-xs">
+            <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <strong className="text-amber-900 block font-bold">Yetki Sınırı: Geçmiş Gün Teslimat İptali (Sadece Yönetici)</strong>
+              <p className="mt-0.5 font-normal text-amber-800 leading-relaxed">
+                Bu hanenin kömür teslimatı önceki bir tarihte ({deliveryDate || 'geçmiş gün'}) yapılmıştır. Güvenlik kuralları gereğince, günü geçmiş teslimatların iptali yalnızca <strong>Sistem Yöneticisi (ADMIN)</strong> yetkisindedir. Saha personeli sadece aynı gün yapılan teslimatları iptal edebilir, geçmiş kayıtları yalnızca görüntüleyebilir.
+              </p>
+            </div>
+          </div>
+        )}
+
         {errorMsg && (
           <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
             {errorMsg}
@@ -164,10 +187,15 @@ export default function CancelModal({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="btn-danger flex-1 font-bold"
+              disabled={isSubmitting || isBlockedByRole}
+              className={`btn-danger flex-1 font-bold ${isBlockedByRole ? 'opacity-50 cursor-not-allowed bg-slate-400 hover:bg-slate-400 border-slate-400' : ''}`}
             >
-              {isSubmitting ? 'İptal Ediliyor...' : (
+              {isBlockedByRole ? (
+                <>
+                  <Lock className="w-4 h-4" />
+                  İptal Yetkisi Yok (Sadece Yönetici)
+                </>
+              ) : isSubmitting ? 'İptal Ediliyor...' : (
                 <>
                   <Undo2 className="w-4 h-4" />
                   İptali Onayla

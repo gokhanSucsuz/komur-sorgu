@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Undo2,
+  Lock,
   ListOrdered,
   Shield,
   FileSpreadsheet,
@@ -28,7 +29,7 @@ import {
 } from 'lucide-react';
 import { showToast } from '@/components/GlobalAlertManager';
 import { formatPhoneDisplay, getBeneficiaryListTypeInfo, getRecordPhones, getYandexNaviUrl, getGoogleMapsUrl, getParselSorguSearchSummary, PARSEL_SORGU_URL } from '@/lib/normalizer';
-import { formatTrAuto } from '@/lib/dateUtils';
+import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen, isAppFullscreen } from '@/lib/fullscreen';
 
 export interface RouteModeCockpitModalProps {
@@ -62,6 +63,7 @@ export interface RouteModeCockpitModalProps {
   handleRouteModeSubmit: (submitKind: 'COMPLETE' | 'DEFER_LATER') => Promise<void>;
   handleSkipCurrentStop: () => void;
   setCancelStopTarget: Dispatch<SetStateAction<any | null>>;
+  userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
 }
 
 export default function RouteModeCockpitModal({
@@ -95,6 +97,7 @@ export default function RouteModeCockpitModal({
   handleRouteModeSubmit,
   handleSkipCurrentStop,
   setCancelStopTarget,
+  userRole = 'PERSONEL',
 }: RouteModeCockpitModalProps) {
   const stops: any[] = activeRoute?.duraklar || [];
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -833,14 +836,24 @@ export default function RouteModeCockpitModal({
                         Önceki Verilen: {prevDeliveredTorba} Torba (Kalan: {remainingForStop} Torba)
                       </strong>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setCancelStopTarget(currentStop)}
-                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 font-black text-xs shrink-0 flex items-center gap-1"
-                    >
-                      <Undo2 className="w-3.5 h-3.5" />
-                      <span>Geri Al</span>
-                    </button>
+                    {userRole !== 'ADMIN' && isPastDeliveryDate(currentStop.teslim_tarihi) ? (
+                      <span
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-400 border border-slate-300 font-bold text-xs shrink-0 flex items-center gap-1 cursor-not-allowed select-none"
+                        title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                      >
+                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Kilitli</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setCancelStopTarget(currentStop)}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 font-black text-xs shrink-0 flex items-center gap-1"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                        <span>Geri Al</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -903,15 +916,25 @@ export default function RouteModeCockpitModal({
                       </button>
                     ) : null}
 
-                    <button
-                      type="button"
-                      onClick={() => setCancelStopTarget(currentStop)}
-                      disabled={isActionLoading}
-                      className="w-full min-h-[46px] py-3 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-black text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all"
-                    >
-                      <Undo2 className="w-4 h-4 shrink-0" />
-                      <span>↩ Yanlışlıkla Yapıldıysa Teslimatı Geri Al</span>
-                    </button>
+                    {userRole !== 'ADMIN' && isPastDeliveryDate(currentStop.teslim_tarihi) ? (
+                      <div
+                        className="w-full min-h-[46px] py-3 px-4 rounded-2xl bg-slate-100 border border-slate-300 text-slate-500 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none"
+                        title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                      >
+                        <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>Geçmiş Gün Teslimatı (Sadece Yönetici İptal Edebilir)</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setCancelStopTarget(currentStop)}
+                        disabled={isActionLoading}
+                        className="w-full min-h-[46px] py-3 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-black text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition-all"
+                      >
+                        <Undo2 className="w-4 h-4 shrink-0" />
+                        <span>↩ Yanlışlıkla Yapıldıysa Teslimatı Geri Al</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (

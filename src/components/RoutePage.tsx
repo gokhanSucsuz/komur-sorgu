@@ -2784,6 +2784,7 @@ export default function RoutePage({
         userName={userName}
         handleCancelStopSuccess={handleCancelStopSuccess}
         isActionLoading={isActionLoading}
+        userRole={userRole}
       />
 
       <RoutePrintReportModal
@@ -2823,6 +2824,7 @@ export default function RoutePage({
         handleRouteModeSubmit={handleRouteModeSubmit}
         handleSkipCurrentStop={handleSkipCurrentStop}
         setCancelStopTarget={setCancelStopTarget}
+        userRole={userRole}
       />
     </div>
   );

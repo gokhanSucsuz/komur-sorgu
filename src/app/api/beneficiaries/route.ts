@@ -9,7 +9,7 @@ import {
   encryptBeneficiary,
   encryptRouteStop,
 } from '@/lib/crypto';
-import { getIstanbulDate } from '@/lib/dateUtils';
+import { getIstanbulDate, isPastDeliveryDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, clampInt, isSafeId, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 
@@ -1390,6 +1390,16 @@ export async function PATCH(request: NextRequest) {
     if (action === 'KOMUR_IPTAL') {
       if (!neden || !String(neden).trim()) {
         return NextResponse.json({ success: false, error: 'Lütfen kömür iptal gerekçesini seçiniz veya belirtiniz' }, { status: 400 });
+      }
+
+      // Geçmiş günlerde kömür teslimatı yapılmış olan kayıtların iptal işlemi yalnızca ADMIN yetkisindedir
+      const wasDelivered = existing.teslimat_durumu === 'TAMAMLANDI' || existing.teslimat_durumu === 'EKSIK';
+      if (wasDelivered && existing.teslimat_tarihi && isPastDeliveryDate(existing.teslimat_tarihi) && session.rol !== 'ADMIN') {
+        return NextResponse.json({
+          success: false,
+          code: 'PAST_DELIVERY_ADMIN_ONLY',
+          error: 'Geçmiş günlerde teslimatı yapılmış olan kayıtların iptal işlemi yalnızca Sistem Yöneticisi (ADMIN) yetkisindedir. Personel hesapları sadece aynı gün teslimatlarını iptal edebilir.',
+        }, { status: 403 });
       }
 
       const updateSet: any = {
