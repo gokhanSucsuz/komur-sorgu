@@ -1622,6 +1622,21 @@ export async function POST(request: NextRequest) {
           }
         });
 
+        await histCol.updateMany(
+          {
+            beneficiary_id: targetStop.beneficiary_id,
+            islem_tipi: { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] },
+            iptal_edildi: { $ne: true }
+          },
+          {
+            $set: {
+              iptal_edildi: true,
+              iptal_nedeni: note || 'Hatalı teslimat geri alma',
+              iptal_tarihi: localTimeStr
+            }
+          }
+        );
+
         await histCol.insertOne(encryptDeliveryHistory({
           beneficiary_id: targetStop.beneficiary_id,
           tc_no: targetStop.tc_no,
@@ -2235,6 +2250,24 @@ export async function POST(request: NextRequest) {
           updated_at: localTimeStr
         }
       });
+
+      if (!isSigned) {
+        // İmza geri alındığında hak sahibi teslim edilmemişse önceki teslimat loglarını iptal_edildi olarak bayrakla
+        await histCol.updateMany(
+          {
+            beneficiary_id: String(beneficiary_id),
+            islem_tipi: { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] },
+            iptal_edildi: { $ne: true }
+          },
+          {
+            $set: {
+              iptal_edildi: true,
+              iptal_nedeni: 'İmza geri alındı / teslimat iptal edildi',
+              iptal_tarihi: localTimeStr
+            }
+          }
+        );
+      }
 
       // If there are active routes with this beneficiary, sync the stop across all active routes
       const activeRouteDocs = await routeCol.find({ durum: 'AKTIF' }).toArray();

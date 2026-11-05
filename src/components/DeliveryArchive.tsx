@@ -52,7 +52,14 @@ export default function DeliveryArchive({
   }, [printDayGroup, printCancelGroup]);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
-  const todayRecords = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT' && r.gun_tarihi === todayStr);
+  const todayRecords = useMemo(() => {
+    return allRecords.filter(
+      (r) =>
+        (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') &&
+        !r.iptal_edildi &&
+        r.gun_tarihi === todayStr
+    );
+  }, [allRecords, todayStr]);
 
   // Günlük tutanakta görev alan tüm personellerin listesi
   const deliveryStaffList = useMemo(() => {
@@ -61,6 +68,8 @@ export default function DeliveryArchive({
       ? allRecords.filter(
           (r) =>
             r &&
+            !r.iptal_edildi &&
+            (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') &&
             (r.gun_tarihi === printDayGroup.gun_tarihi ||
               (typeof r.tarih === 'string' && r.tarih.startsWith(printDayGroup.gun_tarihi)))
         )
@@ -68,23 +77,33 @@ export default function DeliveryArchive({
     return extractUniquePersonnelList([...(printDayGroup.items || []), ...sameDayRecords]);
   }, [printDayGroup, allRecords]);
 
-  // Filter cancelled items
-  const cancelledItems = allRecords.filter((r) => r.islem_tipi === 'IPTAL');
+  // Filter cancelled items (Sadece iptal edilen teslimat kayıtları)
+  const cancelledItems = useMemo(() => {
+    return allRecords.filter((r) => r.islem_tipi === 'IPTAL');
+  }, [allRecords]);
 
-
-  // Filter delivered items
-  const deliveredItems = allRecords.filter((r) => r.islem_tipi === 'TESLIMAT');
+  // Filter delivered items (Yalnızca geçerli, iptal edilmemiş ve imzası aktif teslimatlar)
+  const deliveredItems = useMemo(() => {
+    return allRecords.filter(
+      (r) =>
+        (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') &&
+        !r.iptal_edildi
+    );
+  }, [allRecords]);
 
   // Search filter for deliveries (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
   // Search filter for cancellations (Yalnızca TC Kimlik No ve Adı Soyadı alanlarında %100 Türkçe karakter uyumlu arama)
-  const filteredCancelled = cancelledItems.filter((r) => {
-    if (!searchQuery) return true;
-    return isBirebirBeneficiaryMatch(r, searchQuery);
-  });
+  const filteredCancelled = useMemo(() => {
+    return cancelledItems.filter((r) => {
+      if (!searchQuery) return true;
+      return isBirebirBeneficiaryMatch(r, searchQuery);
+    });
+  }, [cancelledItems, searchQuery]);
 
   // Cumulative (O tarihe kadar olan) teslimatlar
   const cumulativeItems = useMemo(() => {
     return deliveredItems.filter((item) => {
+      if (item.iptal_edildi) return false;
       if (cumulativeDate && item.gun_tarihi > cumulativeDate) return false;
       if (!searchQuery) return true;
       return isBirebirBeneficiaryMatch(item, searchQuery);
@@ -99,16 +118,21 @@ export default function DeliveryArchive({
     return filteredCancelled.reduce((acc, curr) => acc + (curr.torba_sayisi || 34), 0);
   }, [filteredCancelled]);
 
-  // Re-group filtered deliveries by date
-  const filteredGroupedDays = groupedDays.map((group) => ({
-    ...group,
-    items: group.items.filter((item: any) => {
-      if (item.islem_tipi !== 'TESLIMAT') return false;
-      if (selectedDay !== 'ALL' && item.gun_tarihi !== selectedDay) return false;
-      if (!searchQuery) return true;
-      return isBirebirBeneficiaryMatch(item, searchQuery);
-    })
-  })).filter((group) => group.items.length > 0);
+  // Re-group filtered deliveries by date (İptal edilen veya geçersiz kalan kayıtlar elenir)
+  const filteredGroupedDays = useMemo(() => {
+    return groupedDays
+      .map((group) => ({
+        ...group,
+        items: (group.items || []).filter((item: any) => {
+          if (item.islem_tipi !== 'TESLIMAT' && item.islem_tipi !== 'EKSIK_TESLIMAT') return false;
+          if (item.iptal_edildi) return false;
+          if (selectedDay !== 'ALL' && item.gun_tarihi !== selectedDay) return false;
+          if (!searchQuery) return true;
+          return isBirebirBeneficiaryMatch(item, searchQuery);
+        })
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groupedDays, selectedDay, searchQuery]);
 
   return (
     <div className="space-y-4">

@@ -242,3 +242,102 @@ test('5. Sadece İmzası Alınan Kayıtlar & Dağıtım Takibi: Rotalı/Rotasız
   assert.strictEqual(b4?.teslimatSekli, 'DOGRUDAN_TESLIMAT');
   assert.strictEqual(b4?.isDirectDelivery, true);
 });
+
+test('6. Teslimat Arşivi: İptal edilen teslimatların ve imzası geri alınan hanelerin teslimat sayısından düşülmesi', () => {
+  const historyApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/delivery/history/route.ts'), 'utf-8');
+  const deliveryArchiveSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/DeliveryArchive.tsx'), 'utf-8');
+  const deliveryApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/delivery/route.ts'), 'utf-8');
+  const exportApiSrc = fs.readFileSync(path.join(process.cwd(), 'src/app/api/export/route.ts'), 'utf-8');
+
+  // A. Backend History API doğrulaması
+  assert.ok(
+    historyApiSrc.includes('benMap') &&
+      historyApiSrc.includes('hasSubsequentCancel') &&
+      historyApiSrc.includes('isSignatureRevoked') &&
+      historyApiSrc.includes('iptal_edildi'),
+    'GET /api/delivery/history hak sahipleri tablosu ve iptal loglarıyla mutabakat yaparak iptal_edildi bayrağı belirlemelidir'
+  );
+
+  // B. DeliveryArchive UI doğrulaması
+  assert.ok(
+    deliveryArchiveSrc.includes('!r.iptal_edildi') &&
+      deliveryArchiveSrc.includes('deliveredItems = useMemo') &&
+      deliveryArchiveSrc.includes('todayRecords = useMemo'),
+    'DeliveryArchive bileşeni teslim edilenler ve bugün listelerinde iptal_edildi bayraklı kayıtları elemelidir'
+  );
+
+  // C. Delivery API iptal işleminde geçmişi bayraklama
+  assert.ok(
+    deliveryApiSrc.includes('iptal_edildi: true') &&
+      deliveryApiSrc.includes('histCol.updateMany'),
+    'Kömür teslimatı iptal edildiğinde geçmişteki TESLIMAT kayıtları iptal_edildi: true olarak işaretlenmelidir'
+  );
+
+  // D. Export API iptal edilenleri dışa aktarmadan eleme
+  assert.ok(
+    exportApiSrc.includes('validRecords') &&
+      exportApiSrc.includes('r.iptal_edildi'),
+    'Excel dışa aktarım API iptal edilmiş teslimatları resmi teslimat listesinden kesinlikle çıkarmalıdır'
+  );
+
+  // E. Simülasyon: Hatalı teslimat ve imza geri alma senaryosu
+  const mockBens = new Map([
+    // Mehmet Ali: Teslim edildi -> İptal edildi -> Yeniden teslim edildi (Aktif)
+    ['b_ali', { id: 'b_ali', ad_soyad: 'Mehmet Ali', teslimat_durumu: 'TAMAMLANDI', imza_durumu: 'IMZALANDI', torba_sayisi: 34 }],
+    // Nurettin: Yanlışlıkla teslim edildi -> İptal edildi & İmza geri alındı (Teslim Edilmedi!)
+    ['b_nurettin', { id: 'b_nurettin', ad_soyad: 'Nurettin Dur', teslimat_durumu: 'BEKLIYOR', imza_durumu: 'BEKLIYOR', torba_sayisi: 0 }],
+    // Normal Hane: Teslim edildi
+    ['b_normal', { id: 'b_normal', ad_soyad: 'Ayşe Hanım', teslimat_durumu: 'TAMAMLANDI', imza_durumu: 'IMZALANDI', torba_sayisi: 34 }],
+  ]);
+
+  const mockHistory = [
+    { id: 'h1', beneficiary_id: 'b_ali', islem_tipi: 'TESLIMAT', torba_sayisi: 34, tarih: '14:44' },
+    { id: 'h2', beneficiary_id: 'b_ali', islem_tipi: 'IPTAL', torba_sayisi: 34, tarih: '14:46' },
+    { id: 'h3', beneficiary_id: 'b_ali', islem_tipi: 'TESLIMAT', torba_sayisi: 34, tarih: '14:47' },
+    { id: 'h4', beneficiary_id: 'b_nurettin', islem_tipi: 'TESLIMAT', torba_sayisi: 34, tarih: '18:25' },
+    { id: 'h5', beneficiary_id: 'b_nurettin', islem_tipi: 'IPTAL', torba_sayisi: 34, tarih: '21:54' },
+    { id: 'h6', beneficiary_id: 'b_normal', islem_tipi: 'TESLIMAT', torba_sayisi: 34, tarih: '10:00' },
+  ];
+
+  const historyByBen = new Map();
+  mockHistory.forEach((r) => {
+    if (!historyByBen.has(r.beneficiary_id)) historyByBen.set(r.beneficiary_id, []);
+    historyByBen.get(r.beneficiary_id).push(r);
+  });
+
+  let validDeliveries = 0;
+  let validTorba = 0;
+  let cancelledDeliveries = 0;
+
+  mockHistory.forEach((r) => {
+    if (r.islem_tipi === 'TESLIMAT') {
+      const ben = mockBens.get(r.beneficiary_id);
+      const benHistory = historyByBen.get(r.beneficiary_id) || [];
+      const thisIdx = benHistory.indexOf(r);
+      const subsequentEvents = benHistory.slice(thisIdx + 1);
+
+      const hasSubsequentCancel = subsequentEvents.some((e: any) => e.islem_tipi === 'IPTAL');
+      const hasSubsequentDelivery = subsequentEvents.some((e: any) => e.islem_tipi === 'TESLIMAT');
+      const isCurrentlyDeliveredInDb = ben && (ben.teslimat_durumu === 'TAMAMLANDI' || ben.teslimat_durumu === 'TESLIM_EDILDI');
+      const isSignatureRevoked = !ben || ben.imza_durumu !== 'IMZALANDI';
+
+      let isCancelled = false;
+      if (hasSubsequentCancel && !hasSubsequentDelivery) isCancelled = true;
+      else if (hasSubsequentDelivery) isCancelled = true;
+      else if (!isCurrentlyDeliveredInDb || isSignatureRevoked) isCancelled = true;
+
+      if (isCancelled) {
+        cancelledDeliveries++;
+      } else {
+        validDeliveries++;
+        validTorba += r.torba_sayisi;
+      }
+    }
+  });
+
+  // Toplam 4 adet TESLIMAT kaydından sadece 2 tanesi geçerlidir (Ayşe Hanım ve Mehmet Ali'nin son teslimatı)
+  // Nurettin Dur iptal edildiği için, Mehmet Ali'nin ilk hatalı teslimatı da iptal edildiği için sayılmamalıdır!
+  assert.strictEqual(validDeliveries, 2, 'Geçerli teslimat sayısı 2 olmalıdır (Nurettin Dur ve Mehmet Ali ilk kayıt hariç)');
+  assert.strictEqual(validTorba, 68, 'Geçerli toplam torba 68 olmalıdır');
+  assert.strictEqual(cancelledDeliveries, 2, 'İptal / geçersiz sayılan teslimat kaydı 2 olmalıdır');
+});

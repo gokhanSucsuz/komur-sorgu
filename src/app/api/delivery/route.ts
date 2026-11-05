@@ -514,6 +514,22 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Flag existing TESLIMAT records as cancelled in delivery history
+      await histCol.updateMany(
+        {
+          beneficiary_id: beneficiary.id,
+          islem_tipi: { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] },
+          iptal_edildi: { $ne: true }
+        },
+        {
+          $set: {
+            iptal_edildi: true,
+            iptal_nedeni: cancelReason,
+            iptal_tarihi: localTimeStr
+          }
+        }
+      );
+
       // Record cancellation in history (AES-256-GCM Şifreli)
       await histCol.insertOne(encryptDeliveryHistory({
         beneficiary_id: beneficiary.id,

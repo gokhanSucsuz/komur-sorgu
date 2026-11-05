@@ -1101,7 +1101,7 @@ export async function GET(request: NextRequest) {
       const endDate = searchParams.get('endDate');
       const startDate = searchParams.get('startDate');
       
-      const filter: any = { islem_tipi: 'TESLIMAT' };
+      const filter: any = { islem_tipi: 'TESLIMAT', iptal_edildi: { $ne: true } };
       if (endDate) {
         filter.gun_tarihi = { ...(filter.gun_tarihi || {}), $lte: endDate };
       }
@@ -1119,8 +1119,27 @@ export async function GET(request: NextRequest) {
 
       const records = mapDocs(rawRecords);
 
+      // Reconcile with current beneficiaries status to exclude mistakenly delivered / signature revoked records
+      const allBens = mapDocs(await benCol.find({}).toArray());
+      const benMap = new Map<string, any>();
+      allBens.forEach((b: any) => {
+        benMap.set(String(b.id || b._id), b);
+        if (b.tc_no) benMap.set(String(b.tc_no).trim(), b);
+      });
+
+      const validRecords = records.filter((r: any) => {
+        if (r.iptal_edildi) return false;
+        const bId = String(r.beneficiary_id || '');
+        const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
+        if (!ben) return false;
+        if (ben.teslimat_durumu !== 'TAMAMLANDI' && ben.teslimat_durumu !== 'TESLIM_EDILDI') return false;
+        if (ben.imza_durumu !== 'IMZALANDI') return false;
+        if (ben.komur_verilmeyecek === true || ben.komur_verilmeyecek === 'true') return false;
+        return true;
+      });
+
       let totalBags = 0;
-      const exportData = records.map((r: any, idx: number) => {
+      const exportData = validRecords.map((r: any, idx: number) => {
         const bag = r.torba_sayisi || 0;
         totalBags += bag;
         const rawDate = r.gun_tarihi || (r.tarih ? String(r.tarih).split(' ')[0].split('T')[0] : '');
