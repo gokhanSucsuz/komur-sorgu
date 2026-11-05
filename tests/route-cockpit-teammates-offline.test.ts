@@ -557,10 +557,10 @@ test('10. Tek Hane Ekle: Mobil Uyarı Gizleme & Dokunmatik Mahalle/Sokak Modalla
     'utf8'
   );
 
-  // A. Üst başlıktaki uzun açıklama metni mobilde gizlenmelidir
+  // A. Üst başlıktaki banner alanı mobilde tamamen gizlenmelidir
   assert.ok(
-    addPageSrc.includes('className="hidden sm:block text-xs text-emerald-50 font-medium mt-0.5 leading-relaxed"'),
-    'SingleHouseholdAddPage.tsx üst bilgi paragrafı mobilde gizlenmelidir'
+    addPageSrc.includes('className="hidden sm:block rounded-2xl'),
+    'SingleHouseholdAddPage.tsx üst başlık bannerı mobilde tamamen gizlenmelidir'
   );
 
   // B. Mahalle ve sokak seçimi için mobil modallar bulunmalıdır

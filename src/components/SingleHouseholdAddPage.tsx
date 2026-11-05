@@ -711,9 +711,9 @@ export default function SingleHouseholdAddPage({
 
   return (
     <div className="space-y-4 pb-8">
-      {/* ÜST BAŞLIK BANNERI */}
+      {/* ÜST BAŞLIK BANNERI (Mobilde tamamen gizlenir, sadece masaüstünde görünür) */}
       <div
-        className="rounded-2xl p-4 sm:p-5 border border-emerald-700/30 shadow-md text-white"
+        className="hidden sm:block rounded-2xl p-4 sm:p-5 border border-emerald-700/30 shadow-md text-white"
         style={{
           background:
             calismaModu === 'DENEME'
