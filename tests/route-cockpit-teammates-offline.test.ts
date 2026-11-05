@@ -518,3 +518,35 @@ test('8. Çevrimdışı Çakışma Önleme & Eşzamanlı Saha Senkronizasyonu (I
     'RoutePage.tsx ekip arkadaşı haneyi teslim ettiğinde otomatik sıradaki bekleyen durağa geçmelidir'
   );
 });
+
+test('9. Filtrelenen Sokak Gösterimi Tıklanabilirliği ve Mobil Sokak Seçimi', () => {
+  const beneficiaryListSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/BeneficiaryList.tsx'),
+    'utf8'
+  );
+
+  // A. Filtrelenen sokak barı tıklandığında sokak modalını açmalıdır (setShowSokakModal(true))
+  assert.ok(
+    beneficiaryListSrc.includes('onClick={() => setShowSokakModal(true)}') &&
+      beneficiaryListSrc.includes('Filtrelenen Sokak / Cadde:'),
+    'BeneficiaryList.tsx filtrelenen sokak alanına tıklandığında setShowSokakModal(true) çağırmalıdır'
+  );
+
+  // B. Filtrelenen sokak barında "Değiştir" ve "Diğer Sokaklar" buton/rozetleri yer almalıdır
+  assert.ok(
+    beneficiaryListSrc.includes('Değiştir') && beneficiaryListSrc.includes('Diğer Sokaklar'),
+    'Filtrelenen sokak barında kullanıcıya diğer sokakları seçebileceği görsel olarak belirtilmelidir'
+  );
+
+  // C. Sokak çipleri içinde "Sokak Ara" butonu bulunmalıdır
+  assert.ok(
+    beneficiaryListSrc.includes('Sokak Ara (') && beneficiaryListSrc.includes('setShowSokakModal(true)'),
+    'Sokak çiplerinde doğrudan arama ve seçim modalını açan buton bulunmalıdır'
+  );
+
+  // D. Kartlardaki sokak rozetine tıklandığında o sokak filtrelenmelidir
+  assert.ok(
+    beneficiaryListSrc.includes('setSelectedSokak(stInfo.sokak)'),
+    'Vatandaş kartlarındaki sokak rozetine tıklandığında o sokağa göre filtreleme yapılmalıdır'
+  );
+});

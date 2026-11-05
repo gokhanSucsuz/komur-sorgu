@@ -1684,6 +1684,15 @@ export default function BeneficiaryList({
               >
                 Tüm Sokaklar ({mahalleFilteredList.length})
               </button>
+              <button
+                type="button"
+                onClick={() => setShowSokakModal(true)}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 bg-sky-50 text-sky-800 hover:bg-sky-100 border-sky-200 flex items-center gap-1"
+                title="Sokak listesinden ara ve seç"
+              >
+                <Search className="w-3 h-3 text-sky-600" />
+                <span>Sokak Ara ({availableStreets.length})</span>
+              </button>
               {availableStreets.map((st) => (
                 <button
                   key={st.sokak}
@@ -1709,28 +1718,65 @@ export default function BeneficiaryList({
             </div>
           )}
 
-          {/* Active Street Filter Bar if a street is selected */}
+          {/* Active Street Filter Bar if a street is selected - Tıklandığında diğer sokaklar seçilebilir */}
           {selectedSokak !== 'HEPSI' && (
-            <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-2 min-w-0">
-                <Compass className="w-4 h-4 text-sky-700 shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-sky-800 block">
-                    Filtrelenen Sokak / Cadde:
-                  </span>
-                  <div className="text-xs font-black text-sky-950 truncate flex items-center gap-1.5">
-                    <span>{selectedSokak}</span>
-                    <span className="text-[11px] font-bold text-sky-700">({streetFilteredList.length} Hane)</span>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setShowSokakModal(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowSokakModal(true);
+                }
+              }}
+              className="p-2.5 rounded-xl bg-sky-50 hover:bg-sky-100/90 active:bg-sky-100 border border-sky-200 flex items-center justify-between shadow-xs cursor-pointer transition-all select-none group"
+              title="Başka bir sokak seçmek veya aramak için dokunun"
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 group-hover:bg-sky-200/80 transition-colors">
+                  <Compass className="w-4 h-4 text-sky-700 shrink-0" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-sky-800 block">
+                      Filtrelenen Sokak / Cadde:
+                    </span>
+                    <span className="text-[10px] font-extrabold text-sky-700 bg-sky-200/60 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 group-hover:bg-sky-200">
+                      Değiştir <ChevronDown className="w-2.5 h-2.5" />
+                    </span>
+                  </div>
+                  <div className="text-xs font-black text-sky-950 truncate flex items-center gap-1.5 mt-0.5">
+                    <span className="truncate">{selectedSokak}</span>
+                    <span className="text-[11px] font-bold text-sky-700 shrink-0">({streetFilteredList.length} Hane)</span>
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedSokak('HEPSI')}
-                className="text-xs font-bold text-rose-600 hover:text-rose-800 underline shrink-0 ml-2"
-              >
-                Sokağı Temizle
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSokakModal(true);
+                  }}
+                  className="px-2.5 py-1 text-xs font-bold text-sky-800 bg-white hover:bg-sky-100 border border-sky-200 rounded-lg shadow-2xs transition-colors flex items-center gap-1"
+                  title="Diğer sokakları listele"
+                >
+                  <Navigation className="w-3 h-3 text-sky-600" />
+                  <span>Diğer Sokaklar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedSokak('HEPSI');
+                  }}
+                  className="px-2 py-1 text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                  title="Sokak filtresini temizle"
+                >
+                  Temizle ✕
+                </button>
+              </div>
             </div>
           )}
 
@@ -2583,9 +2629,17 @@ export default function BeneficiaryList({
                         <span>{person.mahalle}</span>
                       </span>
 
-                      {/* Sokak / Kapı No Rozeti */}
+                      {/* Sokak / Kapı No Rozeti - Dokunulduğunda o sokağı filtreler */}
                       {stInfo.sokak && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-950 font-bold text-xs shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSokak(stInfo.sokak);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 font-bold text-xs shadow-2xs transition-all cursor-pointer text-left"
+                          title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
+                        >
                           <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
                           <span>{stInfo.sokak}</span>
                           {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
@@ -2594,7 +2648,7 @@ export default function BeneficiaryList({
                           {stInfo.daireNo > 0 && (
                             <span className="text-sky-700 font-semibold">D: {stInfo.daireNo}</span>
                           )}
-                        </span>
+                        </button>
                       )}
 
                       {/* Fiili İkamet Bilgisi */}
