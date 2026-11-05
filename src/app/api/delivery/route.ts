@@ -4,7 +4,7 @@ import { encryptField, encryptDeliveryHistory, encryptRouteStop, hashTc } from '
 import { cleanTcNo, normalizeStaffName } from '@/lib/normalizer';
 import { getIstanbulDate, isPastDeliveryDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
-import { checkRouteTeamAuthorization } from '@/app/api/routes/route';
+import { checkRouteTeamAuthorization, ensureTeamDailyRoute, addBeneficiariesToTeamRoute } from '@/app/api/routes/route';
 import { serverError } from '@/lib/security';
 
 export async function POST(request: NextRequest) {
@@ -328,6 +328,39 @@ export async function POST(request: NextRequest) {
             });
           }
         }
+      }
+
+      // Ekibin günlük rotasını temin et ve teslimatı rotaya ekle / tamamlandı olarak işaretle
+      try {
+        const { route: teamRoute } = await ensureTeamDailyRoute({
+          session,
+          usersCol,
+          routeCol,
+          localToday,
+          localTimeStr,
+          preferredNeighborhood: beneficiary.mahalle
+        });
+        await addBeneficiariesToTeamRoute({
+          route: teamRoute,
+          beneficiaries: [
+            {
+              ...beneficiary,
+              teslimat_durumu: newStatus,
+              torba_sayisi: newTotalBags,
+              teslim_alan: recipient,
+              teslim_eden_personel: staff,
+              teslimat_tarihi: localTimeStr,
+              imza_durumu: 'IMZALANDI',
+              imza_tarihi: localTimeStr,
+              imza_alan_personel: staff,
+            },
+          ],
+          session,
+          routeCol,
+          localTimeStr,
+        });
+      } catch (teamRouteErr) {
+        console.error('Error auto-syncing delivery to team daily route:', teamRouteErr);
       }
 
       // Update sync pulse in systemSettings so other clients auto-refresh & invalidate cache

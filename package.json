@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --no-warnings --import ./tests/ts-loader.mjs --test tests/security-kvkk.test.ts tests/signature-lists.test.ts tests/ek-komur.test.ts tests/cache-manager.test.ts tests/fullscreen.test.ts tests/system-audit.test.ts tests/tonnage-templates.test.ts tests/delivery-past-date.test.ts tests/route-cockpit-teammates-offline.test.ts",
+    "test": "node --no-warnings --import ./tests/ts-loader.mjs --test tests/security-kvkk.test.ts tests/signature-lists.test.ts tests/ek-komur.test.ts tests/cache-manager.test.ts tests/fullscreen.test.ts tests/system-audit.test.ts tests/tonnage-templates.test.ts tests/delivery-past-date.test.ts tests/route-cockpit-teammates-offline.test.ts tests/team-daily-route.test.ts",
     "security:rotate-keys": "node --no-warnings --import ./tests/ts-loader.mjs scripts/rotate-keys.mjs",
     "db:backup": "node --no-warnings scripts/backup-restore.mjs",
     "db:restore": "node --no-warnings scripts/backup-restore.mjs --restore"

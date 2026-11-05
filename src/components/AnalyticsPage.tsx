@@ -1645,7 +1645,6 @@ export default function AnalyticsPage({
                     <span>Bölge: <strong className="text-slate-800">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalleler' : selectedMahalle}</strong></span>
                     <span>•</span>
                     <span>Dağıtım Kapsamı: <strong className="text-emerald-700">{summary?.dagitimYapilacakHane || summary?.toplamHane || 0} Hane</strong></span>
-                    <span>(Kayıtlı: {summary?.toplamKayitliHane || summary?.toplamHane || 0} • İptal: {summary?.komurVerilmeyecekHane || 0})</span>
                     <span>•</span>
                     <span><strong className="text-amber-800">{summary?.dagitilanTonaj || 0} Ton Dağıtıldı</strong></span>
                   </p>
@@ -1724,7 +1723,7 @@ export default function AnalyticsPage({
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                     <span className="text-[10px] text-slate-500 font-bold uppercase block">Kömür Dağıtılacak Hane</span>
                     <div className="text-lg font-black text-slate-900 mt-0.5">{summary?.dagitimYapilacakHane ?? summary?.toplamHane ?? 0} Hane</div>
-                    <span className="text-[9px] text-slate-500 font-medium block">Kayıtlı: {summary?.toplamKayitliHane ?? summary?.toplamHane ?? 0} • İptal: {summary?.komurVerilmeyecekHane || 0}</span>
+                    <span className="text-[9px] text-slate-500 font-medium block">Resmi Dağıtım Hedef Havuzu</span>
                   </div>
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
                     <span className="text-[10px] text-emerald-800 font-bold uppercase block">Dağıtılan Kömür</span>
@@ -1743,7 +1742,7 @@ export default function AnalyticsPage({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-slate-200 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200 text-center">
                   <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
                     <span className="text-[10px] font-bold text-emerald-800 uppercase block">Tam Teslim Yapılan</span>
                     <span className="text-sm font-black text-emerald-700">{summary?.tamHane || 0} Hane</span>
@@ -1759,10 +1758,6 @@ export default function AnalyticsPage({
                   <div className="p-2 rounded-xl bg-slate-50 border border-slate-200">
                     <span className="text-[10px] font-bold text-slate-600 uppercase block">Dağıtım Bekleyen</span>
                     <span className="text-sm font-black text-slate-800">{summary?.bekleyenHane || 0} Hane</span>
-                  </div>
-                  <div className="p-2 rounded-xl bg-rose-50 border border-rose-200">
-                    <span className="text-[10px] font-bold text-rose-800 uppercase block">İptal Edilenler</span>
-                    <span className="text-sm font-black text-rose-700">{summary?.komurVerilmeyecekHane || 0} Hane</span>
                   </div>
                 </div>
               </div>
@@ -1973,61 +1968,6 @@ export default function AnalyticsPage({
                 </div>
               )}
 
-              {/* Personel Dağıtım ve Saha Performans Cetveli (Resmi İcmal Tablosu) */}
-              {personelStats.length > 0 && (
-                <div className="space-y-1.5 pt-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-purple-900">
-                    KÖMÜR DAĞITIM VE PERSONEL PERFORMANS CETVELİ ({personelStats.length} Personel)
-                  </h4>
-                  <div className="border border-purple-200 rounded-xl overflow-hidden shadow-2xs">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-purple-50 text-purple-950 border-b border-purple-200 font-bold">
-                          <th className="p-2 text-center w-10">#</th>
-                          <th className="p-2">Teslim Eden Personel</th>
-                          <th className="p-2 text-center">Tam Teslim (Hane)</th>
-                          <th className="p-2 text-center">Kısmi / Eksik (Hane)</th>
-                          <th className="p-2 text-center">Toplam Hane</th>
-                          <th className="p-2 text-center">Dağıtılan Torba</th>
-                          <th className="p-2 text-center">Net Ağırlık (Ton & Kg)</th>
-                          <th className="p-2 text-center">Son Dağıtım Tarihi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-purple-100">
-                        {personelStats.map((p: any, idx: number) => {
-                          const fmt = formatTonnage(p.toplamTorba * 0.025);
-                          return (
-                            <tr key={idx} className="hover:bg-purple-50/40">
-                              <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
-                              <td className="p-2 font-bold text-slate-900">{p.personel}</td>
-                              <td className="p-2 text-center font-bold text-emerald-700">{p.tamHane || 0}</td>
-                              <td className="p-2 text-center font-bold text-amber-700">{p.eksikHane || 0}</td>
-                              <td className="p-2 text-center font-bold text-sky-800">{p.toplamHane || 0}</td>
-                              <td className="p-2 text-center font-black text-slate-900">{p.toplamTorba} Torba</td>
-                              <td className="p-2 text-center font-mono font-bold text-amber-900">{fmt.combined}</td>
-                              <td className="p-2 text-center text-xs text-slate-700 font-semibold">{p.sonTeslimatTarihi ? formatTrAuto(p.sonTeslimatTarihi) : '-'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-purple-100/70 font-black text-purple-950 border-t-2 border-purple-300">
-                          <td colSpan={2} className="p-2 text-right uppercase">GENEL TOPLAM:</td>
-                          <td className="p-2 text-center text-emerald-800">{personelStats.reduce((acc, p) => acc + (p.tamHane || 0), 0)}</td>
-                          <td className="p-2 text-center text-amber-800">{personelStats.reduce((acc, p) => acc + (p.eksikHane || 0), 0)}</td>
-                          <td className="p-2 text-center text-sky-800">{personelStats.reduce((acc, p) => acc + (p.toplamHane || 0), 0)}</td>
-                          <td className="p-2 text-center">{personelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0)} Torba</td>
-                          <td className="p-2 text-center font-mono text-amber-950">
-                            {formatTonnage(personelStats.reduce((acc, p) => acc + (p.toplamTorba || 0), 0) * 0.025).combined}
-                          </td>
-                          <td className="p-2 text-center">-</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-              )}
-
               {/* 2-Column Official Signatures Block */}
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 space-y-4 print-signatures shadow-2xs">
                 <h4 className="text-[10px] sm:text-xs font-bold text-center uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
@@ -2067,14 +2007,6 @@ export default function AnalyticsPage({
                 >
                   <Download className="w-4 h-4" />
                   <span className="hidden sm:inline">İcmal Raporu (Excel)</span>
-                </a>
-                <a
-                  href="/api/export?type=cancelled_beneficiaries"
-                  download="Edirne_SYDV_Iptal_Edilen_Haneler_Listesi.xlsx"
-                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
-                >
-                  <UserX className="w-4 h-4" />
-                  <span className="hidden sm:inline">İptal Edilenleri İndir (Excel)</span>
                 </a>
               </div>
 

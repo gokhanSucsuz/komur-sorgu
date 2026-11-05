@@ -246,6 +246,256 @@ export async function checkRouteTeamAuthorization(
   };
 }
 
+/**
+ * Ekip Başına Günlük Tek Rota Bulucu veya Otomatik Oluşturucu
+ * - Aynı ekibin aynı güne ait tek bir rotası olur.
+ * - Ekip üyeleri bu rotayı eşzamanlı takip edip tüm işlemleri yapabilir.
+ */
+export async function ensureTeamDailyRoute({
+  session,
+  usersCol,
+  routeCol,
+  localToday,
+  localTimeStr,
+  preferredNeighborhood
+}: {
+  session: any;
+  usersCol: any;
+  routeCol: any;
+  localToday: string;
+  localTimeStr: string;
+  preferredNeighborhood?: string;
+}): Promise<{ route: any; created: boolean }> {
+  // 1. Bugün için oluşturulmuş tüm aktif/duraklatılmış rotaları tara
+  const todayRoutes = await routeCol
+    .find({
+      tarih: localToday,
+      durum: { $in: ['AKTIF', 'DURAKLATILDI'] }
+    })
+    .sort({ created_at: -1 })
+    .toArray();
+
+  for (const rawR of todayRoutes) {
+    const decR = mapDoc(rawR);
+    const authCheck = await checkRouteTeamAuthorization(decR, session, usersCol);
+    if (authCheck.authorized) {
+      return { route: decR, created: false };
+    }
+  }
+
+  // 2. Bugün için henüz bu ekibe ait rota yoksa: Otomatik olarak ekibin günlük rotasını oluştur!
+  let userDbDoc: any = null;
+  if (usersCol && session.username) {
+    try {
+      userDbDoc = await usersCol.findOne({ username: session.username });
+    } catch {
+      // ignore
+    }
+  }
+
+  const teamName = String(userDbDoc?.ekip_adi || session.user?.ekip_adi || '').trim();
+  const staffName = String(session.ad_soyad || session.username || 'Saha Personeli').trim();
+  const teamDisplayName = teamName || staffName;
+  const neighborhoodName = preferredNeighborhood || 'Genel';
+  const routeName = `${localToday} ${neighborhoodName} Dağıtım Rotası (${teamDisplayName})`;
+
+  const routeObjectId = new ObjectId();
+  const routeIdStr = routeObjectId.toString();
+
+  const newRoute: any = {
+    _id: routeObjectId,
+    id: routeIdStr,
+    rota_adi: routeName,
+    tarih: localToday,
+    durum: 'AKTIF',
+    olusturan_personel: staffName,
+    olusturan_username: session.username || '',
+    dagitim_personeli: staffName,
+    isleten_personel: staffName,
+    isleten_username: session.username || '',
+    ekip_adi: teamName,
+    ekip_arkadaslari: Array.isArray(userDbDoc?.ekip_arkadaslari)
+      ? userDbDoc.ekip_arkadaslari
+      : Array.isArray(session.user?.ekip_arkadaslari)
+      ? session.user.ekip_arkadaslari
+      : [],
+    arac_plaka: '',
+    mahalleler: preferredNeighborhood ? [preferredNeighborhood] : [],
+    duraklar: [],
+    toplam_hane: 0,
+    tamamlanan_hane: 0,
+    eksik_hane: 0,
+    teslim_edilemeyen_hane: 0,
+    toplam_dagitilan_torba: 0,
+    hedef_toplam_torba: 0,
+    notlar: 'İmzası alınan hanelerden otomatik oluşturulan günlük ekip rotası.',
+    created_at: localTimeStr,
+    completed_at: null
+  };
+
+  await routeCol.insertOne(encryptRoute(newRoute));
+
+  await recordActivityLog({
+    kullanici_adi: staffName,
+    kullanici_rolu: session.rol || 'PERSONEL',
+    islem_tipi: 'ROTA_OLUSTURMA',
+    baslik: 'Günlük Ekip Rotası Otomatik Başlatıldı',
+    detay: `"${routeName}" imzası alınan haneler için otomatik olarak oluşturuldu ve ekip kullanımına açıldı.`,
+    ek_bilgi: { routeId: routeIdStr, teamName: teamDisplayName }
+  });
+
+  return { route: newRoute, created: true };
+}
+
+/**
+ * Hak sahiplerini ekibin günlük rotasına otomatik ekler veya teslimat durumunu günceller
+ */
+export async function addBeneficiariesToTeamRoute({
+  route,
+  beneficiaries,
+  session,
+  routeCol,
+  localTimeStr
+}: {
+  route: any;
+  beneficiaries: any[];
+  session: any;
+  routeCol: any;
+  localTimeStr: string;
+}) {
+  if (!route || !Array.isArray(beneficiaries) || beneficiaries.length === 0) return route;
+
+  const stops = Array.isArray(route.duraklar) ? [...route.duraklar] : [];
+  const staff = String(session.ad_soyad || session.username || 'Personel').trim();
+  let modified = false;
+
+  for (const b of beneficiaries) {
+    if (!b) continue;
+    const bIdStr = String(b.id || b._id || '');
+    const bTc = String(b.tc_no || '').trim();
+    const bTcHash = b.tc_hash || '';
+
+    const existingStopIndex = stops.findIndex((s: any) => {
+      const sBenId = String(s.beneficiary_id || s.id || '');
+      const sTc = String(s.tc_no || '').trim();
+      const sTcHash = s.tc_hash || '';
+      return (
+        (bIdStr && sBenId && bIdStr === sBenId) ||
+        (bTc && sTc && bTc === sTc) ||
+        (bTcHash && sTcHash && bTcHash === sTcHash)
+      );
+    });
+
+    const isComplete =
+      b.teslimat_durumu === 'TAMAMLANDI' ||
+      b.teslimat_durumu === 'TESLIM_EDILDI' ||
+      (Number(b.torba_sayisi) > 0 && Number(b.torba_sayisi) >= Number(b.hedef_torba || 34));
+    const isEksik = b.teslimat_durumu === 'EKSIK';
+    const stopStatus = isComplete ? 'TAMAMLANDI' : isEksik ? 'EKSIK' : 'BEKLIYOR';
+    const deliveredBags = Number(b.torba_sayisi) || (isComplete ? Number(b.hedef_torba || 34) : 0);
+
+    if (existingStopIndex >= 0) {
+      const s = stops[existingStopIndex];
+      s.imza_durumu = 'IMZALANDI';
+      if (!s.imza_tarihi) s.imza_tarihi = b.imza_tarihi || localTimeStr;
+      if (!s.imza_alan_personel) s.imza_alan_personel = b.imza_alan_personel || staff;
+      if (isComplete || isEksik) {
+        s.durum = stopStatus;
+        s.teslim_edilen_torba = deliveredBags;
+        if (!s.teslim_tarihi) s.teslim_tarihi = b.teslimat_tarihi || localTimeStr;
+        if (!s.teslim_eden_personel) s.teslim_eden_personel = b.teslim_eden_personel || staff;
+        if (b.teslim_alan) s.teslim_alan = b.teslim_alan;
+      }
+      modified = true;
+    } else {
+      // Rotaya yeni durak olarak ekle
+      const stInfo = getRecordStreetInfo(b);
+      const targetQuota = Number(b.hedef_torba) || 34;
+
+      const newStop = {
+        sira: stops.length + 1,
+        beneficiary_id: bIdStr,
+        tc_no: b.tc_no,
+        ad_soyad: b.ad_soyad,
+        sira_no: b.sira_no || b.mahalle_sira || '',
+        liste_turu: b.liste_turu || '',
+        ek_liste_no: b.ek_liste_no ?? null,
+        ek_liste_adi: b.ek_liste_adi || '',
+        telefon: b.telefon || '',
+        telefon2: b.telefon2 || '',
+        mahalle: b.mahalle || '',
+        sokak: stInfo.sokak || '',
+        kapi_no: stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' ? stInfo.kapiNo : '',
+        daire_no: stInfo.daireNo && stInfo.daireNo > 0 ? stInfo.daireNo : '',
+        acik_adres: b.acik_adres || '',
+        hedef_torba: targetQuota,
+        imza_durumu: 'IMZALANDI',
+        imza_tarihi: b.imza_tarihi || localTimeStr,
+        imza_alan_personel: b.imza_alan_personel || staff,
+        durum: stopStatus,
+        teslim_edilen_torba: deliveredBags,
+        teslim_tarihi: b.teslimat_tarihi || (isComplete ? localTimeStr : null),
+        teslim_eden_personel: b.teslim_eden_personel || (isComplete ? staff : null),
+        teslim_alan: b.teslim_alan || '',
+        teslimat_notu: b.teslimat_notu || ''
+      };
+      stops.push(newStop);
+      modified = true;
+    }
+  }
+
+  if (modified) {
+    let completedCount = 0;
+    let eksikCount = 0;
+    let undeliveredCount = 0;
+    let totalDeliveredBags = 0;
+    let totalTargetBags = 0;
+
+    stops.forEach((s: any, idx: number) => {
+      s.sira = idx + 1;
+      const target = Number(s.hedef_torba) || 34;
+      totalTargetBags += target;
+
+      if (s.durum === 'TAMAMLANDI') {
+        completedCount++;
+        totalDeliveredBags += Number(s.teslim_edilen_torba) || target;
+      } else if (s.durum === 'EKSIK') {
+        eksikCount++;
+        totalDeliveredBags += Number(s.teslim_edilen_torba) || 0;
+      } else if (s.durum === 'TESLIM_EDILEMEDI') {
+        undeliveredCount++;
+      }
+    });
+
+    const uniqueMahalleler = Array.from(new Set(stops.map((s: any) => s.mahalle).filter(Boolean)));
+
+    await routeCol.updateOne(buildIdFilter(route.id || route._id), {
+      $set: {
+        duraklar: stops.map(encryptRouteStop),
+        mahalleler: uniqueMahalleler,
+        toplam_hane: stops.length,
+        tamamlanan_hane: completedCount,
+        eksik_hane: eksikCount,
+        teslim_edilemeyen_hane: undeliveredCount,
+        toplam_dagitilan_torba: totalDeliveredBags,
+        hedef_toplam_torba: totalTargetBags,
+        updated_at: localTimeStr
+      }
+    });
+
+    route.duraklar = stops;
+    route.toplam_hane = stops.length;
+    route.tamamlanan_hane = completedCount;
+    route.eksik_hane = eksikCount;
+    route.teslim_edilemeyen_hane = undeliveredCount;
+    route.toplam_dagitilan_torba = totalDeliveredBags;
+    route.hedef_toplam_torba = totalTargetBags;
+    route.mahalleler = uniqueMahalleler;
+  }
+
+  return route;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await verifySession(request);
@@ -621,6 +871,32 @@ export async function POST(request: NextRequest) {
 
       if (!beneficiary_ids || beneficiary_ids.length === 0) {
         return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir imzalı hane seçilmelidir' }, { status: 400 });
+      }
+
+      // Ekip Başına Günlük Tek Rota Kısıtlaması:
+      // Aynı ekip aynı gün ikinci bir rota oluşturamaz, tek bir ana rota üzerinden çalışır.
+      const existingTeamRoutes = await routeCol
+        .find({
+          tarih: localToday,
+          durum: { $in: ['AKTIF', 'DURAKLATILDI'] }
+        })
+        .toArray();
+
+      for (const rawR of existingTeamRoutes) {
+        const decR = mapDoc(rawR);
+        const authCheck = await checkRouteTeamAuthorization(decR, session, usersCol);
+        if (authCheck.authorized) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'TEAM_DAILY_ROUTE_ALREADY_EXISTS',
+              error: `Ekibiniz için bugün (${localToday}) zaten aktif bir rota bulunmaktadır ("${decR.rota_adi}"). Sistem kuralları gereği her ekip günde yalnızca bir rota oluşturabilir. İmzası alınan tüm haneler otomatik olarak bu rotanıza eklenmektedir.`,
+              route: decR,
+              route_id: decR.id || decR._id
+            },
+            { status: 409 }
+          );
+        }
       }
 
       // Multi-Route & Transfer Support:
@@ -2306,6 +2582,33 @@ export async function POST(request: NextRequest) {
       // Invalidate cache & pulse sync across devices
       const pulseTime = await touchSyncPulse('İmza Güncellendi');
 
+      // İmzası alınan hak sahibini ekibin günlük rotasına otomatik ekle
+      if (isSigned) {
+        try {
+          const targetBenRaw = await benCol.findOne(benFilter);
+          if (targetBenRaw) {
+            const decBen = mapDoc(targetBenRaw);
+            const { route: teamRoute } = await ensureTeamDailyRoute({
+              session,
+              usersCol,
+              routeCol,
+              localToday,
+              localTimeStr,
+              preferredNeighborhood: decBen.mahalle
+            });
+            await addBeneficiariesToTeamRoute({
+              route: teamRoute,
+              beneficiaries: [decBen],
+              session,
+              routeCol,
+              localTimeStr
+            });
+          }
+        } catch (autoRouteErr) {
+          console.error('Error auto-adding signed beneficiary to team route:', autoRouteErr);
+        }
+      }
+
       return NextResponse.json({
         success: true,
         message: isSigned
@@ -2360,6 +2663,33 @@ export async function POST(request: NextRequest) {
           await routeCol.updateOne(buildIdFilter(activeDoc.id || activeDoc._id), {
             $set: { duraklar: stops.map(encryptRouteStop), updated_at: localTimeStr }
           });
+        }
+      }
+
+      // İmzası alınan hak sahiplerini ekibin günlük rotasına otomatik ekle
+      if (isSigned && idFilters.length > 0) {
+        try {
+          const rawBens = await benCol.find({ $or: idFilters }).toArray();
+          const decBens = mapDocs(rawBens);
+          if (decBens.length > 0) {
+            const { route: teamRoute } = await ensureTeamDailyRoute({
+              session,
+              usersCol,
+              routeCol,
+              localToday,
+              localTimeStr,
+              preferredNeighborhood: decBens[0]?.mahalle
+            });
+            await addBeneficiariesToTeamRoute({
+              route: teamRoute,
+              beneficiaries: decBens,
+              session,
+              routeCol,
+              localTimeStr
+            });
+          }
+        } catch (autoRouteErr) {
+          console.error('Error auto-adding bulk signed beneficiaries to team route:', autoRouteErr);
         }
       }
 

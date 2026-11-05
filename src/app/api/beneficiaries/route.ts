@@ -11,6 +11,7 @@ import {
 } from '@/lib/crypto';
 import { getIstanbulDate, isPastDeliveryDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
+import { ensureTeamDailyRoute, addBeneficiariesToTeamRoute } from '@/app/api/routes/route';
 import { serverError, asString, clampInt, isSafeId, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
@@ -842,7 +843,7 @@ export async function POST(request: NextRequest) {
     // Varsayılan hane kömür kotasını sistem ayarlarından al
     const settingDoc = await systemSettings.findOne({ key: 'varsayilan_hedef_torba' });
     const targetQuota = parseInt(hedef_torba || settingDoc?.value || '34', 10);
-    const { nowLocaleTr } = getIstanbulDate();
+    const { nowLocaleTr, nowEnCa } = getIstanbulDate();
     const nowStr = nowLocaleTr;
     const creatorName = (body.personel || session.ad_soyad || session.username || 'Saha Personeli').trim();
 
@@ -983,6 +984,30 @@ export async function POST(request: NextRequest) {
     const encryptedDoc = encryptBeneficiary(newDoc);
     const res = await benCol.insertOne(encryptedDoc);
     const newId = res.insertedId ? res.insertedId.toString() : '';
+
+    // Kapıda imzası alınmış tek hane eklenirse ekibin günlük rotasına otomatik dahil et
+    if (isSignedAtDoor) {
+      try {
+        const { deliveryRoutes: routeCol, users: usersCol } = await getDbCollections();
+        const { route: teamRoute } = await ensureTeamDailyRoute({
+          session,
+          usersCol,
+          routeCol,
+          localToday: nowEnCa,
+          localTimeStr: nowStr,
+          preferredNeighborhood: settlement.name
+        });
+        await addBeneficiariesToTeamRoute({
+          route: teamRoute,
+          beneficiaries: [{ ...newDoc, id: newId }],
+          session,
+          routeCol,
+          localTimeStr: nowStr
+        });
+      } catch (autoRouteErr) {
+        console.error('Error auto-adding signed new household to team daily route:', autoRouteErr);
+      }
+    }
 
     // Eğer aktif bir Excel listesine veya otomatik "Ek Liste" grubuna bağlandıysa sayaçlarını güncelle
     if (attachedBatch && attachedBatch._id) {

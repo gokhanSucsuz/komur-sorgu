@@ -456,6 +456,23 @@ export default function RoutePage({
 
   // Open Create Route Modal
   const handleOpenCreateModal = async () => {
+    // Ekip Başına Günlük Tek Rota Kontrolü
+    const todayYmd = new Date().toLocaleDateString('en-CA');
+    const existingTeamRoute = (activeRoutes || []).find((r: any) =>
+      (r.durum === 'AKTIF' || r.durum === 'DURAKLATILDI') &&
+      (r.tarih === todayYmd || !r.tarih) &&
+      isUserTeamAuthorized(r)
+    );
+    if (existingTeamRoute) {
+      showAlert({
+        title: 'Ekip Günlük Rota Bilgisi',
+        message: `Ekibiniz için bugün zaten aktif bir rota bulunmaktadır ("${existingTeamRoute.rota_adi}"). Sistem kuralları gereği her ekip günde yalnızca bir rota üzerinden çalışabilir. İmzası alınan tüm haneler otomatik olarak bu rotanıza eklenmektedir.`,
+        type: 'info'
+      });
+      setSelectedRouteId(String(existingTeamRoute.id || existingTeamRoute._id));
+      return;
+    }
+
     const todayStr = new Date().toLocaleDateString('tr-TR');
     const teamNum = (activeRoutes?.length || 0) + 1;
     setNewRouteName(`Ekip ${teamNum} - ${todayStr} Dağıtım Rotası`);
@@ -1789,10 +1806,17 @@ export default function RoutePage({
         await fetchRoutes(true);
         if (onRefreshAll) onRefreshAll();
       } else {
+        if (data.code === 'TEAM_DAILY_ROUTE_ALREADY_EXISTS') {
+          setShowCreateModal(false);
+          if (data.route_id || data.route?.id) {
+            setSelectedRouteId(String(data.route_id || data.route?.id));
+          }
+          await fetchRoutes(true);
+        }
         showAlert({
-          title: 'Rota Oluşturulamadı',
+          title: data.code === 'TEAM_DAILY_ROUTE_ALREADY_EXISTS' ? 'Ekip Günlük Rota Bilgisi' : 'Rota Oluşturulamadı',
           message: data.error || 'Rota oluşturulamadı',
-          type: 'error'
+          type: data.code === 'TEAM_DAILY_ROUTE_ALREADY_EXISTS' ? 'info' : 'error'
         });
       }
     } catch (err: any) {
