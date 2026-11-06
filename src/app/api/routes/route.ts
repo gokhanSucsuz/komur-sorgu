@@ -976,9 +976,24 @@ export async function GET(request: NextRequest) {
     }
     const normalizeRoute = (r: any) => {
       if (!r) return r;
+      const stops = Array.isArray(r.duraklar) ? r.duraklar : [];
+      let cCount = r.tamamlanan_hane;
+      let eCount = r.eksik_hane;
+      let uCount = r.teslim_edilemeyen_hane;
+      let tCount = r.toplam_hane;
+      if (stops.length > 0) {
+        cCount = stops.filter((s: any) => (s.durum === 'TAMAMLANDI' || s.durum === 'TESLIM_EDILDI') && !s.onceki_gunden_devir).length;
+        eCount = stops.filter((s: any) => s.durum === 'EKSIK' && !s.onceki_gunden_devir).length;
+        uCount = stops.filter((s: any) => s.durum === 'TESLIM_EDILEMEDI' && !s.onceki_gunden_devir).length;
+        tCount = stops.filter((s: any) => !s.onceki_gunden_devir).length || stops.length;
+      }
       return {
         ...r,
         rota_adi: replaceYmdWithDdmmyyyy(r.rota_adi || ''),
+        tamamlanan_hane: cCount,
+        eksik_hane: eCount,
+        teslim_edilemeyen_hane: uCount,
+        toplam_hane: tCount || r.toplam_hane,
       };
     };
 

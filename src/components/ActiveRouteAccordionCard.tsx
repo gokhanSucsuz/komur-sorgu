@@ -49,10 +49,16 @@ export default function ActiveRouteAccordionCard({
 
   const routeStops = (route.duraklar as any[]) || [];
   const total = route.toplam_hane || routeStops.length || 0;
-  const completed = route.tamamlanan_hane || 0;
-  const eksik = route.eksik_hane || 0;
-  const undelivered = route.teslim_edilemeyen_hane || 0;
-  const handled = completed + eksik + undelivered;
+  const completed = routeStops.length > 0
+    ? routeStops.filter((s: any) => (s.durum === 'TAMAMLANDI' || s.durum === 'TESLIM_EDILDI') && !s.onceki_gunden_devir).length
+    : (route.tamamlanan_hane || 0);
+  const eksik = routeStops.length > 0
+    ? routeStops.filter((s: any) => s.durum === 'EKSIK' && !s.onceki_gunden_devir).length
+    : (route.eksik_hane || 0);
+  const undelivered = routeStops.length > 0
+    ? routeStops.filter((s: any) => s.durum === 'TESLIM_EDILEMEDI' && !s.onceki_gunden_devir).length
+    : (route.teslim_edilemeyen_hane || 0);
+  const handled = total > 0 ? Math.min(total, completed + eksik + undelivered) : (completed + eksik + undelivered);
   const percent = total > 0 ? Math.min(100, Math.round((handled / total) * 100)) : 0;
 
   // Eksik kömür teslim edilen haneler
@@ -208,11 +214,11 @@ export default function ActiveRouteAccordionCard({
                 <span className="font-extrabold text-slate-800">
                   {handled} / {total} Hane (%{percent})
                 </span>
-                {route.eksik_hane > 0 && (
+                {eksik > 0 && (
                   <>
                     <span>•</span>
                     <span className="text-amber-800 font-black bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
-                      ⚠️ {route.eksik_hane} Hane Eksik Kömür
+                      ⚠️ {eksik} Hane Eksik Kömür
                     </span>
                   </>
                 )}
@@ -379,21 +385,21 @@ export default function ActiveRouteAccordionCard({
                 <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
                   <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
                     <span className="text-base font-black text-emerald-800 block leading-tight">
-                      {route.tamamlanan_hane || 0}
+                      {completed}
                     </span>
                     <span className="text-[10px] font-bold text-emerald-900 uppercase">Tamam</span>
                   </div>
 
                   <div className="p-2 rounded-xl bg-amber-50 border border-amber-200">
                     <span className="text-base font-black text-amber-800 block leading-tight">
-                      {route.eksik_hane || 0}
+                      {eksik}
                     </span>
                     <span className="text-[10px] font-bold text-amber-900 uppercase">Eksik</span>
                   </div>
 
                   <div className="p-2 rounded-xl bg-rose-50 border border-rose-200">
                     <span className="text-base font-black text-rose-800 block leading-tight">
-                      {route.teslim_edilemeyen_hane || 0}
+                      {undelivered}
                     </span>
                     <span className="text-[10px] font-bold text-rose-900 uppercase">Verilemedi</span>
                   </div>
@@ -675,7 +681,7 @@ export default function ActiveRouteAccordionCard({
                         : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
-                    Tamamlanan ({route.tamamlanan_hane || 0})
+                    Tamamlanan ({completed})
                   </button>
                   <button
                     type="button"
@@ -686,7 +692,7 @@ export default function ActiveRouteAccordionCard({
                         : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
-                    Verilemedi ({route.teslim_edilemeyen_hane || 0})
+                    Verilemedi ({undelivered})
                   </button>
                 </div>
               </div>
