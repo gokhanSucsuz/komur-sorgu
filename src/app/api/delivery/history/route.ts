@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, buildIdFilter } from '@/lib/mongodb';
-import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
+import { isBirebirBeneficiaryMatch, normalizeToTon } from '@/lib/normalizer';
 import { getIstanbulDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString } from '@/lib/security';
@@ -12,11 +12,22 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { deliveryHistory: histCol, beneficiaries: benCol } = await getDbCollections();
+    const { deliveryHistory: histCol, beneficiaries: benCol, truckDeliveries: trucksCol } = await getDbCollections();
     const searchParams = request.nextUrl.searchParams;
     const islemTipi = asString(searchParams.get('tip'), 32); // 'TESLIMAT', 'IPTAL', or all
     const gun = asString(searchParams.get('gun'), 32); // YYYY-MM-DD
     const q = asString(searchParams.get('q'), 100);
+
+    // O gün gelen kantar/tır tonajını çek (kişi veya torba sayısına göre değil fiili gelen tonaja göre esas alınır)
+    const allTrucks = await trucksCol.find({}).toArray();
+    const trucksByDate = new Map<string, number>();
+    for (const t of allTrucks) {
+      const dateStr = t.tarih ? String(t.tarih).slice(0, 10) : '';
+      if (dateStr) {
+        const netT = normalizeToTon(t.net_tonaj);
+        trucksByDate.set(dateStr, parseFloat(((trucksByDate.get(dateStr) || 0) + netT).toFixed(3)));
+      }
+    }
 
     // 1. Hak sahiplerinin canlı ve kesin durumunu çek (Source of Truth)
     const allBens = mapDocs(await benCol.find({}).toArray());
@@ -158,10 +169,10 @@ export async function GET(request: NextRequest) {
       return tA - tB;
     });
 
-    // 4. Günlük gruplama (Yalnızca geçerli teslimatları teslimatSayisi ve toplamTorba'ya dahil et)
+    // 4. Günlük gruplama (Yalnızca geçerli teslimatları teslimatSayisi ve toplamTorba'ya dahil et; gelen tonajı bağla)
     const groupedDaysMap = new Map<
       string,
-      { gun_tarihi: string; items: any[]; toplamTorba: number; teslimatSayisi: number; iptalSayisi: number }
+      { gun_tarihi: string; items: any[]; toplamTorba: number; teslimatSayisi: number; iptalSayisi: number; gelen_tonaj: number }
     >();
 
     for (const item of records) {
@@ -173,6 +184,7 @@ export async function GET(request: NextRequest) {
           toplamTorba: 0,
           teslimatSayisi: 0,
           iptalSayisi: 0,
+          gelen_tonaj: trucksByDate.get(g) || 0,
         });
       }
       const dayGroup = groupedDaysMap.get(g)!;

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
-import { Route as RouteIcon, X, Download, Printer, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Route as RouteIcon, X, Download, Printer, AlertTriangle, RefreshCw, Truck } from 'lucide-react';
 import { getBeneficiaryListTypeInfo, resolveStaffDisplayName } from '@/lib/normalizer';
 import { formatTrDate, formatDottedTrDate, replaceYmdWithDdmmyyyy, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
@@ -67,7 +67,20 @@ export default function RoutePrintReportModal({
     (acc: number, d: any) => acc + (Number(d.teslim_edilen_torba) || 0),
     0
   );
-  const toplamTon = (toplamTorba * 0.025).toFixed(2);
+
+  // Kural: Günlük tutanakta o gün gelen tonaj sayısı yazar; verilen kişi sayısına göre tonaj hesaplanmaz!
+  // Kömür torbalarının takribi 25 kg ağırlıkta olması sebebiyle sahaya gelen kantar tonajı esas alınır.
+  const [customGelenTonaj, setCustomGelenTonaj] = useState<string>(
+    printRoute.gelen_tonaj ? String(printRoute.gelen_tonaj) : ''
+  );
+
+  const routeGelenTonajNum = customGelenTonaj !== ''
+    ? parseFloat(customGelenTonaj) || 0
+    : (Number(printRoute.gelen_tonaj) || 0);
+
+  const displayGelenTonaj = routeGelenTonajNum > 0
+    ? routeGelenTonajNum.toFixed(2)
+    : (toplamTorba * 0.025).toFixed(2);
 
   const cleanStaffList = routeStaffList.map((st) => resolveStaffDisplayName(st, st, 'PERSONEL'));
 
@@ -126,7 +139,7 @@ export default function RoutePrintReportModal({
                 <span>•</span>
                 <span>
                   <strong className="text-amber-800">
-                    {toplamTorba} Torba ({toplamTon} Ton)
+                    {toplamTorba} Torba (Gelen Tonaj: {displayGelenTonaj} Ton)
                   </strong>
                 </span>
               </p>
@@ -134,6 +147,22 @@ export default function RoutePrintReportModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 ml-2">
+            {/* O Gün Gelen Tonaj Girişi / Teyidi (no-print) */}
+            <div className="hidden sm:flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-2xs">
+              <Truck className="w-3.5 h-3.5 text-sky-600" />
+              <span className="text-[11px] font-bold text-slate-700">Gelen Tonaj:</span>
+              <input
+                type="number"
+                step="0.01"
+                value={customGelenTonaj}
+                onChange={(e) => setCustomGelenTonaj(e.target.value)}
+                placeholder={printRoute.gelen_tonaj ? String(printRoute.gelen_tonaj) : '27.40'}
+                className="w-20 text-xs font-black text-sky-950 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-sky-500"
+                title="O gün gelen kantar tonajı (tutanakta yazacak resmi miktar)"
+              />
+              <span className="text-[11px] font-bold text-slate-500">Ton</span>
+            </div>
+
             <button
               type="button"
               onClick={onClose}
@@ -254,15 +283,25 @@ export default function RoutePrintReportModal({
             </div>
             <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200">
               <span className="text-[10px] font-bold text-sky-800 uppercase block">
-                Toplam Dağıtılan Kömür
+                O Gün Gelen Tonaj
               </span>
               <span className="text-base font-black text-sky-800 block">
-                {toplamTorba} Torba
+                {displayGelenTonaj} Ton
               </span>
               <span className="text-[9px] text-sky-700 font-semibold block mt-0.5">
-                ({toplamTon} Ton / 25 kg Torba)
+                ({toplamTorba} Torba Dağıtıldı • Takribi ~25kg)
               </span>
             </div>
+          </div>
+
+          {/* Resmi Tonaj ve Torba Toleransı Bilgilendirme Notu */}
+          <div className="p-2.5 rounded-xl bg-sky-50/60 border border-sky-200 text-[11px] text-sky-950 space-y-0.5">
+            <span className="font-bold text-sky-900 block">
+              ⚖️ Resmi Kantar Tonajı Esası:
+            </span>
+            <p>
+              Kömür torbalarının takribi 25 kg ağırlıkta olması sebebiyle bu tutanakta yer alan tonaj miktarı <strong>o gün sahaya intikal eden fiili kantar/tır tonajı ({displayGelenTonaj} Ton)</strong> olarak esas alınmıştır; verilen kişi sayısına göre tonaj hesaplanmamıştır.
+            </p>
           </div>
 
           {/* Devir Uyarısı / Bilgilendirme Bandı */}

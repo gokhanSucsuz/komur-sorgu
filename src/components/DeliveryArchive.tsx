@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp, MapPin, Truck } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate, formatTrAuto, formatTrTime, formatDottedTrDate, parseDateSafely, isPastDeliveryDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
@@ -46,6 +46,7 @@ export default function DeliveryArchive({
   const [printCancelGroup, setPrintCancelGroup] = useState<any | null>(null);
   const [cumulativeDate, setCumulativeDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
   const [printSortMode, setPrintSortMode] = useState<'TIME_ASC' | 'TIME_DESC' | 'ADDRESS' | 'NAME'>('TIME_ASC');
+  const [dayTonajInput, setDayTonajInput] = useState<Record<string, string>>({});
 
   // ESC tuşu ve overlay ile yazdırma modalını güvenli kapatma (ekran kilitlenmesini önler)
   useEffect(() => {
@@ -462,7 +463,8 @@ export default function DeliveryArchive({
             filteredGroupedDays.map((dayGroup) => {
               const isExpanded = expandedDay === dayGroup.gun_tarihi;
               const totalBags = dayGroup.items.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0);
-              const totalTon = (totalBags * 0.025).toFixed(2);
+              const dayGelenTonajNum = dayGroup.gelen_tonaj ? Number(dayGroup.gelen_tonaj) : 0;
+              const displayTon = dayGelenTonajNum > 0 ? dayGelenTonajNum.toFixed(2) : (totalBags * 0.025).toFixed(2);
 
               return (
                 <div
@@ -486,12 +488,12 @@ export default function DeliveryArchive({
                           <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                             {dayGroup.items.length} Teslimat
                           </span>
-                          <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            {totalTon} Ton
+                          <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200" title={dayGelenTonajNum > 0 ? "O gün gelen fiili kantar/tır net tonajı" : "Tahmini tonaj"}>
+                            {dayGelenTonajNum > 0 ? `${displayTon} Ton (Gelen)` : `${displayTon} Ton`}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                          {dayGroup.items.length} Haneye toplam {totalBags} torba kömür ulaştırıldı
+                          {dayGroup.items.length} Haneye toplam {totalBags} torba kömür ulaştırıldı {dayGelenTonajNum > 0 ? `• O gün sahaya ${displayTon} Ton geldi` : ''}
                         </p>
                       </div>
                     </div>
@@ -744,7 +746,19 @@ export default function DeliveryArchive({
                     <span>•</span>
                     <span>Toplam: <strong className="text-emerald-700">{sortedPrintItems.length} Hane</strong></span>
                     <span>•</span>
-                    <span><strong className="text-amber-800">{(sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton</strong></span>
+                    <span>
+                      <strong className="text-amber-800">
+                        {printDayGroup.isBulk
+                          ? `${(sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2)} Ton`
+                          : `O Gün Gelen Tonaj: ${
+                              (dayTonajInput[printDayGroup.gun_tarihi] !== undefined && dayTonajInput[printDayGroup.gun_tarihi] !== '')
+                                ? Number(dayTonajInput[printDayGroup.gun_tarihi]).toFixed(2)
+                                : (Number(printDayGroup.gelen_tonaj) > 0
+                                    ? Number(printDayGroup.gelen_tonaj).toFixed(2)
+                                    : (sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2))
+                            } Ton`}
+                      </strong>
+                    </span>
                     {deliveryStaffList.length > 0 && (
                       <>
                         <span>•</span>
@@ -756,6 +770,23 @@ export default function DeliveryArchive({
               </div>
 
               <div className="flex items-center gap-2 shrink-0 ml-2">
+                {!printDayGroup.isBulk && (
+                  <div className="hidden sm:flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-2xs">
+                    <Truck className="w-3.5 h-3.5 text-sky-600" />
+                    <span className="text-[11px] font-bold text-slate-700">O Gün Gelen Tonaj:</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={dayTonajInput[printDayGroup.gun_tarihi] ?? (printDayGroup.gelen_tonaj ? String(printDayGroup.gelen_tonaj) : '')}
+                      onChange={(e) => setDayTonajInput({ ...dayTonajInput, [printDayGroup.gun_tarihi]: e.target.value })}
+                      placeholder={printDayGroup.gelen_tonaj ? String(printDayGroup.gelen_tonaj) : '27.40'}
+                      className="w-20 text-xs font-black text-amber-950 bg-amber-50/50 border border-amber-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-amber-500"
+                      title="O gün sahaya gelen kantar/tır net tonajı"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500">Ton</span>
+                  </div>
+                )}
+
                 <div className="hidden sm:flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-2xs">
                   <Clock className="w-3.5 h-3.5 text-amber-600" />
                   <span className="text-[11px] font-bold text-slate-700">Sıralama:</span>
@@ -836,7 +867,21 @@ export default function DeliveryArchive({
                     <span>TUTANAK</span>
                   </div>
                 </div>
-                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">Bu tutanak, {printDayGroup.isBulk ? <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihine kadar</span> : <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde</span>} Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri{deliveryStaffList.length > 0 ? ` (${deliveryStaffList.join(', ')})` : ''} tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
+                <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
+                  Bu tutanak, {printDayGroup.isBulk ? <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihine kadar</span> : <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde</span>} Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri{deliveryStaffList.length > 0 ? ` (${deliveryStaffList.join(', ')})` : ''} tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
+                  {!printDayGroup.isBulk && (
+                    <span className="block mt-1.5 p-2 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 font-medium">
+                      ⚖️ <strong>O Gün Gelen Kömür Tonajı:</strong> <strong className="font-mono font-bold text-amber-900">
+                        {
+                          (dayTonajInput[printDayGroup.gun_tarihi] !== undefined && dayTonajInput[printDayGroup.gun_tarihi] !== '')
+                            ? Number(dayTonajInput[printDayGroup.gun_tarihi]).toFixed(2)
+                            : (Number(printDayGroup.gelen_tonaj) > 0
+                                ? Number(printDayGroup.gelen_tonaj).toFixed(2)
+                                : (sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2))
+                        } Ton
+                      </strong> — Kömür torbalarının takribi 25 kg ağırlıkta olması sebebiyle resmi tonaj sahaya gelen fiili kantar tonajı olarak esas alınmıştır; verilen kişi sayısına göre tonaj hesaplanmamıştır.
+                    </span>
+                  )}
                 </p>
               </div>
 

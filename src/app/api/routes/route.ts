@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptField, encryptDeliveryHistory, encryptRoute, encryptRouteStop } from '@/lib/crypto';
-import { compareByAddressAsc, getRecordStreetInfo, normalizeStaffName } from '@/lib/normalizer';
+import { compareByAddressAsc, getRecordStreetInfo, normalizeStaffName, normalizeToTon } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { getIstanbulDate, isPastDeliveryDate, formatDottedTrDate, replaceYmdWithDdmmyyyy } from '@/lib/dateUtils';
 import { serverError } from '@/lib/security';
@@ -585,7 +585,18 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { deliveryRoutes: routeCol, beneficiaries: benCol, users: usersCol } = await getDbCollections();
+    const { deliveryRoutes: routeCol, beneficiaries: benCol, users: usersCol, truckDeliveries: trucksCol } = await getDbCollections();
+
+    // Kantar / tır tonajlarını çek (tutanaklarda kişi sayısına göre değil o gün gelen fiili tonaj esas alınır)
+    const allTrucks = await trucksCol.find({}).toArray();
+    const trucksByDate = new Map<string, number>();
+    for (const t of allTrucks) {
+      const dateStr = t.tarih ? String(t.tarih).slice(0, 10) : '';
+      if (dateStr) {
+        const netT = normalizeToTon(t.net_tonaj);
+        trucksByDate.set(dateStr, parseFloat(((trucksByDate.get(dateStr) || 0) + netT).toFixed(3)));
+      }
+    }
 
     // 1. Fetch All Active & Paused Routes (Simultaneous multi-team & multi-vehicle support)
     const activeRouteDocs = await routeCol
@@ -741,6 +752,16 @@ export async function GET(request: NextRequest) {
       const dateB = new Date(a.created_at || a.completed_at || 0).getTime();
       return dateA - dateB;
     });
+
+    // Rota tutanaklarında kullanılmak üzere o gün gelen fiili tır/kantar tonajını bağla
+    for (const r of activeRoutes) {
+      const rDate = r.tarih ? String(r.tarih).slice(0, 10) : '';
+      r.gelen_tonaj = r.gelen_tonaj || trucksByDate.get(rDate) || 0;
+    }
+    for (const r of archivedRoutes) {
+      const rDate = r.tarih ? String(r.tarih).slice(0, 10) : '';
+      r.gelen_tonaj = r.gelen_tonaj || trucksByDate.get(rDate) || 0;
+    }
 
     // 3. Fetch beneficiaries with signed status (ready for route)
     // Citizens whose signature is taken and coal is not yet delivered
@@ -2569,6 +2590,14 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      let finalizedGelenTonaj = Number(body.gelen_tonaj) || Number(route.gelen_tonaj) || 0;
+      if (!finalizedGelenTonaj && route.tarih) {
+        const { truckDeliveries: trucksCol } = await getDbCollections();
+        const rDate = String(route.tarih).slice(0, 10);
+        const dayTrucks = await trucksCol.find({ tarih: rDate }).toArray();
+        finalizedGelenTonaj = dayTrucks.reduce((sum: number, t: any) => sum + normalizeToTon(t.net_tonaj), 0);
+      }
+
       await routeCol.updateOne(buildIdFilter(route_id), {
         $set: {
           durum: 'TAMAMLANDI',
@@ -2578,6 +2607,7 @@ export async function POST(request: NextRequest) {
           eksik_hane: eksikCount,
           teslim_edilemeyen_hane: undeliveredCount,
           toplam_dagitilan_torba: totalDeliveredBags,
+          gelen_tonaj: finalizedGelenTonaj,
           kapanis_notu: encryptField(notlar.trim()),
           kapatan_personel: staffName,
           kilitli_personel: null,
