@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronUp, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
+import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, Hourglass, ChevronRight, ChevronDown, ChevronUp, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled, toTitleCaseTurkish } from '@/lib/normalizer';
 import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
@@ -2547,10 +2547,10 @@ export default function BeneficiaryList({
                         }
                       }}
                     >
-                      {/* 1. Üst Satır: Sıra No, Liste Türü, Özel Rozetler & Sağda Durum ve Chevron */}
+                      {/* 1. Üst Satır: Hak Sahibi Adı Soyadı & Sağda İmza Rozeti (yalnızca teslim edilmemişse), Durum Rozeti ve Chevron */}
                       <div className="flex items-center justify-between gap-2">
-                        {/* Sol Taraf: Sıra No & Liste Türü & Şehit/Gazi */}
-                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        {/* Sol Taraf: Toplu Seçim Checkbox & Hak Sahibi Adı Soyadı */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           {isBulkSignMode && (
                             <button
                               type="button"
@@ -2567,84 +2567,51 @@ export default function BeneficiaryList({
                               )}
                             </button>
                           )}
-                          <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
-                            #{person.sira_no || person.mahalle_sira || person.id}
-                          </span>
-                          <span
-                            className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
-                            title={listInfo.folderLabel}
-                          >
-                            {listInfo.type === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-600" />}
-                            {listInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-indigo-600" />}
-                            {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
-                            <span>{listInfo.label}</span>
-                          </span>
-                          {person.sehit_gazi && (
-                            <span
-                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
-                              title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
-                            >
-                              <span className="text-xs">🎖️</span>
-                              <span className="hidden xs:inline">Şehit/Gazi</span>
-                            </span>
-                          )}
-                          {person.imza_sonrasi_adres_degisti && (
-                            <span
-                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 shadow-2xs"
-                              title={`İmza listesi basıldıktan sonra adres güncellendi. Basılı listede "${person.imza_listesi_mahalle || person.onceki_mahalle}" altında yer alır.`}
-                            >
-                              <FileText className="w-3 h-3 text-amber-700" />
-                              <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
-                            </span>
-                          )}
-                          {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
-                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 shrink-0" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
-                              Mh:#{person.mahalle_sira}
-                            </span>
-                          )}
-                          {(person.excel_sira_no || person.ek_excel_sira) && (
-                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shrink-0" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
-                              Ex:#{person.excel_sira_no || person.ek_excel_sira}
-                            </span>
-                          )}
+                          <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors truncate">
+                            {person.ad_soyad}
+                          </h4>
                         </div>
 
-                        {/* Sağ Taraf: İmza Durumu, Teslimat Rozeti ve Akordiyon Oku */}
+                        {/* Sağ Taraf: Teslim Edilmemişse İmza Rozeti, Durum Rozeti (Yeşil Tik / Kum Saati) ve Chevron */}
                         <div className="shrink-0 flex items-center gap-1.5">
-                          {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && (
-                            <span
-                              className="text-[10px] font-black text-amber-900 bg-amber-100/95 px-2 py-0.5 rounded-lg border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
-                              title={person.ek_liste_imza_notu || 'Manuel ek listeye imzası alındı'}
-                            >
-                              <PenTool className="w-3 h-3 text-amber-700" />
-                              <span className="hidden sm:inline">Ek İmzalı</span>
-                            </span>
+                          {!isComplete && (
+                            <>
+                              {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) ? (
+                                <span
+                                  className="text-[10px] font-black text-amber-900 bg-amber-100/95 px-2 py-0.5 rounded-lg border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
+                                  title={person.ek_liste_imza_notu || 'Manuel ek listeye imzası alındı'}
+                                >
+                                  <PenTool className="w-3 h-3 text-amber-700" />
+                                  <span className="hidden sm:inline">Ek İmzalı</span>
+                                </span>
+                              ) : isSigned ? (
+                                <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                                  <PenTool className="w-3 h-3 text-emerald-700" />
+                                  <span>İmzalı</span>
+                                </span>
+                              ) : null}
+                            </>
                           )}
-                          {!(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && isSigned && (
-                            <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
-                              <PenTool className="w-3 h-3 text-emerald-700" />
-                              <span>İmzalı</span>
-                            </span>
-                          )}
+
                           {person.komur_verilmeyecek ? (
-                            <span className="badge badge-danger text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
+                            <span className="badge badge-cancelled text-xs font-black flex items-center gap-1 px-2.5 py-1 shadow-2xs" title="Kömür Verilmeyecek">
                               <Ban className="w-3.5 h-3.5 text-rose-600" />
-                              Verilmeyecek
+                              <span>Verilmeyecek</span>
                             </span>
                           ) : isComplete ? (
-                            <span className="badge badge-delivered text-[11px]">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              Tam ({teslim})
+                            <span className="badge badge-delivered text-xs font-black flex items-center gap-1 px-2.5 py-1 shadow-2xs" title={`Teslim Edildi: ${teslim} Torba`}>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>{teslim}</span>
                             </span>
                           ) : isPartial ? (
-                            <span className="badge badge-pending text-[11px]">
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              Eksik: {teslim}/{hedef}
+                            <span className="badge badge-pending text-xs font-black flex items-center gap-1 px-2.5 py-1 shadow-2xs" title={`Eksik Teslimat: ${teslim}/${hedef} Torba`}>
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>{teslim}/{hedef}</span>
                             </span>
                           ) : (
-                            <span className="badge badge-pending text-[11px]">
-                              <Clock className="w-3.5 h-3.5" />
-                              Bekliyor ({hedef})
+                            <span className="badge bg-amber-50 text-amber-900 border border-amber-300 text-xs font-black flex items-center gap-1 px-2.5 py-1 shadow-2xs" title={`Dağıtım Bekliyor: ${hedef} Torba`}>
+                              <Hourglass className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>{hedef}</span>
                             </span>
                           )}
 
@@ -2662,23 +2629,10 @@ export default function BeneficiaryList({
                         </div>
                       </div>
 
-                      {/* 2. Orta Satır: Hak Sahibi Adı Soyadı, Altında TC Kimlik No ve En Sağında Konum Butonu */}
+                      {/* 2. Orta Satır: TC Kimlik No & En Sağında Konum Butonu */}
                       <div className="pt-0.5 flex items-center justify-between gap-3">
-                        {/* Sol Taraf: Ad Soyad ve TC Kimlik No */}
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
-                              {person.ad_soyad}
-                            </h4>
-                            {hasHouseholdDuplicate && (
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
-                                <Users className="w-3 h-3 text-purple-700" />
-                                <span>Aynı Adres</span>
-                              </span>
-                            )}
-                          </div>
-
-                          {/* İsmin Altında TC Kimlik No */}
+                        {/* Sol Taraf: TC Kimlik No & Aynı Adres Rozeti */}
+                        <div className="flex items-center gap-2 flex-wrap">
                           <div className="flex items-center gap-1.5 text-slate-600">
                             <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
                               TC
@@ -2687,6 +2641,12 @@ export default function BeneficiaryList({
                               {person.tc_no}
                             </span>
                           </div>
+                          {hasHouseholdDuplicate && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
+                              <Users className="w-3 h-3 text-purple-700" />
+                              <span>Aynı Adres</span>
+                            </span>
+                          )}
                         </div>
 
                         {/* Sağ Taraf: Konum Butonu (İsim ve TC Alanının En Sağında - Mobil Uyumlu) */}
@@ -2695,7 +2655,7 @@ export default function BeneficiaryList({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="h-10 px-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 shrink-0 self-center"
+                          className="h-8 sm:h-9 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 shrink-0 self-center"
                           title="Yandex Navigasyon ile kapıya yol tarifi al"
                         >
                           <Navigation className="w-3.5 h-3.5 fill-white shrink-0" />
@@ -2743,6 +2703,49 @@ export default function BeneficiaryList({
                     {/* 2. AKORDİYON GÖVDESİ: Yalnızca Kart Açıkken (isCardExpanded) Görünür */}
                     {isCardExpanded && (
                       <div className="pt-3 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* Kart Açıldığında Üst İdari Rozetler: Sıra No, Liste Türü, Mahalle Sıra, Excel Sıra, Şehit/Gazi vb. */}
+                        <div className="flex items-center gap-1.5 flex-wrap pb-2 border-b border-slate-100">
+                          <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
+                            #{person.sira_no || person.mahalle_sira || person.id}
+                          </span>
+                          <span
+                            className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
+                            title={listInfo.folderLabel}
+                          >
+                            {listInfo.type === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-600" />}
+                            {listInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-indigo-600" />}
+                            {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
+                            <span>{listInfo.label}</span>
+                          </span>
+                          {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 shrink-0" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
+                              Mh:#{person.mahalle_sira}
+                            </span>
+                          )}
+                          {(person.excel_sira_no || person.ek_excel_sira) && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shrink-0" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
+                              Ex:#{person.excel_sira_no || person.ek_excel_sira}
+                            </span>
+                          )}
+                          {person.sehit_gazi && (
+                            <span
+                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                              title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
+                            >
+                              <span className="text-xs">🎖️</span>
+                              <span>Şehit/Gazi</span>
+                            </span>
+                          )}
+                          {person.imza_sonrasi_adres_degisti && (
+                            <span
+                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                              title={`İmza listesi basıldıktan sonra adres güncellendi. Basılı listede "${person.imza_listesi_mahalle || person.onceki_mahalle}" altında yer alır.`}
+                            >
+                              <FileText className="w-3 h-3 text-amber-700" />
+                              <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
+                            </span>
+                          )}
+                        </div>
                         {/* Ek Liste Notu Bilgilendirmesi */}
                         {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi || person.ek_liste_imza_notu) && (
                           <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-50/90 border border-amber-200/90 rounded-xl px-2.5 py-1.5 shadow-2xs">

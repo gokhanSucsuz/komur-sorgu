@@ -126,5 +126,39 @@ test('Vatandaş Sorgu Ekranı Akordiyon Kart Menü Mimarisi ve Mobil Alan Tasarr
       'Masaüstü grid görünümünde kartların gereksiz esnemesini önlemek için align-items: start kullanılmalıdır'
     );
   });
+
+  await t.test('7. Sadeleştirilmiş Kapalı Kart & İdari Rozetlerin Açılır Gövdeye Taşınması', () => {
+    // A. Kapalı durumda #sira_no, liste türü (Ana Liste vb.), Mh ve Ex rozetleri gizlenir; açık gövdede yer alır
+    assert.ok(
+      beneficiaryListSrc.includes('{/* Kart Açıldığında Üst İdari Rozetler: Sıra No, Liste Türü, Mahalle Sıra, Excel Sıra, Şehit/Gazi vb. */}') &&
+      beneficiaryListSrc.includes('#{person.sira_no || person.mahalle_sira || person.id}') &&
+      beneficiaryListSrc.includes('{listInfo.label}') &&
+      beneficiaryListSrc.includes('Ex:#{person.excel_sira_no || person.ek_excel_sira}'),
+      'Sıra no, liste türü ve ek liste rozetleri kapalı başlıkta değil açılan gövde içerisinde yer almalıdır'
+    );
+
+    // B. "Bekliyor" metni yerine kumsaati simgesi (Hourglass) kullanılmalıdır
+    assert.ok(
+      beneficiaryListSrc.includes('<Hourglass className="w-3.5 h-3.5 text-amber-600 shrink-0" />') &&
+      !beneficiaryListSrc.includes('Bekliyor ({hedef})'),
+      'Dağıtım bekleyen kayıtlarda "Bekliyor" yazısı yerine kum saati (Hourglass) simgesi yer almalıdır'
+    );
+
+    // C. Teslim edilen kayıtlarda yeşil tik simgesi (CheckCircle2) yer alır ve "İmzalı" rozeti YAZMAZ
+    assert.ok(
+      beneficiaryListSrc.includes('<CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />') &&
+      beneficiaryListSrc.includes('<span>{teslim}</span>') &&
+      !beneficiaryListSrc.includes('Tam ({teslim})'),
+      'Teslim edilen hanelerde yeşil tik işareti ve teslimat sayısı görünmeli, "Tam" yazmamalıdır'
+    );
+
+    // D. Teslim edilmemiş kayıtlarda imza alındıysa imza rozeti görünebilir (!isComplete && isSigned)
+    assert.ok(
+      beneficiaryListSrc.includes('{!isComplete && (') &&
+      beneficiaryListSrc.includes('isSigned ? (') &&
+      beneficiaryListSrc.includes('<span>İmzalı</span>'),
+      'İmzalı rozeti yalnızca teslim edilmemiş (!isComplete) ve imzası alınmış kayıtlarda görüntülenmelidir'
+    );
+  });
 });
 
