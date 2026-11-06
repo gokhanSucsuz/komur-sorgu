@@ -582,7 +582,7 @@ export default function ActiveRouteAccordionCard({
                                 #{stop.sira}
                               </span>
                               <span className="text-xs font-black text-slate-900 truncate">
-                                {stop.ad_soyad}
+                                {(stop.ad_soyad || '').includes('ŞİFRELİ') ? `Hak Sahibi #${stop.sira}` : stop.ad_soyad}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 text-[11px] mt-1 text-slate-600">
@@ -779,15 +779,27 @@ export default function ActiveRouteAccordionCard({
                         </div>
 
                         <div className="min-w-0">
-                          <h4 className="text-sm font-extrabold text-slate-900 truncate">
-                            {stop.ad_soyad}
-                          </h4>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                              {(stop.ad_soyad || '').includes('ŞİFRELİ') ? `Hak Sahibi #${stop.sira || stop.originalIndex + 1}` : stop.ad_soyad}
+                            </h4>
+                            {stop.onceki_gunden_devir && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                🔄 Önceki Gün Eksik Devri (Kalan {stop.hedef_torba} Torba)
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-0.5">
                             <span className="font-mono text-amber-800 font-bold">
-                              TC: {stop.tc_no}
+                              TC: {stop.tc_no && !stop.tc_no.includes('ŞİFRELİ') ? stop.tc_no : '-'}
                             </span>
                             <span>•</span>
                             <span className="text-slate-700 font-medium">{stop.mahalle}</span>
+                            {stop.onceki_gunden_devir && (
+                              <span className="text-[10px] text-amber-900 font-bold italic">
+                                • (Hane sayımına dahil edilmez)
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

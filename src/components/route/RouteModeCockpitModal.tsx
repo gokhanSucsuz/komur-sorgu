@@ -687,11 +687,11 @@ export default function RouteModeCockpitModal({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
                   <div className="min-w-0">
                     <h2 className="text-lg sm:text-xl font-black text-slate-950 leading-tight">
-                      {currentStop.ad_soyad}
+                      {(currentStop.ad_soyad || '').includes('ŞİFRELİ') ? `Hak Sahibi #${currentStop.sira || safeIndex + 1}` : currentStop.ad_soyad}
                     </h2>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                       <span className="text-xs font-mono font-black text-amber-950 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                        TC: {currentStop.tc_no}
+                        TC: {currentStop.tc_no && !currentStop.tc_no.includes('ŞİFRELİ') ? currentStop.tc_no : '-'}
                       </span>
 
                       <span
@@ -712,6 +712,16 @@ export default function RouteModeCockpitModal({
                           <span className="font-mono">#{currentStop.sira_no}</span>
                         )}
                       </span>
+
+                      {currentStop.onceki_gunden_devir && (
+                        <span
+                          className="text-xs font-black text-amber-950 bg-amber-100 px-2.5 py-0.5 rounded-lg border border-amber-400 flex items-center gap-1 shadow-2xs"
+                          title="Önceki gün eksik kalan teslimat tamamlama durağıdır. Hane sayımına dahil edilmez."
+                        >
+                          <span>🔄</span>
+                          <span>Önceki Gün Devri (Kalan {currentStop.hedef_torba} Torba)</span>
+                        </span>
+                      )}
 
                       {currentStop.sehit_gazi && (
                         <span
@@ -1035,7 +1045,7 @@ export default function RouteModeCockpitModal({
                             type="text"
                             value={routeModeRecipient}
                             onChange={(e) => setRouteModeRecipient(e.target.value)}
-                            placeholder={currentStop.ad_soyad}
+                            placeholder={(currentStop.ad_soyad || '').includes('ŞİFRELİ') ? 'Hak Sahibi' : currentStop.ad_soyad}
                             className="w-full h-11 px-3 rounded-xl bg-white border border-slate-300 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
                           />
                         </div>
@@ -1209,7 +1219,7 @@ export default function RouteModeCockpitModal({
                               type="text"
                               value={routeModeRecipient}
                               onChange={(e) => setRouteModeRecipient(e.target.value)}
-                              placeholder={currentStop.ad_soyad}
+                              placeholder={(currentStop.ad_soyad || '').includes('ŞİFRELİ') ? 'Hak Sahibi' : currentStop.ad_soyad}
                               className="w-full h-11 px-3 rounded-xl bg-white border border-amber-300 text-xs font-bold text-slate-900"
                             />
                           </div>

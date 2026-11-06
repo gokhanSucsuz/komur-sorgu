@@ -45,7 +45,8 @@ import {
   getYandexNaviUrl,
   getGoogleMapsUrl,
   getParselSorguSearchSummary,
-  PARSEL_SORGU_URL
+  PARSEL_SORGU_URL,
+  resolveStaffDisplayName
 } from '@/lib/normalizer';
 import { formatTrDate } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';
@@ -3458,10 +3459,15 @@ export default function RoutePage({
                     </h4>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
                       {route.kapatan_personel ? (
-                        <>Teslim Eden: <strong className="text-slate-700 font-bold">{route.kapatan_personel}</strong> {route.dagitim_personeli ? `(${route.dagitim_personeli})` : ''}</>
+                        <>Teslim Eden: <strong className="text-slate-700 font-bold">{resolveStaffDisplayName(route.kapatan_personel, 'admin', 'ADMIN')}</strong> {route.dagitim_personeli ? `(${resolveStaffDisplayName(route.dagitim_personeli, 'admin', 'ADMIN')})` : ''}</>
                       ) : (
-                        <>{route.dagitim_personeli}</>
-                      )} • {route.toplam_hane} Hane ({route.toplam_dagitilan_torba || 0} Torba)
+                        <>{resolveStaffDisplayName(route.dagitim_personeli, 'admin', 'ADMIN')}</>
+                      )} • <strong className="text-emerald-700 font-bold">{(Number(route.tamamlanan_hane) || 0) + (Number(route.eksik_hane) || 0)} Hane</strong>
+                      {Number(route.eksik_hane) > 0 ? (
+                        <span className="text-amber-800 font-semibold ml-1">
+                          ({route.tamamlanan_hane || 0} Tam, {route.eksik_hane} Eksik)
+                        </span>
+                      ) : null} ({route.toplam_dagitilan_torba || 0} Torba)
                     </p>
                   </div>
 
@@ -3541,47 +3547,69 @@ export default function RoutePage({
                       <h5 className="text-[11px] font-extrabold uppercase text-slate-500 tracking-wider">
                         Durak Dökümü:
                       </h5>
-                      {route.duraklar?.map((s: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="p-2 rounded-xl bg-white border border-slate-200 text-xs flex items-center justify-between"
-                        >
-                          <div className="min-w-0 pr-2">
-                            <div className="font-bold text-slate-900 truncate">
-                              #{s.sira || idx + 1}. {s.ad_soyad}
-                            </div>
-                            <div className="text-[11px] text-slate-500 truncate">
-                              {s.mahalle} {s.sokak ? `• ${s.sokak}` : ''}
-                            </div>
-                            {(s.teslim_eden_personel || route.kapatan_personel || route.dagitim_personeli || s.teslim_alan) && (
-                              <div className="text-[10px] text-slate-600 truncate mt-0.5 flex flex-wrap gap-x-2">
-                                <span>Teslim Eden: <strong className="text-slate-900 font-bold">{s.teslim_eden_personel || route.kapatan_personel || route.dagitim_personeli || '-'}</strong></span>
-                                {s.teslim_alan && (
-                                  <span>Teslim Alan: <strong className="text-slate-900 font-bold">{s.teslim_alan}</strong></span>
+                      {route.duraklar?.map((s: any, idx: number) => {
+                        const cleanAd = (s.ad_soyad || '').includes('ŞİFRELİ') ? `Hak Sahibi #${s.sira || idx + 1}` : s.ad_soyad;
+                        const cleanAlan = (s.teslim_alan || '').includes('ŞİFRELİ') ? cleanAd : s.teslim_alan;
+                        const cleanStaff = resolveStaffDisplayName(s.teslim_eden_personel || route.kapatan_personel || route.dagitim_personeli, 'admin', 'ADMIN');
+                        const isDevir = Boolean(s.onceki_gunden_devir);
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-2 rounded-xl bg-white border border-slate-200 text-xs flex items-center justify-between ${isDevir ? 'border-amber-300 bg-amber-50/40' : ''}`}
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                <span>#{s.sira || idx + 1}. {cleanAd}</span>
+                                {isDevir && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                    🔄 Önceki Gün Eksik Devri (Kalan {s.hedef_torba} Torba)
+                                  </span>
                                 )}
                               </div>
-                            )}
-                          </div>
+                              <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                                {s.mahalle} • {s.acik_adres || s.sokak || 'Adres Kaydı Belirtilmemiş'}
+                              </div>
+                              {isDevir && (
+                                <div className="text-[10px] text-amber-900 font-bold italic mt-0.5">
+                                  *(Önceki gün eksik teslimat tamamlaması - Hane sayımına dahil edilmemiştir)*
+                                </div>
+                              )}
+                              {(cleanStaff || cleanAlan) && (
+                                <div className="text-[10px] text-slate-600 truncate mt-0.5 flex flex-wrap gap-x-2">
+                                  <span>Teslim Eden: <strong className="text-slate-900 font-bold">{cleanStaff || '-'}</strong></span>
+                                  {cleanAlan && (
+                                    <span>Teslim Alan: <strong className="text-slate-900 font-bold">{cleanAlan}</strong></span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
 
-                          <div className="shrink-0 text-right">
-                            {s.durum === 'TAMAMLANDI' && (
-                              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                ✓ {s.teslim_edilen_torba} Torba
-                              </span>
-                            )}
-                            {s.durum === 'EKSIK' && (
-                              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                ⚠️ Eksik ({s.teslim_edilen_torba})
-                              </span>
-                            )}
-                            {s.durum === 'TESLIM_EDILEMEDI' && (
-                              <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                                ✕ Verilemedi
-                              </span>
-                            )}
+                            <div className="shrink-0 text-right">
+                              {s.durum === 'TAMAMLANDI' && (
+                                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 block">
+                                  ✓ {s.teslim_edilen_torba} Torba
+                                </span>
+                              )}
+                              {s.durum === 'EKSIK' && (
+                                <div className="space-y-0.5">
+                                  <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 block">
+                                    ⚠️ Eksik ({s.teslim_edilen_torba}/{s.hedef_torba || 34})
+                                  </span>
+                                  <span className="text-[9px] text-amber-700 font-semibold block">
+                                    Kalan devredilecek
+                                  </span>
+                                </div>
+                              )}
+                              {s.durum === 'TESLIM_EDILEMEDI' && (
+                                <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 block">
+                                  ✕ Verilemedi
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

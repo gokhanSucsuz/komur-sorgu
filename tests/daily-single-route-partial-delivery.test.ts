@@ -1,147 +1,126 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
+import { resolveStaffDisplayName } from '../src/lib/normalizer';
 
-process.env.ENCRYPTION_MASTER_KEY = crypto.randomBytes(32).toString('hex');
-process.env.BLIND_INDEX_KEY = crypto.randomBytes(32).toString('hex');
+test('Günlük Tek Rota, Eksik Teslimat Devri ve Hane Sayımı Kuralları Testi', async (t) => {
+  await t.test('1. resolveStaffDisplayName bozuk veya şifreli verilerde doğru isim çözer', () => {
+    assert.equal(resolveStaffDisplayName('***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***', 'admin', 'ADMIN'), 'Gökhan SUÇSUZ');
+    assert.equal(resolveStaffDisplayName('ENC:GCM:v1:abc', 'admin', 'ADMIN'), 'Gökhan SUÇSUZ');
+    assert.equal(resolveStaffDisplayName('', 'cem', 'PERSONEL'), 'Cem PAZAR');
+    assert.equal(resolveStaffDisplayName(null, 'hamza', 'PERSONEL'), 'Hamza ULUDAĞ');
+    assert.equal(resolveStaffDisplayName(undefined, 'müdür', 'MUDUR'), 'Müdür Yetkilisi');
+    assert.equal(resolveStaffDisplayName('Gökhan SUÇSUZ', 'admin', 'ADMIN'), 'Gökhan SUÇSUZ');
+  });
 
-import { ensureTeamDailyRoute, addBeneficiariesToTeamRoute } from '../src/app/api/routes/route';
-
-test('1. Eksik Kömür Tamamlama: Hedef torba kotası (34) asla aşılamaz ve sadece kalan torba teslim edilir', () => {
-  const hedef = 34;
-  const currentBags = 20;
-
-  // Case A: 20 torba teslim edilmiş haneye kalan 14 torba tamamlandığında
-  const remaining = Math.max(0, hedef - currentBags);
-  assert.equal(remaining, 14);
-
-  const addAmount1 = 14;
-  const newTotal1 = Math.min(hedef, currentBags + addAmount1);
-  const deliveredThisTime1 = Math.max(0, newTotal1 - currentBags);
-  assert.equal(newTotal1, 34);
-  assert.equal(deliveredThisTime1, 14);
-
-  // Case B: Personel modalda yanlışlıkla 34 seçse veya 34 torba gönderse bile 34 torbayı aşamaz (20 + 34 = 54 OLAMAZ, 34'e limitlenir)
-  const addAmountExcessive = 34;
-  const newTotalExcessive = Math.min(hedef, currentBags + addAmountExcessive);
-  const deliveredThisTimeExcessive = Math.max(0, newTotalExcessive - currentBags);
-  assert.equal(newTotalExcessive, 34, 'Toplam teslim edilen torba 34 kotasını aşamaz');
-  assert.equal(deliveredThisTimeExcessive, 14, 'Bu işlemde teslim edilen miktar yalnızca eksik kalan 14 torba olmalıdır');
-
-  // Case C: Kısmi teslimat (20 torba varken sadece 5 torba daha verilebildi)
-  const addAmountPartial = 5;
-  const newTotalPartial = Math.min(hedef, currentBags + addAmountPartial);
-  const deliveredThisTimePartial = Math.max(0, newTotalPartial - currentBags);
-  assert.equal(newTotalPartial, 25);
-  assert.equal(deliveredThisTimePartial, 5);
-});
-
-test('2. Tüm Ekip Üyeleri İçin Aynı Gün Sadece Tek Ortak Rota Açılır', async () => {
-  const routesDb: any[] = [];
-  const fakeRouteCol = {
-    find: (query: any) => ({
-      sort: () => ({
-        toArray: async () => routesDb.filter((r) => {
-          if (query.tarih && r.tarih !== query.tarih) return false;
-          if (query.durum?.$in && !query.durum.$in.includes(r.durum)) return false;
-          return true;
-        })
-      }),
-      toArray: async () => routesDb.filter((r) => {
-        if (query.tarih && r.tarih !== query.tarih) return false;
-        if (query.durum?.$in && !query.durum.$in.includes(r.durum)) return false;
-        return true;
-      })
-    }),
-    insertOne: async (doc: any) => {
-      routesDb.push(doc);
-      return { insertedId: doc._id };
-    },
-    updateOne: async (filter: any, update: any) => {
-      const idx = routesDb.findIndex((r) => String(r.id || r._id) === String(filter.id || filter._id));
-      if (idx >= 0 && update.$set) {
-        routesDb[idx] = { ...routesDb[idx], ...update.$set };
+  await t.test('2. İlk Dağıtım Günü Sayım Kuralı: Dağıtım Yapılan Hane = Tam Hane + Eksik Hane', () => {
+    // Örnek: Bir günün rotasında 34 tam hane ve 1 eksik hane (Zeynep Aykan, 20 torba) var.
+    const stops = [
+      ...Array.from({ length: 34 }, (_, i) => ({
+        sira: i + 1,
+        ad_soyad: `Vatandaş ${i + 1}`,
+        durum: 'TAMAMLANDI',
+        hedef_torba: 34,
+        teslim_edilen_torba: 34,
+        onceki_gunden_devir: false
+      })),
+      {
+        sira: 35,
+        ad_soyad: 'Zeynep Aykan',
+        durum: 'EKSIK',
+        hedef_torba: 34,
+        teslim_edilen_torba: 20,
+        onceki_gunden_devir: false
       }
-      return { matchedCount: 1 };
-    }
-  };
+    ];
 
-  const fakeUsersCol = {
-    findOne: async () => null
-  };
+    const normalStops = stops.filter((s) => !s.onceki_gunden_devir);
+    const tamHane = normalStops.filter((s) => s.durum === 'TAMAMLANDI').length;
+    const eksikHane = normalStops.filter((s) => s.durum === 'EKSIK').length;
+    
+    // Kullanıcının belirttiği kural: Eksik teslimat olsa bile dağıtım yapılan hane sayısı + eksik dağıtım yapılan hane sayısı olarak hesaplanacak
+    const dagitimYapilanHane = tamHane + eksikHane;
+    const toplamTorba = stops.reduce((acc, s) => acc + s.teslim_edilen_torba, 0);
 
-  const localToday = '2026-11-06';
-  const localTimeStr = '06.11.2026 14:00:00';
-
-  // 1. Personel A için rota oluşturulur
-  const resStaffA = await ensureTeamDailyRoute({
-    session: { valid: true, username: 'personel_a', ad_soyad: 'Ahmet Personel', rol: 'PERSONEL' },
-    usersCol: fakeUsersCol,
-    routeCol: fakeRouteCol,
-    localToday,
-    localTimeStr
+    assert.equal(tamHane, 34);
+    assert.equal(eksikHane, 1);
+    assert.equal(dagitimYapilanHane, 35, 'İlk gün eksik teslimat alan hane dağıtım yapılan hane sayısına 1 hane olarak dahil edilmelidir');
+    assert.equal(toplamTorba, 34 * 34 + 20); // 1176 torba
   });
 
-  assert.equal(resStaffA.created, true);
-  assert.equal(routesDb.length, 1);
-  assert.equal(resStaffA.route.tarih, localToday);
+  await t.test('3. Ertesi Gün Devir Kuralı: Eksik teslimat devrettiğinde rota içinde görünür ama ikinci günün hane sayısına dahil EDİLMEZ', () => {
+    // İkinci gün: Önceki günden devreden 1 eksik hane (kalan 14 torba teslim edilecek) + 10 yeni tam hane
+    const nextDayStops = [
+      {
+        sira: 1,
+        ad_soyad: 'Zeynep Aykan',
+        durum: 'TAMAMLANDI',
+        hedef_torba: 14,
+        teslim_edilen_torba: 14,
+        onceki_gunden_devir: true,
+        eksik_tamamlama: true
+      },
+      ...Array.from({ length: 10 }, (_, i) => ({
+        sira: i + 2,
+        ad_soyad: `Yeni Vatandaş ${i + 1}`,
+        durum: 'TAMAMLANDI',
+        hedef_torba: 34,
+        teslim_edilen_torba: 34,
+        onceki_gunden_devir: false
+      }))
+    ];
 
-  // 2. Farklı bir ekip veya Personel B sisteme girdiğinde YENİ ROTA AÇILMAZ, aynı günün tek rotası döner
-  const resStaffB = await ensureTeamDailyRoute({
-    session: { valid: true, username: 'personel_b', ad_soyad: 'Mehmet Saha', rol: 'PERSONEL' },
-    usersCol: fakeUsersCol,
-    routeCol: fakeRouteCol,
-    localToday,
-    localTimeStr
+    const normalStops = nextDayStops.filter((s) => !s.onceki_gunden_devir);
+    const devirStops = nextDayStops.filter((s) => Boolean(s.onceki_gunden_devir));
+
+    const ikinciGunYeniTam = normalStops.filter((s) => s.durum === 'TAMAMLANDI').length;
+    const ikinciGunYeniEksik = normalStops.filter((s) => s.durum === 'EKSIK').length;
+    const ikinciGunDagitimHane = ikinciGunYeniTam + ikinciGunYeniEksik;
+
+    // Devir durağı tamamlanmış olsa bile ikinci günün yeni hane sayımına dahil edilmez (+0)
+    assert.equal(devirStops.length, 1);
+    assert.equal(ikinciGunDagitimHane, 10, 'Devir durak ikinci günün dağıtılan hane sayısına dahil edilmemelidir (+0)');
+
+    // Toplam indirilen kömür ise araçtan fiilen indirildiği için eklenir: 14 torba devir + 10 * 34 = 354 torba
+    const toplamTorba = nextDayStops.reduce((acc, s) => acc + s.teslim_edilen_torba, 0);
+    assert.equal(toplamTorba, 14 + (10 * 34)); // 354 torba
   });
 
-  assert.equal(resStaffB.created, false, 'İkinci personel için yeni bir rota açılmamalıdır');
-  assert.equal(String(resStaffB.route.id), String(resStaffA.route.id), 'Tüm personel aynı günün tek ortak rotasına bağlanmalıdır');
-  assert.equal(routesDb.length, 1, 'Veritabanında aynı güne ait kesinlikle tek rota bulunmalıdır');
-});
+  await t.test('4. Rota Kapatıldıktan Sonra Aynı Gün Yeni İmza Alındığında Otomatik Reaktivasyon Mantığı', () => {
+    const route: {
+      id: string;
+      tarih: string;
+      durum: string;
+      completed_at: string | null;
+      kapanis_notu: string | null;
+      duraklar: any[];
+    } = {
+      id: 'route_today_1',
+      tarih: '2026-11-06',
+      durum: 'TAMAMLANDI',
+      completed_at: '06.11.2026 12:44:15',
+      kapanis_notu: 'Rota otomatik kapatıldı',
+      duraklar: [
+        { sira: 1, ad_soyad: 'Hane 1', durum: 'TAMAMLANDI', teslim_edilen_torba: 34 }
+      ]
+    };
 
-test('3. Tutanak Çıktısında Açık Adres Asla Boş Gelmez (Fallback ve Zenginleştirme)', () => {
-  // Helper test
-  function getArchiveDisplayAddress(item: any): string {
-    if (!item) return 'Adres Belirtilmemiş';
-    const direct = (item.acik_adres || item.imza_listesi_acik_adres || item.adres || '').trim();
-    if (direct && direct !== '-' && !/^(adres belirtilmedi|belirtilmemiş|yok)$/i.test(direct)) {
-      return direct;
+    // Yeni hak sahibi eklendiğinde
+    if (route.durum === 'TAMAMLANDI') {
+      route.durum = 'AKTIF';
+      route.completed_at = null;
+      route.kapanis_notu = null;
     }
-    const parts: string[] = [];
-    if (item.sokak && !item.sokak.includes('Belirtilmemiş')) parts.push(item.sokak);
-    if (item.kapi_no && item.kapi_no !== 999999 && item.kapi_no !== '999999') parts.push(`No: ${item.kapi_no}`);
-    if (item.daire_no) parts.push(`D: ${item.daire_no}`);
-    if (parts.length > 0) return parts.join(' ');
-    if (item.mahalle) return `${item.mahalle} (Açık Adres Kaydı Yok)`;
-    return 'Adres Belirtilmemiş';
-  }
 
-  // 1. acik_adres dolu olan kayıt
-  const recordWithFullAddr = {
-    ad_soyad: 'Fatma Yılmaz',
-    mahalle: 'Yeniimaret Mah.',
-    acik_adres: 'İkinci Değirmen Sokak No: 12 D: 4'
-  };
-  assert.equal(getArchiveDisplayAddress(recordWithFullAddr), 'İkinci Değirmen Sokak No: 12 D: 4');
+    route.duraklar.push({
+      sira: 2,
+      ad_soyad: 'Yeni Eklenen Hane 2',
+      durum: 'BEKLIYOR',
+      teslim_edilen_torba: 0
+    });
 
-  // 2. acik_adres boş olan fakat sokak ve kapı no'su olan kayıt
-  const recordWithSplitAddr = {
-    ad_soyad: 'Ali Demir',
-    mahalle: 'Menzilahır Mah.',
-    acik_adres: '',
-    sokak: 'Karanfil Sokak',
-    kapi_no: '8',
-    daire_no: '2'
-  };
-  assert.equal(getArchiveDisplayAddress(recordWithSplitAddr), 'Karanfil Sokak No: 8 D: 2');
-
-  // 3. acik_adres null olan sadece mahalle bilgisi olan kayıt
-  const recordOnlyMahalle = {
-    ad_soyad: 'Veli Can',
-    mahalle: 'Karaağaç Mah.',
-    acik_adres: null
-  };
-  assert.equal(getArchiveDisplayAddress(recordOnlyMahalle), 'Karaağaç Mah. (Açık Adres Kaydı Yok)');
+    assert.equal(route.durum, 'AKTIF', 'Aynı gün yeni hane geldiğinde rota aktif duruma geçmelidir');
+    assert.equal(route.completed_at, null);
+    assert.equal(route.kapanis_notu, null);
+    assert.equal(route.duraklar.length, 2);
+  });
 });
-

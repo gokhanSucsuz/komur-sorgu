@@ -247,7 +247,8 @@ export async function ensureTeamDailyRoute({
   routeCol,
   localToday,
   localTimeStr,
-  preferredNeighborhood
+  preferredNeighborhood,
+  benCol
 }: {
   session: any;
   usersCol: any;
@@ -255,18 +256,45 @@ export async function ensureTeamDailyRoute({
   localToday: string;
   localTimeStr: string;
   preferredNeighborhood?: string;
+  benCol?: any;
 }): Promise<{ route: any; created: boolean }> {
-  // 1. Bugün için oluşturulmuş aktif/duraklatılmış tek ana rotayı bul
+  // 1. Bugün için oluşturulmuş tek ana rotayı bul (TAMAMLANDI olsa dahi aynı gün YENİ ROTA AÇILMAZ!)
   const todayRoutes = await routeCol
     .find({
-      tarih: localToday,
-      durum: { $in: ['AKTIF', 'DURAKLATILDI'] }
+      tarih: localToday
     })
     .sort({ created_at: -1 })
     .toArray();
 
   if (todayRoutes.length > 0) {
     const decR = mapDoc(todayRoutes[0]);
+    // Eğer aynı güne ait fazladan mükerrer rotalar varsa ana rotada birleştir
+    if (todayRoutes.length > 1) {
+      const otherRoutes = todayRoutes.slice(1);
+      const mainStops = Array.isArray(decR.duraklar) ? [...decR.duraklar] : [];
+      const seenIds = new Set(mainStops.map((s: any) => String(s.beneficiary_id || s.id || '').trim()));
+      for (const o of otherRoutes) {
+        const oStops = Array.isArray(o.duraklar) ? o.duraklar : [];
+        for (const os of oStops) {
+          const bId = String(os.beneficiary_id || os.id || '').trim();
+          if (bId && !seenIds.has(bId)) {
+            seenIds.add(bId);
+            mainStops.push(os);
+          }
+        }
+      }
+      mainStops.forEach((s: any, idx: number) => { s.sira = idx + 1; });
+      decR.duraklar = mainStops;
+      decR.toplam_hane = mainStops.filter((s: any) => !s.onceki_gunden_devir).length;
+      await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+        $set: {
+          duraklar: mainStops.map(encryptRouteStop),
+          toplam_hane: decR.toplam_hane
+        }
+      });
+      const otherIds = otherRoutes.map((r: any) => r._id);
+      await routeCol.deleteMany({ _id: { $in: otherIds } });
+    }
     return { route: decR, created: false };
   }
 
@@ -287,6 +315,57 @@ export async function ensureTeamDailyRoute({
   const routeObjectId = new ObjectId();
   const routeIdStr = routeObjectId.toString();
 
+  // EKSİK KALAN TESLİMATLARIN ERTESİ GÜNÜN ROTASINA OTOMATİK DEVRİ:
+  // Önceki günlerden eksik kalan haneler otomatik olarak yeni günün rotasına eklenir.
+  // Bu duraklar günün "Dağıtım Yapılan Hane Sayısı" toplamına dahil edilmez (çift sayımı önler).
+  const carriedStops: any[] = [];
+  if (benCol && typeof benCol.find === 'function') {
+    try {
+      const incompleteDocs = await benCol.find({ teslimat_durumu: 'EKSIK' }).toArray();
+      const decIncompletes = mapDocs(incompleteDocs);
+      for (const b of decIncompletes) {
+        const targetQuota = Number(b.hedef_torba) || 34;
+        const currentTorba = Number(b.torba_sayisi) || 0;
+        const remainingQuota = Math.max(0, targetQuota - currentTorba);
+        if (remainingQuota > 0) {
+          const stInfo = getRecordStreetInfo(b);
+          carriedStops.push({
+            sira: carriedStops.length + 1,
+            beneficiary_id: String(b.id || b._id),
+            tc_no: b.tc_no,
+            ad_soyad: b.ad_soyad,
+            sira_no: b.sira_no || b.mahalle_sira || '',
+            liste_turu: b.liste_turu || '',
+            ek_liste_no: b.ek_liste_no ?? null,
+            ek_liste_adi: b.ek_liste_adi || '',
+            telefon: b.telefon || '',
+            telefon2: b.telefon2 || '',
+            mahalle: b.mahalle || '',
+            sokak: stInfo.sokak || '',
+            kapi_no: stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' ? stInfo.kapiNo : '',
+            daire_no: stInfo.daireNo && stInfo.daireNo > 0 ? stInfo.daireNo : '',
+            acik_adres: b.acik_adres || '',
+            hedef_torba: remainingQuota, // Sadece kalan eksik miktar teslim edilir
+            onceki_teslim_edilen_torba: currentTorba,
+            onceki_gunden_devir: true,
+            eksik_tamamlama: true,
+            imza_durumu: 'IMZALANDI',
+            imza_tarihi: b.imza_tarihi || localTimeStr,
+            imza_alan_personel: b.imza_alan_personel || staffName,
+            durum: 'BEKLIYOR',
+            teslim_edilen_torba: 0,
+            teslim_tarihi: null,
+            teslim_eden_personel: null,
+            teslim_alan: '',
+            teslimat_notu: '(Önceki gün eksik teslimat tamamlaması - Hane sayımına dahil edilmemiştir)'
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error auto-carrying forward incomplete deliveries:', err);
+    }
+  }
+
   const newRoute: any = {
     _id: routeObjectId,
     id: routeIdStr,
@@ -302,13 +381,13 @@ export async function ensureTeamDailyRoute({
     ekip_arkadaslari: [],
     arac_plaka: '',
     mahalleler: preferredNeighborhood ? [preferredNeighborhood] : [],
-    duraklar: [],
-    toplam_hane: 0,
+    duraklar: carriedStops,
+    toplam_hane: 0, // Devir kayıtlar bugünün yeni hane sayımına dahil edilmez
     tamamlanan_hane: 0,
     eksik_hane: 0,
     teslim_edilemeyen_hane: 0,
     toplam_dagitilan_torba: 0,
-    hedef_toplam_torba: 0,
+    hedef_toplam_torba: carriedStops.reduce((acc, s) => acc + (s.hedef_torba || 0), 0),
     notlar: 'İmzası alınan hanelerden otomatik oluşturulan günlük tek ekip rotası.',
     created_at: localTimeStr,
     completed_at: null
@@ -322,7 +401,7 @@ export async function ensureTeamDailyRoute({
     islem_tipi: 'ROTA_OLUSTURMA',
     baslik: 'Günlük Ekip Rotası Otomatik Başlatıldı',
     detay: `"${routeName}" imzası alınan tüm haneler için otomatik olarak oluşturuldu ve tek ortak rota olarak kullanıma açıldı.`,
-    ek_bilgi: { routeId: routeIdStr, singleDailyRoute: true }
+    ek_bilgi: { routeId: routeIdStr, singleDailyRoute: true, carriedStopsCount: carriedStops.length }
   });
 
   return { route: newRoute, created: true };
@@ -349,6 +428,16 @@ export async function addBeneficiariesToTeamRoute({
   const stops = Array.isArray(route.duraklar) ? [...route.duraklar] : [];
   const staff = String(session.ad_soyad || session.username || 'Personel').trim();
   let modified = false;
+
+  // Aynı gün rota daha önce kapatılmış olsa dahi yeni hane veya imza eklendiğinde rota otomatik AKTİF edilir
+  let wasReactivated = false;
+  if (route.durum === 'TAMAMLANDI') {
+    route.durum = 'AKTIF';
+    route.kapanis_notu = null;
+    route.completed_at = null;
+    wasReactivated = true;
+    modified = true;
+  }
 
   for (const b of beneficiaries) {
     if (!b) continue;
@@ -431,41 +520,53 @@ export async function addBeneficiariesToTeamRoute({
     let undeliveredCount = 0;
     let totalDeliveredBags = 0;
     let totalTargetBags = 0;
+    let normalStopsCount = 0;
 
     stops.forEach((s: any, idx: number) => {
       s.sira = idx + 1;
       const target = Number(s.hedef_torba) || 34;
       totalTargetBags += target;
 
+      const isDevir = Boolean(s.onceki_gunden_devir);
+      if (!isDevir) normalStopsCount++;
+
       if (s.durum === 'TAMAMLANDI') {
-        completedCount++;
+        if (!isDevir) completedCount++;
         totalDeliveredBags += Number(s.teslim_edilen_torba) || target;
       } else if (s.durum === 'EKSIK') {
-        eksikCount++;
+        if (!isDevir) eksikCount++;
         totalDeliveredBags += Number(s.teslim_edilen_torba) || 0;
       } else if (s.durum === 'TESLIM_EDILEMEDI') {
-        undeliveredCount++;
+        if (!isDevir) undeliveredCount++;
       }
     });
 
     const uniqueMahalleler = Array.from(new Set(stops.map((s: any) => s.mahalle).filter(Boolean)));
 
+    const updateSet: any = {
+      duraklar: stops.map(encryptRouteStop),
+      mahalleler: uniqueMahalleler,
+      toplam_hane: normalStopsCount,
+      tamamlanan_hane: completedCount,
+      eksik_hane: eksikCount,
+      teslim_edilemeyen_hane: undeliveredCount,
+      toplam_dagitilan_torba: totalDeliveredBags,
+      hedef_toplam_torba: totalTargetBags,
+      updated_at: localTimeStr
+    };
+
+    if (wasReactivated) {
+      updateSet.durum = 'AKTIF';
+      updateSet.kapanis_notu = null;
+      updateSet.completed_at = null;
+    }
+
     await routeCol.updateOne(buildIdFilter(route.id || route._id), {
-      $set: {
-        duraklar: stops.map(encryptRouteStop),
-        mahalleler: uniqueMahalleler,
-        toplam_hane: stops.length,
-        tamamlanan_hane: completedCount,
-        eksik_hane: eksikCount,
-        teslim_edilemeyen_hane: undeliveredCount,
-        toplam_dagitilan_torba: totalDeliveredBags,
-        hedef_toplam_torba: totalTargetBags,
-        updated_at: localTimeStr
-      }
+      $set: updateSet
     });
 
     route.duraklar = stops;
-    route.toplam_hane = stops.length;
+    route.toplam_hane = normalStopsCount;
     route.tamamlanan_hane = completedCount;
     route.eksik_hane = eksikCount;
     route.teslim_edilemeyen_hane = undeliveredCount;
@@ -655,7 +756,13 @@ export async function GET(request: NextRequest) {
     // Günlük Tek Rota & Otomatik Toplama Kuralı:
     // İmzası alınan tüm kayıtlar aynı gün tek bir ana rotada toplanır.
     const { nowEnCa: localTodayDate } = getIstanbulDate();
-    let todayActiveRoute = activeRoutes.find((r) => r.tarih === localTodayDate && (r.durum === 'AKTIF' || r.durum === 'DURAKLATILDI'));
+    let todayActiveRoute = activeRoutes.find((r) => r.tarih === localTodayDate);
+    if (!todayActiveRoute) {
+      const todayArchived = archivedRoutes.find((r) => r.tarih === localTodayDate);
+      if (todayArchived) {
+        todayActiveRoute = todayArchived;
+      }
+    }
 
     if (signedBeneficiaries.length > 0) {
       if (!todayActiveRoute) {
@@ -664,7 +771,8 @@ export async function GET(request: NextRequest) {
           usersCol,
           routeCol,
           localToday: localTodayDate,
-          localTimeStr: localNow
+          localTimeStr: localNow,
+          benCol
         });
         const fullRoute = await addBeneficiariesToTeamRoute({
           route: newDailyRoute,
@@ -676,6 +784,18 @@ export async function GET(request: NextRequest) {
         todayActiveRoute = fullRoute;
         activeRoutes.unshift(fullRoute);
       } else {
+        // Eğer günün rotası daha önce tamamlandıysa ancak yeni imzalar geldiyse rotayı tekrar AKTİF et
+        if (todayActiveRoute.durum === 'TAMAMLANDI') {
+          todayActiveRoute.durum = 'AKTIF';
+          todayActiveRoute.kapanis_notu = null;
+          todayActiveRoute.completed_at = null;
+          const archIdx = archivedRoutes.findIndex((r) => String(r.id || r._id) === String(todayActiveRoute.id || todayActiveRoute._id));
+          if (archIdx !== -1) archivedRoutes.splice(archIdx, 1);
+          if (!activeRoutes.some((r) => String(r.id || r._id) === String(todayActiveRoute.id || todayActiveRoute._id))) {
+            activeRoutes.unshift(todayActiveRoute);
+          }
+        }
+
         const existingBenIds = new Set(
           (todayActiveRoute.duraklar || []).map((s: any) => String(s.beneficiary_id || s.id || '').trim())
         );
@@ -830,13 +950,39 @@ export async function GET(request: NextRequest) {
       totalWaitingBags
     };
 
+    // Aynı güne ait birden fazla arşiv rotası varsa tarih bazında tek rotada birleştir
+    const archivedByDate = new Map<string, any>();
+    for (const r of archivedRoutes) {
+      const dateKey = r.tarih || 'bilinmeyen';
+      if (!archivedByDate.has(dateKey)) {
+        archivedByDate.set(dateKey, { ...r });
+      } else {
+        const primary = archivedByDate.get(dateKey);
+        const pStops = Array.isArray(primary.duraklar) ? [...primary.duraklar] : [];
+        const seenStopIds = new Set(pStops.map((s: any) => String(s.beneficiary_id || s.id || '').trim()));
+        for (const s of (r.duraklar || [])) {
+          const sId = String(s.beneficiary_id || s.id || '').trim();
+          if (sId && !seenStopIds.has(sId)) {
+            seenStopIds.add(sId);
+            pStops.push(s);
+          }
+        }
+        primary.duraklar = pStops.map((s: any, idx: number) => ({ ...s, sira: idx + 1 }));
+        primary.toplam_hane = primary.duraklar.filter((s: any) => !s.onceki_gunden_devir).length;
+        primary.tamamlanan_hane = primary.duraklar.filter((s: any) => s.durum === 'TAMAMLANDI' && !s.onceki_gunden_devir).length;
+        primary.eksik_hane = primary.duraklar.filter((s: any) => s.durum === 'EKSIK' && !s.onceki_gunden_devir).length;
+        primary.toplam_dagitilan_torba = primary.duraklar.reduce((acc: number, s: any) => acc + (Number(s.teslim_edilen_torba) || 0), 0);
+      }
+    }
+    const finalArchivedRoutes = Array.from(archivedByDate.values());
+
     return NextResponse.json(
       {
         success: true,
         activeRoutes,
         activeRoute,
         activeCount: activeRoutes.length,
-        archivedRoutes,
+        archivedRoutes: finalArchivedRoutes,
         signedBeneficiaries,
         signedCount: signedBeneficiaries.length,
         signedTrackingRecords,
@@ -901,15 +1047,24 @@ export async function POST(request: NextRequest) {
 
       // Günlük Tek Rota Kuralı:
       // Tüm ekipler için aynı gün tek bir ortak ana rota kullanılır.
+      // Rota TAMAMLANDI olsa dahi YENİ ROTA AÇILMAZ; mevcut rota tekrar AKTİF edilir ve kayıtlar eklenir.
       const existingTeamRoutes = await routeCol
         .find({
-          tarih: localToday,
-          durum: { $in: ['AKTIF', 'DURAKLATILDI'] }
+          tarih: localToday
         })
+        .sort({ created_at: -1 })
         .toArray();
 
       if (existingTeamRoutes.length > 0) {
         const decR = mapDoc(existingTeamRoutes[0]);
+        if (decR.durum === 'TAMAMLANDI') {
+          decR.durum = 'AKTIF';
+          decR.kapanis_notu = null;
+          decR.completed_at = null;
+          await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+            $set: { durum: 'AKTIF', kapanis_notu: null, completed_at: null }
+          });
+        }
         const objIds: ObjectId[] = [];
         const strIds: string[] = [];
         beneficiary_ids.forEach((id: any) => {
