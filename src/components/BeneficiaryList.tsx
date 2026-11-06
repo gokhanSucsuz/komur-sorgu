@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
+import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronUp, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
 import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled } from '@/lib/normalizer';
 import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
@@ -61,9 +61,29 @@ export default function BeneficiaryList({
   isLoading = false,
   userRole = 'PERSONEL'
 }: BeneficiaryListProps) {
+  const [allCardsExpanded, setAllCardsExpanded] = useState(false);
+  const [expandedCardIds, setExpandedCardIds] = useState<Record<string, boolean>>({});
   const [showAllOpenAddresses, setShowAllOpenAddresses] = useState(false);
   const [expandedAddresses, setExpandedAddresses] = useState<Record<number, boolean>>({});
   const [localSignatures, setLocalSignatures] = useState<Record<string, boolean>>({});
+
+  const toggleCardExpand = (id: string | number) => {
+    const key = String(id);
+    setExpandedCardIds((prev) => {
+      const isCurrentExpanded = prev[key] !== undefined ? prev[key] : allCardsExpanded;
+      return {
+        ...prev,
+        [key]: !isCurrentExpanded
+      };
+    });
+  };
+
+  const handleToggleAllCards = () => {
+    const nextState = !allCardsExpanded;
+    setAllCardsExpanded(nextState);
+    setExpandedCardIds({});
+    setShowAllOpenAddresses(nextState);
+  };
   const [showMahalleModal, setShowMahalleModal] = useState(false);
   const [showSokakModal, setShowSokakModal] = useState(false);
   const [phoneSelectTarget, setPhoneSelectTarget] = useState<BeneficiaryRecord | null>(null);
@@ -1294,30 +1314,26 @@ export default function BeneficiaryList({
                 </span>
               </button>
 
-              {/* Açık Adresleri Göster / Gizle Butonu */}
+              {/* Tüm Kart Detaylarını Aç / Kapat Butonu */}
               <button
                 type="button"
-                onClick={() => {
-                  const nextState = !showAllOpenAddresses;
-                  setShowAllOpenAddresses(nextState);
-                  setExpandedAddresses({});
-                }}
+                onClick={handleToggleAllCards}
                 className={`w-full py-2.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs active:scale-95 min-h-[44px] ${
-                  showAllOpenAddresses
+                  allCardsExpanded
                     ? 'bg-amber-500 border-amber-600 text-white shadow-xs font-black'
                     : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
                 }`}
-                title="Tüm hanelerin açık adresini toplu olarak göster veya gizle"
+                title="Tüm hanelerin kart detaylarını toplu olarak aç veya kapat"
               >
-                {showAllOpenAddresses ? (
+                {allCardsExpanded ? (
                   <>
-                    <EyeOff className="w-4 h-4 text-white shrink-0" />
-                    <span className="truncate font-black">Adresleri Gizle</span>
+                    <ChevronUp className="w-4 h-4 text-white shrink-0" />
+                    <span className="truncate font-black">Tümünü Kapat</span>
                   </>
                 ) : (
                   <>
-                    <Eye className="w-4 h-4 text-slate-500 shrink-0" />
-                    <span className="truncate">Açık Adresleri Göster</span>
+                    <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                    <span className="truncate">Tümünü Aç</span>
                   </>
                 )}
               </button>
@@ -2479,10 +2495,11 @@ export default function BeneficiaryList({
                 const stInfo = getRecordStreetInfo(person);
                 const listInfo = getBeneficiaryListTypeInfo(person);
 
-                const isExpanded =
-                  expandedAddresses[person.id] !== undefined
-                    ? expandedAddresses[person.id]
-                    : isSearching || showAllOpenAddresses;
+                const isCardExpanded =
+                  expandedCardIds[String(person.id)] !== undefined
+                    ? expandedCardIds[String(person.id)]
+                    : allCardsExpanded || (isSearching && citizens.length === 1);
+
                 const hasHouseholdDuplicate = (householdCounts[person.norm_adres] || 0) > 1;
                 const isSigned = localSignatures[String(person.id)] !== undefined
                   ? localSignatures[String(person.id)]
@@ -2491,428 +2508,410 @@ export default function BeneficiaryList({
                 return (
                   <div
                     key={person.id}
-                    onClick={() => {
-                      if (isBulkSignMode) {
-                        handleToggleCardSelect(String(person.id));
-                      }
-                    }}
-                    className={`citizen-card ${
+                    className={`citizen-card transition-all duration-200 ${
                       isBulkSignMode ? 'cursor-pointer select-none' : ''
                     } ${
                       isBulkSignMode && selectedIds.has(String(person.id))
                         ? 'border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/40'
                         : isPartial
-                        ? 'border-amber-400 bg-amber-50/30 ring-1 ring-amber-300 shadow-sm'
+                        ? 'border-amber-400 bg-amber-50/20 ring-1 ring-amber-300 shadow-xs'
+                        : isCardExpanded
+                        ? 'border-sky-300 ring-1 ring-sky-200 shadow-sm bg-white'
                         : hasHouseholdDuplicate
                         ? 'has-household-duplicate'
-                        : ''
+                        : 'hover:border-slate-300'
                     }`}
                   >
-                    {/* 1. ÜST BAŞLIK: Sıra No, Liste Türü ve Durum Rozeti */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                        {isBulkSignMode && (
+                    {/* 1. KART BAŞLIĞI & AKORDİYON TETİKLEYİCİSİ (Her Zaman Görünür - Tıklanınca Açılır / Kapanır) */}
+                    <div
+                      onClick={() => {
+                        if (isBulkSignMode) {
+                          handleToggleCardSelect(String(person.id));
+                        } else {
+                          toggleCardExpand(person.id);
+                        }
+                      }}
+                      className="cursor-pointer select-none space-y-2 group/cardhead"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isCardExpanded}
+                      title={isCardExpanded ? 'Detayları kapatmak için dokunun' : 'Detayları görmek için dokunun'}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (isBulkSignMode) {
+                            handleToggleCardSelect(String(person.id));
+                          } else {
+                            toggleCardExpand(person.id);
+                          }
+                        }
+                      }}
+                    >
+                      {/* Üst Satır: Sıra No, Liste Türü, Durum Rozeti ve Akordiyon Oku */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                          {isBulkSignMode && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleCardSelect(String(person.id));
+                              }}
+                              className="shrink-0 text-emerald-700 p-0.5"
+                            >
+                              {selectedIds.has(String(person.id)) ? (
+                                <CheckSquare className="w-5 h-5 text-emerald-600" />
+                              ) : (
+                                <Square className="w-5 h-5 text-slate-300" />
+                              )}
+                            </button>
+                          )}
+                          <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
+                            #{person.sira_no || person.mahalle_sira || person.id}
+                          </span>
+                          {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
+                            <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
+                              Mh: #{person.mahalle_sira}
+                            </span>
+                          )}
+                          {(person.excel_sira_no || person.ek_excel_sira) && (
+                            <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
+                              Ex: #{person.excel_sira_no || person.ek_excel_sira}
+                            </span>
+                          )}
+                          <span
+                            className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
+                            title={listInfo.folderLabel}
+                          >
+                            {listInfo.type === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-600" />}
+                            {listInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-indigo-600" />}
+                            {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
+                            <span>{listInfo.label}</span>
+                          </span>
+                          {person.imza_sonrasi_adres_degisti && (
+                            <span
+                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                              title={`İmza listesi basıldıktan sonra adres güncellendi. Basılı listede "${person.imza_listesi_mahalle || person.onceki_mahalle}" altında yer alır.`}
+                            >
+                              <FileText className="w-3 h-3 text-amber-700" />
+                              <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
+                            </span>
+                          )}
+                          {person.sehit_gazi && (
+                            <span
+                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                              title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
+                            >
+                              <span className="text-xs">🎖️</span>
+                              <span>Şehit / Gazi</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Sağ Taraf: Rozetler & Akordiyon Oku */}
+                        <div className="shrink-0 flex items-center gap-1.5">
+                          {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && (
+                            <span
+                              className="text-[10px] font-black text-amber-900 bg-amber-100/95 px-2 py-0.5 rounded-lg border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
+                              title={person.ek_liste_imza_notu || 'Manuel ek listeye imzası alındı'}
+                            >
+                              <PenTool className="w-3 h-3 text-amber-700" />
+                              <span>Ek Listeye İmzalı</span>
+                            </span>
+                          )}
+                          {!(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && isSigned && (
+                            <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                              <PenTool className="w-3 h-3 text-emerald-700" />
+                              <span>İmzalı</span>
+                            </span>
+                          )}
+                          {person.komur_verilmeyecek ? (
+                            <span className="badge badge-danger text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
+                              <Ban className="w-3.5 h-3.5 text-rose-600" />
+                              Verilmeyecek
+                            </span>
+                          ) : isComplete ? (
+                            <span className="badge badge-delivered text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Tam ({teslim})
+                            </span>
+                          ) : isPartial ? (
+                            <span className="badge badge-pending text-[11px]">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              Eksik: {teslim}/{hedef}
+                            </span>
+                          ) : (
+                            <span className="badge badge-pending text-[11px]">
+                              <Clock className="w-3.5 h-3.5" />
+                              Bekliyor ({hedef})
+                            </span>
+                          )}
+
+                          {/* Akordiyon Chevron Butonu */}
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 border shrink-0 ${
+                              isCardExpanded
+                                ? 'bg-sky-100 border-sky-300 text-sky-800 rotate-180 shadow-2xs'
+                                : 'bg-slate-100 border-slate-200 text-slate-500 group-hover/cardhead:bg-slate-200 group-hover/cardhead:text-slate-800'
+                            }`}
+                            title={isCardExpanded ? 'Detayları Kapat' : 'Detayları Göster'}
+                          >
+                            <ChevronDown className="w-4 h-4 transition-transform duration-200" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Orta Satır: Hak Sahibi Adı Soyadı */}
+                      <div className="pt-0.5 flex items-center justify-between gap-2">
+                        <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
+                          {person.ad_soyad}
+                        </h4>
+                        {!isCardExpanded && (
+                          <span className="text-[11px] font-bold text-slate-400 group-hover/cardhead:text-sky-600 transition-colors shrink-0 flex items-center gap-0.5">
+                            <span>Detay</span>
+                            <ChevronDown className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Alt Satır: TC Kimlik & Mahalle & Sokak Etiketleri */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        {/* TC Kimlik Rozeti */}
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-950 font-mono text-xs font-bold shadow-2xs">
+                          <span className="text-[10px] text-amber-700 font-sans font-bold">TC:</span>
+                          <span>{person.tc_no}</span>
+                        </span>
+
+                        {/* Mahalle / Köy Rozeti */}
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs shadow-2xs">
+                          <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span>{person.mahalle}</span>
+                        </span>
+
+                        {/* Sokak / Kapı No Rozeti - Dokunulduğunda o sokağı filtreler */}
+                        {stInfo.sokak && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleToggleCardSelect(String(person.id));
+                              setSelectedSokak(stInfo.sokak);
                             }}
-                            className="shrink-0 text-emerald-700 p-0.5"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 font-bold text-xs shadow-2xs transition-all cursor-pointer text-left"
+                            title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
                           >
-                            {selectedIds.has(String(person.id)) ? (
-                              <CheckSquare className="w-5 h-5 text-emerald-600" />
-                            ) : (
-                              <Square className="w-5 h-5 text-slate-300" />
+                            <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
+                            <span>{stInfo.sokak}</span>
+                            {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
+                              <strong className="text-sky-950 font-black">No: {stInfo.kapiNo}</strong>
+                            )}
+                            {stInfo.daireNo > 0 && (
+                              <span className="text-sky-700 font-semibold">D: {stInfo.daireNo}</span>
                             )}
                           </button>
                         )}
-                        <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
-                          #{person.sira_no || person.mahalle_sira || person.id}
-                        </span>
-                        {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
-                          <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
-                            Mh: #{person.mahalle_sira}
+
+                        {/* Fiili İkamet Bilgisi */}
+                        {person.fiili_adres_guncellendi && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px] font-black shadow-2xs">
+                            <MapPin className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span>Fiili İkamet</span>
                           </span>
                         )}
-                        {(person.excel_sira_no || person.ek_excel_sira) && (
-                          <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
-                            Ex: #{person.excel_sira_no || person.ek_excel_sira}
+
+                        {/* Kapalıyken telefon sayısı ipucu */}
+                        {phones.length > 0 && !isCardExpanded && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold shadow-2xs ml-auto">
+                            <Phone className="w-2.5 h-2.5 text-emerald-600" />
+                            <span>{phones.length} Tel</span>
                           </span>
                         )}
-                        <span
-                          className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
-                          title={listInfo.folderLabel}
-                        >
-                          {listInfo.type === 'SIGORTALI' && <Shield className="w-3 h-3 text-purple-600" />}
-                          {listInfo.type === 'EK_LISTE' && <FileSpreadsheet className="w-3 h-3 text-indigo-600" />}
-                          {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
-                          <span>{listInfo.label}</span>
-                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2. AKORDİYON GÖVDESİ: Yalnızca Kart Açıkken (isCardExpanded) Görünür */}
+                    {isCardExpanded && (
+                      <div className="pt-3 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* Ek Liste Notu Bilgilendirmesi */}
+                        {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi || person.ek_liste_imza_notu) && (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-50/90 border border-amber-200/90 rounded-xl px-2.5 py-1.5 shadow-2xs">
+                            <span>📝</span>
+                            <span>{person.ek_liste_imza_notu || (person.teslimat_tarihi ? `${person.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}</span>
+                          </div>
+                        )}
+
+                        {/* Aynı Adreste Başka Hak Sahibi Uyarı Kartı */}
+                        {(hasHouseholdDuplicate || person.uyari_notu) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenHousehold(person);
+                            }}
+                            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-amber-300 text-amber-950 transition-all active:scale-[0.98] shadow-2xs group text-left"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                              <div className="truncate">
+                                <span className="text-xs font-black block text-amber-950 truncate">
+                                  {person.uyari_notu || 'Aynı Adreste Diğer Hak Sahibi Mevcut!'}
+                                </span>
+                                <span className="text-[10px] text-amber-800 font-bold block">
+                                  Hane bireylerini görmek için dokunun →
+                                </span>
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-md bg-amber-200/80 text-amber-950 text-[10px] font-black shrink-0 flex items-center gap-0.5">
+                              <span>Hane</span>
+                              <ChevronRight className="w-3 h-3 text-amber-800" />
+                            </span>
+                          </button>
+                        )}
+
+                        {/* Önceki Adres Kaydı (İmza Listesi Çıktısı) */}
                         {person.imza_sonrasi_adres_degisti && (
-                          <span
-                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 shadow-2xs"
-                            title={`İmza listesi basıldıktan sonra adres güncellendi. Basılı listede "${person.imza_listesi_mahalle || person.onceki_mahalle}" altında yer alır.`}
+                          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider flex items-center gap-1">
+                                <FileText className="w-3.5 h-3.5 text-amber-700" />
+                                Önceki Adres Kaydı (İmza Listesi Çıktısı)
+                              </span>
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
+                                Listede Bu Adreste
+                              </span>
+                            </div>
+                            <div className="text-xs font-bold text-slate-900 leading-snug">
+                              <strong className="text-amber-950">{person.imza_listesi_mahalle || person.onceki_mahalle}</strong>
+                              {' — '}
+                              <span>{person.imza_listesi_acik_adres || person.onceki_acik_adres}</span>
+                            </div>
+                            <p className="text-[10px] text-amber-800 leading-tight">
+                              İmza listeleri basıldıktan sonra adres değişikliği yapıldığı için bu kayıt basılı klasörde önceki adresine göre yer almaktadır.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Telefon İletişim Butonları */}
+                        {phones.length === 1 && (
+                          <a
+                            href={`tel:${phones[0]}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-50/90 hover:bg-emerald-100 active:bg-emerald-200 border-2 border-emerald-300 text-emerald-950 font-bold text-xs transition-all active:scale-[0.98] shadow-2xs group"
+                            title={`${formatPhoneDisplay(phones[0])} - Aramak için dokunun`}
                           >
-                            <FileText className="w-3 h-3 text-amber-700" />
-                            <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
-                          </span>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                                <Phone className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="text-left truncate">
+                                <span className="text-[10px] text-emerald-700 font-extrabold uppercase tracking-wider block">İletişim Numarası</span>
+                                <span className="font-mono text-sm font-black text-emerald-950 tracking-wide block truncate">{formatPhoneDisplay(phones[0])}</span>
+                              </div>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-800 bg-white px-3 py-1.5 rounded-lg border border-emerald-300 shadow-2xs group-hover:bg-emerald-600 group-hover:text-white transition-colors shrink-0">
+                              <Phone className="w-3.5 h-3.5" />
+                              <span>Hemen Ara</span>
+                            </span>
+                          </a>
                         )}
-                        {person.sehit_gazi && (
-                          <span
-                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
-                            title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
+
+                        {phones.length >= 2 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            <a
+                              href={`tel:${phones[0]}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-300 text-emerald-950 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span className="font-mono font-black truncate">{formatPhoneDisplay(phones[0])}</span>
+                              </div>
+                              <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shrink-0">
+                                1. Tel Ara
+                              </span>
+                            </a>
+                            <a
+                              href={`tel:${phones[1]}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center justify-between px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 border-2 border-teal-300 text-teal-950 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                <Phone className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                <span className="font-mono font-black truncate">{formatPhoneDisplay(phones[1])}</span>
+                              </div>
+                              <span className="text-[11px] font-black text-teal-800 bg-white px-2 py-0.5 rounded border border-teal-200 shrink-0">
+                                2. Tel Ara
+                              </span>
+                            </a>
+                          </div>
+                        )}
+
+                        {phones.length === 0 && onOpenEdit && userRole !== 'MUDUR' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenEdit(person);
+                            }}
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 hover:bg-amber-50 border border-dashed border-slate-300 hover:border-amber-300 text-slate-500 hover:text-amber-900 text-xs font-bold transition-all"
                           >
-                            <span className="text-xs">🎖️</span>
-                            <span>Şehit / Gazi</span>
-                          </span>
+                            <span className="flex items-center gap-1.5 text-slate-400">
+                              <Phone className="w-3.5 h-3.5" />
+                              <span>Telefon Kaydı Bulunmuyor</span>
+                            </span>
+                            <span className="text-amber-700 text-xs font-black">+ Numara Ekle</span>
+                          </button>
                         )}
-                      </div>
 
-                      {/* Sağ Taraf: Durum Rozeti & İmza Rozeti */}
-                      <div className="shrink-0 flex items-center gap-1.5">
-                        {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && (
-                          <span
-                            className="text-[10px] font-black text-amber-900 bg-amber-100/95 px-2 py-0.5 rounded-lg border border-amber-300 inline-flex items-center gap-1 shadow-2xs"
-                            title={person.ek_liste_imza_notu || 'Manuel ek listeye imzası alındı'}
+                        {/* Navigasyon Butonları (1. Yandex Navigasyon, 2. Google Navigasyon) */}
+                        <div className="flex items-center gap-2 w-full">
+                          {/* Yandex Navigasyon */}
+                          <a
+                            href={getYandexNaviUrl(person)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 min-w-0 h-11 flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-sky-50/90 hover:bg-sky-100 active:bg-sky-200 border-2 border-sky-300 text-sky-950 transition-all active:scale-[0.98] shadow-2xs group"
+                            title="Yandex Navigasyon ile kapıya kadar canlı sesli yol tarifi al"
                           >
-                            <PenTool className="w-3 h-3 text-amber-700" />
-                            <span>Ek Listeye İmzalı</span>
-                          </span>
-                        )}
-                        {!(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && isSigned && (
-                          <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
-                            <PenTool className="w-3 h-3 text-emerald-700" />
-                            <span>İmzalı</span>
-                          </span>
-                        )}
-                        {person.komur_verilmeyecek ? (
-                          <span className="badge badge-danger text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
-                            <Ban className="w-3.5 h-3.5 text-rose-600" />
-                            Verilmeyecek
-                          </span>
-                        ) : isComplete ? (
-                          <span className="badge badge-delivered text-[11px]">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Tam ({teslim})
-                          </span>
-                        ) : isPartial ? (
-                          <span className="badge badge-pending text-[11px]">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            Eksik: {teslim}/{hedef}
-                          </span>
-                        ) : (
-                          <span className="badge badge-pending text-[11px]">
-                            <Clock className="w-3.5 h-3.5" />
-                            Bekliyor ({hedef})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 2. HAK SAHİBİ ADI SOYADI (Büyük, Net, Okunaklı) */}
-                    <div className="pt-0.5">
-                      <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight">
-                        {person.ad_soyad}
-                      </h4>
-                    </div>
-
-                    {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi || person.ek_liste_imza_notu) && (
-                      <div className="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-50/90 border border-amber-200/90 rounded-xl px-2.5 py-1 shadow-2xs">
-                        <span>📝</span>
-                        <span>{person.ek_liste_imza_notu || (person.teslimat_tarihi ? `${person.teslimat_tarihi} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}</span>
-                      </div>
-                    )}
-
-                    {/* 3. AYNI ADRESTE BAŞKA HAK SAHİBİ UYARI BUTONU (Tıklanabilir Uyarı Kartı) */}
-                    {(hasHouseholdDuplicate || person.uyari_notu) && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenHousehold(person);
-                        }}
-                        className="w-full flex items-center justify-between p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-amber-300 text-amber-950 transition-all active:scale-[0.98] shadow-2xs group text-left"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <div className="truncate">
-                            <span className="text-xs font-black block text-amber-950 truncate">
-                              {person.uyari_notu || 'Aynı Adreste Diğer Hak Sahibi Mevcut!'}
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                                <Navigation className="w-3.5 h-3.5 fill-white" />
+                              </div>
+                              <div className="min-w-0 flex-1 text-left">
+                                <span className="text-[10px] text-sky-700 font-extrabold uppercase tracking-wider block leading-none truncate">
+                                  Yandex Navigasyon
+                                </span>
+                                <span className="font-bold text-xs text-sky-950 block truncate leading-tight mt-0.5">
+                                  {getCleanNavigationAddress(person)}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-xs font-black text-white bg-sky-600 hover:bg-sky-700 px-2.5 py-1 rounded-lg border border-sky-600 shadow-2xs group-hover:bg-sky-700 transition-colors shrink-0 whitespace-nowrap">
+                              <Navigation className="w-3 h-3 fill-white" />
+                              <span>Yol Tarifi</span>
                             </span>
-                            <span className="text-[10px] text-amber-800 font-bold block">
-                              Hane bireylerini görmek için dokunun →
-                            </span>
-                          </div>
+                          </a>
+
+                          {/* Google Navigasyon Simgesi */}
+                          <a
+                            href={getGoogleMapsUrl(person)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-11 h-11 rounded-xl bg-white hover:bg-slate-50 active:bg-slate-100 border-2 border-slate-200 hover:border-slate-300 flex items-center justify-center shrink-0 transition-all active:scale-95 shadow-2xs group"
+                            title="Google Haritalar ve Navigasyon ile Yol Tarifi Al"
+                            aria-label="Google Navigasyon"
+                          >
+                            <svg className="w-5 h-5 shrink-0 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none">
+                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335" />
+                              <circle cx="12" cy="9" r="3.2" fill="#FFFFFF" />
+                              <polygon points="12,6.8 14.5,10.8 12,9.8 9.5,10.8" fill="#1A73E8" />
+                            </svg>
+                          </a>
                         </div>
-                        <span className="px-2 py-0.5 rounded-md bg-amber-200/80 text-amber-950 text-[10px] font-black shrink-0 flex items-center gap-0.5">
-                          <span>Hane</span>
-                          <ChevronRight className="w-3 h-3 text-amber-800" />
-                        </span>
-                      </button>
-                    )}
 
-                    {/* 4. KİMLİK & ADRES ETİKETLERİ (Düzenli Buton/Çip Görünümü) */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                      {/* TC Kimlik Rozeti */}
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-950 font-mono text-xs font-bold shadow-2xs">
-                        <span className="text-[10px] text-amber-700 font-sans font-bold">TC:</span>
-                        <span>{person.tc_no}</span>
-                      </span>
-
-                      {/* Mahalle / Köy Rozeti */}
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs shadow-2xs">
-                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                        <span>{person.mahalle}</span>
-                      </span>
-
-                      {/* Sokak / Kapı No Rozeti - Dokunulduğunda o sokağı filtreler */}
-                      {stInfo.sokak && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedSokak(stInfo.sokak);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 font-bold text-xs shadow-2xs transition-all cursor-pointer text-left"
-                          title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
-                        >
-                          <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
-                          <span>{stInfo.sokak}</span>
-                          {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
-                            <strong className="text-sky-950 font-black">No: {stInfo.kapiNo}</strong>
-                          )}
-                          {stInfo.daireNo > 0 && (
-                            <span className="text-sky-700 font-semibold">D: {stInfo.daireNo}</span>
-                          )}
-                        </button>
-                      )}
-
-                      {/* Fiili İkamet Bilgisi */}
-                      {person.fiili_adres_guncellendi && (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px] font-black shadow-2xs">
-                          <MapPin className="w-3 h-3 text-blue-600 shrink-0" />
-                          <span>Fiili İkamet</span>
-                        </span>
-                      )}
-
-                      {/* Islak İmza Listesi Çıktısı Sonrası Önceki Adres Bilgisi */}
-                      {person.imza_sonrasi_adres_degisti && (
-                        <div className="w-full mt-1 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1 shadow-2xs">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider flex items-center gap-1">
-                              <FileText className="w-3.5 h-3.5 text-amber-700" />
-                              Önceki Adres Kaydı (İmza Listesi Çıktısı)
-                            </span>
-                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
-                              Listede Bu Adreste
-                            </span>
-                          </div>
-                          <div className="text-xs font-bold text-slate-900 leading-snug">
-                            <strong className="text-amber-950">{person.imza_listesi_mahalle || person.onceki_mahalle}</strong>
-                            {' — '}
-                            <span>{person.imza_listesi_acik_adres || person.onceki_acik_adres}</span>
-                          </div>
-                          <p className="text-[10px] text-amber-800 leading-tight">
-                            İmza listeleri basıldıktan sonra adres değişikliği yapıldığı için bu kayıt basılı klasörde önceki adresine göre yer almaktadır.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 5. TELEFON İLETİŞİM BUTONU (Tek Dokunuşla Doğrudan Arama Butonu) */}
-                    {phones.length === 1 && (
-                      <a
-                        href={`tel:${phones[0]}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-50/90 hover:bg-emerald-100 active:bg-emerald-200 border-2 border-emerald-300 text-emerald-950 font-bold text-xs transition-all active:scale-[0.98] shadow-2xs group"
-                        title={`${formatPhoneDisplay(phones[0])} - Aramak için dokunun`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                            <Phone className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="text-left truncate">
-                            <span className="text-[10px] text-emerald-700 font-extrabold uppercase tracking-wider block">İletişim Numarası</span>
-                            <span className="font-mono text-sm font-black text-emerald-950 tracking-wide block truncate">{formatPhoneDisplay(phones[0])}</span>
-                          </div>
-                        </div>
-                        <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-800 bg-white px-3 py-1.5 rounded-lg border border-emerald-300 shadow-2xs group-hover:bg-emerald-600 group-hover:text-white transition-colors shrink-0">
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>Hemen Ara</span>
-                        </span>
-                      </a>
-                    )}
-
-                    {phones.length >= 2 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        <a
-                          href={`tel:${phones[0]}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-300 text-emerald-950 text-xs font-bold transition-all active:scale-95 shadow-2xs"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span className="font-mono font-black truncate">{formatPhoneDisplay(phones[0])}</span>
-                          </div>
-                          <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shrink-0">
-                            1. Tel Ara
-                          </span>
-                        </a>
-                        <a
-                          href={`tel:${phones[1]}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center justify-between px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 border-2 border-teal-300 text-teal-950 text-xs font-bold transition-all active:scale-95 shadow-2xs"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <Phone className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                            <span className="font-mono font-black truncate">{formatPhoneDisplay(phones[1])}</span>
-                          </div>
-                          <span className="text-[11px] font-black text-teal-800 bg-white px-2 py-0.5 rounded border border-teal-200 shrink-0">
-                            2. Tel Ara
-                          </span>
-                        </a>
-                      </div>
-                    )}
-
-                    {phones.length === 0 && onOpenEdit && userRole !== 'MUDUR' && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenEdit(person);
-                        }}
-                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 hover:bg-amber-50 border border-dashed border-slate-300 hover:border-amber-300 text-slate-500 hover:text-amber-900 text-xs font-bold transition-all"
-                      >
-                        <span className="flex items-center gap-1.5 text-slate-400">
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>Telefon Kaydı Bulunmuyor</span>
-                        </span>
-                        <span className="text-amber-700 text-xs font-black">+ Numara Ekle</span>
-                      </button>
-                    )}
-
-                    {/* 5.1 NAVİGASYON (1. Yandex Navigasyon, 2. Google Navigasyon Simgesi) */}
-                    <div className="flex items-center gap-2 w-full">
-                      {/* 1. Öncelik: Yandex Navigasyon (Kapıya Nokta Atışı Canlı Yol Tarifi) */}
-                      <a
-                        href={getYandexNaviUrl(person)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex-1 min-w-0 h-11 flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-sky-50/90 hover:bg-sky-100 active:bg-sky-200 border-2 border-sky-300 text-sky-950 transition-all active:scale-[0.98] shadow-2xs group"
-                        title="Yandex Navigasyon ile kapıya kadar canlı sesli yol tarifi al"
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                            <Navigation className="w-3.5 h-3.5 fill-white" />
-                          </div>
-                          <div className="min-w-0 flex-1 text-left">
-                            <span className="text-[10px] text-sky-700 font-extrabold uppercase tracking-wider block leading-none truncate">
-                              Yandex Navigasyon
-                            </span>
-                            <span className="font-bold text-xs text-sky-950 block truncate leading-tight mt-0.5">
-                              {getCleanNavigationAddress(person)}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="inline-flex items-center gap-1 text-xs font-black text-white bg-sky-600 hover:bg-sky-700 px-2.5 py-1 rounded-lg border border-sky-600 shadow-2xs group-hover:bg-sky-700 transition-colors shrink-0 whitespace-nowrap">
-                          <Navigation className="w-3 h-3 fill-white" />
-                          <span>Yol Tarifi</span>
-                        </span>
-                      </a>
-
-                      {/* 2. Öncelik: Google Navigasyon Simgesi */}
-                      <a
-                        href={getGoogleMapsUrl(person)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-11 h-11 rounded-xl bg-white hover:bg-slate-50 active:bg-slate-100 border-2 border-slate-200 hover:border-slate-300 flex items-center justify-center shrink-0 transition-all active:scale-95 shadow-2xs group"
-                        title="Google Haritalar ve Navigasyon ile Yol Tarifi Al"
-                        aria-label="Google Navigasyon"
-                      >
-                        <svg className="w-5 h-5 shrink-0 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none">
-                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335" />
-                          <circle cx="12" cy="9" r="3.2" fill="#FFFFFF" />
-                          <polygon points="12,6.8 14.5,10.8 12,9.8 9.5,10.8" fill="#1A73E8" />
-                        </svg>
-                      </a>
-                    </div>
-
-                    {/* 6. HIZLI İŞLEM BUTON IZGARASI (4 Düzenli & Ergonomik Buton) */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 border-t border-slate-100">
-                      {/* 1. Açık Adres Butonu */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleAddress(person.id);
-                        }}
-                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs ${
-                          isExpanded
-                            ? 'bg-amber-100 text-amber-950 border-amber-300'
-                            : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>{isExpanded ? 'Adresi Kapat' : 'Açık Adres'}</span>
-                        {isExpanded ? (
-                          <ChevronDown className="w-3 h-3 text-amber-700" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3 text-slate-400" />
-                        )}
-                      </button>
-
-                      {/* 2. Hane & Detay Butonu */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenHousehold(person);
-                        }}
-                        className="py-2 px-2.5 rounded-xl bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                      >
-                        <Users className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                        <span>Hane & Detay</span>
-                      </button>
-
-                      {/* 3. Adres / Tel Güncelleme Butonu */}
-                      {onOpenEdit && userRole !== 'MUDUR' && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenEdit(person);
-                          }}
-                          className="py-2 px-2.5 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                        >
-                          <Edit3 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span>Adres / Tel</span>
-                        </button>
-                      )}
-
-                      {/* 4. Kömür İptal Butonu */}
-                      {onOpenKomurIptal && !person.komur_verilmeyecek && !isComplete && userRole !== 'MUDUR' && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenKomurIptal(person);
-                          }}
-                          className="py-2 px-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-800 border border-slate-200 hover:border-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                        >
-                          <Ban className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                          <span>Kömür İptal</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* 7. AÇILABİLİR AÇIK ADRES VE NAVİGASYON KUTUSU */}
-                    {isExpanded && (
-                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 space-y-2.5 animate-in fade-in duration-200">
-                        {/* Tam Genişlik Resmi Açık Adres Bölgesi (Mobilde satır daralması ve tek kelime bölünmesini önler) */}
-                        <div className="w-full space-y-1">
+                        {/* Resmi Açık Adres ve Saha Notu Kutusu */}
+                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">
                               Resmi Açık Adres
@@ -2926,316 +2925,343 @@ export default function BeneficiaryList({
                           <p className="w-full font-semibold text-slate-900 text-xs sm:text-sm leading-relaxed break-words bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
                             {person.acik_adres || 'Açık adres kaydı bulunmuyor.'}
                           </p>
-                        </div>
-
-                        {/* Modern Navigasyon Butonları */}
-                        <div className="flex items-center gap-2 pt-1 border-t border-slate-200/80 w-full">
-                          {/* Yandex Navigasyon Butonu */}
-                          <a
-                            href={getYandexNaviUrl(person)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex-1 min-w-0 h-10 flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-extrabold text-xs shadow-xs active:scale-95 transition-all"
-                            title="Yandex Navigasyon ile kapıya yol tarifi al"
-                          >
-                            <Navigation className="w-3.5 h-3.5 text-white shrink-0 fill-white" />
-                            <span className="truncate">Yandex Navigasyon ile Yol Tarifi</span>
-                          </a>
-
-                          {/* Google Navigasyon Butonu */}
-                          <a
-                            href={getGoogleMapsUrl(person)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-10 h-10 sm:w-auto sm:px-3 sm:py-2 rounded-xl bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-800 font-bold text-xs border border-slate-300 shadow-2xs flex items-center justify-center gap-1.5 shrink-0 transition-all active:scale-95"
-                            title="Google Haritalar ve Navigasyon"
-                            aria-label="Google Navigasyon"
-                          >
-                            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
-                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335" />
-                              <circle cx="12" cy="9" r="3.2" fill="#FFFFFF" />
-                              <polygon points="12,6.8 14.5,10.8 12,9.8 9.5,10.8" fill="#1A73E8" />
-                            </svg>
-                            <span className="hidden sm:inline font-bold text-xs">Google</span>
-                          </a>
-                        </div>
-                        {person.fiili_adres_guncellendi && (
-                          <div className="text-[11px] font-bold text-sky-800 flex items-center gap-1 bg-sky-50 p-2 rounded-lg border border-sky-200">
-                            <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                            <span>Fiili İkametgah Adresi Güncellenmiştir {person.son_adres_guncelleme_tarihi && `(${formatTrAuto(person.son_adres_guncelleme_tarihi)})`}</span>
-                          </div>
-                        )}
-                        {person.imza_sonrasi_adres_degisti && (
-                          <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 space-y-1">
-                            <div className="flex items-center gap-1 font-bold text-amber-900 text-[11px]">
-                              <FileText className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                              <span>Basılı Islak İmza Listesindeki Önceki Adres:</span>
-                            </div>
-                            <p className="text-xs font-semibold text-slate-800">
-                              <span className="font-bold text-amber-950">{person.imza_listesi_mahalle || person.onceki_mahalle}</span>
-                              {' — '}
-                              <span>{person.imza_listesi_acik_adres || person.onceki_acik_adres}</span>
-                            </p>
-                            <span className="text-[10px] text-amber-800 italic block">
-                              (Resmi liste çıktısı alındıktan sonra adres güncellendiği için kayıt basılı klasörde bu adrestedir)
-                            </span>
-                          </div>
-                        )}
-                        {person.adres_guncelleme_notu && (
-                          <p className="text-[11px] text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200 font-medium">
-                            <strong>Saha Notu:</strong> {person.adres_guncelleme_notu}
-                          </p>
-                        )}
-                        {person.hane_no && (
-                          <span className="inline-block text-[11px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-medium">
-                            Hane No: {person.hane_no}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 8. ANA EYLEM BÖLÜMÜ (İmza ve Kömür Teslimat Butonları - Dokunmatik Ergonomik) */}
-                    <div className="pt-1">
-                      {person.komur_verilmeyecek ? (
-                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Ban className="w-5 h-5 text-rose-600 shrink-0" />
-                              <div>
-                                <span className="font-black text-rose-800 block text-xs">Kömür Yardımı İptal Edildi</span>
-                                <span className="text-[11px] text-rose-700 font-bold block">{formatCancelReason(person.komur_iptal_nedeni)}</span>
-                              </div>
-                            </div>
-                            {onOpenKomurIptal && (
-                              <button
-                                type="button"
-                                onClick={() => onOpenKomurIptal(person)}
-                                className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 font-bold text-xs shrink-0 shadow-2xs transition-all active:scale-95"
-                              >
-                                İncele / Aktif Et
-                              </button>
-                            )}
-                          </div>
-                          {formatCancelExplanation(person.komur_iptal_aciklama) && (
-                            <p className="text-[11px] text-rose-800 bg-white/70 p-1.5 rounded border border-rose-200 font-medium">
-                              {formatCancelExplanation(person.komur_iptal_aciklama)}
+                          {person.adres_guncelleme_notu && (
+                            <p className="text-[11px] text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200 font-medium">
+                              <strong>Saha Notu:</strong> {person.adres_guncelleme_notu}
                             </p>
                           )}
+                          {person.fiili_adres_guncellendi && (
+                            <div className="text-[11px] font-bold text-sky-800 flex items-center gap-1 bg-sky-50 p-2 rounded-lg border border-sky-200">
+                              <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                              <span>Fiili İkametgah Adresi Güncellenmiştir {person.son_adres_guncelleme_tarihi && `(${formatTrAuto(person.son_adres_guncelleme_tarihi)})`}</span>
+                            </div>
+                          )}
                         </div>
-                      ) : userRole === 'MUDUR' ? (
-                        <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                          <div className="min-w-0">
-                            <span className="font-extrabold text-slate-900 block text-xs">
-                              {isComplete
-                                ? `✓ ${teslim} Torba Teslim Edildi`
-                                : isPartial
-                                ? `⚠️ Kısmi Teslim Edildi (${teslim} / ${hedef} Torba)`
-                                : isSigned
-                                ? '✍️ Kapıda İmza Alındı (Teslim Bekliyor)'
-                                : `⏳ Dağıtım Bekliyor (${hedef} Torba)`}
-                            </span>
-                            {person.teslim_eden_personel && (
-                              <p className="text-[11px] text-slate-600 mt-0.5">
-                                Dağıtan Personel: <strong className="text-slate-900">{person.teslim_eden_personel}</strong>
-                              </p>
-                            )}
-                            {person.teslimat_tarihi && (
-                              <p className="text-[10px] text-slate-500 mt-0.5">
-                                Tarih: {formatTrAuto(person.teslimat_tarihi)}
-                              </p>
-                            )}
-                          </div>
+
+                        {/* Hızlı İşlem Araç Çubuğu (Hane & Detay, Adres/Tel, Kömür İptal) */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+                          {/* Hane & Detay Butonu */}
                           <button
                             type="button"
-                            onClick={() => onOpenHousehold(person)}
-                            className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold shrink-0 transition-all active:scale-95 shadow-2xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenHousehold(person);
+                            }}
+                            className="py-2 px-2.5 rounded-xl bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
                           >
-                            Hane Detayı
+                            <Users className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                            <span>Hane & Detay</span>
                           </button>
+
+                          {/* Adres / Tel Güncelleme Butonu */}
+                          {onOpenEdit && userRole !== 'MUDUR' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenEdit(person);
+                              }}
+                              className="py-2 px-2.5 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-slate-200 hover:border-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>Adres / Tel</span>
+                            </button>
+                          )}
+
+                          {/* Kömür İptal Butonu */}
+                          {onOpenKomurIptal && !person.komur_verilmeyecek && !isComplete && userRole !== 'MUDUR' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenKomurIptal(person);
+                              }}
+                              className="py-2 px-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-800 border border-slate-200 hover:border-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                            >
+                              <Ban className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                              <span>Kömür İptal</span>
+                            </button>
+                          )}
                         </div>
-                      ) : isPartial ? (
-                        <div className="space-y-2">
-                          {/* Eksik Teslimat Bilgi Bandı */}
-                          <div className="flex items-center justify-between p-2 rounded-xl bg-amber-100/80 border border-amber-300 text-xs font-bold text-amber-950">
-                            <div className="flex items-center gap-1.5">
-                              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                              <span>Eksik Dağıtım: {teslim}/{hedef} Torba Verildi</span>
+
+                        {/* Ana Eylem Bölümü (İmza ve Kömür Teslimat Butonları) */}
+                        <div className="pt-1">
+                          {person.komur_verilmeyecek ? (
+                            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <Ban className="w-5 h-5 text-rose-600 shrink-0" />
+                                  <div>
+                                    <span className="font-black text-rose-800 block text-xs">Kömür Yardımı İptal Edildi</span>
+                                    <span className="text-[11px] text-rose-700 font-bold block">{formatCancelReason(person.komur_iptal_nedeni)}</span>
+                                  </div>
+                                </div>
+                                {onOpenKomurIptal && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onOpenKomurIptal(person);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 font-bold text-xs shrink-0 shadow-2xs transition-all active:scale-95"
+                                  >
+                                    İncele / Aktif Et
+                                  </button>
+                                )}
+                              </div>
+                              {formatCancelExplanation(person.komur_iptal_aciklama) && (
+                                <p className="text-[11px] text-rose-800 bg-white/70 p-1.5 rounded border border-rose-200 font-medium">
+                                  {formatCancelExplanation(person.komur_iptal_aciklama)}
+                                </p>
+                              )}
                             </div>
-                            <span className="font-mono text-rose-700 font-black bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                              +{kalan} Torba Eksik
-                            </span>
-                          </div>
-
-                          {/* 2 Adımlı Teslimat Akışı */}
-                          <div className="flex items-center gap-2">
-                            {/* 1. Adım: İmza Butonu */}
-                            {isSigned ? (
+                          ) : userRole === 'MUDUR' ? (
+                            <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-slate-900 block text-xs">
+                                  {isComplete
+                                    ? `✓ ${teslim} Torba Teslim Edildi`
+                                    : isPartial
+                                    ? `⚠️ Kısmi Teslim Edildi (${teslim} / ${hedef} Torba)`
+                                    : isSigned
+                                    ? '✍️ Kapıda İmza Alındı (Teslim Bekliyor)'
+                                    : `⏳ Dağıtım Bekliyor (${hedef} Torba)`}
+                                </span>
+                                {person.teslim_eden_personel && (
+                                  <p className="text-[11px] text-slate-600 mt-0.5">
+                                    Dağıtan Personel: <strong className="text-slate-900">{person.teslim_eden_personel}</strong>
+                                  </p>
+                                )}
+                                {person.teslimat_tarihi && (
+                                  <p className="text-[10px] text-slate-500 mt-0.5">
+                                    Tarih: {formatTrAuto(person.teslimat_tarihi)}
+                                  </p>
+                                )}
+                              </div>
                               <button
                                 type="button"
-                                onClick={() => handleToggleSignature(person)}
-                                className="h-12 px-3.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 shrink-0 shadow-2xs"
-                                title="Kapıda Islak İmza Alındı (Geri almak için dokunun)"
-                              >
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                <span>✓ İmzalı</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleToggleSignature(person)}
-                                className="h-12 flex-1 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 shadow-sm"
-                                title="Kömür teslimatını tamamlamadan önce lütfen kapıda ıslak imza alınız"
-                              >
-                                <PenTool className="w-4 h-4 text-white" />
-                                <span>✍️ 1. Adım: İmza Al</span>
-                              </button>
-                            )}
-
-                            {/* 2. Adım: Teslimat Butonu */}
-                            {isSigned ? (
-                              <button
-                                onClick={() => onOpenDelivery(person)}
-                                className="h-12 flex-1 rounded-xl text-xs font-black bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
-                                style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
-                              >
-                                <PackagePlus className="w-4 h-4 text-white" />
-                                <span>Kalanı Tamamla (+{kalan} Torba)</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  showToast({
-                                    type: 'warning',
-                                    title: 'Önce İmza Alınmalıdır',
-                                    message: 'Eksik kömürü teslim etmeden önce lütfen "✍️ 1. Adım: İmza Al" butonuna dokunarak ıslak imzayı onaylayınız.'
-                                  });
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenHousehold(person);
                                 }}
-                                className="h-12 flex-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 cursor-not-allowed flex items-center justify-center gap-1.5 transition-all shadow-none"
+                                className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold shrink-0 transition-all active:scale-95 shadow-2xs"
                               >
-                                <Lock className="w-4 h-4 text-slate-400" />
-                                <span>Kalanı Tamamla (Kilitli)</span>
+                                Hane Detayı
                               </button>
-                            )}
+                            </div>
+                          ) : isPartial ? (
+                            <div className="space-y-2">
+                              {/* Eksik Teslimat Bilgi Bandı */}
+                              <div className="flex items-center justify-between p-2 rounded-xl bg-amber-100/80 border border-amber-300 text-xs font-bold text-amber-950">
+                                <div className="flex items-center gap-1.5">
+                                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                                  <span>Eksik Dağıtım: {teslim}/{hedef} Torba Verildi</span>
+                                </div>
+                                <span className="font-mono text-rose-700 font-black bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                                  +{kalan} Torba Eksik
+                                </span>
+                              </div>
 
-                            {onOpenCancel && (
-                              userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
-                                <div
-                                  className="h-12 px-3 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1 cursor-not-allowed select-none shrink-0"
-                                  title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                              {/* 2 Adımlı Teslimat Akışı */}
+                              <div className="flex items-center gap-2">
+                                {/* 1. Adım: İmza Butonu */}
+                                {isSigned ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleSignature(person);
+                                    }}
+                                    className="h-12 px-3.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 shrink-0 shadow-2xs"
+                                    title="Kapıda Islak İmza Alındı (Geri almak için dokunun)"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                    <span>✓ İmzalı</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleSignature(person);
+                                    }}
+                                    className="h-12 flex-1 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 shadow-sm"
+                                    title="Kömür teslimatını tamamlamadan önce lütfen kapıda ıslak imza alınız"
+                                  >
+                                    <PenTool className="w-4 h-4 text-white" />
+                                    <span>✍️ 1. Adım: İmza Al</span>
+                                  </button>
+                                )}
+
+                                {/* 2. Adım: Teslimat Butonu */}
+                                {isSigned ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onOpenDelivery(person);
+                                    }}
+                                    className="h-12 flex-1 rounded-xl text-xs font-black bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                                    style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                                  >
+                                    <PackagePlus className="w-4 h-4 text-white" />
+                                    <span>Kalanı Tamamla (+{kalan} Torba)</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      showToast({
+                                        type: 'warning',
+                                        title: 'Önce İmza Alınmalıdır',
+                                        message: 'Eksik kömürü teslim etmeden önce lütfen "✍️ 1. Adım: İmza Al" butonuna dokunarak ıslak imzayı onaylayınız.'
+                                      });
+                                    }}
+                                    className="h-12 flex-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 cursor-not-allowed flex items-center justify-center gap-1.5 transition-all shadow-none"
+                                  >
+                                    <Lock className="w-4 h-4 text-slate-400" />
+                                    <span>Kalanı Tamamla (Kilitli)</span>
+                                  </button>
+                                )}
+
+                                {onOpenCancel && (
+                                  userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
+                                    <div
+                                      className="h-12 px-3 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1 cursor-not-allowed select-none shrink-0"
+                                      title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                                    >
+                                      <Lock className="w-4 h-4 text-slate-400" />
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenCancel(person);
+                                      }}
+                                      className="h-12 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs shrink-0"
+                                      title="Teslimatı geri al"
+                                    >
+                                      <Undo2 className="w-4 h-4 text-rose-600" />
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          ) : !isComplete ? (
+                            <div className="flex items-center gap-2">
+                              {/* 1. Adım: İmza Butonu */}
+                              {isSigned ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleSignature(person);
+                                  }}
+                                  className="h-12 px-3.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 shrink-0 shadow-2xs"
+                                  title="Kapıda Islak İmza Alındı (Geri almak için dokunun)"
+                                >
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  <span>✓ İmzalı</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleSignature(person);
+                                  }}
+                                  className="h-12 flex-1 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 shadow-sm"
+                                  title="Teslimatı başlatmak için önce kapıda ıslak imza alınız"
+                                >
+                                  <PenTool className="w-4 h-4 text-white" />
+                                  <span>✍️ 1. Adım: İmza Al</span>
+                                </button>
+                              )}
+
+                              {/* 2. Adım: Teslimat Butonu */}
+                              {isSigned ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenDelivery(person);
+                                  }}
+                                  className="h-12 flex-1 rounded-xl text-xs sm:text-sm font-black bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                                  style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
+                                >
+                                  <PackageCheck className="w-4 h-4 text-white" />
+                                  <span>Kömür Teslimatı Yap ({hedef} Torba)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    showToast({
+                                      type: 'warning',
+                                      title: 'Önce İmza Alınmalıdır',
+                                      message: 'Kömür teslimatı yapmadan önce lütfen "✍️ 1. Adım: İmza Al" butonuna dokunarak ıslak imzayı onaylayınız.'
+                                    });
+                                  }}
+                                  className="h-12 flex-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 cursor-not-allowed flex items-center justify-center gap-1.5 transition-all shadow-none"
+                                  title="Kömür teslimatını açabilmek için önce ıslak imza almalısınız"
                                 >
                                   <Lock className="w-4 h-4 text-slate-400" />
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => onOpenCancel(person)}
-                                  className="h-12 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-2xs shrink-0"
-                                  title="Teslimatı geri al"
-                                >
-                                  <Undo2 className="w-4 h-4 text-rose-600" />
+                                  <span>Teslim Et (Önce İmza)</span>
                                 </button>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      ) : !isComplete ? (
-                        <div className="flex items-center gap-2">
-                          {/* 1. Adım: İmza Butonu */}
-                          {isSigned ? (
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSignature(person)}
-                              className="h-12 px-3.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 shrink-0 shadow-2xs"
-                              title="Kapıda Islak İmza Alındı (Geri almak için dokunun)"
-                            >
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                              <span>✓ İmzalı</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSignature(person)}
-                              className="h-12 flex-1 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 shadow-sm"
-                              title="Teslimatı başlatmak için önce kapıda ıslak imza alınız"
-                            >
-                              <PenTool className="w-4 h-4 text-white" />
-                              <span>✍️ 1. Adım: İmza Al</span>
-                            </button>
-                          )}
-
-                          {/* 2. Adım: Teslimat Butonu */}
-                          {isSigned ? (
-                            <button
-                              onClick={() => onOpenDelivery(person)}
-                              className="h-12 flex-1 rounded-xl text-xs sm:text-sm font-black bg-emerald-600 bg-linear-to-r from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
-                              style={{ background: 'linear-gradient(135deg, #059669 0%, #0f766e 100%)', color: '#ffffff' }}
-                            >
-                              <PackageCheck className="w-4 h-4 text-white" />
-                              <span>Kömür Teslimatı Yap ({hedef} Torba)</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                showToast({
-                                  type: 'warning',
-                                  title: 'Önce İmza Alınmalıdır',
-                                  message: 'Kömür teslimatı yapmadan önce lütfen "✍️ 1. Adım: İmza Al" butonuna dokunarak ıslak imzayı onaylayınız.'
-                                });
-                              }}
-                              className="h-12 flex-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-400 border border-slate-300/80 cursor-not-allowed flex items-center justify-center gap-1.5 transition-all shadow-none"
-                              title="Kömür teslimatını açabilmek için önce ıslak imza almalısınız"
-                            >
-                              <Lock className="w-4 h-4 text-slate-400" />
-                              <span>Teslim Et (Önce İmza)</span>
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950">
-                          <div className="min-w-0">
-                            <span className="font-black text-emerald-950 block text-xs">✓ {teslim} Torba Teslim Edildi</span>
-                            <div className="text-[11px] text-emerald-800 space-y-0.5 mt-0.5">
-                              {person.teslimat_tarihi && (
-                                <div className="flex items-center gap-1">
-                                  <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
-                                  <span>{formatTrAuto(person.teslimat_tarihi)}</span>
-                                </div>
-                              )}
-                              {person.teslim_eden_personel && (
-                                <div>
-                                  Teslim Eden: <strong className="font-bold text-emerald-950">{person.teslim_eden_personel}</strong>
-                                </div>
                               )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {onOpenCancel && (
-                              userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
-                                <span
-                                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center gap-1 cursor-not-allowed select-none"
-                                  title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
-                                >
-                                  <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>Kilitli</span>
-                                </span>
-                              ) : (
-                                <button
-                                  onClick={() => onOpenCancel(person)}
-                                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
-                                  title="Bu hanenin teslimatını iptal et / geri al"
-                                >
-                                  <Undo2 className="w-3.5 h-3.5 text-rose-600" />
-                                  <span>Geri Al</span>
-                                </button>
-                              )
-                            )}
-                          </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950">
+                              <div className="min-w-0">
+                                <span className="font-black text-emerald-950 block text-xs">✓ {teslim} Torba Teslim Edildi</span>
+                                <div className="text-[11px] text-emerald-800 space-y-0.5 mt-0.5">
+                                  {person.teslimat_tarihi && (
+                                    <div className="flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
+                                      <span>{formatTrAuto(person.teslimat_tarihi)}</span>
+                                    </div>
+                                  )}
+                                  {person.teslim_eden_personel && (
+                                    <div>
+                                      Teslim Eden: <strong className="font-bold text-emerald-950">{person.teslim_eden_personel}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {onOpenCancel && (
+                                  userRole !== 'ADMIN' && isPastDeliveryDate(person.teslimat_tarihi) ? (
+                                    <span
+                                      className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center gap-1 cursor-not-allowed select-none"
+                                      title="Geçmiş gün teslimat iptali sadece Yönetici (ADMIN) yetkisindedir. Personel sadece görüntüleyebilir."
+                                    >
+                                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>Kilitli</span>
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenCancel(person);
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
+                                      title="Bu hanenin teslimatını iptal et / geri al"
+                                    >
+                                      <Undo2 className="w-3.5 h-3.5 text-rose-600" />
+                                      <span>Geri Al</span>
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
