@@ -24,20 +24,27 @@ test('Vatandaş Sorgu Ekranı Akordiyon Kart Menü Mimarisi ve Mobil Alan Tasarr
     );
   });
 
-  await t.test('2. Kapalı Durum (Collapsed Header): İsim Altında TC, Mahalle ve Sokak Alt Alta ve Konum Butonu', () => {
-    // A. Ad Soyad ve altında TC Kimlik No
+  await t.test('2. Kapalı Durum (Collapsed Header): İsim Altında TC, Sağında Konum Butonu, Mahalle ve Sokak Alt Alta', () => {
+    // A. Ad Soyad ve altında TC Kimlik No, en sağında Konum butonu
     assert.ok(
       beneficiaryListSrc.includes('{person.ad_soyad}') &&
-      beneficiaryListSrc.includes('{person.tc_no}'),
-      'Kart başlığında hak sahibi adı soyadı ve altında TC kimlik numarası yer almalıdır'
+      beneficiaryListSrc.includes('{person.tc_no}') &&
+      beneficiaryListSrc.includes('<span>Konum</span>') &&
+      beneficiaryListSrc.includes('title="Yandex Navigasyon ile kapıya yol tarifi al"'),
+      'Kart başlığında hak sahibi adı soyadı, altında TC kimlik numarası ve en sağında Konum butonu yer almalıdır'
     );
 
-    // B. Mahalle ve Sokak etiketleri alt alta (flex-col) ve aynı puntoda (text-xs font-bold px-2.5 py-1.5)
+    // B. Mahalle ve Sokak etiketleri alt alta (flex-col w-full), aynı puntoda ve sokak baş harfleri büyük & kesilmeden tam görünür
     assert.ok(
-      beneficiaryListSrc.includes('flex flex-col gap-1.5 min-w-0 flex-1') &&
+      beneficiaryListSrc.includes('flex flex-col gap-1.5 w-full') &&
       beneficiaryListSrc.includes('{person.mahalle}') &&
-      beneficiaryListSrc.includes('{stInfo.sokak}'),
-      'Mahalle ve Sokak etiketleri ekrana sığması için alt alta (flex-col) yer almalıdır'
+      beneficiaryListSrc.includes('toTitleCaseTurkish(stInfo.sokak)'),
+      'Mahalle ve Sokak etiketleri alt alta (flex-col w-full) olmalı ve sokak baş harfleri büyük yazılmalıdır'
+    );
+    assert.ok(
+      beneficiaryListSrc.includes('whitespace-normal break-words leading-snug') &&
+      !beneficiaryListSrc.includes('<span className="truncate">{stInfo.sokak}</span>'),
+      'Sokak etiketi mobilde kesilmeden ve kısaltılmadan içeriği tamamen görünür olmalıdır'
     );
     assert.ok(
       beneficiaryListSrc.includes('px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold') &&
@@ -45,14 +52,7 @@ test('Vatandaş Sorgu Ekranı Akordiyon Kart Menü Mimarisi ve Mobil Alan Tasarr
       'Mahalle ve Sokak etiketleri aynı büyüklük, padding ve puntoda (text-xs font-bold px-2.5 py-1.5) olmalıdır'
     );
 
-    // C. Kapalı durumda hızlı erişim için Konum Butonu
-    assert.ok(
-      beneficiaryListSrc.includes('<span>Konum</span>') &&
-      beneficiaryListSrc.includes('title="Yandex Navigasyon ile kapıya yol tarifi al"'),
-      'Kapalı kart durumunda doğrudan yol tarifi açan Konum butonu yer almalıdır'
-    );
-
-    // D. Tıklanabilir akordiyon başlığı ve Chevron indikatörü
+    // C. Tıklanabilir akordiyon başlığı ve Chevron indikatörü
     assert.ok(
       beneficiaryListSrc.includes('role="button"') &&
       beneficiaryListSrc.includes('aria-expanded={isCardExpanded}') &&

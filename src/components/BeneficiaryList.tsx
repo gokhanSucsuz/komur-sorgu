@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Search, MapPin, Phone, PackageCheck, Eye, EyeOff, Users, CheckCircle2, Clock, ChevronRight, ChevronDown, ChevronUp, ChevronLeft, ChevronsLeft, ChevronsRight, AlertTriangle, PackagePlus, CheckSquare, Square, X, Undo2, Navigation, ArrowUpDown, Trees, Building2, Compass, PenTool, List, LayoutGrid, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, Download, UserPlus, ArrowUp } from 'lucide-react';
 import { showAlert, showToast } from './GlobalAlertManager';
-import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled } from '@/lib/normalizer';
+import { getRecordPhones, formatPhoneDisplay, getRecordStreetInfo, compareByAddressAsc, compareBySiraNo, isBirebirBeneficiaryMatch, validateSmartSearchInput, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, normalizeMahalleName, normalizeStreetForCompare, getCleanNavigationAddress, getYandexNaviUrl, getGoogleMapsUrl, isBeneficiaryCancelled, toTitleCaseTurkish } from '@/lib/normalizer';
 import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
 import BeneficiaryFilterModals from './beneficiary/BeneficiaryFilterModals';
 import type { BeneficiaryRecord, MahalleSummary, QueueTabType, ListTypeFilter, UserRoleType } from '@/types/beneficiary';
@@ -2662,81 +2662,81 @@ export default function BeneficiaryList({
                         </div>
                       </div>
 
-                      {/* 2. Orta Satır: Hak Sahibi Adı Soyadı ve Altında TC Kimlik No */}
-                      <div className="pt-0.5 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
-                            {person.ad_soyad}
-                          </h4>
-                          {hasHouseholdDuplicate && (
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
-                              <Users className="w-3 h-3 text-purple-700" />
-                              <span>Aynı Adres</span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* İsmin Altında TC Kimlik No */}
-                        <div className="flex items-center gap-1.5 text-slate-600">
-                          <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
-                            TC
-                          </span>
-                          <span className="font-mono text-xs font-bold text-slate-900 tracking-wide">
-                            {person.tc_no}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* 3. Alt Bölüm: Mahalle ve Sokak Alt Alta + Sağda Konum Butonu */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                        {/* Sol Taraf: Mahalle ve Sokak Etiketleri (Alt Alta, Aynı Büyüklük ve Puntoda) */}
-                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                          {/* Mahalle Etiketi */}
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold shadow-2xs w-fit max-w-full">
-                            <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <span className="truncate">{person.mahalle}</span>
-                            {person.fiili_adres_guncellendi && (
-                              <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-200 shrink-0 ml-1">
-                                Fiili
+                      {/* 2. Orta Satır: Hak Sahibi Adı Soyadı, Altında TC Kimlik No ve En Sağında Konum Butonu */}
+                      <div className="pt-0.5 flex items-center justify-between gap-3">
+                        {/* Sol Taraf: Ad Soyad ve TC Kimlik No */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
+                              {person.ad_soyad}
+                            </h4>
+                            {hasHouseholdDuplicate && (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
+                                <Users className="w-3 h-3 text-purple-700" />
+                                <span>Aynı Adres</span>
                               </span>
                             )}
                           </div>
 
-                          {/* Sokak Etiketi (Mahalle ile Aynı Büyüklük ve Puntoda) */}
-                          {stInfo.sokak && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedSokak(stInfo.sokak);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 text-xs font-bold shadow-2xs transition-all cursor-pointer text-left w-fit max-w-full"
-                              title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
-                            >
-                              <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                              <span className="truncate">{stInfo.sokak}</span>
-                              {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
-                                <strong className="text-sky-950 font-black shrink-0">No: {stInfo.kapiNo}</strong>
-                              )}
-                              {stInfo.daireNo > 0 && (
-                                <span className="text-sky-700 font-semibold shrink-0">D: {stInfo.daireNo}</span>
-                              )}
-                            </button>
-                          )}
+                          {/* İsmin Altında TC Kimlik No */}
+                          <div className="flex items-center gap-1.5 text-slate-600">
+                            <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                              TC
+                            </span>
+                            <span className="font-mono text-xs font-bold text-slate-900 tracking-wide">
+                              {person.tc_no}
+                            </span>
+                          </div>
                         </div>
 
-                        {/* Sağ Taraf: Konum Butonu (Yandex Canlı Navigasyon Yol Tarifi) */}
+                        {/* Sağ Taraf: Konum Butonu (İsim ve TC Alanının En Sağında - Mobil Uyumlu) */}
                         <a
                           href={getYandexNaviUrl(person)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="h-10 px-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 shrink-0"
+                          className="h-10 px-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 shrink-0 self-center"
                           title="Yandex Navigasyon ile kapıya yol tarifi al"
                         >
                           <Navigation className="w-3.5 h-3.5 fill-white shrink-0" />
                           <span>Konum</span>
                         </a>
+                      </div>
+
+                      {/* 3. Alt Bölüm: Mahalle ve Sokak Alt Alta (Aynı Büyüklükte, Baş Harfleri Büyük, Kesilmeden Tamamen Görünür) */}
+                      <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5 w-full">
+                        {/* Mahalle Etiketi */}
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold shadow-2xs w-fit max-w-full">
+                          <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span>{person.mahalle}</span>
+                          {person.fiili_adres_guncellendi && (
+                            <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-200 shrink-0 ml-1">
+                              Fiili
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Sokak Etiketi (Mahalle ile Aynı Büyüklük ve Puntoda, Baş Harfleri Büyük, İçeriği Tamamen Görünür) */}
+                        {stInfo.sokak && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedSokak(stInfo.sokak);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 text-xs font-bold shadow-2xs transition-all cursor-pointer text-left w-fit max-w-full whitespace-normal break-words leading-snug"
+                            title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
+                          >
+                            <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                            <span>{toTitleCaseTurkish(stInfo.sokak)}</span>
+                            {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
+                              <strong className="text-sky-950 font-black shrink-0">No: {stInfo.kapiNo}</strong>
+                            )}
+                            {stInfo.daireNo > 0 && (
+                              <span className="text-sky-700 font-semibold shrink-0">D: {stInfo.daireNo}</span>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
 
