@@ -29,21 +29,25 @@ export async function GET(request: NextRequest) {
     // 2. Tüm geçmiş kayıtlarını çek ve çöz
     const rawAllRecords = await histCol.find({}).sort({ tarih: 1 }).toArray();
     const allHistoryMapped = mapDocs(rawAllRecords);
+    for (let i = 0; i < allHistoryMapped.length; i++) {
+      allHistoryMapped[i]._raw_iptal_edildi = Boolean(rawAllRecords[i]?.iptal_edildi);
+    }
 
     // Hak sahibi bazında geçmiş kayıtlarını grupla
     const historyByBen = new Map<string, any[]>();
     for (const r of allHistoryMapped) {
-      const bId = String(r.beneficiary_id || '');
+      const bId = String(r.beneficiary_id || r.tc_no || '');
       if (!historyByBen.has(bId)) historyByBen.set(bId, []);
       historyByBen.get(bId)!.push(r);
     }
 
     const autoHealIds: any[] = [];
+    const autoHealUncancelIds: any[] = [];
 
     // Her teslimat kaydının geçerliliğini, açık adresini ve iptal durumunu doğrula
     for (const r of allHistoryMapped) {
-      const bId = String(r.beneficiary_id || '');
-      const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
+      const bId = String(r.beneficiary_id || r.tc_no || '');
+      const ben = benMap.get(String(r.beneficiary_id || '')) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
 
       // Açık adres ve yerleşim bilgilerini hane üzerinden zenginleştir (tutanak çıktılarında adres boş görünmez)
       if (!r.acik_adres || String(r.acik_adres).trim() === '' || r.acik_adres === '-') {
@@ -71,8 +75,12 @@ export async function GET(request: NextRequest) {
           (e: any) => e.islem_tipi === 'TESLIMAT' || e.islem_tipi === 'EKSIK_TESLIMAT'
         );
         const isCurrentlyDeliveredInDb =
-          ben && (ben.teslimat_durumu === 'TAMAMLANDI' || ben.teslimat_durumu === 'TESLIM_EDILDI');
-        const isSignatureRevoked = !ben || ben.imza_durumu !== 'IMZALANDI';
+          ben &&
+          (ben.teslimat_durumu === 'TAMAMLANDI' ||
+            ben.teslimat_durumu === 'TESLIM_EDILDI' ||
+            ben.teslimat_durumu === 'EKSIK' ||
+            (Number(ben.torba_sayisi) > 0 && ben.imza_durumu === 'IMZALANDI'));
+        const isSignatureRevoked = !ben || (ben.imza_durumu !== 'IMZALANDI' && Number(ben.torba_sayisi || 0) === 0);
         const isCoalCancelled = ben && (ben.komur_verilmeyecek === true || ben.komur_verilmeyecek === 'true');
 
         if (hasSubsequentCancel && !hasSubsequentDelivery) {
@@ -90,6 +98,8 @@ export async function GET(request: NextRequest) {
 
         if (r.iptal_edildi && !r._raw_iptal_edildi) {
           autoHealIds.push(r.id || r._id);
+        } else if (!r.iptal_edildi && r._raw_iptal_edildi) {
+          autoHealUncancelIds.push(r.id || r._id);
         }
       }
     }
@@ -104,6 +114,17 @@ export async function GET(request: NextRequest) {
         );
       } catch (err) {
         console.warn('Auto-heal history flags network blip:', err);
+      }
+    }
+    if (autoHealUncancelIds.length > 0) {
+      try {
+        const idFilters = autoHealUncancelIds.map((id) => buildIdFilter(id));
+        await histCol.updateMany(
+          { $or: idFilters },
+          { $set: { iptal_edildi: false } }
+        );
+      } catch (err) {
+        console.warn('Auto-heal uncancel history flags network blip:', err);
       }
     }
 

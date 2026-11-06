@@ -1101,7 +1101,7 @@ export async function GET(request: NextRequest) {
       const endDate = searchParams.get('endDate');
       const startDate = searchParams.get('startDate');
       
-      const filter: any = { islem_tipi: 'TESLIMAT', iptal_edildi: { $ne: true } };
+      const filter: any = { islem_tipi: { $in: ['TESLIMAT', 'EKSIK_TESLIMAT'] }, iptal_edildi: { $ne: true } };
       if (endDate) {
         filter.gun_tarihi = { ...(filter.gun_tarihi || {}), $lte: endDate };
       }
@@ -1132,7 +1132,12 @@ export async function GET(request: NextRequest) {
         const bId = String(r.beneficiary_id || '');
         const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
         if (!ben) return false;
-        if (ben.teslimat_durumu !== 'TAMAMLANDI' && ben.teslimat_durumu !== 'TESLIM_EDILDI') return false;
+        if (
+          ben.teslimat_durumu !== 'TAMAMLANDI' &&
+          ben.teslimat_durumu !== 'TESLIM_EDILDI' &&
+          ben.teslimat_durumu !== 'EKSIK' &&
+          !(Number(ben.torba_sayisi) > 0 && ben.imza_durumu === 'IMZALANDI')
+        ) return false;
         if (ben.imza_durumu !== 'IMZALANDI') return false;
         if (ben.komur_verilmeyecek === true || ben.komur_verilmeyecek === 'true') return false;
         return true;
@@ -1226,10 +1231,10 @@ export async function GET(request: NextRequest) {
         : (isAllDays ? 'GENEL TOPLU KÖMÜR DAĞITIM VE TESLİMAT TUTANAĞI' : 'KÖMÜR YARDIMI GÜNLÜK DAĞITIM VE TESLİMAT TUTANAĞI');
 
       const subtitle = isCumulative
-        ? `${formatTrDate(endDate)} Tarihine Kadar Yapılan Toplu Dağıtımlar | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`
+        ? `${formatTrDate(endDate)} Tarihine Kadar Yapılan Toplu Dağıtımlar | Toplam Hane: ${validRecords.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`
         : (isAllDays
-          ? `Tüm Günler (Genel Arşiv) | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`
-          : `Dağıtım Tarihi: ${formatTrDate(targetDate || new Date().toLocaleDateString('en-CA'))} | Toplam Hane: ${records.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`);
+          ? `Tüm Günler (Genel Arşiv) | Toplam Hane: ${validRecords.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`
+          : `Dağıtım Tarihi: ${formatTrDate(targetDate || new Date().toLocaleDateString('en-CA'))} | Toplam Hane: ${validRecords.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`);
 
       const filename = isCumulative
         ? `Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${endDate}.xlsx`

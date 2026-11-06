@@ -403,7 +403,7 @@ export async function GET(request: NextRequest) {
         const mi = mBatchMap.get(m)!;
         mi.toplamKayit += 1;
         if (b.sira_no) mi.siraNoList.push(b.sira_no);
-        if (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI') {
+        if (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI' || b.teslimat_durumu === 'EKSIK') {
           mi.teslimEdilen += 1;
           del += 1;
         } else {
@@ -448,7 +448,7 @@ export async function GET(request: NextRequest) {
         const mi = mBatchMap.get(m)!;
         mi.toplamKayit += 1;
         if (b.sira_no) mi.siraNoList.push(b.sira_no);
-        if (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI') {
+        if (b.teslimat_durumu === 'TAMAMLANDI' || b.teslimat_durumu === 'TESLIM_EDILDI' || b.teslimat_durumu === 'EKSIK') {
           mi.teslimEdilen += 1;
           del += 1;
         } else {

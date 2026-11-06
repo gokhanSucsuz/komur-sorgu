@@ -548,6 +548,11 @@ export default function DeliveryArchive({
                                       <span>🎖️</span> Şehit/Gazi
                                     </span>
                                   )}
+                                  {item.islem_tipi === 'EKSIK_TESLIMAT' && (
+                                    <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 shadow-2xs">
+                                      <span>⚠️</span> Eksik / Kısmi Teslimat
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                                   <span className="font-mono font-bold text-amber-800">TC: {item.tc_no}</span>
@@ -561,7 +566,11 @@ export default function DeliveryArchive({
                               </div>
 
                               <div className="text-right">
-                                <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">
+                                <span className={`text-xs font-extrabold px-2 py-0.5 rounded-lg border ${
+                                  item.islem_tipi === 'EKSIK_TESLIMAT'
+                                    ? 'text-amber-900 bg-amber-100 border-amber-300'
+                                    : 'text-emerald-800 bg-emerald-100 border-emerald-200'
+                                }`}>
                                   {item.torba_sayisi} Torba
                                 </span>
                                 <div className="text-[10px] text-slate-500 mt-1 font-semibold flex items-center justify-end gap-1">
@@ -868,9 +877,16 @@ export default function DeliveryArchive({
                           )}
                         </td>
                         <td className="py-2 px-2 text-center">
-                          <span className="font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded text-[11px]">
+                          <span className={`font-black px-1.5 py-0.5 rounded text-[11px] ${
+                            item.islem_tipi === 'EKSIK_TESLIMAT'
+                              ? 'text-amber-900 bg-amber-100 border border-amber-300'
+                              : 'text-emerald-800 bg-emerald-100'
+                          }`}>
                             {item.torba_sayisi}
                           </span>
+                          {item.islem_tipi === 'EKSIK_TESLIMAT' && (
+                            <span className="block text-[8px] font-black text-amber-800 uppercase mt-0.5">Eksik</span>
+                          )}
                         </td>
                         <td className="py-2 px-2 font-medium text-slate-700 break-words">{item.teslim_alan || item.ad_soyad}</td>
                         <td className="py-2 px-2 text-center font-semibold text-slate-800">

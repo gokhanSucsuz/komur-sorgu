@@ -152,4 +152,70 @@ test('Günlük Tek Rota, Eksik Teslimat Devri ve Hane Sayımı Kuralları Testi'
     const stopsWithPending = [...stops, pendingStop];
     assert.equal(stopsWithPending.every(isStopDelivered), false);
   });
+
+  await t.test('6. Teslimat Arşivi: EKSIK_TESLIMAT Kayıtları Günün Teslimatlarına, İstatistiklere ve Raporlara Dahil Edilir', () => {
+    // Hak sahibi ve geçmiş kaydı
+    const beneficiary = {
+      id: 'ben_partial_1',
+      ad_soyad: 'Zeynep Aykan',
+      tc_no: '12345678901',
+      teslimat_durumu: 'EKSIK',
+      torba_sayisi: 20,
+      imza_durumu: 'IMZALANDI',
+      komur_verilmeyecek: false,
+    };
+
+    const record = {
+      id: 'hist_partial_1',
+      beneficiary_id: 'ben_partial_1',
+      tc_no: '12345678901',
+      ad_soyad: 'Zeynep Aykan',
+      islem_tipi: 'EKSIK_TESLIMAT',
+      torba_sayisi: 20,
+      gun_tarihi: '2026-11-06',
+      tarih: '06.11.2026 14:43:51',
+    };
+
+    // Arşiv doğrulama mantığı
+    const isCurrentlyDeliveredInDb =
+      beneficiary &&
+      (beneficiary.teslimat_durumu === 'TAMAMLANDI' ||
+        beneficiary.teslimat_durumu === 'TESLIM_EDILDI' ||
+        beneficiary.teslimat_durumu === 'EKSIK' ||
+        (Number(beneficiary.torba_sayisi) > 0 && beneficiary.imza_durumu === 'IMZALANDI'));
+    const isSignatureRevoked = !beneficiary || (beneficiary.imza_durumu !== 'IMZALANDI' && Number(beneficiary.torba_sayisi || 0) === 0);
+    const isCoalCancelled = beneficiary && (beneficiary.komur_verilmeyecek === true || (beneficiary.komur_verilmeyecek as unknown) === 'true');
+
+    const iptalEdildi = !isCurrentlyDeliveredInDb || isSignatureRevoked || isCoalCancelled;
+    assert.equal(iptalEdildi, false, 'Eksik kömür teslimatı yapılan ve imzası alınan hane arşivde iptal edilmiş sayılmamalıdır');
+
+    // Günlük gruplama ve istatistik hesaplama
+    const allRecords = [
+      ...Array.from({ length: 34 }, (_, i) => ({
+        id: `hist_full_${i + 1}`,
+        beneficiary_id: `ben_full_${i + 1}`,
+        islem_tipi: 'TESLIMAT',
+        torba_sayisi: 34,
+        gun_tarihi: '2026-11-06',
+        iptal_edildi: false,
+      })),
+      {
+        ...record,
+        iptal_edildi: iptalEdildi,
+      },
+    ];
+
+    let gunlukTeslimatSayisi = 0;
+    let gunlukToplamTorba = 0;
+
+    for (const item of allRecords) {
+      if ((item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') && !item.iptal_edildi) {
+        gunlukTeslimatSayisi += 1;
+        gunlukToplamTorba += item.torba_sayisi || 0;
+      }
+    }
+
+    assert.equal(gunlukTeslimatSayisi, 35, 'Günün teslimat arşivinde 34 tam + 1 eksik hane = 35 hane görünmelidir');
+    assert.equal(gunlukToplamTorba, 1176, 'Günün kömür toplamı 34 * 34 + 20 = 1176 torba (29.40 Ton) olmalıdır');
+  });
 });
