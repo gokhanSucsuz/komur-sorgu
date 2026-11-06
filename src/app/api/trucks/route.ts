@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptTruck, normalizeIrsaliyeNo, hashIrsaliye } from '@/lib/crypto';
-import { getIstanbulDate } from '@/lib/dateUtils';
+import { getIstanbulDate, formatDottedTrDate } from '@/lib/dateUtils';
 import { turkishIncludes, normalizeToTon, formatTonnage, calculateCoalStockMetrics } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, isSafeId } from '@/lib/security';
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `"${cleanIrsaliye}" İrsaliye / Teslimat Numarası sistemde zaten kayıtlı (#${duplicateTruck.tir_sirasi} - Plaka: ${duplicateTruck.plaka} - Tarih: ${duplicateTruck.tarih}). İrsaliye No birincil anahtardır; aynı irsaliye numarasıyla birden fazla kayıt açılamaz!`,
+          error: `"${cleanIrsaliye}" İrsaliye / Teslimat Numarası sistemde zaten kayıtlı (#${duplicateTruck.tir_sirasi} - Plaka: ${duplicateTruck.plaka} - Tarih: ${formatDottedTrDate(duplicateTruck.tarih)}). İrsaliye No birincil anahtardır; aynı irsaliye numarasıyla birden fazla kayıt açılamaz!`,
         },
         { status: 409 }
       );
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
       kullanici_rolu: session.rol || 'ADMIN',
       islem_tipi: 'TIR_GIRIS',
       baslik: `Yeni Kömür Tırı Kaydedildi (#${orderNum} - ${newDoc.plaka})`,
-      detay: `#${orderNum} Sıra No | Tır Plakası: ${newDoc.plaka}${newDoc.dorse_plaka ? ` (Dorse: ${newDoc.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${newDoc.ocak_cikis_tarihi} → Saha Geliş: ${tarih} | Net Tonaj: ${formatTonnage(netVal).combined} (Brüt: ${formatTonnage(brutVal).combined}, Dara: ${formatTonnage(taraVal).combined})${newDoc.sofor_adi ? ` | Şoför: ${newDoc.sofor_adi}` : ''}`,
+      detay: `#${orderNum} Sıra No | Tır Plakası: ${newDoc.plaka}${newDoc.dorse_plaka ? ` (Dorse: ${newDoc.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${formatDottedTrDate(newDoc.ocak_cikis_tarihi)} → Saha Geliş: ${formatDottedTrDate(tarih)} | Net Tonaj: ${formatTonnage(netVal).combined} (Brüt: ${formatTonnage(brutVal).combined}, Dara: ${formatTonnage(taraVal).combined})${newDoc.sofor_adi ? ` | Şoför: ${newDoc.sofor_adi}` : ''}`,
       ek_bilgi: {
         id: newId,
         tir_sirasi: orderNum,
@@ -363,7 +363,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `"${cleanIrsaliye}" İrsaliye / Teslimat Numarası başka bir tır kaydında (#${duplicateTruck.tir_sirasi} - Plaka: ${duplicateTruck.plaka} - Tarih: ${duplicateTruck.tarih}) zaten kullanılıyor! İrsaliye No birincil anahtardır.`,
+          error: `"${cleanIrsaliye}" İrsaliye / Teslimat Numarası başka bir tır kaydında (#${duplicateTruck.tir_sirasi} - Plaka: ${duplicateTruck.plaka} - Tarih: ${formatDottedTrDate(duplicateTruck.tarih)}) zaten kullanılıyor! İrsaliye No birincil anahtardır.`,
         },
         { status: 409 }
       );
@@ -401,7 +401,7 @@ export async function PUT(request: NextRequest) {
       kullanici_rolu: session.rol || 'ADMIN',
       islem_tipi: 'TIR_GUNCELLEME',
       baslik: `Kömür Tırı Kaydı Güncellendi (#${orderNum} - ${updatedFields.plaka})`,
-      detay: `#${orderNum} Sıra No | Tır Plakası: ${updatedFields.plaka}${updatedFields.dorse_plaka ? ` (Dorse: ${updatedFields.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${updatedFields.ocak_cikis_tarihi} → Saha Geliş: ${tarih} | Net Tonaj: ${formatTonnage(netVal).combined} (Brüt: ${formatTonnage(brutVal).combined}, Dara: ${formatTonnage(taraVal).combined})`,
+      detay: `#${orderNum} Sıra No | Tır Plakası: ${updatedFields.plaka}${updatedFields.dorse_plaka ? ` (Dorse: ${updatedFields.dorse_plaka})` : ''} | İrsaliye No: ${cleanIrsaliye} | Ocak Çıkış: ${formatDottedTrDate(updatedFields.ocak_cikis_tarihi)} → Saha Geliş: ${formatDottedTrDate(tarih)} | Net Tonaj: ${formatTonnage(netVal).combined} (Brüt: ${formatTonnage(brutVal).combined}, Dara: ${formatTonnage(taraVal).combined})`,
       ek_bilgi: {
         id: String(id),
         eski_plaka: existingTarget.plaka,
@@ -462,7 +462,7 @@ export async function DELETE(request: NextRequest) {
         ? `Kömür Tırı Kaydı Silindi (#${existing.tir_sirasi} - ${existing.plaka})`
         : 'Kömür Tırı Kaydı Silindi',
       detay: existing
-        ? `Silinen Tır: #${existing.tir_sirasi} | Plaka: ${existing.plaka}${existing.dorse_plaka ? ` (Dorse: ${existing.dorse_plaka})` : ''} | İrsaliye No: ${existing.irsaliye_no} | Tarih: ${existing.tarih} | Net Tonaj: ${existing.net_tonaj} Ton`
+        ? `Silinen Tır: #${existing.tir_sirasi} | Plaka: ${existing.plaka}${existing.dorse_plaka ? ` (Dorse: ${existing.dorse_plaka})` : ''} | İrsaliye No: ${existing.irsaliye_no} | Tarih: ${formatDottedTrDate(existing.tarih)} | Net Tonaj: ${existing.net_tonaj} Ton`
         : `Tır ID (${id}) sistemden silindi.`,
     });
     await touchSyncPulse('TRUCK_DELETE');

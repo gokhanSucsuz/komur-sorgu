@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Calendar, Plus, Trash2, Edit3, RefreshCw, CheckCircle2, AlertTriangle, MapPin, Printer, X, History, Sparkles, Download, FileText } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
-import { formatTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
+import { formatTrDate, formatDottedTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 interface ShiftPageProps {
   userRole?: 'ADMIN' | 'PERSONEL' | 'MUDUR';
@@ -185,7 +185,7 @@ export default function ShiftPage({
     if (conflict) {
       setFeedbackMsg({
         type: 'error',
-        text: `"${entryStaff}" için ${entryDate} tarihinde aynı saatlere denk gelen (${conflict.baslama_saati} - ${conflict.bitis_saati}) bir mesai kaydı bulunmaktadır. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
+        text: `"${entryStaff}" için ${formatDottedTrDate(entryDate)} tarihinde aynı saatlere denk gelen (${conflict.baslama_saati} - ${conflict.bitis_saati}) bir mesai kaydı bulunmaktadır. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
       });
       return;
     }
@@ -218,7 +218,7 @@ export default function ShiftPage({
         throw new Error(data.error || 'Kayıt eklenemedi.');
       }
 
-      setFeedbackMsg({ type: 'success', text: `${entryDate} tarihli çalışma saati (${entryStartTime} - ${entryEndTime}) başarıyla kaydedildi.` });
+      setFeedbackMsg({ type: 'success', text: `${formatDottedTrDate(entryDate)} tarihli çalışma saati (${entryStartTime} - ${entryEndTime}) başarıyla kaydedildi.` });
       setEntryNotes('');
       await fetchShifts();
       if (onRefreshAll) onRefreshAll();
@@ -298,7 +298,7 @@ export default function ShiftPage({
   const handleDeleteShift = async (shift: any) => {
     const confirmPrompt = await showConfirm({
       title: 'Mesai Kaydını Sil',
-      message: `${shift.tarih} tarihli "${shift.personel_adi}" çalışma saati kaydını (${shift.baslama_saati} - ${shift.bitis_saati}) silmek istediğinize emin misiniz?`,
+      message: `${formatDottedTrDate(shift.tarih)} tarihli "${shift.personel_adi}" çalışma saati kaydını (${shift.baslama_saati} - ${shift.bitis_saati}) silmek istediğinize emin misiniz?`,
       type: 'warning',
       confirmText: 'Evet, Sil',
       cancelText: 'Vazgeç'
@@ -1168,7 +1168,7 @@ export default function ShiftPage({
                     Personel Çalışma Saatleri & Mesai Takip Cetveli
                   </h3>
                   <p className="text-[11px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
-                    <span>Dönem: <strong className="text-slate-800">{reportTargetDate !== 'ALL' ? reportTargetDate : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong></span>
+                    <span>Dönem: <strong className="text-slate-800">{reportTargetDate !== 'ALL' ? formatDottedTrDate(reportTargetDate) : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong></span>
                     <span>•</span>
                     <span>Personel: <strong className="text-slate-800">{selectedPersonnel === 'ALL' ? 'Tüm Personeller' : selectedPersonnel}</strong></span>
                     <span>•</span>
@@ -1229,7 +1229,7 @@ export default function ShiftPage({
                   </div>
                 </div>
                 <p className="text-xs text-slate-600 pt-1">
-                  Bu tutanak ve çalışma cetveli, <strong>{reportTargetDate !== 'ALL' ? reportTargetDate : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong> kapsamında Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde kömür dağıtım ve saha faaliyetlerinde görev alan personelin çalışma saatlerini, görev alanlarını ve mesai sürelerini resmi olarak tevsik eder.
+                  Bu tutanak ve çalışma cetveli, <strong>{reportTargetDate !== 'ALL' ? formatDottedTrDate(reportTargetDate) : (selectedMonth === 'ALL' ? 'Tüm Dönemler' : availableMonths.find(m => m.id === selectedMonth)?.label || selectedMonth)}</strong> kapsamında Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde kömür dağıtım ve saha faaliyetlerinde görev alan personelin çalışma saatlerini, görev alanlarını ve mesai sürelerini resmi olarak tevsik eder.
                 </p>
               </div>
 

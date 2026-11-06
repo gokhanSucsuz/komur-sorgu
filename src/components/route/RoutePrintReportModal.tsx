@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { Route as RouteIcon, X, Download, Printer, AlertTriangle, RefreshCw } from 'lucide-react';
 import { getBeneficiaryListTypeInfo, resolveStaffDisplayName } from '@/lib/normalizer';
-import { formatTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
+import { formatTrDate, formatDottedTrDate, replaceYmdWithDdmmyyyy, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 export interface RoutePrintReportModalProps {
   printRoute: any | null;
@@ -90,7 +90,7 @@ export default function RoutePrintReportModal({
             </div>
             <div className="truncate">
               <h3 className="text-xs sm:text-sm md:text-base font-black text-slate-900 truncate">
-                {printRoute.rota_adi || 'Günlük Kömür Dağıtım Rotası Tutanağı'}
+                {replaceYmdWithDdmmyyyy(printRoute.rota_adi || 'Günlük Kömür Dağıtım Rotası Tutanağı')}
               </h3>
               <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
                 <span>
@@ -190,7 +190,7 @@ export default function RoutePrintReportModal({
             <div className="pt-2 flex flex-wrap items-center justify-between text-[11px] text-slate-600 gap-2 font-medium">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span>
-                  Rota: <strong className="text-slate-900">{printRoute.rota_adi}</strong>
+                  Rota: <strong className="text-slate-900">{replaceYmdWithDdmmyyyy(printRoute.rota_adi || '')}</strong>
                 </span>
                 <span>•</span>
                 <span>
@@ -477,7 +477,7 @@ export default function RoutePrintReportModal({
         <div className="report-modal-footer shrink-0 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between bg-slate-100 z-20 no-print gap-2">
           <a
             href={`/api/export?type=daily_deliveries&date=${encodeURIComponent(String(printRoute.tarih || ''))}`}
-            download={`Edirne_SYDV_Rota_Teslimat_Listesi_${String(printRoute.tarih || '').replace(/[^a-zA-Z0-9._-]/g, '_')}.xlsx`}
+            download={`Edirne_SYDV_Rota_Teslimat_Listesi_${formatDottedTrDate(printRoute.tarih)}.xlsx`}
             className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
           >
             <Download className="w-4 h-4" />

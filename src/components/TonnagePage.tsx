@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { Truck, Plus, Calendar, FileText, Weight, Trash2, AlertCircle, Printer, X, Download, Search, Copy, RotateCcw, Pencil, Target, ShieldCheck, Scale, LayoutGrid, ListFilter, FileSpreadsheet, Users, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { turkishIncludes, formatTonnage, normalizeToTon, formatTwoWayTonnage, formatTwoWayDiff } from '@/lib/normalizer';
-import { formatTrDateTime, formatTrDateWithDay, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
+import { formatTrDateTime, formatTrDateWithDay, formatDottedTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 import { parseTonnageTemplates, DEFAULT_TONNAGE_TEMPLATES, TonnageReportTemplates } from '@/lib/tonnageTemplates';
 import dynamic from 'next/dynamic';
 const InstitutionTonnageModal = dynamic(() => import('./InstitutionTonnageModal'));
@@ -465,7 +465,7 @@ export default function TonnagePage({
 
     if (duplicateIrsaliyeTruck) {
       setErrorMsg(
-        `"${irsaliyeNo.trim().toLocaleUpperCase('tr-TR')}" İrsaliye / Teslimat No sistemde zaten kayıtlı (#${duplicateIrsaliyeTruck.tir_sirasi} - Plaka: ${duplicateIrsaliyeTruck.plaka} - Tarih: ${duplicateIrsaliyeTruck.tarih}). İrsaliye No birincil anahtardır; aynı irsaliye numarasıyla birden fazla kayıt açılamaz!`
+        `"${irsaliyeNo.trim().toLocaleUpperCase('tr-TR')}" İrsaliye / Teslimat No sistemde zaten kayıtlı (#${duplicateIrsaliyeTruck.tir_sirasi} - Plaka: ${duplicateIrsaliyeTruck.plaka} - Tarih: ${formatDottedTrDate(duplicateIrsaliyeTruck.tarih)}). İrsaliye No birincil anahtardır; aynı irsaliye numarasıyla birden fazla kayıt açılamaz!`
       );
       return;
     }
@@ -1090,7 +1090,7 @@ export default function TonnagePage({
             )}
             {(mainStartDate || mainEndDate) && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 text-teal-900 border border-teal-300 font-bold text-[11px]">
-                <span>{mainStartDate || '...'} &rarr; {mainEndDate || '...'}</span>
+                <span>{mainStartDate ? formatDottedTrDate(mainStartDate) : '...'} &rarr; {mainEndDate ? formatDottedTrDate(mainEndDate) : '...'}</span>
                 <button type="button" onClick={() => { setMainStartDate(''); setMainEndDate(''); }} className="hover:text-teal-950 p-0.5">
                   <X className="w-3 h-3" />
                 </button>
@@ -1711,7 +1711,7 @@ export default function TonnagePage({
                       return (
                         <option key={tid} value={tid}>
                           #{t.tir_sirasi} | {t.plaka}
-                          {t.tutanak_no ? ` (Mühür: ${t.tutanak_no})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({t.tarih})
+                          {t.tutanak_no ? ` (Mühür: ${t.tutanak_no})` : ''} — {t.sofor_adi || 'Şoför Yok'} — Net: {formatTonnage(t.net_tonaj).combined} ({formatDottedTrDate(t.tarih)})
                         </option>
                       );
                     })}
@@ -1758,7 +1758,7 @@ export default function TonnagePage({
                   />
                   {duplicateIrsaliyeTruck ? (
                     <p className="mt-1 text-[11px] font-bold text-rose-700 leading-tight">
-                      ⚠️ Bu irsaliye no zaten kayıtlı: #{duplicateIrsaliyeTruck.tir_sirasi} ({duplicateIrsaliyeTruck.plaka} • {duplicateIrsaliyeTruck.tarih})
+                      ⚠️ Bu irsaliye no zaten kayıtlı: #{duplicateIrsaliyeTruck.tir_sirasi} ({duplicateIrsaliyeTruck.plaka} • {formatDottedTrDate(duplicateIrsaliyeTruck.tarih)})
                     </p>
                   ) : irsaliyeNo.trim().length > 0 ? (
                     <p className="mt-1 text-[10px] font-bold text-emerald-700">

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { formatPhoneDisplay, getYandexNaviUrl } from '@/lib/normalizer';
 import { safeVibrate } from '@/lib/batteryManager';
+import { formatDottedTrDate, replaceYmdWithDdmmyyyy } from '@/lib/dateUtils';
 
 interface ActiveRouteAccordionCardProps {
   route: any;
@@ -178,7 +179,7 @@ export default function ActiveRouteAccordionCard({
                     title="Saha Dağıtımı Aktif"
                   />
                   <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
-                    {route.rota_adi || `Ekip ${routeIdx + 1} Dağıtım Rotası`}
+                    {replaceYmdWithDdmmyyyy(route.rota_adi || `Ekip ${routeIdx + 1} Dağıtım Rotası`)}
                   </h3>
                 </div>
                 {route.arac_plaka && (
@@ -202,7 +203,7 @@ export default function ActiveRouteAccordionCard({
                   {route.dagitim_personeli || 'Personel'}
                 </span>
                 <span>•</span>
-                <span>{route.tarih}</span>
+                <span>{formatDottedTrDate(route.tarih)}</span>
                 <span>•</span>
                 <span className="font-extrabold text-slate-800">
                   {handled} / {total} Hane (%{percent})
@@ -326,11 +327,11 @@ export default function ActiveRouteAccordionCard({
                         Dağıtım Sürüyor
                       </span>
                       <span className="text-xs text-slate-500 font-mono">
-                        {route.tarih}
+                        {formatDottedTrDate(route.tarih)}
                       </span>
                     </div>
                     <h3 className="text-base font-black text-slate-900 mt-1 truncate">
-                      {route.rota_adi}
+                      {replaceYmdWithDdmmyyyy(route.rota_adi)}
                     </h3>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-1">
                       {route.arac_plaka && (
@@ -503,7 +504,7 @@ export default function ActiveRouteAccordionCard({
                   <div className="flex items-center gap-2">
                     <a
                       href={`/api/export?type=daily_deliveries&date=${route.tarih || new Date().toLocaleDateString('en-CA')}`}
-                      download={`Edirne_SYDV_Teslimat_Listesi_${route.tarih || 'Bugun'}.xlsx`}
+                      download={`Edirne_SYDV_Teslimat_Listesi_${formatDottedTrDate(route.tarih)}.xlsx`}
                       className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
                     >
                       <Download className="w-3.5 h-3.5 text-emerald-700" />

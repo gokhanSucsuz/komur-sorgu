@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog } from '@/lib/mongodb';
 import { encryptShift, encryptField } from '@/lib/crypto';
-import { getIstanbulDate } from '@/lib/dateUtils';
+import { getIstanbulDate, formatDottedTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, isSafeId } from '@/lib/security';
 
@@ -585,7 +585,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `${targetStaff} için ${tarih} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) bir mesai kaydı mevcuttur. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
+            error: `${targetStaff} için ${formatDottedTrDate(tarih)} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) bir mesai kaydı mevcuttur. Aynı güne çakışan saatlerde birden fazla mesai girişi yapılamaz.`
           },
           { status: 400 }
         );
@@ -615,7 +615,7 @@ export async function POST(request: NextRequest) {
         kullanici_rolu: session.rol || 'PERSONEL',
         islem_tipi: 'MESAI_GIRIS',
         baslik: 'Günlük Çalışma Saati Kaydedildi',
-        detay: `${targetStaff} için ${tarih} tarihine çalışma saati girildi: ${baslama_saati} - ${bitis_saati} (${formatMinutes(totalMinutes)}).`,
+        detay: `${targetStaff} için ${formatDottedTrDate(tarih)} tarihine çalışma saati girildi: ${baslama_saati} - ${bitis_saati} (${formatMinutes(totalMinutes)}).`,
         ek_bilgi: { tarih, baslama_saati, bitis_saati, totalMinutes },
       });
 
@@ -695,7 +695,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `${targetStaff} için ${targetDate} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) başka bir mesai kaydı mevcuttur. Çakışan saatlerde güncelleme yapılamaz.`
+          error: `${targetStaff} için ${formatDottedTrDate(targetDate)} tarihinde aynı saatlere denk gelen (${conflictingShift.baslama_saati} - ${conflictingShift.bitis_saati}) başka bir mesai kaydı mevcuttur. Çakışan saatlerde güncelleme yapılamaz.`
         },
         { status: 400 }
       );

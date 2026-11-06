@@ -230,6 +230,15 @@ export function formatDottedTrDate(val?: any): string {
 }
 
 /**
+ * Replaces any ISO date pattern (YYYY-MM-DD) inside a string with standard Turkish format (DD.MM.YYYY).
+ * e.g. "2026-11-06 Günlük Dağıtım Rotası" -> "06.11.2026 Günlük Dağıtım Rotası"
+ */
+export function replaceYmdWithDdmmyyyy(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  return text.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, '$3.$2.$1');
+}
+
+/**
  * Creates the official PDF filename / document title strictly formatted as:
  * "DD.MM.YYYY - <Rapor Başlığı>" (e.g. "05.11.2026 - Günlük Kömür Dağıtım ve Teslimat Tutanağı")
  */

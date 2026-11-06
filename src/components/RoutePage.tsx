@@ -48,7 +48,7 @@ import {
   PARSEL_SORGU_URL,
   resolveStaffDisplayName
 } from '@/lib/normalizer';
-import { formatTrDate } from '@/lib/dateUtils';
+import { formatTrDate, formatDottedTrDate, replaceYmdWithDdmmyyyy } from '@/lib/dateUtils';
 import { requestAppFullscreen, exitAppFullscreen } from '@/lib/fullscreen';
 import { saveOfflineDelivery } from '@/lib/offlineSync';
 
@@ -475,7 +475,7 @@ export default function RoutePage({
       return;
     }
 
-    const todayStr = new Date().toLocaleDateString('tr-TR');
+    const todayStr = formatDottedTrDate(new Date());
     const teamNum = (activeRoutes?.length || 0) + 1;
     setNewRouteName(`Ekip ${teamNum} - ${todayStr} Dağıtım Rotası`);
     setNewRouteStaff(userName || `Ekip ${teamNum}`);
@@ -3296,7 +3296,7 @@ export default function RoutePage({
                         <FileCheck className="w-3 h-3 text-emerald-600" />
                         <span>İmza Alındı</span>
                         {person.imza_tarihi && (
-                          <span className="text-emerald-700 font-medium font-mono">({person.imza_tarihi})</span>
+                          <span className="text-emerald-700 font-medium font-mono">({formatDottedTrDate(person.imza_tarihi)})</span>
                         )}
                         {person.imza_alan_personel && (
                           <span className="text-slate-500 font-medium">• {person.imza_alan_personel}</span>
@@ -3312,12 +3312,12 @@ export default function RoutePage({
                       ) : person.teslimat_sekli === 'ROTA_TESLIMATI' ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 font-bold text-[11px] border border-sky-200/80">
                           <RouteIcon className="w-3 h-3 text-sky-600" />
-                          <span>Rota İle Teslim Edildi: {person.rota_adi}</span>
+                          <span>Rota İle Teslim Edildi: {replaceYmdWithDdmmyyyy(person.rota_adi || '')}</span>
                         </span>
                       ) : person.teslimat_sekli === 'ROTADA_BEKLIYOR' ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-bold text-[11px] border border-blue-200/80">
                           <Truck className="w-3 h-3 text-blue-600" />
-                          <span>Aktif Rotada Dağıtımda: {person.rota_adi}</span>
+                          <span>Aktif Rotada Dağıtımda: {replaceYmdWithDdmmyyyy(person.rota_adi || '')}</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[11px] border border-slate-200/80">
@@ -3331,7 +3331,7 @@ export default function RoutePage({
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
                           <span>Teslim Eden: <strong>{person.teslim_eden_personel}</strong></span>
                           {person.teslimat_tarihi && (
-                            <span className="text-slate-500 font-mono">({person.teslimat_tarihi})</span>
+                            <span className="text-slate-500 font-mono">({formatDottedTrDate(person.teslimat_tarihi)})</span>
                           )}
                         </span>
                       )}
@@ -3532,7 +3532,7 @@ export default function RoutePage({
                     <div className="flex items-center gap-2 pt-1">
                       <a
                         href={`/api/export?type=daily_deliveries&date=${route.tarih}`}
-                        download={`Edirne_SYDV_Rota_Teslimat_Listesi_${route.tarih}.xlsx`}
+                        download={`Edirne_SYDV_Rota_Teslimat_Listesi_${formatDottedTrDate(route.tarih)}.xlsx`}
                         className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95"
                       >
                         <Download className="w-3.5 h-3.5" />

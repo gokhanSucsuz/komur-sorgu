@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Calendar, Archive, CheckCircle2, AlertTriangle, Download, RefreshCw, X, Target, ShieldAlert, ChevronRight } from 'lucide-react';
 import { showConfirm, showAlert, showToast } from './GlobalAlertManager';
-import { formatTrAuto } from '@/lib/dateUtils';
+import { formatTrAuto, formatDottedTrDate } from '@/lib/dateUtils';
 
 interface SeasonManagementModalProps {
   isOpen: boolean;
@@ -789,7 +789,7 @@ export default function SeasonManagementModal({
                   {selectedArchiveDetail.baslik} - Mahalle İcmali
                 </h4>
                 <p className="text-xs text-slate-500">
-                  Dönem Kodu: {selectedArchiveDetail.donem_kodu} | Kapanış: {selectedArchiveDetail.kapanis_tarihi}
+                  Dönem Kodu: {selectedArchiveDetail.donem_kodu} | Kapanış: {formatDottedTrDate(selectedArchiveDetail.kapanis_tarihi)}
                 </p>
               </div>
               <button

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { FileSpreadsheet, Upload, Download, AlertTriangle, CheckCircle2, Trash2, Filter, Search, ShieldAlert, Shield, RefreshCw, FileText, X, Undo2, FolderSync, PackageCheck, Eye, Phone, MapPin, Copy, Check, Users, Building2, Trees, ChevronDown, FlaskConical, Play, RotateCcw, Loader2, Printer, PenLine, FileCheck, Sparkles, UserX } from 'lucide-react';
 import { showConfirm, showToast, showAlert } from './GlobalAlertManager';
 import { isBirebirBeneficiaryMatch } from '@/lib/normalizer';
-import { formatTrAuto } from '@/lib/dateUtils';
+import { formatTrAuto, formatDottedTrDate } from '@/lib/dateUtils';
 import MissingAddressModal, { MissingAddressBeneficiary } from './MissingAddressModal';
 
 const isKoySettlement = (name: string, tip?: string) => {
@@ -2276,7 +2276,7 @@ export default function ExcelImportPage({
                           </span>
                         )}
                         <span className="text-[11px] text-slate-500 font-medium">
-                          • {item.created_at || 'Tarih yok'}
+                          • {item.created_at ? formatDottedTrDate(item.created_at) : 'Tarih yok'}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-[11px] text-slate-600 font-medium">

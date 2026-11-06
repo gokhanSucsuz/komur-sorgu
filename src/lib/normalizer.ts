@@ -2,6 +2,8 @@
  * Address & Data Normalization Utilities for Turkish Coal Distribution System
  */
 
+import { replaceYmdWithDdmmyyyy } from './dateUtils';
+
 export function cleanTurkishText(text: string | null | undefined): string {
   if (!text) return '';
   return text
@@ -1769,7 +1771,7 @@ export function formatDeliveryStatusSummary(record: {
   const durum = (record.teslimat_durumu || 'BEKLIYOR').toUpperCase();
   const torba = Number(record.torba_sayisi || 0);
   const hedef = Number(record.hedef_torba || 34);
-  const tarih = record.teslimat_tarihi ? ` [Tarih: ${record.teslimat_tarihi}]` : '';
+  const tarih = record.teslimat_tarihi ? ` [Tarih: ${replaceYmdWithDdmmyyyy(record.teslimat_tarihi)}]` : '';
 
   const ekImzaNot = (record as any)?.manuel_ek_liste_imzasi || (record as any)?.ek_komur_verildi
     ? ` • ${(record as any)?.ek_liste_imza_notu || 'Ek listeye imzası alındı'}`

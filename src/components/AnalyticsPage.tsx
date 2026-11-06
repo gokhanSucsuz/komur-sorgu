@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart3, Calendar, Printer, AlertTriangle, Clock, Truck, Target, TrendingUp, Users, Search, Navigation, Building2, Trees, FileSpreadsheet, PackageCheck, ChevronDown, Archive, X, Download, UserX } from 'lucide-react';
 import { formatTonnage, normalizeToTon } from '@/lib/normalizer';
-import { formatTrDate, formatTrDateTime, formatTrAuto, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
+import { formatTrDate, formatTrDateTime, formatTrAuto, formatDottedTrDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 interface AnalyticsPageProps {
   onRefreshAll?: () => void;
@@ -886,7 +886,7 @@ export default function AnalyticsPage({
                 <div className="space-y-1.5">
                   {dailyBreakdown.map((d: any) => (
                     <div key={d.gun} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-800">{d.gun}</span>
+                      <span className="font-bold text-slate-800">{formatDottedTrDate(d.gun)}</span>
                       <div className="text-right">
                         <span className="font-bold text-emerald-700">{d.torba} Torba</span>
                         <span className="text-[11px] text-slate-500 block">({d.teslimat} Teslimat)</span>
@@ -1640,7 +1640,7 @@ export default function AnalyticsPage({
                     Kömür Dağıtım ve İstatistiki İcmal Raporu
                   </h3>
                   <p className="text-[10px] sm:text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
-                    <span>Filtre: <strong className="text-slate-800">{activePreset === 'ALL' ? 'Tüm Dağıtım Süreci' : `${startDate || 'Başlangıç'} - ${endDate || 'Bugün'}`}</strong></span>
+                    <span>Filtre: <strong className="text-slate-800">{activePreset === 'ALL' ? 'Tüm Dağıtım Süreci' : `${startDate ? formatDottedTrDate(startDate) : 'Başlangıç'} - ${endDate ? formatDottedTrDate(endDate) : 'Bugün'}`}</strong></span>
                     <span>•</span>
                     <span>Bölge: <strong className="text-slate-800">{selectedMahalle === 'HEPSI' ? 'Tüm Mahalleler' : selectedMahalle}</strong></span>
                     <span>•</span>
@@ -2002,7 +2002,7 @@ export default function AnalyticsPage({
               <div className="flex items-center gap-2">
                 <a
                   href="/api/export?type=analytics"
-                  download={`Edirne_SYDV_Istatistik_Raporu_${new Date().toLocaleDateString('en-CA')}.xlsx`}
+                  download={`Edirne_SYDV_Istatistik_Raporu_${formatDottedTrDate(new Date())}.xlsx`}
                   className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
                 >
                   <Download className="w-4 h-4" />

@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
-import { formatTrDate, formatTrAuto, formatTrTime, parseDateSafely, isPastDeliveryDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
+import { formatTrDate, formatTrAuto, formatTrTime, formatDottedTrDate, parseDateSafely, isPastDeliveryDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
 function getArchiveDisplayAddress(item: any): string {
   if (!item) return 'Adres Belirtilmemiş';
@@ -336,7 +336,7 @@ export default function DeliveryArchive({
 
               <a
                 href={`/api/export?type=daily_deliveries&endDate=${cumulativeDate}`}
-                download={`Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${cumulativeDate}.xlsx`}
+                download={`Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${formatDottedTrDate(cumulativeDate)}.xlsx`}
                 className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
                 title="Seçili tarihe kadar teslim edilenleri Excel olarak indir"
               >
@@ -405,7 +405,7 @@ export default function DeliveryArchive({
             </button>
             <a
               href={`/api/export?type=daily_deliveries&date=${todayStr}`}
-              download={`Bugunku_Komur_Teslimat_Listesi_${todayStr}.xlsx`}
+              download={`Bugunku_Komur_Teslimat_Listesi_${formatDottedTrDate(todayStr)}.xlsx`}
               className="w-full sm:w-auto h-full min-h-[42px] px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center text-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer"
               title="Bugünün teslimat listesini Excel olarak indir"
             >
@@ -500,7 +500,7 @@ export default function DeliveryArchive({
                     <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                       <a
                         href={`/api/export?type=daily_deliveries&date=${dayGroup.gun_tarihi}`}
-                        download={`Komur_Teslimat_Listesi_${dayGroup.gun_tarihi}.xlsx`}
+                        download={`Komur_Teslimat_Listesi_${formatDottedTrDate(dayGroup.gun_tarihi)}.xlsx`}
                         onClick={(e) => e.stopPropagation()}
                         className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                         title="Bu günün teslimat listesini Excel olarak indir"
@@ -955,7 +955,7 @@ export default function DeliveryArchive({
             <div className="report-modal-footer shrink-0 h-14 sm:h-16 px-4 sm:px-6 border-t border-slate-200 bg-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 no-print z-20 shadow-sm">
               <a
                 href={printDayGroup.isBulk ? `/api/export?type=daily_deliveries&endDate=${printDayGroup.gun_tarihi}&sort=${printSortMode}` : `/api/export?type=daily_deliveries&date=${printDayGroup.gun_tarihi}&sort=${printSortMode}`}
-                download={`Edirne_SYDV_Teslimat_Listesi_${printDayGroup.gun_tarihi}.xlsx`}
+                download={`Edirne_SYDV_Teslimat_Listesi_${formatDottedTrDate(printDayGroup.gun_tarihi)}.xlsx`}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
               >
                 <Download className="w-4 h-4" />
@@ -1093,7 +1093,7 @@ export default function DeliveryArchive({
                   </thead>
                   <tbody className="divide-y divide-rose-100">
                     {printCancelGroup.items.map((item: any, idx: number) => {
-                      const dateOnlyStr = formatTrDate(item.gun_tarihi || (item.tarih ? item.tarih.split(' ')[0] : '')) || (item.gun_tarihi || '-');
+                      const dateOnlyStr = formatTrDate(item.gun_tarihi || (item.tarih ? item.tarih.split(' ')[0] : '')) || (item.gun_tarihi ? formatDottedTrDate(item.gun_tarihi) : '-');
                       return (
                         <tr key={item.id} className="hover:bg-rose-50/50">
                           <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>

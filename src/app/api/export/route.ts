@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
 import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress, isBeneficiaryCancelled } from '@/lib/normalizer';
-import { formatTrDateWithDay, formatTrDate, formatTrTime, parseDateSafely } from '@/lib/dateUtils';
+import { formatTrDateWithDay, formatTrDate, formatTrTime, parseDateSafely, formatDottedTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
 import { parseTonnageTemplates } from '@/lib/tonnageTemplates';
@@ -1237,8 +1237,8 @@ export async function GET(request: NextRequest) {
           : `Dağıtım Tarihi: ${formatTrDate(targetDate || new Date().toLocaleDateString('en-CA'))} | Toplam Hane: ${validRecords.length} | Toplam Torba: ${totalBags} (${(totalBags * 0.025).toFixed(2)} Ton)`);
 
       const filename = isCumulative
-        ? `Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${endDate}.xlsx`
-        : (isAllDays ? 'Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_Tum_Gunler.xlsx' : `Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${targetDate || 'Bugun'}.xlsx`);
+        ? `Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_${formatDottedTrDate(endDate)}.xlsx`
+        : (isAllDays ? 'Edirne_SYDV_Toplu_Komur_Teslimat_Listesi_Tum_Gunler.xlsx' : `Edirne_SYDV_Gunluk_Komur_Teslimat_Listesi_${formatDottedTrDate(targetDate) || 'Bugun'}.xlsx`);
 
       addStyledWorksheet(
         workbook,
@@ -1460,7 +1460,7 @@ export async function GET(request: NextRequest) {
 
         return {
           'Sıra': idx + 1,
-          'Çalışma Tarihi': s.tarih || '-',
+          'Çalışma Tarihi': s.tarih ? formatDottedTrDate(s.tarih) : '-',
           'Gün': dayName,
           'Personel Adı': s.personel_adi || '-',
           'Başlama Saati': s.baslama_saati || '-',
@@ -2400,7 +2400,7 @@ export async function GET(request: NextRequest) {
         'Mahalle': r.mahalle || '-',
         'Açık Adres': r.acik_adres || '-',
         'Hane No': r.hane_no || '-',
-        'Tarih': r.tarih || '-',
+        'Tarih': r.tarih ? formatDottedTrDate(r.tarih) : '-',
       }));
 
       const colWidths = [
@@ -2571,7 +2571,7 @@ export async function GET(request: NextRequest) {
       addStyledWorksheet(
         workbook,
         `${(archive.baslik || archive.donem_kodu).toUpperCase()} - DÖNEM SONU İCMAL VE DAĞITIM RAPORU`,
-        `Dönem: ${archive.donem_kodu} | Kapanış: ${archive.kapanis_tarihi || archive.arsivlenme_zamani} | Kapatan: ${archive.kapatan_kullanici || 'Yönetici'}`,
+        `Dönem: ${archive.donem_kodu} | Kapanış: ${formatDottedTrDate(archive.kapanis_tarihi || archive.arsivlenme_zamani)} | Kapatan: ${archive.kapatan_kullanici || 'Yönetici'}`,
         sanitizeSheetName('Dönem İcmali', seenSheetNames),
         icmalData,
         icmalColWidths
@@ -2933,7 +2933,7 @@ export async function GET(request: NextRequest) {
       }
 
       const buf = await workbook.xlsx.writeBuffer();
-      const todayStr = new Date().toLocaleDateString('en-CA');
+      const todayStr = formatDottedTrDate(new Date());
       const filename = `Edirne_SYDV_Istatistik_Raporu_${todayStr}.xlsx`;
       return buildExcelResponse(buf, filename, session, type);
     }

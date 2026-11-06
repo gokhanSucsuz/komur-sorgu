@@ -4,7 +4,7 @@ import { getDbCollections, buildIdFilter, mapDoc, mapDocs, recordActivityLog, to
 import { encryptField, encryptDeliveryHistory, encryptRoute, encryptRouteStop } from '@/lib/crypto';
 import { compareByAddressAsc, getRecordStreetInfo, normalizeStaffName } from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
-import { getIstanbulDate, isPastDeliveryDate } from '@/lib/dateUtils';
+import { getIstanbulDate, isPastDeliveryDate, formatDottedTrDate, replaceYmdWithDdmmyyyy } from '@/lib/dateUtils';
 import { serverError } from '@/lib/security';
 
 const LOCK_TIMEOUT_MS = 25 * 60 * 1000; // 25 dakika hareketsizlik aşımı
@@ -310,7 +310,7 @@ export async function ensureTeamDailyRoute({
 
   const teamName = String(userDbDoc?.ekip_adi || session.user?.ekip_adi || '').trim();
   const staffName = String(session.ad_soyad || session.username || 'Saha Personeli').trim();
-  const routeName = `Günlük Dağıtım Rotası (${localToday})`;
+  const routeName = `Günlük Dağıtım Rotası (${formatDottedTrDate(localToday)})`;
 
   const routeObjectId = new ObjectId();
   const routeIdStr = routeObjectId.toString();
@@ -832,7 +832,7 @@ export async function GET(request: NextRequest) {
     const allKnownRoutes = [...uniqueArchived, ...activeRoutes];
     for (const r of allKnownRoutes) {
       const rId = String(r.id || r._id);
-      const rName = r.rota_adi || 'Dağıtım Rotası';
+      const rName = replaceYmdWithDdmmyyyy(r.rota_adi || 'Dağıtım Rotası');
       const rStatus = r.durum || 'AKTIF';
       for (const s of (r.duraklar || [])) {
         const bId = String(s.beneficiary_id || '');
@@ -974,14 +974,24 @@ export async function GET(request: NextRequest) {
         primary.toplam_dagitilan_torba = primary.duraklar.reduce((acc: number, s: any) => acc + (Number(s.teslim_edilen_torba) || 0), 0);
       }
     }
-    const finalArchivedRoutes = Array.from(archivedByDate.values());
+    const normalizeRoute = (r: any) => {
+      if (!r) return r;
+      return {
+        ...r,
+        rota_adi: replaceYmdWithDdmmyyyy(r.rota_adi || ''),
+      };
+    };
+
+    const finalArchivedRoutes = Array.from(archivedByDate.values()).map(normalizeRoute);
+    const mappedActiveRoutes = activeRoutes.map(normalizeRoute);
+    const mappedActiveRoute = activeRoute ? normalizeRoute(activeRoute) : null;
 
     return NextResponse.json(
       {
         success: true,
-        activeRoutes,
-        activeRoute,
-        activeCount: activeRoutes.length,
+        activeRoutes: mappedActiveRoutes,
+        activeRoute: mappedActiveRoute,
+        activeCount: mappedActiveRoutes.length,
         archivedRoutes: finalArchivedRoutes,
         signedBeneficiaries,
         signedCount: signedBeneficiaries.length,
@@ -1287,7 +1297,7 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      const routeName = (rota_adi || `${localToday} ${mahalleler[0] || 'Genel'} Dağıtım Rotası`).trim();
+      const routeName = replaceYmdWithDdmmyyyy((rota_adi || `${formatDottedTrDate(localToday)} ${mahalleler[0] || 'Genel'} Dağıtım Rotası`).trim());
 
       const routeObjectId = new ObjectId();
       const routeIdStr = routeObjectId.toString();
