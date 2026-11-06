@@ -2547,8 +2547,9 @@ export default function BeneficiaryList({
                         }
                       }}
                     >
-                      {/* Üst Satır: Sıra No, Liste Türü, Durum Rozeti ve Akordiyon Oku */}
+                      {/* 1. Üst Satır: Sıra No, Liste Türü, Özel Rozetler & Sağda Durum ve Chevron */}
                       <div className="flex items-center justify-between gap-2">
+                        {/* Sol Taraf: Sıra No & Liste Türü & Şehit/Gazi */}
                         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                           {isBulkSignMode && (
                             <button
@@ -2569,16 +2570,6 @@ export default function BeneficiaryList({
                           <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-0.5" title="İmza Listesi Sıra No">
                             #{person.sira_no || person.mahalle_sira || person.id}
                           </span>
-                          {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
-                            <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
-                              Mh: #{person.mahalle_sira}
-                            </span>
-                          )}
-                          {(person.excel_sira_no || person.ek_excel_sira) && (
-                            <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs shrink-0 flex items-center gap-0.5" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
-                              Ex: #{person.excel_sira_no || person.ek_excel_sira}
-                            </span>
-                          )}
                           <span
                             className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shrink-0 flex items-center gap-1 ${listInfo.badgeClass}`}
                             title={listInfo.folderLabel}
@@ -2588,6 +2579,15 @@ export default function BeneficiaryList({
                             {listInfo.type === 'ANA_LISTE' && <FileText className="w-3 h-3 text-emerald-600" />}
                             <span>{listInfo.label}</span>
                           </span>
+                          {person.sehit_gazi && (
+                            <span
+                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                              title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
+                            >
+                              <span className="text-xs">🎖️</span>
+                              <span className="hidden xs:inline">Şehit/Gazi</span>
+                            </span>
+                          )}
                           {person.imza_sonrasi_adres_degisti && (
                             <span
                               className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 shadow-2xs"
@@ -2597,18 +2597,19 @@ export default function BeneficiaryList({
                               <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
                             </span>
                           )}
-                          {person.sehit_gazi && (
-                            <span
-                              className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
-                              title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
-                            >
-                              <span className="text-xs">🎖️</span>
-                              <span>Şehit / Gazi</span>
+                          {person.mahalle_sira !== undefined && person.mahalle_sira !== null && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 shrink-0" title={`Mahalle Sırası: #${person.mahalle_sira}`}>
+                              Mh:#{person.mahalle_sira}
+                            </span>
+                          )}
+                          {(person.excel_sira_no || person.ek_excel_sira) && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 shrink-0" title={`Ek Excel Liste Sırası: #${person.excel_sira_no || person.ek_excel_sira}`}>
+                              Ex:#{person.excel_sira_no || person.ek_excel_sira}
                             </span>
                           )}
                         </div>
 
-                        {/* Sağ Taraf: Rozetler & Akordiyon Oku */}
+                        {/* Sağ Taraf: İmza Durumu, Teslimat Rozeti ve Akordiyon Oku */}
                         <div className="shrink-0 flex items-center gap-1.5">
                           {(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && (
                             <span
@@ -2616,7 +2617,7 @@ export default function BeneficiaryList({
                               title={person.ek_liste_imza_notu || 'Manuel ek listeye imzası alındı'}
                             >
                               <PenTool className="w-3 h-3 text-amber-700" />
-                              <span>Ek Listeye İmzalı</span>
+                              <span className="hidden sm:inline">Ek İmzalı</span>
                             </span>
                           )}
                           {!(person.manuel_ek_liste_imzasi || person.ek_komur_verildi) && isSigned && (
@@ -2661,70 +2662,84 @@ export default function BeneficiaryList({
                         </div>
                       </div>
 
-                      {/* Orta Satır: Hak Sahibi Adı Soyadı */}
+                      {/* 2. Orta Satır: Hak Sahibi Adı Soyadı */}
                       <div className="pt-0.5 flex items-center justify-between gap-2">
                         <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
                           {person.ad_soyad}
                         </h4>
-                        {!isCardExpanded && (
-                          <span className="text-[11px] font-bold text-slate-400 group-hover/cardhead:text-sky-600 transition-colors shrink-0 flex items-center gap-0.5">
-                            <span>Detay</span>
-                            <ChevronDown className="w-3 h-3" />
+                        {hasHouseholdDuplicate && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
+                            <Users className="w-3 h-3 text-purple-700" />
+                            <span>Aynı Adres</span>
                           </span>
                         )}
                       </div>
 
-                      {/* Alt Satır: TC Kimlik & Mahalle & Sokak Etiketleri */}
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                        {/* TC Kimlik Rozeti */}
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-950 font-mono text-xs font-bold shadow-2xs">
-                          <span className="text-[10px] text-amber-700 font-sans font-bold">TC:</span>
-                          <span>{person.tc_no}</span>
-                        </span>
-
-                        {/* Mahalle / Köy Rozeti */}
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs shadow-2xs">
-                          <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                          <span>{person.mahalle}</span>
-                        </span>
-
-                        {/* Sokak / Kapı No Rozeti - Dokunulduğunda o sokağı filtreler */}
-                        {stInfo.sokak && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedSokak(stInfo.sokak);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 font-bold text-xs shadow-2xs transition-all cursor-pointer text-left"
-                            title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
-                          >
-                            <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
-                            <span>{stInfo.sokak}</span>
-                            {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
-                              <strong className="text-sky-950 font-black">No: {stInfo.kapiNo}</strong>
-                            )}
-                            {stInfo.daireNo > 0 && (
-                              <span className="text-sky-700 font-semibold">D: {stInfo.daireNo}</span>
-                            )}
-                          </button>
-                        )}
-
-                        {/* Fiili İkamet Bilgisi */}
-                        {person.fiili_adres_guncellendi && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px] font-black shadow-2xs">
-                            <MapPin className="w-3 h-3 text-blue-600 shrink-0" />
-                            <span>Fiili İkamet</span>
+                      {/* 3. Alt Satırlar: Düzenli Konum (Mahalle/Sokak) ve Kimlik/İletişim (TC & Telefon) */}
+                      <div className="pt-1.5 border-t border-slate-100 space-y-1.5 text-xs">
+                        {/* Konum / Adres Satırı */}
+                        <div className="flex items-center gap-1.5 text-slate-700 min-w-0">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-extrabold text-slate-900 shrink-0">
+                            {person.mahalle}
                           </span>
-                        )}
+                          {stInfo.sokak && (
+                            <>
+                              <span className="text-slate-300 shrink-0">•</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedSokak(stInfo.sokak);
+                                }}
+                                className="font-bold text-sky-900 hover:text-sky-700 hover:underline truncate cursor-pointer text-left transition-colors flex items-center gap-1 min-w-0"
+                                title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
+                              >
+                                <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
+                                <span className="truncate">{stInfo.sokak}</span>
+                                {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
+                                  <strong className="text-sky-950 font-black shrink-0">No: {stInfo.kapiNo}</strong>
+                                )}
+                                {stInfo.daireNo > 0 && (
+                                  <span className="text-sky-700 font-semibold shrink-0">D: {stInfo.daireNo}</span>
+                                )}
+                              </button>
+                            </>
+                          )}
+                          {person.fiili_adres_guncellendi && (
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200 shrink-0 ml-auto">
+                              Fiili İkamet
+                            </span>
+                          )}
+                        </div>
 
-                        {/* Kapalıyken telefon sayısı ipucu */}
-                        {phones.length > 0 && !isCardExpanded && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold shadow-2xs ml-auto">
-                            <Phone className="w-2.5 h-2.5 text-emerald-600" />
-                            <span>{phones.length} Tel</span>
-                          </span>
-                        )}
+                        {/* TC Kimlik ve İletişim Satırı */}
+                        <div className="flex items-center justify-between gap-2 pt-0.5">
+                          <div className="flex items-center gap-1.5 text-slate-600 min-w-0">
+                            <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                              TC
+                            </span>
+                            <span className="font-mono text-xs font-bold text-slate-900 tracking-wide">
+                              {person.tc_no}
+                            </span>
+                          </div>
+
+                          {phones.length > 0 ? (
+                            <div className="flex items-center gap-1 font-mono text-xs font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shadow-2xs shrink-0">
+                              <Phone className="w-3 h-3 text-emerald-600" />
+                              <span>{formatPhoneDisplay(phones[0])}</span>
+                              {phones.length > 1 && (
+                                <span className="text-[10px] font-black text-emerald-800 bg-emerald-200/80 px-1 rounded ml-0.5">
+                                  +{phones.length - 1}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-slate-400 italic shrink-0">
+                              Telefon Yok
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
