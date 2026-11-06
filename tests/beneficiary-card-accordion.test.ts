@@ -24,26 +24,35 @@ test('Vatandaş Sorgu Ekranı Akordiyon Kart Menü Mimarisi ve Mobil Alan Tasarr
     );
   });
 
-  await t.test('2. Kapalı Durum (Collapsed Header): Adı Soyadı, TC Kimlik ve Mahalle/Sokak Etiketleri Her Zaman Görünür', () => {
-    // A. Ad Soyad, TC No, Mahalle ve Sokak etiketleri
+  await t.test('2. Kapalı Durum (Collapsed Header): İsim Altında TC, Mahalle ve Sokak Alt Alta ve Konum Butonu', () => {
+    // A. Ad Soyad ve altında TC Kimlik No
     assert.ok(
-      beneficiaryListSrc.includes('{person.ad_soyad}'),
-      'Kart başlığında hak sahibi adı soyadı yer almalıdır'
-    );
-    assert.ok(
+      beneficiaryListSrc.includes('{person.ad_soyad}') &&
       beneficiaryListSrc.includes('{person.tc_no}'),
-      'Kart başlığında TC kimlik numarası etiketi yer almalıdır'
-    );
-    assert.ok(
-      beneficiaryListSrc.includes('{person.mahalle}'),
-      'Kart başlığında Mahalle etiketi yer almalıdır'
-    );
-    assert.ok(
-      beneficiaryListSrc.includes('{stInfo.sokak}'),
-      'Kart başlığında Sokak etiketi yer almalıdır'
+      'Kart başlığında hak sahibi adı soyadı ve altında TC kimlik numarası yer almalıdır'
     );
 
-    // B. Tıklanabilir akordiyon başlığı ve Chevron indikatörü
+    // B. Mahalle ve Sokak etiketleri alt alta (flex-col) ve aynı puntoda (text-xs font-bold px-2.5 py-1.5)
+    assert.ok(
+      beneficiaryListSrc.includes('flex flex-col gap-1.5 min-w-0 flex-1') &&
+      beneficiaryListSrc.includes('{person.mahalle}') &&
+      beneficiaryListSrc.includes('{stInfo.sokak}'),
+      'Mahalle ve Sokak etiketleri ekrana sığması için alt alta (flex-col) yer almalıdır'
+    );
+    assert.ok(
+      beneficiaryListSrc.includes('px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold') &&
+      beneficiaryListSrc.includes('px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 text-xs font-bold'),
+      'Mahalle ve Sokak etiketleri aynı büyüklük, padding ve puntoda (text-xs font-bold px-2.5 py-1.5) olmalıdır'
+    );
+
+    // C. Kapalı durumda hızlı erişim için Konum Butonu
+    assert.ok(
+      beneficiaryListSrc.includes('<span>Konum</span>') &&
+      beneficiaryListSrc.includes('title="Yandex Navigasyon ile kapıya yol tarifi al"'),
+      'Kapalı kart durumunda doğrudan yol tarifi açan Konum butonu yer almalıdır'
+    );
+
+    // D. Tıklanabilir akordiyon başlığı ve Chevron indikatörü
     assert.ok(
       beneficiaryListSrc.includes('role="button"') &&
       beneficiaryListSrc.includes('aria-expanded={isCardExpanded}') &&

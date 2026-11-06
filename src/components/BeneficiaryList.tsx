@@ -2662,84 +2662,81 @@ export default function BeneficiaryList({
                         </div>
                       </div>
 
-                      {/* 2. Orta Satır: Hak Sahibi Adı Soyadı */}
-                      <div className="pt-0.5 flex items-center justify-between gap-2">
-                        <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
-                          {person.ad_soyad}
-                        </h4>
-                        {hasHouseholdDuplicate && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
-                            <Users className="w-3 h-3 text-purple-700" />
-                            <span>Aynı Adres</span>
+                      {/* 2. Orta Satır: Hak Sahibi Adı Soyadı ve Altında TC Kimlik No */}
+                      <div className="pt-0.5 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight group-hover/cardhead:text-sky-900 transition-colors">
+                            {person.ad_soyad}
+                          </h4>
+                          {hasHouseholdDuplicate && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1 shadow-2xs">
+                              <Users className="w-3 h-3 text-purple-700" />
+                              <span>Aynı Adres</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* İsmin Altında TC Kimlik No */}
+                        <div className="flex items-center gap-1.5 text-slate-600">
+                          <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                            TC
                           </span>
-                        )}
+                          <span className="font-mono text-xs font-bold text-slate-900 tracking-wide">
+                            {person.tc_no}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* 3. Alt Satırlar: Düzenli Konum (Mahalle/Sokak) ve Kimlik/İletişim (TC & Telefon) */}
-                      <div className="pt-1.5 border-t border-slate-100 space-y-1.5 text-xs">
-                        {/* Konum / Adres Satırı */}
-                        <div className="flex items-center gap-1.5 text-slate-700 min-w-0">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-extrabold text-slate-900 shrink-0">
-                            {person.mahalle}
-                          </span>
-                          {stInfo.sokak && (
-                            <>
-                              <span className="text-slate-300 shrink-0">•</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedSokak(stInfo.sokak);
-                                }}
-                                className="font-bold text-sky-900 hover:text-sky-700 hover:underline truncate cursor-pointer text-left transition-colors flex items-center gap-1 min-w-0"
-                                title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
-                              >
-                                <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
-                                <span className="truncate">{stInfo.sokak}</span>
-                                {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
-                                  <strong className="text-sky-950 font-black shrink-0">No: {stInfo.kapiNo}</strong>
-                                )}
-                                {stInfo.daireNo > 0 && (
-                                  <span className="text-sky-700 font-semibold shrink-0">D: {stInfo.daireNo}</span>
-                                )}
-                              </button>
-                            </>
-                          )}
-                          {person.fiili_adres_guncellendi && (
-                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200 shrink-0 ml-auto">
-                              Fiili İkamet
-                            </span>
-                          )}
-                        </div>
-
-                        {/* TC Kimlik ve İletişim Satırı */}
-                        <div className="flex items-center justify-between gap-2 pt-0.5">
-                          <div className="flex items-center gap-1.5 text-slate-600 min-w-0">
-                            <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
-                              TC
-                            </span>
-                            <span className="font-mono text-xs font-bold text-slate-900 tracking-wide">
-                              {person.tc_no}
-                            </span>
+                      {/* 3. Alt Bölüm: Mahalle ve Sokak Alt Alta + Sağda Konum Butonu */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                        {/* Sol Taraf: Mahalle ve Sokak Etiketleri (Alt Alta, Aynı Büyüklük ve Puntoda) */}
+                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                          {/* Mahalle Etiketi */}
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold shadow-2xs w-fit max-w-full">
+                            <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="truncate">{person.mahalle}</span>
+                            {person.fiili_adres_guncellendi && (
+                              <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-200 shrink-0 ml-1">
+                                Fiili
+                              </span>
+                            )}
                           </div>
 
-                          {phones.length > 0 ? (
-                            <div className="flex items-center gap-1 font-mono text-xs font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shadow-2xs shrink-0">
-                              <Phone className="w-3 h-3 text-emerald-600" />
-                              <span>{formatPhoneDisplay(phones[0])}</span>
-                              {phones.length > 1 && (
-                                <span className="text-[10px] font-black text-emerald-800 bg-emerald-200/80 px-1 rounded ml-0.5">
-                                  +{phones.length - 1}
-                                </span>
+                          {/* Sokak Etiketi (Mahalle ile Aynı Büyüklük ve Puntoda) */}
+                          {stInfo.sokak && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedSokak(stInfo.sokak);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-200 text-sky-950 text-xs font-bold shadow-2xs transition-all cursor-pointer text-left w-fit max-w-full"
+                              title={`"${stInfo.sokak}" sokağını filtrelemek için dokunun`}
+                            >
+                              <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                              <span className="truncate">{stInfo.sokak}</span>
+                              {stInfo.kapiNo && stInfo.kapiNo !== 999999 && stInfo.kapiNo !== '999999' && (
+                                <strong className="text-sky-950 font-black shrink-0">No: {stInfo.kapiNo}</strong>
                               )}
-                            </div>
-                          ) : (
-                            <span className="text-[11px] font-semibold text-slate-400 italic shrink-0">
-                              Telefon Yok
-                            </span>
+                              {stInfo.daireNo > 0 && (
+                                <span className="text-sky-700 font-semibold shrink-0">D: {stInfo.daireNo}</span>
+                              )}
+                            </button>
                           )}
                         </div>
+
+                        {/* Sağ Taraf: Konum Butonu (Yandex Canlı Navigasyon Yol Tarifi) */}
+                        <a
+                          href={getYandexNaviUrl(person)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-10 px-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 shrink-0"
+                          title="Yandex Navigasyon ile kapıya yol tarifi al"
+                        >
+                          <Navigation className="w-3.5 h-3.5 fill-white shrink-0" />
+                          <span>Konum</span>
+                        </a>
                       </div>
                     </div>
 
