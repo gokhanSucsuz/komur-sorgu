@@ -231,25 +231,15 @@ export async function checkRouteTeamAuthorization(
     return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
   }
 
-  // Saha personeli ve ekip arkadaşları birbirlerinin rotalarını kontrol edebilir ve birlikte işletebilir
-  if (session.rol === 'PERSONEL') {
-    return { authorized: true, isOwner: false, isPartner: true, ownerName: routeOperatorName };
-  }
-
-  // Yetkisiz: Başka personele ve ekibine ait rota!
-  return {
-    authorized: false,
-    isOwner: false,
-    isPartner: false,
-    ownerName: routeOperatorName,
-    error: `Bu rota "${routeOperatorName || 'başka bir personel'}" personeline ve ekibine aittir. Yalnızca ilgili personel veya tanımlı ekip arkadaşı işlem yapabilir.`
-  };
+  // Tüm personel ve ekip üyeleri aynı gün tek rotaya bağlıdır ve birbirini anlık görür
+  return { authorized: true, isOwner: true, isPartner: true, ownerName: routeOperatorName };
 }
 
 /**
  * Ekip Başına Günlük Tek Rota Bulucu veya Otomatik Oluşturucu
- * - Aynı ekibin aynı güne ait tek bir rotası olur.
- * - Ekip üyeleri bu rotayı eşzamanlı takip edip tüm işlemleri yapabilir.
+ * - Tüm personeller ve ekipler için aynı gün sadece tek rota olur ve otomatik açılır.
+ * - İmzası alınan tüm hak sahipleri bu tek rotada toplanır.
+ * - Ekip üyeleri bu rotayı eşzamanlı takip edip birbirlerini anlık görebilir.
  */
 export async function ensureTeamDailyRoute({
   session,
@@ -266,7 +256,7 @@ export async function ensureTeamDailyRoute({
   localTimeStr: string;
   preferredNeighborhood?: string;
 }): Promise<{ route: any; created: boolean }> {
-  // 1. Bugün için oluşturulmuş tüm aktif/duraklatılmış rotaları tara
+  // 1. Bugün için oluşturulmuş aktif/duraklatılmış tek ana rotayı bul
   const todayRoutes = await routeCol
     .find({
       tarih: localToday,
@@ -275,15 +265,12 @@ export async function ensureTeamDailyRoute({
     .sort({ created_at: -1 })
     .toArray();
 
-  for (const rawR of todayRoutes) {
-    const decR = mapDoc(rawR);
-    const authCheck = await checkRouteTeamAuthorization(decR, session, usersCol);
-    if (authCheck.authorized) {
-      return { route: decR, created: false };
-    }
+  if (todayRoutes.length > 0) {
+    const decR = mapDoc(todayRoutes[0]);
+    return { route: decR, created: false };
   }
 
-  // 2. Bugün için henüz bu ekibe ait rota yoksa: Otomatik olarak ekibin günlük rotasını oluştur!
+  // 2. Bugün için henüz rota yoksa: Günün tek resmi dağıtım rotasını otomatik oluştur!
   let userDbDoc: any = null;
   if (usersCol && session.username) {
     try {
@@ -295,9 +282,7 @@ export async function ensureTeamDailyRoute({
 
   const teamName = String(userDbDoc?.ekip_adi || session.user?.ekip_adi || '').trim();
   const staffName = String(session.ad_soyad || session.username || 'Saha Personeli').trim();
-  const teamDisplayName = teamName || staffName;
-  const neighborhoodName = preferredNeighborhood || 'Genel';
-  const routeName = `${localToday} ${neighborhoodName} Dağıtım Rotası (${teamDisplayName})`;
+  const routeName = `Günlük Dağıtım Rotası (${localToday})`;
 
   const routeObjectId = new ObjectId();
   const routeIdStr = routeObjectId.toString();
@@ -310,15 +295,11 @@ export async function ensureTeamDailyRoute({
     durum: 'AKTIF',
     olusturan_personel: staffName,
     olusturan_username: session.username || '',
-    dagitim_personeli: staffName,
+    dagitim_personeli: 'Tüm Saha Ekibi',
     isleten_personel: staffName,
     isleten_username: session.username || '',
-    ekip_adi: teamName,
-    ekip_arkadaslari: Array.isArray(userDbDoc?.ekip_arkadaslari)
-      ? userDbDoc.ekip_arkadaslari
-      : Array.isArray(session.user?.ekip_arkadaslari)
-      ? session.user.ekip_arkadaslari
-      : [],
+    ekip_adi: teamName || 'Genel Dağıtım Ekibi',
+    ekip_arkadaslari: [],
     arac_plaka: '',
     mahalleler: preferredNeighborhood ? [preferredNeighborhood] : [],
     duraklar: [],
@@ -328,7 +309,7 @@ export async function ensureTeamDailyRoute({
     teslim_edilemeyen_hane: 0,
     toplam_dagitilan_torba: 0,
     hedef_toplam_torba: 0,
-    notlar: 'İmzası alınan hanelerden otomatik oluşturulan günlük ekip rotası.',
+    notlar: 'İmzası alınan hanelerden otomatik oluşturulan günlük tek ekip rotası.',
     created_at: localTimeStr,
     completed_at: null
   };
@@ -340,8 +321,8 @@ export async function ensureTeamDailyRoute({
     kullanici_rolu: session.rol || 'PERSONEL',
     islem_tipi: 'ROTA_OLUSTURMA',
     baslik: 'Günlük Ekip Rotası Otomatik Başlatıldı',
-    detay: `"${routeName}" imzası alınan haneler için otomatik olarak oluşturuldu ve ekip kullanımına açıldı.`,
-    ek_bilgi: { routeId: routeIdStr, teamName: teamDisplayName }
+    detay: `"${routeName}" imzası alınan tüm haneler için otomatik olarak oluşturuldu ve tek ortak rota olarak kullanıma açıldı.`,
+    ek_bilgi: { routeId: routeIdStr, singleDailyRoute: true }
   });
 
   return { route: newRoute, created: true };
@@ -503,7 +484,7 @@ export async function GET(request: NextRequest) {
       return session.response || NextResponse.json({ success: false, error: 'Oturum gerekli' }, { status: 401 });
     }
 
-    const { deliveryRoutes: routeCol, beneficiaries: benCol } = await getDbCollections();
+    const { deliveryRoutes: routeCol, beneficiaries: benCol, users: usersCol } = await getDbCollections();
 
     // 1. Fetch All Active & Paused Routes (Simultaneous multi-team & multi-vehicle support)
     const activeRouteDocs = await routeCol
@@ -670,6 +651,51 @@ export async function GET(request: NextRequest) {
       })
       .toArray();
     const signedBeneficiaries = mapDocs(pendingSignedDocs).sort(compareByAddressAsc);
+
+    // Günlük Tek Rota & Otomatik Toplama Kuralı:
+    // İmzası alınan tüm kayıtlar aynı gün tek bir ana rotada toplanır.
+    const { nowEnCa: localTodayDate } = getIstanbulDate();
+    let todayActiveRoute = activeRoutes.find((r) => r.tarih === localTodayDate && (r.durum === 'AKTIF' || r.durum === 'DURAKLATILDI'));
+
+    if (signedBeneficiaries.length > 0) {
+      if (!todayActiveRoute) {
+        const { route: newDailyRoute } = await ensureTeamDailyRoute({
+          session,
+          usersCol,
+          routeCol,
+          localToday: localTodayDate,
+          localTimeStr: localNow
+        });
+        const fullRoute = await addBeneficiariesToTeamRoute({
+          route: newDailyRoute,
+          beneficiaries: signedBeneficiaries,
+          session,
+          routeCol,
+          localTimeStr: localNow
+        });
+        todayActiveRoute = fullRoute;
+        activeRoutes.unshift(fullRoute);
+      } else {
+        const existingBenIds = new Set(
+          (todayActiveRoute.duraklar || []).map((s: any) => String(s.beneficiary_id || s.id || '').trim())
+        );
+        const unassignedSigned = signedBeneficiaries.filter(
+          (b) => !existingBenIds.has(String(b.id || b._id || '').trim())
+        );
+        if (unassignedSigned.length > 0) {
+          const updatedRoute = await addBeneficiariesToTeamRoute({
+            route: todayActiveRoute,
+            beneficiaries: unassignedSigned,
+            session,
+            routeCol,
+            localTimeStr: localNow
+          });
+          todayActiveRoute = updatedRoute;
+          const idx = activeRoutes.findIndex((r) => String(r.id || r._id) === String(todayActiveRoute.id || todayActiveRoute._id));
+          if (idx !== -1) activeRoutes[idx] = updatedRoute;
+        }
+      }
+    }
 
     // 4. Build comprehensive Route vs Direct Delivery Map for All Signed & Delivered Records
     const routeBeneficiaryMap = new Map<string, {
@@ -873,8 +899,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Rotaya eklenecek en az bir imzalı hane seçilmelidir' }, { status: 400 });
       }
 
-      // Ekip Başına Günlük Tek Rota Kısıtlaması:
-      // Aynı ekip aynı gün ikinci bir rota oluşturamaz, tek bir ana rota üzerinden çalışır.
+      // Günlük Tek Rota Kuralı:
+      // Tüm ekipler için aynı gün tek bir ortak ana rota kullanılır.
       const existingTeamRoutes = await routeCol
         .find({
           tarih: localToday,
@@ -882,21 +908,33 @@ export async function POST(request: NextRequest) {
         })
         .toArray();
 
-      for (const rawR of existingTeamRoutes) {
-        const decR = mapDoc(rawR);
-        const authCheck = await checkRouteTeamAuthorization(decR, session, usersCol);
-        if (authCheck.authorized) {
-          return NextResponse.json(
-            {
-              success: false,
-              code: 'TEAM_DAILY_ROUTE_ALREADY_EXISTS',
-              error: `Ekibiniz için bugün (${localToday}) zaten aktif bir rota bulunmaktadır ("${decR.rota_adi}"). Sistem kuralları gereği her ekip günde yalnızca bir rota oluşturabilir. İmzası alınan tüm haneler otomatik olarak bu rotanıza eklenmektedir.`,
-              route: decR,
-              route_id: decR.id || decR._id
-            },
-            { status: 409 }
-          );
-        }
+      if (existingTeamRoutes.length > 0) {
+        const decR = mapDoc(existingTeamRoutes[0]);
+        const objIds: ObjectId[] = [];
+        const strIds: string[] = [];
+        beneficiary_ids.forEach((id: any) => {
+          const s = String(id).trim();
+          if (ObjectId.isValid(s) && s.length === 24) objIds.push(new ObjectId(s));
+          strIds.push(s);
+        });
+        const orClauses: any[] = [{ id: { $in: strIds } }];
+        if (objIds.length > 0) orClauses.push({ _id: { $in: objIds } });
+        const selectedBenDocs = await benCol.find({ $or: orClauses }).toArray();
+        const selectedBens = mapDocs(selectedBenDocs);
+
+        const updatedRoute = await addBeneficiariesToTeamRoute({
+          route: decR,
+          beneficiaries: selectedBens,
+          session,
+          routeCol,
+          localTimeStr
+        });
+
+        return NextResponse.json({
+          success: true,
+          route: updatedRoute,
+          message: `Bugün için tek bir rota kullanılır ("${decR.rota_adi}"). Seçilen ${selectedBens.length} hane günün ortak rotasına dahil edildi.`
+        });
       }
 
       // Multi-Route & Transfer Support:
@@ -1672,22 +1710,29 @@ export async function POST(request: NextRequest) {
       let effectiveDurum = durum;
       if (durum === 'TAMAMLANDI') {
         const parsed = parseInt(torba_sayisi || String(hedef), 10);
-        deliveredBags = !isNaN(parsed) && parsed > 0 ? parsed : hedef;
-        if (deliveredBags < hedef && previousDelivered > 0) {
-          deliveredBags = Math.min(hedef, previousDelivered + deliveredBags);
+        let calculatedBags = !isNaN(parsed) && parsed > 0 ? parsed : hedef;
+        if (previousDelivered > 0 && calculatedBags < hedef) {
+          calculatedBags = Math.min(hedef, previousDelivered + calculatedBags);
         }
+        // Hane hedef kotasını (varsayılan 34) asla aşamaz
+        deliveredBags = Math.min(hedef, calculatedBags);
         // Eğer girilen veya teslim edilen torba hedef kotanın altındaysa otomatik EKSIK durumuna çevir!
         if (deliveredBags < hedef) {
           effectiveDurum = 'EKSIK';
         }
       } else if (durum === 'EKSIK') {
-        deliveredBags = parseInt(torba_sayisi || '0', 10);
-        if (isNaN(deliveredBags) || deliveredBags <= 0) {
+        const parsed = parseInt(torba_sayisi || '0', 10);
+        if (isNaN(parsed) || parsed <= 0) {
           return NextResponse.json({
             success: false,
             error: 'Eksik teslimat için teslim edilen torba miktarı en az 1 olmalıdır. Hiç kömür teslim edilemediyse "Daha Sonra Tamamlanacak (0 Torba)" veya "Teslim Edilemedi" seçeneğini kullanınız.'
           }, { status: 400 });
         }
+        let calculatedBags = parsed;
+        if (previousDelivered > 0 && parsed + previousDelivered <= hedef) {
+          calculatedBags = previousDelivered + parsed;
+        }
+        deliveredBags = Math.min(hedef, calculatedBags);
         if (deliveredBags >= hedef) {
           effectiveDurum = 'TAMAMLANDI';
         }

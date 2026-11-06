@@ -3,9 +3,24 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, PackageCheck, AlertTriangle, Undo2, Lock, Search, Download, Clock, Printer, X, FileText, CheckCircle2, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 import { isBirebirBeneficiaryMatch, extractUniquePersonnelList } from '@/lib/normalizer';
 import { formatTrDate, formatTrAuto, formatTrTime, parseDateSafely, isPastDeliveryDate, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
+
+function getArchiveDisplayAddress(item: any): string {
+  if (!item) return 'Adres Belirtilmemiş';
+  const direct = (item.acik_adres || item.imza_listesi_acik_adres || item.adres || '').trim();
+  if (direct && direct !== '-' && !/^(adres belirtilmedi|belirtilmemiş|yok)$/i.test(direct)) {
+    return direct;
+  }
+  const parts: string[] = [];
+  if (item.sokak && !item.sokak.includes('Belirtilmemiş')) parts.push(item.sokak);
+  if (item.kapi_no && item.kapi_no !== 999999 && item.kapi_no !== '999999') parts.push(`No: ${item.kapi_no}`);
+  if (item.daire_no) parts.push(`D: ${item.daire_no}`);
+  if (parts.length > 0) return parts.join(' ');
+  if (item.mahalle) return `${item.mahalle} (Açık Adres Kaydı Yok)`;
+  return 'Adres Belirtilmemiş';
+}
 
 interface DeliveryArchiveProps {
   groupedDays: any[];
@@ -530,7 +545,11 @@ export default function DeliveryArchive({
                                 <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                                   <span className="font-mono font-bold text-amber-800">TC: {item.tc_no}</span>
                                   <span>•</span>
-                                  <span className="text-slate-700 font-medium">{item.mahalle}</span>
+                                  <span className="text-slate-700 font-medium">{item.mahalle || 'Edirne'}</span>
+                                </div>
+                                <div className="text-xs text-slate-600 mt-1 flex items-start gap-1">
+                                  <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                  <span className="line-clamp-2">{getArchiveDisplayAddress(item)}</span>
                                 </div>
                               </div>
 
@@ -825,9 +844,9 @@ export default function DeliveryArchive({
                         <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                         <td className="py-2 px-2 font-mono font-bold text-slate-800 truncate">{item.tc_no}</td>
                         <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
-                        <td className="py-2 px-2 text-slate-600 break-words" title={item.acik_adres}>
-                          <span className="font-semibold text-slate-800 block">{item.mahalle}</span>
-                          {item.acik_adres && <span className="block text-[11px] text-slate-500 line-clamp-2">{item.acik_adres}</span>}
+                        <td className="py-2 px-2 text-slate-600 break-words" title={getArchiveDisplayAddress(item)}>
+                          <span className="font-semibold text-slate-800 block">{item.mahalle || 'Edirne Merkez'}</span>
+                          <span className="block text-[11px] text-slate-600 leading-snug">{getArchiveDisplayAddress(item)}</span>
                           {(item.manuel_ek_liste_imzasi || item.ek_komur_verildi || item.ek_liste_imza_notu) && (
                             <span className="inline-block mt-0.5 text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1 py-0.2 rounded leading-tight">
                               {item.ek_liste_imza_notu || (item.tarih ? `${formatTrDate(item.gun_tarihi || item.tarih)} tarihinde ek listeye imzası alındı` : 'Ek listeye imzası alındı')}
@@ -1050,9 +1069,9 @@ export default function DeliveryArchive({
                           <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                           <td className="py-2 px-2 font-mono font-bold text-rose-900 truncate">{item.tc_no}</td>
                           <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
-                          <td className="py-2 px-2 text-slate-600 break-words">
-                            <strong className="text-slate-800 block">{item.mahalle}</strong>
-                            {item.acik_adres && <span className="block text-[11px] text-slate-500 line-clamp-2">{item.acik_adres}</span>}
+                          <td className="py-2 px-2 text-slate-600 break-words" title={getArchiveDisplayAddress(item)}>
+                            <strong className="text-slate-800 block">{item.mahalle || 'Edirne Merkez'}</strong>
+                            <span className="block text-[11px] text-slate-600 leading-snug">{getArchiveDisplayAddress(item)}</span>
                           </td>
                           <td className="py-2 px-2 text-center">
                             <span className="font-black text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded text-[11px]">

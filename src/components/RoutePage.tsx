@@ -905,8 +905,9 @@ export default function RoutePage({
     if (!stop) return;
     const hedef = Number(stop.hedef_torba) || 34;
     const prevDelivered = Number(stop.teslim_edilen_torba) || 0;
+    const remaining = Math.max(0, hedef - prevDelivered);
     setRouteModeTab('DELIVER');
-    setRouteModeTorba(String(hedef));
+    setRouteModeTorba(String(prevDelivered > 0 ? remaining : hedef));
     setRouteModeRecipient(stop.teslim_alan || stop.ad_soyad || '');
     setRouteModeNote(stop.teslimat_notu || '');
     setRouteModeDeferType(prevDelivered > 0 ? 'PARTIAL' : 'PARTIAL');
@@ -1448,11 +1449,12 @@ export default function RoutePage({
     if (submitKind === 'COMPLETE') {
       const prevDelivered = Number(currentStop.teslim_edilen_torba) || 0;
       const parsed = parseInt(routeModeTorba, 10);
-      const effectiveInput = !isNaN(parsed) && parsed > 0 ? parsed : (prevDelivered > 0 ? Math.max(0, hedef - prevDelivered) : hedef);
-      const totalDelivered = prevDelivered > 0 ? prevDelivered + effectiveInput : effectiveInput;
+      const remaining = Math.max(0, hedef - prevDelivered);
+      const effectiveInput = !isNaN(parsed) && parsed > 0 ? parsed : (prevDelivered > 0 ? remaining : hedef);
+      const totalDelivered = prevDelivered > 0 ? Math.min(hedef, prevDelivered + effectiveInput) : Math.min(hedef, effectiveInput);
 
       if (totalDelivered >= hedef) {
-        targetTorba = totalDelivered;
+        targetTorba = hedef;
         targetDurum = 'TAMAMLANDI';
       } else {
         // Eksik kömür teslimatı yapıldı (Örn: 34 yerine 20 torba teslim edildi)

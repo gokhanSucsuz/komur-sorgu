@@ -29,6 +29,7 @@ export default function DeliveryModal({
   const initialDeliveryAmount = kalanTorba > 0 ? (mevcutTorba > 0 ? kalanTorba : hedefTorba) : hedefTorba;
 
   const [torbaSayisi, setTorbaSayisi] = useState(initialDeliveryAmount);
+  const maxTorbaAllowed = mevcutTorba > 0 ? kalanTorba : hedefTorba;
   const [deliveryMode, setDeliveryMode] = useState<'REMAINING' | 'CUSTOM'>(mevcutTorba > 0 ? 'REMAINING' : 'CUSTOM');
   const [teslimAlan, setTeslimAlan] = useState(`${beneficiary.ad_soyad} (Kendisi)`);
   const [personel, setPersonel] = useState(currentStaff || 'Saha Personeli');
@@ -51,9 +52,12 @@ export default function DeliveryModal({
   );
   const listInfo = getBeneficiaryListTypeInfo(beneficiary);
 
-  const projectedTotal = mevcutTorba > 0
-    ? (deliveryMode === 'REMAINING' ? hedefTorba : mevcutTorba + torbaSayisi)
-    : torbaSayisi;
+  const projectedTotal = Math.min(
+    hedefTorba,
+    mevcutTorba > 0
+      ? (deliveryMode === 'REMAINING' ? hedefTorba : mevcutTorba + torbaSayisi)
+      : torbaSayisi
+  );
 
   const willBeComplete = projectedTotal >= hedefTorba;
   const willBeMissing = Math.max(0, hedefTorba - projectedTotal);
@@ -342,7 +346,7 @@ export default function DeliveryModal({
 
               <button
                 type="button"
-                onClick={() => setTorbaSayisi(torbaSayisi + (torbaSayisi < 5 ? 1 : 5))}
+                onClick={() => setTorbaSayisi(Math.min(maxTorbaAllowed, torbaSayisi + (torbaSayisi < 5 ? 1 : 5)))}
                 className="w-12 h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 flex items-center justify-center font-bold text-lg active:scale-95 transition-all shadow-xs"
               >
                 <Plus className="w-5 h-5 text-slate-700" />
@@ -351,7 +355,10 @@ export default function DeliveryModal({
 
             {/* Quick Bag Pills */}
             <div className="flex gap-2 mt-2">
-              {[hedefTorba, 25, 20, 15, kalanTorba > 0 ? kalanTorba : 10].map((val, idx) => (
+              {(mevcutTorba > 0
+                ? [kalanTorba, 10, 5, 2, 1].filter((v, i, a) => v > 0 && v <= kalanTorba && a.indexOf(v) === i)
+                : [hedefTorba, 25, 20, 15, 10]
+              ).map((val, idx) => (
                 <button
                   key={`${val}-${idx}`}
                   type="button"
@@ -362,7 +369,9 @@ export default function DeliveryModal({
                       : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  {val === hedefTorba ? `${val} (Tam)` : `${val}`}
+                  {val === (mevcutTorba > 0 ? kalanTorba : hedefTorba)
+                    ? (mevcutTorba > 0 ? `${val} (Tamamla)` : `${val} (Tam)`)
+                    : `${val}`}
                 </button>
               ))}
             </div>

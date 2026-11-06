@@ -281,17 +281,10 @@ export default function RoutePrintReportModal({
                         </span>
                       </td>
                       <td className="p-2.5 text-slate-600 break-words whitespace-normal max-w-[180px] leading-snug">
-                        <span className="font-semibold text-slate-900">{stop.mahalle}</span>
-                        {stop.sokak && (
-                          <span className="block text-[11px] text-slate-500 font-medium">
-                            {stop.sokak}
-                            {stop.kapi_no &&
-                            stop.kapi_no !== 999999 &&
-                            stop.kapi_no !== '999999'
-                              ? ` No: ${stop.kapi_no}`
-                              : ''}
-                          </span>
-                        )}
+                        <span className="font-semibold text-slate-900">{stop.mahalle || 'Edirne Merkez'}</span>
+                        <span className="block text-[11px] text-slate-600 font-medium">
+                          {stop.acik_adres || [stop.sokak, stop.kapi_no && stop.kapi_no !== 999999 && stop.kapi_no !== '999999' ? `No: ${stop.kapi_no}` : '', stop.daire_no ? `D: ${stop.daire_no}` : ''].filter(Boolean).join(' ') || 'Adres Kaydı Yok'}
+                        </span>
                       </td>
                       <td className="p-2.5 text-center font-black text-slate-900">
                         {stop.teslim_edilen_torba ? `${stop.teslim_edilen_torba} Torba` : '-'}

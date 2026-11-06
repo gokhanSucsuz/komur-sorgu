@@ -976,16 +976,19 @@ export default function RouteModeCockpitModal({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
                           <label className="text-xs font-black text-slate-700 uppercase block mb-1">
-                            Teslim Edilen Torba
+                            {prevDeliveredTorba > 0
+                              ? `Kalan Teslim Edilecek Torba (Hedef: ${hedefTorba})`
+                              : 'Teslim Edilen Torba'}
                           </label>
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
+                                const maxAllowed = prevDeliveredTorba > 0 ? remainingForStop : hedefTorba;
                                 setRouteModeTorba((v) =>
-                                  String(Math.max(1, (parseInt(v, 10) || hedefTorba) - 1))
-                                )
-                              }
+                                  String(Math.max(1, (parseInt(v, 10) || maxAllowed) - 1))
+                                );
+                              }}
                               className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 font-black text-lg text-slate-800 active:scale-95"
                             >
                               -
@@ -996,16 +999,17 @@ export default function RouteModeCockpitModal({
                               value={routeModeTorba}
                               onChange={(e) => setRouteModeTorba(e.target.value)}
                               min="1"
-                              max={hedefTorba}
+                              max={prevDeliveredTorba > 0 ? remainingForStop : hedefTorba}
                               className="flex-1 h-11 px-3 rounded-xl bg-white border-2 border-emerald-500 text-center text-base font-mono font-black text-slate-900 focus:outline-none"
                             />
                             <button
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
+                                const maxAllowed = prevDeliveredTorba > 0 ? remainingForStop : hedefTorba;
                                 setRouteModeTorba((v) =>
-                                  String(Math.min(hedefTorba, (parseInt(v, 10) || 0) + 1))
-                                )
-                              }
+                                  String(Math.min(maxAllowed, (parseInt(v, 10) || 0) + 1))
+                                );
+                              }}
                               className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 font-black text-lg text-slate-800 active:scale-95"
                             >
                               +

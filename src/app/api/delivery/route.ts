@@ -168,18 +168,30 @@ export async function POST(request: NextRequest) {
       let deliveredThisTime = 0;
 
       if (eklenen_torba !== undefined && eklenen_torba !== null) {
-        deliveredThisTime = parseInt(eklenen_torba, 10);
-        if (isNaN(deliveredThisTime) || deliveredThisTime <= 0 || deliveredThisTime > 150) {
+        const addAmount = parseInt(eklenen_torba, 10);
+        if (isNaN(addAmount) || addAmount <= 0 || addAmount > 150) {
           return NextResponse.json({ success: false, error: 'Geçersiz teslim edilecek torba miktarı (1-150 arası olmalıdır)' }, { status: 400 });
         }
-        newTotalBags = currentBags + deliveredThisTime;
+        // Hane hedef kotasını (varsayılan 34) asla aşamaz
+        newTotalBags = Math.min(hedef, currentBags + addAmount);
+        deliveredThisTime = Math.max(0, newTotalBags - currentBags);
       } else {
-        newTotalBags = parseInt(torba_sayisi || String(hedef), 10);
-        if (isNaN(newTotalBags) || newTotalBags <= 0 || newTotalBags > 200) {
+        const requestedVal = parseInt(torba_sayisi || String(hedef), 10);
+        if (isNaN(requestedVal) || requestedVal <= 0 || requestedVal > 200) {
           return NextResponse.json({ success: false, error: 'Geçersiz toplam torba miktarı' }, { status: 400 });
         }
-        deliveredThisTime = newTotalBags - currentBags;
-        if (deliveredThisTime <= 0) deliveredThisTime = newTotalBags;
+        // Mevcut torba varsa ve kullanıcı kalan miktarı girdiyse (örn: 20 varken 14 girdiyse)
+        if (currentBags > 0 && requestedVal < hedef && currentBags + requestedVal <= hedef) {
+          newTotalBags = Math.min(hedef, currentBags + requestedVal);
+          deliveredThisTime = Math.max(0, newTotalBags - currentBags);
+        } else {
+          newTotalBags = Math.min(hedef, requestedVal);
+          deliveredThisTime = Math.max(0, newTotalBags - currentBags);
+          if (deliveredThisTime <= 0 && currentBags < hedef) {
+            deliveredThisTime = Math.max(0, hedef - currentBags);
+            newTotalBags = hedef;
+          }
+        }
       }
 
       const recipient = (teslim_alan || beneficiary.ad_soyad).trim();

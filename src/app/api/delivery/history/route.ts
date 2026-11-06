@@ -40,11 +40,28 @@ export async function GET(request: NextRequest) {
 
     const autoHealIds: any[] = [];
 
-    // Her teslimat kaydının geçerliliğini ve iptal durumunu doğrula
+    // Her teslimat kaydının geçerliliğini, açık adresini ve iptal durumunu doğrula
     for (const r of allHistoryMapped) {
+      const bId = String(r.beneficiary_id || '');
+      const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
+
+      // Açık adres ve yerleşim bilgilerini hane üzerinden zenginleştir (tutanak çıktılarında adres boş görünmez)
+      if (!r.acik_adres || String(r.acik_adres).trim() === '' || r.acik_adres === '-') {
+        if (ben) {
+          r.acik_adres = ben.acik_adres || ben.imza_listesi_acik_adres || ben.adres || '';
+          if (!r.acik_adres && ben.sokak) {
+            r.acik_adres = `${ben.sokak}${ben.kapi_no && ben.kapi_no !== 999999 && ben.kapi_no !== '999999' ? ' No: ' + ben.kapi_no : ''}${ben.daire_no ? ' D: ' + ben.daire_no : ''}`.trim();
+          }
+        }
+      }
+      if (!r.mahalle || String(r.mahalle).trim() === '') {
+        r.mahalle = ben?.mahalle || ben?.imza_listesi_mahalle || 'Edirne Merkez';
+      }
+      if (!r.sokak && ben?.sokak) r.sokak = ben.sokak;
+      if (!r.kapi_no && ben?.kapi_no) r.kapi_no = ben.kapi_no;
+      if (!r.daire_no && ben?.daire_no) r.daire_no = ben.daire_no;
+
       if (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') {
-        const bId = String(r.beneficiary_id || '');
-        const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
         const benHistory = historyByBen.get(bId) || [];
         const thisIdx = benHistory.indexOf(r);
         const subsequentEvents = thisIdx !== -1 ? benHistory.slice(thisIdx + 1) : [];
