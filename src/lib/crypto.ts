@@ -297,6 +297,7 @@ const BENEFICIARY_ENCRYPTED_FIELDS = [
   'onceki_sokak',
   'imza_listesi_acik_adres',
   'imza_listesi_sokak',
+  'sehit_gazi_notu',
 ];
 
 /**
@@ -691,6 +692,7 @@ export const ROUTE_STOP_ENCRYPTED_FIELDS = [
   'sokak',
   'teslim_alan',
   'teslimat_notu',
+  'sehit_gazi_notu',
 ];
 
 export const ROUTE_ENCRYPTED_FIELDS = [

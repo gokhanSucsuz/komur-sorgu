@@ -3225,9 +3225,16 @@ export default function RoutePage({
                           {idx + 1}
                         </span>
                         <div>
-                          <h4 className="text-sm font-black text-slate-900 tracking-tight">
-                            {person.ad_soyad}
-                          </h4>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-sm font-black text-slate-900 tracking-tight">
+                              {person.ad_soyad}
+                            </h4>
+                            {person.sehit_gazi && (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-rose-100 text-rose-900 border border-rose-300 inline-flex items-center gap-0.5 shadow-2xs">
+                                <span>🎖️</span> Şehit/Gazi
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[11px] font-semibold text-slate-500 font-mono">
                             TC: {person.tc_no || 'Belirtilmemiş'}
                           </span>

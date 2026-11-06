@@ -8,6 +8,7 @@ import { showToast } from './GlobalAlertManager';
 import { applySafeCachePurge } from '@/lib/cacheManager';
 import { getSecureItem, setSecureItem } from '@/lib/secureStorage';
 import { isPowerSaverActive, setPowerSaverMode } from '@/lib/batteryManager';
+import { resolveStaffDisplayName } from '@/lib/normalizer';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -30,7 +31,7 @@ export default function ProfileModal({
   const currentUsername = typeof window !== 'undefined' ? (getSecureItem('komur_username') || '') : '';
 
   // Form states
-  const [adSoyad, setAdSoyad] = useState(userName || '');
+  const [adSoyad, setAdSoyad] = useState(() => resolveStaffDisplayName(userName, currentUsername, userRole));
   const [username, setUsername] = useState(currentUsername);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -105,8 +106,9 @@ export default function ProfileModal({
 
   useEffect(() => {
     if (isOpen) {
-      setAdSoyad(userName || '');
-      setUsername(typeof window !== 'undefined' ? (getSecureItem('komur_username') || '') : '');
+      const savedUser = typeof window !== 'undefined' ? (getSecureItem('komur_username') || '') : '';
+      setAdSoyad(resolveStaffDisplayName(userName, savedUser, userRole));
+      setUsername(savedUser);
       setErrorMsg('');
       setSuccessMsg('');
       setSetupMode(false);

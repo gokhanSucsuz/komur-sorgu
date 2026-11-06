@@ -2,7 +2,7 @@ export type UserRoleType = 'ADMIN' | 'PERSONEL' | 'MUDUR';
 
 export type QueueTabType = 'PENDING_AND_PARTIAL' | 'DELIVERED' | 'EXCLUDED' | 'ALL';
 
-export type ListTypeFilter = 'HEPSI' | 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI' | 'EK_KOMUR';
+export type ListTypeFilter = 'HEPSI' | 'ANA_LISTE' | 'EK_LISTE' | 'SIGORTALI' | 'EK_KOMUR' | 'SEHIT_GAZI';
 
 export interface MahalleSummary {
   mahalle: string;
@@ -47,6 +47,10 @@ export interface BeneficiaryRecord {
   komur_verilmeyecek?: boolean;
   komur_iptal_nedeni?: string;
   komur_iptal_aciklama?: string;
+  sehit_gazi?: boolean;
+  sehit_gazi_notu?: string;
+  sehit_gazi_tarihi?: string;
+  sehit_gazi_atanan_personel?: string;
   uyari_notu?: string;
   fiili_adres_guncellendi?: boolean;
   son_adres_guncelleme_tarihi?: string;

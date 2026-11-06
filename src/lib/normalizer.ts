@@ -171,7 +171,7 @@ export function validateSmartSearchInput(rawInput: string | null | undefined): S
 }
 
 export function isBirebirBeneficiaryMatch(
-  record: { tc_no?: any; ad_soyad?: any; hak_sahibi?: any; sira_no?: any; mahalle_sira?: any; excel_sira_no?: any; ek_excel_sira?: any } | null | undefined,
+  record: { tc_no?: any; ad_soyad?: any; hak_sahibi?: any; sira_no?: any; mahalle_sira?: any; excel_sira_no?: any; ek_excel_sira?: any; sehit_gazi?: any; sehit_gazi_notu?: any } | null | undefined,
   query: string | null | undefined
 ): boolean {
   if (!query || !query.trim() || !record) return false;
@@ -188,6 +188,20 @@ export function isBirebirBeneficiaryMatch(
       return recordTcDigits === qDigits;
     }
     return recordTcDigits.startsWith(qDigits) || recordTcDigits.includes(qDigits);
+  }
+
+  // Şehit / Gazi rozet araması desteği (örn: 'şehit', 'gazi')
+  if (record.sehit_gazi) {
+    const normQuery = normalizeTurkishNameForExactMatch(rawQ);
+    if (['sehit', 'gazi', 'sehit gazi', 'gazi sehit'].includes(normQuery)) {
+      return true;
+    }
+    if (record.sehit_gazi_notu) {
+      const normNote = normalizeTurkishNameForExactMatch(String(record.sehit_gazi_notu));
+      if (normNote && normQuery && normNote.includes(normQuery)) {
+        return true;
+      }
+    }
   }
 
   // 2. Harf ile başlandıysa: YALNIZCA Hak Sahibi / Adı Soyadı alanında (%100 Türkçe Karakter Uyumlu) arama yapar
@@ -1922,17 +1936,67 @@ export function formatCancelExplanation(explanation?: string | null): string {
  * Saha ve dağıtım personeli isimlerini normalize eder.
  * Sistem yöneticisi (admin) sahada görev aldığında resmi olarak 'Gökhan SUÇSUZ' adıyla raporlanır.
  */
+export function resolveStaffDisplayName(
+  rawName?: string | null,
+  username?: string | null,
+  role?: string | null
+): string {
+  const cleanName = (rawName || '').trim();
+  const cleanUser = (username || '').trim().toLowerCase();
+  const cleanRole = (role || '').trim().toUpperCase();
+
+  const isTamperedOrUndecrypted =
+    !cleanName ||
+    cleanName.includes('ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ') ||
+    cleanName.includes('DEŞİFRE') ||
+    cleanName.startsWith('ENC:GCM:');
+
+  if (!isTamperedOrUndecrypted) {
+    return cleanName;
+  }
+
+  // Known staff username mapping
+  if (cleanUser === 'admin') return 'Gökhan SUÇSUZ';
+  if (cleanUser === 'cem') return 'Cem PAZAR';
+  if (cleanUser === 'hamza') return 'Hamza ULUDAĞ';
+  if (cleanUser === 'ismail') return 'İsmail';
+  if (cleanUser === 'müdür' || cleanUser === 'mudur') return 'Müdür Yetkilisi';
+
+  if (cleanRole === 'ADMIN') return 'Gökhan SUÇSUZ';
+  if (cleanRole === 'MUDUR') return 'Müdür Yetkilisi';
+
+  if (cleanUser) {
+    return cleanUser.charAt(0).toLocaleUpperCase('tr-TR') + cleanUser.slice(1);
+  }
+
+  return 'Saha Personeli';
+}
+
 export function normalizeStaffName(raw?: any): string {
   if (!raw || typeof raw !== 'string') return '';
   let clean = raw.trim();
   clean = clean.replace(/^\[.*?\]\s*/, '').replace(/\s*\((?:çevrimdışı|çevrimdışı kuyrukta)\)/i, '').trim();
-  if (!clean) return '';
+  if (!clean || clean.includes('ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ') || clean.includes('DEŞİFRE') || clean.startsWith('ENC:GCM:')) {
+    return '';
+  }
   const lower = toExactTurkishLower(clean);
   if (['-', 'null', 'undefined', 'sistem', 'belirtilmedi', 'yok', 'dağıtım ekibi'].includes(lower)) {
     return '';
   }
   if (lower === 'admin' || lower === 'sistem yöneticisi' || lower.startsWith('admin ') || lower.startsWith('sistem yöneticisi ')) {
     return 'Gökhan SUÇSUZ';
+  }
+  if (lower === 'cem' || lower.startsWith('cem ')) {
+    return 'Cem PAZAR';
+  }
+  if (lower === 'hamza' || lower.startsWith('hamza ')) {
+    return 'Hamza ULUDAĞ';
+  }
+  if (lower === 'ismail' || lower.startsWith('ismail ')) {
+    return 'İsmail';
+  }
+  if (lower === 'müdür' || lower === 'mudur') {
+    return 'Müdür Yetkilisi';
   }
   return clean;
 }

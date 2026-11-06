@@ -214,6 +214,15 @@ export default function DeliveryModal({
               TC: {beneficiary.tc_no}
             </span>
           </div>
+          {beneficiary.sehit_gazi && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 text-amber-950 text-xs font-black shadow-2xs">
+              <span className="text-sm">🎖️</span>
+              <span>Şehit / Gazi Ailesi</span>
+              {beneficiary.sehit_gazi_notu && (
+                <span className="font-normal text-amber-900 ml-1">({beneficiary.sehit_gazi_notu})</span>
+              )}
+            </div>
+          )}
           <p className="text-xs text-slate-600 flex items-center gap-1 font-medium">
             <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
             <span className="font-bold text-slate-900">{beneficiary.mahalle}</span> - {beneficiary.acik_adres}

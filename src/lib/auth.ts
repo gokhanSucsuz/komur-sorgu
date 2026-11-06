@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getDbCollections, mapDoc } from './mongodb';
 import { timingSafeTokenEqual } from './crypto';
 import { isSameOriginRequest, checkRateLimit, rateLimitExceededResponse } from './security';
+import { resolveStaffDisplayName } from './normalizer';
 import type { AppRole, UserRecord } from '@/types';
 
 /**
@@ -355,6 +356,14 @@ export function sanitizeUser<T extends Record<string, unknown> | null | undefine
   if (!user) return user;
   const safe: Record<string, unknown> = { ...user };
   safe.totp_enabled = Boolean(user.totp_enabled);
+  if ('ad_soyad' in safe || 'username' in safe || 'rol' in safe) {
+    const rawAd = (safe.ad_soyad || safe.name) as string | null | undefined;
+    const resolved = resolveStaffDisplayName(rawAd, safe.username as any, safe.rol as any);
+    safe.ad_soyad = resolved;
+    if ('name' in safe) {
+      safe.name = resolved;
+    }
+  }
   delete safe.sifre;
   delete safe.sifre_hash;
   delete safe.active_session_token;

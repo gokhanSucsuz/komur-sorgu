@@ -6,11 +6,13 @@ import { Shield, User, RefreshCw, Users, LogOut, FileClock, Search, UserPlus, Ro
 import type { NavTab } from '@/components/BottomNav';
 import dynamic from 'next/dynamic';
 import { subscribeBatteryStatus, isPowerSaverActive } from '@/lib/batteryManager';
+import { resolveStaffDisplayName } from '@/lib/normalizer';
 const ProfileModal = dynamic(() => import('@/components/ProfileModal'));
 
 interface HeaderProps {
   userRole: 'ADMIN' | 'PERSONEL' | 'MUDUR';
   userName: string;
+  userUsername?: string;
   defaultQuota?: number;
   currentTab?: NavTab;
   onTabChange?: (tab: NavTab) => void;
@@ -38,6 +40,7 @@ interface HeaderProps {
 export default function Header({
   userRole,
   userName,
+  userUsername,
   defaultQuota = 34,
   currentTab = 'search',
   onTabChange,
@@ -61,6 +64,7 @@ export default function Header({
 }: HeaderProps) {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isPowerSaver, setIsPowerSaver] = useState<boolean>(false);
+  const effectiveDisplayName = resolveStaffDisplayName(userName, userUsername, userRole);
 
   useEffect(() => {
     setIsPowerSaver(isPowerSaverActive());
@@ -338,17 +342,17 @@ export default function Header({
                 {userRole === 'ADMIN' ? (
                   <>
                     <Shield className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span className="text-amber-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Gökhan SUÇSUZ'}</span>
+                    <span className="text-amber-900 font-bold truncate text-[11px] sm:text-xs">{effectiveDisplayName}</span>
                   </>
                 ) : userRole === 'MUDUR' ? (
                   <>
                     <Building2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <span className="text-purple-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Müdür Yetkilisi'}</span>
+                    <span className="text-purple-900 font-bold truncate text-[11px] sm:text-xs">{effectiveDisplayName}</span>
                   </>
                 ) : (
                   <>
                     <User className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                    <span className="text-sky-900 font-bold truncate text-[11px] sm:text-xs">{userName || 'Personel'}</span>
+                    <span className="text-sky-900 font-bold truncate text-[11px] sm:text-xs">{effectiveDisplayName}</span>
                   </>
                 )}
               </button>
@@ -566,7 +570,7 @@ export default function Header({
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         userRole={userRole}
-        userName={userName}
+        userName={effectiveDisplayName}
         onUserUpdated={onUserUpdated || (() => {})}
         onLogout={onLogout}
       />

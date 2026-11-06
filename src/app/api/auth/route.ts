@@ -23,6 +23,7 @@ import {
   generateRecoveryCodes,
   generateQrCodeSvgDataUrl,
 } from '@/lib/totp';
+import { resolveStaffDisplayName } from '@/lib/normalizer';
 
 /**
  * Finds an active user by username (indexed) or decrypted ad_soyad (AES-256-GCM fallback).
@@ -172,9 +173,11 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const decAdSoyad = rawUser.ad_soyad
-        ? decryptField(rawUser.ad_soyad)
-        : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : (rawUser.rol === 'MUDUR' ? 'Müdür Yetkilisi' : rawUser.username));
+      const decAdSoyad = resolveStaffDisplayName(
+        rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : '',
+        rawUser.username,
+        rawUser.rol
+      );
       return NextResponse.json({
         success: true,
         valid: true,
@@ -419,9 +422,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const decAdSoyad = rawUser.ad_soyad
-        ? decryptField(rawUser.ad_soyad)
-        : (rawUser.rol === 'ADMIN' ? 'Gökhan SUÇSUZ' : (rawUser.rol === 'MUDUR' ? 'Müdür Yetkilisi' : rawUser.username));
+      const decAdSoyad = resolveStaffDisplayName(
+        rawUser.ad_soyad ? decryptField(rawUser.ad_soyad) : '',
+        rawUser.username,
+        rawUser.rol
+      );
       const res = NextResponse.json({
         success: true,
         valid: true,

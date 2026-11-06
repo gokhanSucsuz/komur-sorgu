@@ -144,3 +144,4 @@ test('3. Tutanak Çıktısında Açık Adres Asla Boş Gelmez (Fallback ve Zengi
   };
   assert.equal(getArchiveDisplayAddress(recordOnlyMahalle), 'Karaağaç Mah. (Açık Adres Kaydı Yok)');
 });
+

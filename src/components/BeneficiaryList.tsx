@@ -564,7 +564,9 @@ export default function BeneficiaryList({
         return !signed;
       });
     }
-    if (selectedListTypeFilter === 'EK_KOMUR') {
+    if (selectedListTypeFilter === 'SEHIT_GAZI') {
+      list = list.filter((r) => Boolean(r.sehit_gazi));
+    } else if (selectedListTypeFilter === 'EK_KOMUR') {
       list = list.filter((r) => Boolean(r.manuel_ek_liste_imzasi || r.ek_komur_verildi));
     } else if (selectedListTypeFilter !== 'HEPSI') {
       list = list.filter((r) => getBeneficiaryListTypeInfo(r).type === selectedListTypeFilter);
@@ -577,7 +579,11 @@ export default function BeneficiaryList({
     let ek = 0;
     let sig = 0;
     let ekKomur = 0;
+    let sehitGazi = 0;
     for (const r of mahalleFilteredList) {
+      if (r.sehit_gazi) {
+        sehitGazi++;
+      }
       if (r.manuel_ek_liste_imzasi || r.ek_komur_verildi) {
         ekKomur++;
       }
@@ -586,7 +592,7 @@ export default function BeneficiaryList({
       else if (t === 'EK_LISTE') ek++;
       else ana++;
     }
-    return { ana, ek, sig, ekKomur, total: mahalleFilteredList.length };
+    return { ana, ek, sig, ekKomur, sehitGazi, total: mahalleFilteredList.length };
   }, [mahalleFilteredList]);
 
   // TÜM KAYITLARI SAYFALAMADAN ÖNCE SIRALA (Adrese, İsme veya İmza Sırasına Göre)
@@ -1585,6 +1591,19 @@ export default function BeneficiaryList({
                     <span>📝</span>
                     <span>Ek Kömür Verilenler ({listTypeCounts.ekKomur})</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListTypeFilter('SEHIT_GAZI')}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 whitespace-nowrap ${
+                      selectedListTypeFilter === 'SEHIT_GAZI'
+                        ? 'bg-rose-700 text-white shadow-2xs font-black'
+                        : 'text-rose-900 hover:bg-rose-50'
+                    }`}
+                    title="Şehit yakını veya Gazi olarak rozet atanmış hak sahipleri"
+                  >
+                    <span>🎖️</span>
+                    <span>Şehit / Gazi ({listTypeCounts.sehitGazi})</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2098,6 +2117,15 @@ export default function BeneficiaryList({
                                     Aynı Hane
                                   </button>
                                 )}
+                                {person.sehit_gazi && (
+                                  <span
+                                    className="text-[10px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300 inline-flex items-center gap-0.5 shrink-0 shadow-2xs"
+                                    title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
+                                  >
+                                    <span>🎖️</span>
+                                    <span>Şehit/Gazi</span>
+                                  </span>
+                                )}
                                 {person.fiili_adres_guncellendi && (
                                   <span
                                     className="text-[10px] font-bold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-300 inline-flex items-center gap-0.5 shrink-0"
@@ -2528,6 +2556,15 @@ export default function BeneficiaryList({
                           >
                             <FileText className="w-3 h-3 text-amber-700" />
                             <span>İmza Mh: {person.imza_listesi_mahalle || person.onceki_mahalle}</span>
+                          </span>
+                        )}
+                        {person.sehit_gazi && (
+                          <span
+                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs"
+                            title={person.sehit_gazi_notu ? `Şehit / Gazi Ailesi: ${person.sehit_gazi_notu}` : 'Şehit / Gazi Ailesi'}
+                          >
+                            <span className="text-xs">🎖️</span>
+                            <span>Şehit / Gazi</span>
                           </span>
                         )}
                       </div>

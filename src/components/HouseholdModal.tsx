@@ -3,6 +3,7 @@
 import { Users, Phone, MapPin, CheckCircle2, Clock, AlertTriangle, PackageCheck, Undo2, Edit3, Shield, FileSpreadsheet, FileText, Ban, Lock, PenTool, Navigation, Building2 } from 'lucide-react';
 import { getRecordPhones, formatPhoneDisplay, getBeneficiaryListTypeInfo, formatCancelReason, formatCancelExplanation, getYandexNaviUrl, getGoogleMapsUrl, getParselSorguSearchSummary, PARSEL_SORGU_URL } from '@/lib/normalizer';
 import { formatTrAuto, isPastDeliveryDate } from '@/lib/dateUtils';
+import { showToast, showAlert } from '@/components/GlobalAlertManager';
 import { useState } from 'react';
 
 interface HouseholdModalProps {
@@ -15,6 +16,7 @@ interface HouseholdModalProps {
   onOpenEdit?: (person: any) => void;
   onOpenKomurIptal?: (person: any) => void;
   onToggleSignature?: (person: any) => void;
+  onBeneficiaryUpdated?: (updated: any) => void;
 }
 
 export default function HouseholdModal({
@@ -26,12 +28,60 @@ export default function HouseholdModal({
   onOpenEdit,
   onOpenKomurIptal,
   onToggleSignature,
+  onBeneficiaryUpdated,
   userRole = 'PERSONEL',
 }: HouseholdModalProps) {
-  const isComplete = person.teslimat_durumu === 'TAMAMLANDI' || person.teslimat_durumu === 'TESLIM_EDILDI';
-  const isPartial = person.teslimat_durumu === 'EKSIK';
-  const [isSigned, setIsSigned] = useState<boolean>(person.imza_durumu === 'IMZALANDI');
-  const listInfo = getBeneficiaryListTypeInfo(person);
+  const [currentPerson, setCurrentPerson] = useState(person);
+  const [showBadgeForm, setShowBadgeForm] = useState(false);
+  const [badgeNote, setBadgeNote] = useState('');
+  const [isUpdatingBadge, setIsUpdatingBadge] = useState(false);
+
+  const isComplete = currentPerson.teslimat_durumu === 'TAMAMLANDI' || currentPerson.teslimat_durumu === 'TESLIM_EDILDI';
+  const isPartial = currentPerson.teslimat_durumu === 'EKSIK';
+  const [isSigned, setIsSigned] = useState<boolean>(currentPerson.imza_durumu === 'IMZALANDI');
+  const listInfo = getBeneficiaryListTypeInfo(currentPerson);
+
+  const handleToggleSehitGazi = async (enable: boolean, note?: string) => {
+    setIsUpdatingBadge(true);
+    try {
+      const res = await fetch('/api/beneficiaries', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TOGGLE_SEHIT_GAZI',
+          id: currentPerson.id,
+          sehit_gazi: enable,
+          sehit_gazi_notu: note || '',
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.beneficiary) {
+        setCurrentPerson(data.beneficiary);
+        setShowBadgeForm(false);
+        showToast({
+          type: 'success',
+          message: enable ? '🎖️ Şehit / Gazi rozeti atandı.' : 'Şehit / Gazi rozeti kaldırıldı.',
+        });
+        if (onBeneficiaryUpdated) {
+          onBeneficiaryUpdated(data.beneficiary);
+        }
+      } else {
+        showAlert({
+          type: 'error',
+          title: 'İşlem Başarısız',
+          message: data.error || 'Rozet güncellenirken hata oluştu.',
+        });
+      }
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Hata',
+        message: err.message || 'Sunucuyla bağlantı kurulamadı.',
+      });
+    } finally {
+      setIsUpdatingBadge(false);
+    }
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -58,13 +108,20 @@ export default function HouseholdModal({
         <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 mb-4 space-y-3 shadow-xs">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h4 className="text-lg font-black text-slate-900 leading-tight">{person.ad_soyad}</h4>
-              <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200 inline-block mt-1">
-                TC: {person.tc_no}
-              </span>
+              <h4 className="text-lg font-black text-slate-900 leading-tight">{currentPerson.ad_soyad}</h4>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200 inline-block">
+                  TC: {currentPerson.tc_no}
+                </span>
+                {currentPerson.sehit_gazi && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-black text-rose-900 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-300 shadow-2xs">
+                    <span>🎖️</span> Şehit / Gazi
+                  </span>
+                )}
+              </div>
             </div>
             <div className="shrink-0">
-              {person.komur_verilmeyecek ? (
+              {currentPerson.komur_verilmeyecek ? (
                 <span className="badge badge-danger text-[11px] bg-rose-100 text-rose-800 border border-rose-300">
                   <Ban className="w-3.5 h-3.5 text-rose-600" />
                   Kömür Verilmeyecek
@@ -72,17 +129,17 @@ export default function HouseholdModal({
               ) : isComplete ? (
                 <span className="badge badge-delivered">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Tam ({person.torba_sayisi} Torba)
+                  Tam ({currentPerson.torba_sayisi} Torba)
                 </span>
               ) : isPartial ? (
                 <span className="badge badge-pending">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  Eksik: {person.torba_sayisi}/{person.hedef_torba || 34}
+                  Eksik: {currentPerson.torba_sayisi}/{currentPerson.hedef_torba || 34}
                 </span>
               ) : (
                 <span className="badge badge-pending">
                   <Clock className="w-3.5 h-3.5" />
-                  Bekliyor ({person.hedef_torba || 34})
+                  Bekliyor ({currentPerson.hedef_torba || 34})
                 </span>
               )}
             </div>
@@ -103,9 +160,41 @@ export default function HouseholdModal({
                   Açıklama: {formatCancelExplanation(person.komur_iptal_aciklama)}
                 </p>
               )}
-              {person.komur_iptal_tarihi && (
+              {currentPerson.komur_iptal_tarihi && (
                 <span className="text-[10px] text-rose-600 block">
-                  İptal Tarihi: {formatTrAuto(person.komur_iptal_tarihi)} {person.komur_iptal_eden ? `(${person.komur_iptal_eden})` : ''}
+                  İptal Tarihi: {formatTrAuto(currentPerson.komur_iptal_tarihi)} {currentPerson.komur_iptal_eden ? `(${currentPerson.komur_iptal_eden})` : ''}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Şehit / Gazi Rozet Bildirim Kutusu */}
+          {currentPerson.sehit_gazi && (
+            <div className="p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 text-xs text-amber-950 space-y-1 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-black text-amber-900">
+                  <span className="text-base">🎖️</span>
+                  <span>Şehit / Gazi Ailesi Kaydı</span>
+                </div>
+                {userRole !== 'MUDUR' && (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSehitGazi(false)}
+                    disabled={isUpdatingBadge}
+                    className="text-[11px] font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded border border-rose-200 transition-colors shadow-2xs"
+                  >
+                    {isUpdatingBadge ? 'Kaldırılıyor...' : 'Rozeti Kaldır'}
+                  </button>
+                )}
+              </div>
+              {currentPerson.sehit_gazi_notu && (
+                <p className="text-[11px] text-amber-900 font-medium">
+                  <strong>Not:</strong> {currentPerson.sehit_gazi_notu}
+                </p>
+              )}
+              {currentPerson.sehit_gazi_tarihi && (
+                <span className="text-[10px] text-amber-700 block">
+                  Kayıt Tarihi: {formatTrAuto(currentPerson.sehit_gazi_tarihi)} {currentPerson.sehit_gazi_atanan_personel ? `(${currentPerson.sehit_gazi_atanan_personel})` : ''}
                 </span>
               )}
             </div>
@@ -345,21 +434,69 @@ export default function HouseholdModal({
             <button
               onClick={() => {
                 onClose();
-                onOpenKomurIptal(person);
+                onOpenKomurIptal(currentPerson);
               }}
               className={`w-full mt-2 py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs ${
-                person.komur_verilmeyecek
+                currentPerson.komur_verilmeyecek
                   ? 'bg-rose-100 hover:bg-rose-200 text-rose-900 border-rose-300 font-black'
                   : 'bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200'
               }`}
             >
               <Ban className="w-4 h-4 text-rose-600" />
               <span>
-                {person.komur_verilmeyecek
+                {currentPerson.komur_verilmeyecek
                   ? 'Kömür İptal Gerekçesini Görüntüle / İptali Kaldır'
                   : 'Kömür Yardımını İptal Et (Eşi kömür aldı, doğalgaza geçti vb.)'}
               </span>
             </button>
+          )}
+
+          {/* Şehit / Gazi Rozeti Atama Butonu / Formu */}
+          {!currentPerson.sehit_gazi && userRole !== 'MUDUR' && (
+            showBadgeForm ? (
+              <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-300 space-y-2 mt-2 shadow-2xs">
+                <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
+                  <span>🎖️</span>
+                  <span>Şehit / Gazi Rozeti Atama</span>
+                </div>
+                <input
+                  type="text"
+                  value={badgeNote}
+                  onChange={(e) => setBadgeNote(e.target.value)}
+                  placeholder="Açıklama / Not (isteğe bağlı, örn: Şehit Ailesi, Muharip Gazi)"
+                  className="w-full px-3 py-1.5 rounded-xl border border-amber-300 text-xs bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBadgeForm(false);
+                      setBadgeNote('');
+                    }}
+                    className="px-3 py-1 text-xs font-bold text-slate-600 hover:text-slate-800"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSehitGazi(true, badgeNote)}
+                    disabled={isUpdatingBadge}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-xs transition-all active:scale-95"
+                  >
+                    {isUpdatingBadge ? 'Kaydediliyor...' : 'Rozeti Onayla & Ata'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowBadgeForm(true)}
+                className="w-full mt-2 py-2 px-3 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+              >
+                <span>🎖️</span>
+                <span>Şehit / Gazi Rozeti Ata</span>
+              </button>
+            )
           )}
 
           {(isComplete || isPartial) && onOpenCancel && (
@@ -483,6 +620,14 @@ export default function HouseholdModal({
                         >
                           {memberListInfo.label} (#{member.sira_no || member.mahalle_sira || member.id})
                         </span>
+                        {member.sehit_gazi && (
+                          <span
+                            className="text-[10px] font-black px-1.5 py-0.2 rounded bg-rose-100 text-rose-900 border border-rose-300 inline-flex items-center gap-0.5 shadow-2xs"
+                            title={member.sehit_gazi_notu ? `Şehit / Gazi: ${member.sehit_gazi_notu}` : 'Şehit / Gazi'}
+                          >
+                            <span>🎖️</span> Şehit/Gazi
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
                         <span className="font-mono font-bold text-purple-800">TC: {member.tc_no}</span>

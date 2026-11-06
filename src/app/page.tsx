@@ -16,6 +16,7 @@ import { signatureQueue } from '@/lib/signatureQueue';
 import { getSecureItem, setSecureItem, removeSecureItem, migrateSensitiveStorageKeys } from '@/lib/secureStorage';
 import { applySafeCachePurge, checkAndPurgeIfVersionChanged, purgeSessionStorage } from '@/lib/cacheManager';
 import { initBatteryManager, getOptimizedPollingInterval, isScreenVisible } from '@/lib/batteryManager';
+import { resolveStaffDisplayName } from '@/lib/normalizer';
 
 // Modern Skeleton loader for dynamically loaded sub-tabs
 function TabLoadingSkeleton({ text = 'Yükleniyor...' }: { text?: string }) {
@@ -321,7 +322,8 @@ export default function Home() {
         if (data.user.username) {
           setUserUsername(data.user.username);
         }
-        const effectiveName = data.user.ad_soyad || data.user.name;
+        const rawName = data.user.ad_soyad || data.user.name;
+        const effectiveName = resolveStaffDisplayName(rawName, data.user.username, data.user.rol || userRole);
         if (effectiveName) {
           setUserName(effectiveName);
           setSecureItem('komur_user_name', effectiveName);
@@ -404,7 +406,7 @@ export default function Home() {
       if (savedLogin === 'true' && savedRole && savedName && savedToken) {
         setIsLoggedIn(true);
         setUserRole(savedRole);
-        const resolvedName = (savedRole === 'ADMIN' && (!savedName || savedName === 'Sistem Yöneticisi')) ? 'Gökhan SUÇSUZ' : savedName;
+        const resolvedName = resolveStaffDisplayName(savedName, savedUsername, savedRole);
         setUserName(resolvedName);
         if (resolvedName !== savedName) {
           setSecureItem('komur_user_name', resolvedName);
@@ -1193,6 +1195,7 @@ export default function Home() {
         <Header
           userRole={userRole}
           userName={userName}
+          userUsername={userUsername}
           defaultQuota={defaultQuota}
           currentTab={currentTab}
           onTabChange={(tab) => {
@@ -1557,6 +1560,13 @@ export default function Home() {
             setKomurIptalTarget(person);
           }}
           onToggleSignature={handleToggleSignature}
+          onBeneficiaryUpdated={(updated) => {
+            setBeneficiaries((prev) =>
+              prev.map((b) => (b.id === updated.id ? { ...b, ...updated } : b))
+            );
+            setHouseholdTarget(updated);
+            handleRefreshAll();
+          }}
         />
       )}
 

@@ -160,6 +160,7 @@ export function mapDoc<T = any>(doc: any): T {
     'onceki_sokak',
     'imza_listesi_acik_adres',
     'imza_listesi_sokak',
+    'sehit_gazi_notu',
   ];
 
   for (const field of piiFields) {

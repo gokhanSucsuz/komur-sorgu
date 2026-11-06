@@ -968,6 +968,10 @@ export async function POST(request: NextRequest) {
       liste_kategorisi: selectedListType === 'EK_LISTE' ? 'EK_KAYIT' : selectedListType,
       ek_liste_no: ekListeNo,
       ek_liste_adi: ekListeAdi,
+      sehit_gazi: Boolean(body.sehit_gazi),
+      sehit_gazi_notu: body.sehit_gazi && body.sehit_gazi_notu ? String(body.sehit_gazi_notu).trim() : undefined,
+      sehit_gazi_tarihi: body.sehit_gazi ? nowStr : undefined,
+      sehit_gazi_atanan_personel: body.sehit_gazi ? creatorName : undefined,
       kaynak_dosya: attachedBatch?.dosya_adi || ekListeAdi,
       batch_id: resolvedBatchId,
       import_batch_id: resolvedBatchId,
@@ -1289,6 +1293,21 @@ export async function PUT(request: NextRequest) {
       updateSet.uyari_notu = encryptField(guncelleme_notu);
     }
 
+    if (body.sehit_gazi !== undefined) {
+      updateSet.sehit_gazi = Boolean(body.sehit_gazi);
+      if (body.sehit_gazi) {
+        updateSet.sehit_gazi_tarihi = existing.sehit_gazi_tarihi || nowStr;
+        updateSet.sehit_gazi_atanan_personel = existing.sehit_gazi_atanan_personel || updaterName;
+        if (body.sehit_gazi_notu !== undefined) {
+          updateSet.sehit_gazi_notu = body.sehit_gazi_notu ? encryptField(String(body.sehit_gazi_notu).trim()) : '';
+        }
+      } else {
+        updateSet.sehit_gazi_notu = '';
+        updateSet.sehit_gazi_tarihi = '';
+        updateSet.sehit_gazi_atanan_personel = '';
+      }
+    }
+
     // Veritabanı güncellemesi
     await benCol.updateOne(buildIdFilter(id), { $set: updateSet });
 
@@ -1568,6 +1587,101 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: 'Kömür iptali kaldırıldı, hak sahibi yeniden aktif dağıtım listesine eklendi',
+        beneficiary: updatedDoc,
+      });
+    } else if (action === 'TOGGLE_SEHIT_GAZI' || action === 'SET_SEHIT_GAZI') {
+      const targetState = body.sehit_gazi !== undefined ? Boolean(body.sehit_gazi) : !Boolean(existing.sehit_gazi);
+      const noteInput = body.sehit_gazi_notu !== undefined ? String(body.sehit_gazi_notu).trim() : (existing.sehit_gazi_notu || '');
+
+      let updateOp: any;
+      if (targetState) {
+        updateOp = {
+          $set: {
+            sehit_gazi: true,
+            sehit_gazi_notu: noteInput ? encryptField(noteInput) : '',
+            sehit_gazi_tarihi: nowStr,
+            sehit_gazi_atanan_personel: staff,
+            updated_at: nowStr,
+          },
+        };
+      } else {
+        updateOp = {
+          $set: {
+            sehit_gazi: false,
+            updated_at: nowStr,
+          },
+          $unset: {
+            sehit_gazi_notu: '',
+            sehit_gazi_tarihi: '',
+            sehit_gazi_atanan_personel: '',
+          },
+        };
+      }
+
+      await benCol.updateOne(buildIdFilter(id), updateOp);
+
+      // Aktif rota içerisinde bu vatandaş varsa durağı da senkronize et
+      const activeRoutes = await routeCol.find({
+        durum: { $in: ['AKTIF', 'DURAKLATILDI'] },
+      }).toArray();
+
+      for (const rawR of activeRoutes) {
+        const decR = mapDoc(rawR);
+        const stops = decR.duraklar || [];
+        let modified = false;
+        stops.forEach((s: any) => {
+          if (
+            String(s.beneficiary_id) === String(existing.id) ||
+            String(s.beneficiary_id) === String(existing._id) ||
+            (existing.tc_no && s.tc_no === existing.tc_no)
+          ) {
+            s.sehit_gazi = targetState;
+            s.sehit_gazi_notu = targetState ? (noteInput || '') : undefined;
+            modified = true;
+          }
+        });
+        if (modified) {
+          await routeCol.updateOne(buildIdFilter(decR.id || decR._id), {
+            $set: {
+              duraklar: stops.map(encryptRouteStop),
+              updated_at: nowStr,
+            },
+          });
+        }
+      }
+
+      await touchSyncPulse(staff);
+
+      await recordActivityLog({
+        islem_tipi: targetState ? 'SEHIT_GAZI_ROZETI_ATANDI' : 'SEHIT_GAZI_ROZETI_KALDIRILDI',
+        kullanici_adi: staff,
+        kullanici_rolu: session.rol || 'PERSONEL',
+        baslik: targetState
+          ? `🎖️ Şehit / Gazi Rozeti Atandı (${existing.ad_soyad})`
+          : `Şehit / Gazi Rozeti Kaldırıldı (${existing.ad_soyad})`,
+        detay: targetState
+          ? `${existing.ad_soyad} (TC: ${existing.tc_no || '-'}) adlı hak sahibine Şehit / Gazi rozeti atandı.${noteInput ? ` Not: ${noteInput}` : ''}`
+          : `${existing.ad_soyad} (TC: ${existing.tc_no || '-'}) adlı hak sahibinin Şehit / Gazi rozeti kaldırıldı.`,
+        hedef_kisi: existing.ad_soyad,
+        hedef_tc: existing.tc_no,
+        mahalle: existing.mahalle,
+        ek_bilgi: {
+          beneficiary_id: id,
+          sehit_gazi: targetState,
+          not: noteInput || null,
+          tarih: nowStr,
+          personel: staff,
+        },
+      });
+
+      const updatedRaw = await benCol.findOne(buildIdFilter(id));
+      const updatedDoc = mapDoc(updatedRaw);
+
+      return NextResponse.json({
+        success: true,
+        message: targetState
+          ? 'Şehit / Gazi rozeti başarıyla atandı'
+          : 'Şehit / Gazi rozeti kaldırıldı',
         beneficiary: updatedDoc,
       });
     }

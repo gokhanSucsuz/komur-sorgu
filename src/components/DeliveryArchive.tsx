@@ -541,7 +541,14 @@ export default function DeliveryArchive({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <h4 className="text-sm font-extrabold text-slate-900">{item.ad_soyad}</h4>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4 className="text-sm font-extrabold text-slate-900">{item.ad_soyad}</h4>
+                                  {item.sehit_gazi && (
+                                    <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-rose-100 text-rose-900 border border-rose-300 inline-flex items-center gap-0.5 shadow-2xs">
+                                      <span>🎖️</span> Şehit/Gazi
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                                   <span className="font-mono font-bold text-amber-800">TC: {item.tc_no}</span>
                                   <span>•</span>
@@ -843,7 +850,14 @@ export default function DeliveryArchive({
                       <tr key={item.id || item._id || idx} className="hover:bg-slate-50/80">
                         <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                         <td className="py-2 px-2 font-mono font-bold text-slate-800 truncate">{item.tc_no}</td>
-                        <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
+                        <td className="py-2 px-2 font-bold text-slate-900 break-words">
+                          <span>{item.ad_soyad}</span>
+                          {item.sehit_gazi && (
+                            <span className="block text-[9px] font-black text-rose-900 bg-rose-100 border border-rose-300 px-1 py-0.2 rounded w-fit mt-0.5">
+                              🎖️ Şehit / Gazi
+                            </span>
+                          )}
+                        </td>
                         <td className="py-2 px-2 text-slate-600 break-words" title={getArchiveDisplayAddress(item)}>
                           <span className="font-semibold text-slate-800 block">{item.mahalle || 'Edirne Merkez'}</span>
                           <span className="block text-[11px] text-slate-600 leading-snug">{getArchiveDisplayAddress(item)}</span>
@@ -1068,7 +1082,14 @@ export default function DeliveryArchive({
                         <tr key={item.id} className="hover:bg-rose-50/50">
                           <td className="py-2 px-2 text-center font-bold text-slate-400">{idx + 1}</td>
                           <td className="py-2 px-2 font-mono font-bold text-rose-900 truncate">{item.tc_no}</td>
-                          <td className="py-2 px-2 font-bold text-slate-900 break-words">{item.ad_soyad}</td>
+                          <td className="py-2 px-2 font-bold text-slate-900 break-words">
+                          <span>{item.ad_soyad}</span>
+                          {item.sehit_gazi && (
+                            <span className="block text-[9px] font-black text-rose-900 bg-rose-100 border border-rose-300 px-1 py-0.2 rounded w-fit mt-0.5">
+                              🎖️ Şehit / Gazi
+                            </span>
+                          )}
+                        </td>
                           <td className="py-2 px-2 text-slate-600 break-words" title={getArchiveDisplayAddress(item)}>
                             <strong className="text-slate-800 block">{item.mahalle || 'Edirne Merkez'}</strong>
                             <span className="block text-[11px] text-slate-600 leading-snug">{getArchiveDisplayAddress(item)}</span>

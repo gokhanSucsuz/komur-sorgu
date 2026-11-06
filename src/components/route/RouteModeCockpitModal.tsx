@@ -713,6 +713,16 @@ export default function RouteModeCockpitModal({
                         )}
                       </span>
 
+                      {currentStop.sehit_gazi && (
+                        <span
+                          className="text-xs font-black text-rose-900 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-300 flex items-center gap-1 shadow-2xs"
+                          title={currentStop.sehit_gazi_notu || 'Şehit / Gazi Ailesi'}
+                        >
+                          <span>🎖️</span>
+                          <span>Şehit / Gazi</span>
+                        </span>
+                      )}
+
                       {currentStop.imza_durumu === 'IMZALANDI' ? (
                         <span className="text-xs font-black text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
                           <PenTool className="w-3 h-3 text-emerald-700" />
@@ -1393,6 +1403,11 @@ export default function RouteModeCockpitModal({
                             <span className="text-[11px] font-mono font-bold text-slate-500">
                               TC: {stop.tc_no || '—'}
                             </span>
+                            {stop.sehit_gazi && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] font-black text-rose-900 bg-rose-100 px-1.5 py-0.2 rounded border border-rose-300">
+                                <span>🎖️</span> Şehit/Gazi
+                              </span>
+                            )}
                           </div>
                         </div>
 

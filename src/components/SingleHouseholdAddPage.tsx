@@ -47,6 +47,8 @@ export default function SingleHouseholdAddPage({
   const [hedefTorba, setHedefTorba] = useState<string>(String(defaultQuota || 34));
   const [listeTuru, setListeTuru] = useState<'EK_LISTE' | 'ANA_LISTE' | 'SIGORTALI'>('EK_LISTE');
   const [imzaAlindi, setImzaAlindi] = useState<boolean>(false);
+  const [sehitGazi, setSehitGazi] = useState<boolean>(false);
+  const [sehitGaziNotu, setSehitGaziNotu] = useState<string>('');
   const [eklemeNotu, setEklemeNotu] = useState<string>('');
 
   // Mobil Pratik Etiket Seçim ve Filtre Durumu
@@ -562,6 +564,8 @@ export default function SingleHouseholdAddPage({
     setTelefon2('');
     setHaneNo('');
     setImzaAlindi(false);
+    setSehitGazi(false);
+    setSehitGaziNotu('');
     setEklemeNotu('');
     setConfirmSameAddress(false);
     setErrorMessage(null);
@@ -645,6 +649,8 @@ export default function SingleHouseholdAddPage({
           batch_id: selectedBatchId || null,
           donem_kodu: currentSeasonCode,
           imza_alindi: imzaAlindi,
+          sehit_gazi: sehitGazi,
+          sehit_gazi_notu: sehitGazi ? sehitGaziNotu.trim() : '',
           ekleme_notu: eklemeNotu.trim(),
           personel: userName,
           confirm_same_address: isAddressConfirmed,
@@ -1440,6 +1446,44 @@ export default function SingleHouseholdAddPage({
               </p>
             </div>
           </label>
+
+          {/* Şehit / Gazi Ailesi Rozeti */}
+          <div
+            className={`p-3.5 rounded-2xl border-2 transition-all ${
+              sehitGazi
+                ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-400 text-amber-950 shadow-2xs'
+                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+            }`}
+          >
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={sehitGazi}
+                onChange={(e) => setSehitGazi(e.target.checked)}
+                className="mt-1 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 shrink-0"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-slate-900">
+                  <span className="text-base">🎖️</span>
+                  <span>Şehit / Gazi Ailesi Rozeti Ata</span>
+                </div>
+                <p className="text-[11px] text-slate-600 font-medium mt-0.5 leading-relaxed">
+                  Hak sahibi şehit yakını veya gazi ise işaretleyin; hane kartında, sorgu ekranında ve rotada özel rozetle gösterilir.
+                </p>
+              </div>
+            </label>
+            {sehitGazi && (
+              <div className="mt-2.5 pt-2 border-t border-amber-200">
+                <input
+                  type="text"
+                  value={sehitGaziNotu}
+                  onChange={(e) => setSehitGaziNotu(e.target.value)}
+                  placeholder="Şehit / Gazi Notu (isteğe bağlı, örn: Şehit Ailesi, Muharip Gazi)"
+                  className="w-full px-3 py-1.5 rounded-xl border border-amber-300 text-xs bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                />
+              </div>
+            )}
+          </div>
 
           {/* İsteğe Bağlı Ek Detaylar & Liste Ayarları (Daraltılabilir Akordeon) */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50/60 overflow-hidden">
