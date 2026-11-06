@@ -138,16 +138,22 @@ export default function RouteModeCockpitModal({
   const currentStopListInfo = getBeneficiaryListTypeInfo(currentStop);
   const currentStopPhones = getRecordPhones(currentStop);
 
-  // Kömür teslimi tamamlanmış ve teslimatı henüz tamamlanmamış kayıtları ayır
+  // Kömür teslimi tamamlanmış (tam veya eksik kömür verilmiş) kayıtlar teslim edilmiş sayılır
+  const isDeliveredStop = (s: any) =>
+    s.durum === 'TAMAMLANDI' ||
+    s.durum === 'TESLIM_EDILDI' ||
+    (s.durum === 'EKSIK' && Number(s.teslim_edilen_torba) > 0) ||
+    (Number(s.teslim_edilen_torba) > 0 && Number(s.hedef_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
   const completedStops = stops
     .map((s, idx) => ({ ...s, originalIndex: idx }))
-    .filter((s) => s.durum === 'TAMAMLANDI');
+    .filter((s) => isDeliveredStop(s));
 
   const incompleteStops = stops
     .map((s, idx) => ({ ...s, originalIndex: idx }))
-    .filter((s) => s.durum !== 'TAMAMLANDI');
+    .filter((s) => !isDeliveredStop(s));
 
-  // Sıradaki eksik/bekleyen durak
+  // Sıradaki henüz kömür teslim edilmemiş eksik/bekleyen durak
   const nextIncompleteStop = incompleteStops.find((s) => s.originalIndex > safeIndex) || (incompleteStops.length > 1 ? incompleteStops[0] : null);
   const nextStopInOrder = nextIncompleteStop ? stops[nextIncompleteStop.originalIndex] : null;
 
@@ -165,7 +171,7 @@ export default function RouteModeCockpitModal({
   const completedCount = completedStops.length;
   const deferredStops = stops
     .map((s, idx) => ({ stop: s, index: idx }))
-    .filter(({ stop }) => stop.durum === 'EKSIK' || stop.durum === 'TESLIM_EDILEMEDI');
+    .filter(({ stop }) => (stop.durum === 'TESLIM_EDILEMEDI' || (stop.durum === 'EKSIK' && (!stop.teslim_edilen_torba || Number(stop.teslim_edilen_torba) === 0))));
   const waitingStops = stops
     .map((s, idx) => ({ stop: s, index: idx }))
     .filter(({ stop }) => !stop.durum || stop.durum === 'BEKLIYOR');
@@ -185,17 +191,17 @@ export default function RouteModeCockpitModal({
   const prevDeliveredTorba = Number(currentStop?.teslim_edilen_torba) || 0;
   const remainingForStop = Math.max(0, hedefTorba - prevDeliveredTorba);
 
-  // Önceden atlanmış ve hala tamamlanmamış haneler (Mevcut duraktan önceki bekleyenler)
+  // Önceden atlanmış ve hala kömür teslim edilmemiş haneler (Mevcut duraktan önceki bekleyenler)
   const skippedPendingStops = stops
     .map((s, idx) => ({ stop: s, index: idx }))
-    .filter(({ stop, index }) => index < safeIndex && stop.durum !== 'TAMAMLANDI');
+    .filter(({ stop, index }) => index < safeIndex && !isDeliveredStop(stop));
 
   // Durak Seçici Filtrelenmiş Liste
   const filteredPickerStops = stops
     .map((s, idx) => ({ stop: s, index: idx }))
     .filter(({ stop }) => {
-      if (stopPickerFilter === 'WAITING' && stop.durum === 'TAMAMLANDI') return false;
-      if (stopPickerFilter === 'DONE' && stop.durum !== 'TAMAMLANDI') return false;
+      if (stopPickerFilter === 'WAITING' && isDeliveredStop(stop)) return false;
+      if (stopPickerFilter === 'DONE' && !isDeliveredStop(stop)) return false;
       if (stopPickerSearch.trim()) {
         const q = stopPickerSearch.trim().toLocaleLowerCase('tr-TR');
         const name = (stop.ad_soyad || '').toLocaleLowerCase('tr-TR');
@@ -1556,7 +1562,7 @@ export default function RouteModeCockpitModal({
                       : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                   }`}
                 >
-                  Bekleyen ({stops.filter((s: any) => s.durum !== 'TAMAMLANDI').length})
+                  Bekleyen ({stops.filter((s: any) => !isDeliveredStop(s)).length})
                 </button>
                 <button
                   type="button"
@@ -1567,7 +1573,7 @@ export default function RouteModeCockpitModal({
                       : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                   }`}
                 >
-                  Tamamlanan ({stops.filter((s: any) => s.durum === 'TAMAMLANDI').length})
+                  Teslim Edilen ({stops.filter((s: any) => isDeliveredStop(s)).length})
                 </button>
               </div>
             </div>

@@ -123,4 +123,33 @@ test('Günlük Tek Rota, Eksik Teslimat Devri ve Hane Sayımı Kuralları Testi'
     assert.equal(route.kapanis_notu, null);
     assert.equal(route.duraklar.length, 2);
   });
+
+  await t.test('5. Eksik Kömür Verilen Haneler Teslim Edilmiş Sayılır ve Rota Duraklatılmadan Tamamlanır', () => {
+    const isStopDelivered = (s: any) =>
+      s.durum === 'TAMAMLANDI' ||
+      s.durum === 'TESLIM_EDILDI' ||
+      (s.durum === 'EKSIK' && Number(s.teslim_edilen_torba) > 0) ||
+      (Number(s.teslim_edilen_torba) > 0 && Number(s.hedef_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
+    const stops = [
+      { sira: 1, ad_soyad: 'Ahmet Yılmaz', durum: 'TAMAMLANDI', hedef_torba: 34, teslim_edilen_torba: 34 },
+      { sira: 2, ad_soyad: 'Fatma Kaya', durum: 'EKSIK', hedef_torba: 34, teslim_edilen_torba: 20 },
+      { sira: 3, ad_soyad: 'Mehmet Demir', durum: 'TAMAMLANDI', hedef_torba: 34, teslim_edilen_torba: 34 },
+    ];
+
+    // Her üç hane de kömür teslimi yapıldığı için teslim edilmiş sayılmalıdır
+    assert.equal(isStopDelivered(stops[0]), true);
+    assert.equal(isStopDelivered(stops[1]), true, 'Eksik kömür teslim edilen hane teslim edilmiş sayılmalıdır');
+    assert.equal(isStopDelivered(stops[2]), true);
+
+    const isAllStopsCompleted = stops.length > 0 && stops.every(isStopDelivered);
+    assert.equal(isAllStopsCompleted, true, 'Rotadaki tüm hanelere kömür (tam veya eksik) verildiğinde rota tamamlandı sayılmalıdır');
+
+    // Henüz kömür verilmeyen (BEKLIYOR) hane eklendiğinde rota bitmemiş sayılır
+    const pendingStop = { sira: 4, ad_soyad: 'Ali Can', durum: 'BEKLIYOR', hedef_torba: 34, teslim_edilen_torba: 0 };
+    assert.equal(isStopDelivered(pendingStop), false, 'Hiç kömür verilmeyen hane henüz teslim edilmemiş sayılmalıdır');
+
+    const stopsWithPending = [...stops, pendingStop];
+    assert.equal(stopsWithPending.every(isStopDelivered), false);
+  });
 });

@@ -1942,9 +1942,18 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      const isAllStopsCompleted = stops.length > 0 && completedCount === stops.length;
+      // KURAL: Eksik kömür verileni de teslim edilmiş sayma kuralı
+      // Bir haneye kömür verildiyse (Tam veya Eksik kömür verildiği sürece) teslim edilmiş kabul edilir.
+      const isStopDelivered = (s: any) =>
+        s.durum === 'TAMAMLANDI' ||
+        s.durum === 'TESLIM_EDILDI' ||
+        (s.durum === 'EKSIK' && Number(s.teslim_edilen_torba) > 0) ||
+        (Number(s.teslim_edilen_torba) > 0 && Number(s.hedef_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
+      // Tüm duraklara kömür teslim edildiyse (tam veya eksik teslimat alanlar dahil) rota tamamlanmış sayılır
+      const isAllStopsCompleted = stops.length > 0 && stops.every(isStopDelivered);
       const hasRemainingStopsAfterCurrent = stops.some(
-        (s: any, idx: number) => idx > Number(stop_index) && s.durum !== 'TAMAMLANDI'
+        (s: any, idx: number) => idx > Number(stop_index) && !isStopDelivered(s)
       );
       const isLastStopOrAllVisitedWithIncomplete =
         !isAllStopsCompleted && !hasRemainingStopsAfterCurrent;

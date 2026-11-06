@@ -5,6 +5,9 @@ import {
   hashTc,
   hashHane,
   hashAddress,
+  hashTcCandidates,
+  hashHaneCandidates,
+  hashAddressCandidates,
   encryptField,
   encryptBeneficiary,
   encryptRouteStop,
@@ -115,10 +118,10 @@ export async function GET(request: NextRequest) {
     // Special Query: If looking up a specific TC to show person AND household relatives
     if (targetTc) {
       const cleanedTargetTc = cleanTcNo(targetTc);
-      const tcHash = hashTc(cleanedTargetTc);
+      const tcHashes = hashTcCandidates(cleanedTargetTc);
 
       const tcQueryConditions: any[] = [];
-      if (tcHash) tcQueryConditions.push({ tc_hash: tcHash });
+      if (tcHashes.length > 0) tcQueryConditions.push({ tc_hash: { $in: tcHashes } });
       if (cleanedTargetTc) tcQueryConditions.push({ tc_no: cleanedTargetTc });
 
       if (tcQueryConditions.length === 0) {
@@ -166,15 +169,15 @@ export async function GET(request: NextRequest) {
       }
 
       // Find other people at the exact same normalized address or household
-      const normHash = person.norm_adres ? hashAddress(person.norm_adres) : null;
-      const haneHash = person.hane_no ? hashHane(person.hane_no) : null;
+      const normHashes = person.norm_adres ? hashAddressCandidates(person.norm_adres) : [];
+      const haneHashes = person.hane_no ? hashHaneCandidates(person.hane_no) : [];
 
       const householdOrList: any[] = [];
-      if (normHash) householdOrList.push({ adres_hash: normHash });
+      if (normHashes.length > 0) householdOrList.push({ adres_hash: { $in: normHashes } });
       if (person.norm_adres && typeof person.norm_adres === 'string' && person.norm_adres.trim()) {
         householdOrList.push({ norm_adres: person.norm_adres.trim() });
       }
-      if (haneHash) householdOrList.push({ hane_hash: haneHash });
+      if (haneHashes.length > 0) householdOrList.push({ hane_hash: { $in: haneHashes } });
       if (person.hane_no && typeof person.hane_no === 'string' && person.hane_no.trim()) {
         householdOrList.push({ hane_no: person.hane_no.trim() });
       }
@@ -189,8 +192,8 @@ export async function GET(request: NextRequest) {
           if (rawPerson._id) {
             excludeConditions.push({ _id: { $ne: rawPerson._id } });
           }
-          if (tcHash) {
-            excludeConditions.push({ tc_hash: { $ne: tcHash } });
+          if (tcHashes.length > 0) {
+            excludeConditions.push({ tc_hash: { $nin: tcHashes } });
           }
           if (cleanedTargetTc) {
             excludeConditions.push({ tc_no: { $ne: cleanedTargetTc } });
@@ -311,9 +314,9 @@ export async function GET(request: NextRequest) {
       // If q is an 11-digit TC, we can directly blind-index query in MongoDB
       const cleanedTcQuery = cleanTcNo(q);
       if (cleanedTcQuery && cleanedTcQuery.length === 11) {
-        const tcHash = hashTc(cleanedTcQuery);
+        const tcHashes = hashTcCandidates(cleanedTcQuery);
         filter.$or = [
-          ...(tcHash ? [{ tc_hash: tcHash }] : []),
+          ...(tcHashes.length > 0 ? [{ tc_hash: { $in: tcHashes } }] : []),
           { tc_no: cleanedTcQuery },
         ];
         total = await benCol.countDocuments(filter);
@@ -516,10 +519,10 @@ export async function POST(request: NextRequest) {
     // 1. T.C. KİMLİK NO MÜKERRERLİK KONTROLÜ (KESİN ENGEL - HARD BLOCK)
     // Sistemde kaydı olan TC Kimlik No varsa kesinlikle eklemez ve personele detaylı uyarı verir
     if (cleanedTc && cleanedTc.length === 11) {
-      const tcHash = hashTc(cleanedTc);
+      const tcHashes = hashTcCandidates(cleanedTc);
       const existingTc = await benCol.findOne({
         $or: [
-          ...(tcHash ? [{ tc_hash: tcHash }] : []),
+          ...(tcHashes.length > 0 ? [{ tc_hash: { $in: tcHashes } }] : []),
           { tc_no: cleanedTc },
         ],
       });
@@ -571,10 +574,10 @@ export async function POST(request: NextRequest) {
     const cleanHane = cleanHaneKey(cleanedHaneNo);
 
     if (cleanHane) {
-      const haneHash = hashHane(cleanHane);
+      const haneHashes = hashHaneCandidates(cleanHane);
       const existingHaneDoc = await benCol.findOne({
         $or: [
-          ...(haneHash ? [{ hane_hash: haneHash }] : []),
+          ...(haneHashes.length > 0 ? [{ hane_hash: { $in: haneHashes } }] : []),
           { hane_no: cleanedHaneNo },
           ...(hane_no ? [{ hane_no: String(hane_no).trim() }] : []),
         ],
@@ -659,13 +662,13 @@ export async function POST(request: NextRequest) {
         }
       }
       normAdres = hasSpecificHouseAddress ? normalizeAddress(settlement.name, compositeAddress) : '';
-      const adresHash = normAdres ? hashAddress(normAdres) : null;
+      const adresHashes = normAdres ? hashAddressCandidates(normAdres) : [];
 
       // Aynı mahalledeki veya aynı adres özetindeki aday kayıtları çek (Yalnızca spesifik kapı no veya açık adres girildiyse kontrol et)
       const normMahalleTarget = normalizeMahalleName(settlement.name) || settlement.name;
       const mahalleOrConditions: any[] = [];
       if (hasSpecificHouseAddress) {
-        if (adresHash) mahalleOrConditions.push({ adres_hash: adresHash });
+        if (adresHashes.length > 0) mahalleOrConditions.push({ adres_hash: { $in: adresHashes } });
         if (normAdres) mahalleOrConditions.push({ norm_adres: normAdres });
         if (settlement.name) mahalleOrConditions.push({ mahalle: settlement.name });
         if (rawMahalleStr && rawMahalleStr !== settlement.name) {

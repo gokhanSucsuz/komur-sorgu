@@ -955,15 +955,21 @@ export default function RoutePage({
     const stops = activeRoute.duraklar;
     const currentStop = stops[routeModeIndex];
 
-    // 1. Önce mevcut duraktan sonraki tamamlanmamış haneyi ara
+    const isDeliveredStop = (s: any) =>
+      s.durum === 'TAMAMLANDI' ||
+      s.durum === 'TESLIM_EDILDI' ||
+      (s.durum === 'EKSIK' && Number(s.teslim_edilen_torba) > 0) ||
+      (Number(s.teslim_edilen_torba) > 0 && Number(s.hedef_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
+    // 1. Önce mevcut duraktan sonraki henüz kömür teslim edilmemiş haneyi ara
     let nextIdx = stops.findIndex(
-      (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
+      (s: any, idx: number) => idx > routeModeIndex && !isDeliveredStop(s)
     );
 
-    // 2. Eğer sonrasındaki tüm haneler bitmişse, baştan itibaren tamamlanmamış haneyi ara (döngü)
+    // 2. Eğer sonrasındaki tüm haneler bitmişse, baştan itibaren kömür teslim edilmemiş haneyi ara (döngü)
     if (nextIdx === -1) {
       nextIdx = stops.findIndex(
-        (s: any, idx: number) => idx !== routeModeIndex && s.durum !== 'TAMAMLANDI'
+        (s: any, idx: number) => idx !== routeModeIndex && !isDeliveredStop(s)
       );
     }
 
@@ -1560,17 +1566,18 @@ export default function RoutePage({
         (Array.isArray(data.route?.duraklar) && data.route.duraklar.length > 0 && data.route.duraklar) ||
         fallbackUpdatedStops;
 
+      const isDeliveredStop = (s: any) =>
+        s.durum === 'TAMAMLANDI' ||
+        s.durum === 'TESLIM_EDILDI' ||
+        (s.durum === 'EKSIK' && Number(s.teslim_edilen_torba) > 0) ||
+        (Number(s.teslim_edilen_torba) > 0 && Number(s.hedef_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34));
+
       const allCompleted =
         Boolean(data.routeAutoCompleted) ||
         (updatedStops.length > 0 &&
-          updatedStops.every(
-            (s: any) =>
-              s.durum === 'TAMAMLANDI' ||
-              s.durum === 'TESLIM_EDILDI' ||
-              (Number(s.teslim_edilen_torba) > 0 && Number(s.teslim_edilen_torba) >= Number(s.hedef_torba || 34))
-          ));
+          updatedStops.every(isDeliveredStop));
 
-      // Case 1: All stops in the route are now TAMAMLANDI -> finalize route & exit Rota Modu!
+      // Case 1: All stops in the route are now delivered / completed -> finalize route & exit Rota Modu!
       if (allCompleted) {
         clearSavedSession();
         setIsRouteModeOpen(false);
@@ -1603,10 +1610,10 @@ export default function RoutePage({
         })
       );
 
-      // Case 2: Is there any remaining uncompleted stop AFTER the current stop?
-      // (Whether current stop was completed OR left incomplete, always advance to the next stop!)
+      // Case 2: Is there any remaining unserved stop AFTER the current stop?
+      // (Whether current stop was completed OR left incomplete, always advance to the next unserved stop!)
       const nextStopIndexAfter = updatedStops.findIndex(
-        (s: any, idx: number) => idx > routeModeIndex && s.durum !== 'TAMAMLANDI'
+        (s: any, idx: number) => idx > routeModeIndex && !isDeliveredStop(s)
       );
 
       if (nextStopIndexAfter !== -1) {
@@ -1636,9 +1643,9 @@ export default function RoutePage({
         return;
       }
 
-      // Case 2C: Bekleyen yoksa, daha önce "Daha Sonra Tamamlanacak" olarak işaretlenen eksik hanelere dön
+      // Case 2C: Bekleyen yoksa, daha önce hiç kömür verilememiş (veya teslim edilmemiş) hanelere dön
       const firstDeferredStop = updatedStops.findIndex(
-        (s: any, idx: number) => idx < routeModeIndex && s.durum !== 'TAMAMLANDI'
+        (s: any, idx: number) => idx < routeModeIndex && !isDeliveredStop(s)
       );
 
       if (firstDeferredStop !== -1) {
@@ -1647,8 +1654,8 @@ export default function RoutePage({
         syncRouteModeInputsForStop(updatedStops[firstDeferredStop]);
         showToast({
           type: 'info',
-          title: 'Eksik / Ertelenen Haneye Dönüldü',
-          message: `Daha önce eksik bırakılan #${updatedStops[firstDeferredStop].sira || firstDeferredStop + 1} nolu haneye (${updatedStops[firstDeferredStop].ad_soyad}) dönüldü.`,
+          title: 'Teslim Edilmemiş Haneye Dönüldü',
+          message: `Daha önce verilemeyen #${updatedStops[firstDeferredStop].sira || firstDeferredStop + 1} nolu haneye (${updatedStops[firstDeferredStop].ad_soyad}) dönüldü.`,
           durationMs: 4500
         });
         if (onRefreshAll) onRefreshAll();

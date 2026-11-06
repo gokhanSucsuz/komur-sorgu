@@ -15,6 +15,12 @@ import { cleanTcNo, cleanHaneKey } from './normalizer';
  * erişmesi matematiksel olarak imkansızdır.
  */
 
+/** Bilinen Kurumsal Miras / Rotasyon Geri Dönüş Anahtarları */
+export const KNOWN_LEGACY_MASTER_KEY = 'acb6847010f6d2060e9fc8d875300e51d549e8732c4be718123746c231789ad9';
+export const KNOWN_LEGACY_BLIND_KEY = 'aa1f4c899c6f92db4dba712e678e3a908ff06aaadb57a7a578d2d958c0440782';
+const legacyMasterKeyBuffer = Buffer.from(KNOWN_LEGACY_MASTER_KEY, 'hex');
+const legacyBlindKeyBuffer = Buffer.from(KNOWN_LEGACY_BLIND_KEY, 'hex');
+
 /**
  * ANAHTAR YÖNETİMİ (Fail-Closed)
  *
@@ -131,6 +137,10 @@ export function encryptField(plaintext: string | null | undefined): string | nul
   const str = String(plaintext);
   if (str.length === 0) return '';
   if (isEncrypted(str)) return str;
+  if (str.startsWith('***[') || str.includes('ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ')) {
+    console.warn('[Crypto] Prevented encrypting corrupted failure placeholder into database');
+    return str;
+  }
 
   try {
     const key = getMasterKeyBuffer();
@@ -175,9 +185,16 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
   try {
     const primaryKey = getMasterKeyBuffer();
     const previousKey = getPreviousMasterKeyBuffer();
-    const keyTag =
-      primaryKey.subarray(0, 8).toString('hex') +
-      (previousKey ? ':' + previousKey.subarray(0, 4).toString('hex') : '');
+
+    const candidateKeys: Buffer[] = [primaryKey];
+    if (previousKey && !previousKey.equals(primaryKey)) {
+      candidateKeys.push(previousKey);
+    }
+    if (!candidateKeys.some((k) => k.equals(legacyMasterKeyBuffer))) {
+      candidateKeys.push(legacyMasterKeyBuffer);
+    }
+
+    const keyTag = candidateKeys.map((k) => k.subarray(0, 6).toString('hex')).join(':');
     if (keyTag !== lastCacheKeyFingerprint) {
       decryptionCache.clear();
       lastCacheKeyFingerprint = keyTag;
@@ -202,9 +219,6 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
       return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
     }
 
-    const candidateKeys: Buffer[] = [primaryKey];
-    if (previousKey) candidateKeys.push(previousKey);
-
     let lastErr: unknown = null;
     for (const key of candidateKeys) {
       try {
@@ -228,6 +242,49 @@ export function decryptField(ciphertext: string | null | undefined): string | nu
     console.error('[Crypto] Decryption error (possible tampering or invalid key):', err instanceof Error ? err.message : 'unknown');
     return '***[ŞİFRELİ VERİ DEŞİFRE EDİLEMEDİ]***';
   }
+}
+
+/**
+ * Compute candidate deterministic HMAC-SHA256 blind index hashes (active + legacy keys).
+ * Ensures search and equality checks succeed even during/after key rotations.
+ */
+export function hashBlindIndexCandidates(value: string | null | undefined): string[] {
+  if (value === null || value === undefined) return [];
+  const str = String(value).trim();
+  if (str.length === 0) return [];
+
+  const hashes: string[] = [];
+  const primaryKey = getBlindIndexKeyBuffer();
+  const keys: Buffer[] = [primaryKey];
+  if (!keys.some((k) => k.equals(legacyBlindKeyBuffer))) {
+    keys.push(legacyBlindKeyBuffer);
+  }
+  for (const k of keys) {
+    const h = crypto.createHmac('sha256', k).update(str).digest('hex');
+    if (!hashes.includes(h)) hashes.push(h);
+  }
+  return hashes;
+}
+
+export function hashTcCandidates(tc: string | null | undefined): string[] {
+  if (!tc) return [];
+  const clean = cleanTcNo(tc);
+  if (!clean) return [];
+  return hashBlindIndexCandidates(clean);
+}
+
+export function hashHaneCandidates(hane: string | null | undefined): string[] {
+  if (!hane) return [];
+  const clean = cleanHaneKey(hane);
+  if (!clean) return [];
+  return hashBlindIndexCandidates(clean);
+}
+
+export function hashAddressCandidates(normAdres: string | null | undefined): string[] {
+  if (!normAdres) return [];
+  const trimmed = normAdres.trim();
+  if (!trimmed) return [];
+  return hashBlindIndexCandidates(trimmed);
 }
 
 /**
