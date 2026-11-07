@@ -231,13 +231,18 @@ export default function DeliveryArchive({
         </div>
 
         <div className="stat-card">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Toplam Kömür</span>
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Dağıtılan Kömür</span>
           <div className="mt-1 flex items-baseline gap-1">
             <span className="text-2xl font-black text-amber-700">
-              {((stats?.toplamTorbaSayisi || 0) * 0.025).toFixed(1)}
+              {stats?.toplamFiiliTonaj !== undefined
+                ? Number(stats.toplamFiiliTonaj).toFixed(2)
+                : ((stats?.toplamTorbaSayisi || 0) * 0.025).toFixed(1)}
             </span>
             <span className="text-xs text-slate-500 font-semibold">Ton</span>
           </div>
+          <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">
+            {stats?.toplamTorbaSayisi || 0} Torba {stats?.toplamResmiKabulTonaj && stats.toplamResmiKabulTonaj !== stats.toplamFiiliTonaj ? `(Kabul: ${stats.toplamResmiKabulTonaj} T)` : ''}
+          </span>
         </div>
 
         <div className="stat-card">
@@ -491,9 +496,24 @@ export default function DeliveryArchive({
                           <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200" title={dayGelenTonajNum > 0 ? "O gün gelen fiili kantar/tır net tonajı" : "Tahmini tonaj"}>
                             {dayGelenTonajNum > 0 ? `${displayTon} Ton (Gelen)` : `${displayTon} Ton`}
                           </span>
+                          {dayGelenTonajNum > 0 && Number(dayGroup.ortalama_torba_kg || 0) > 0 && (
+                            <span className="text-[11px] font-bold text-sky-800 bg-sky-50 px-2 py-0.5 rounded border border-sky-200" title="O gün dağıtılan kömür torbalarının ortalama birim ağırlığı">
+                              Ort. {dayGroup.ortalama_torba_kg} kg/torba
+                            </span>
+                          )}
+                          {Number(dayGroup.artan_torba || 0) > 0 && (
+                            <span className="text-[11px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200" title="Torbaların 25 kg altında gelmesi nedeniyle artan torba ve ilave hane karşılığı">
+                              +{dayGroup.artan_torba} Artan Torba (+{dayGroup.artan_hane_kesirli} Hane)
+                            </span>
+                          )}
+                          {Number(dayGroup.acik_torba || 0) > 0 && (
+                            <span className="text-[11px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200" title="Torbaların 25 kg üzerinde gelmesi nedeniyle oluşan açık torba">
+                              -{dayGroup.acik_torba} Açık Torba (-{dayGroup.acik_hane_kesirli} Hane)
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                          {dayGroup.items.length} Haneye toplam {totalBags} torba kömür ulaştırıldı {dayGelenTonajNum > 0 ? `• O gün sahaya ${displayTon} Ton geldi` : ''}
+                          {dayGroup.items.length} Haneye toplam {totalBags} torba kömür ulaştırıldı (Resmi Kabul: {(totalBags * 0.025).toFixed(2)} Ton){dayGelenTonajNum > 0 ? ` • O gün sahaya ${displayTon} Ton geldi (Fiili Dağıtılan Tonaj: ${displayTon} Ton)` : ''}
                         </p>
                       </div>
                     </div>
@@ -860,19 +880,30 @@ export default function DeliveryArchive({
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-600 pt-1">
                   Bu tutanak, {printDayGroup.isBulk ? <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihine kadar</span> : <span><strong>{formatTrDate(printDayGroup.gun_tarihi)}</strong> tarihinde</span>} Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı Başkanlığı bünyesinde görevli dağıtım personelleri{deliveryStaffList.length > 0 ? ` (${deliveryStaffList.join(', ')})` : ''} tarafından hak sahibi hanelere teslim edilen kömür kayıtlarını içerir.
-                  {!printDayGroup.isBulk && (
-                    <span className="block mt-1.5 p-2 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 font-medium">
-                      ⚖️ <strong>O Gün Gelen Kömür Tonajı:</strong> <strong className="font-mono font-bold text-amber-900">
-                        {
-                          (dayTonajInput[printDayGroup.gun_tarihi] !== undefined && dayTonajInput[printDayGroup.gun_tarihi] !== '')
-                            ? Number(dayTonajInput[printDayGroup.gun_tarihi]).toFixed(2)
-                            : (Number(printDayGroup.gelen_tonaj) > 0
-                                ? Number(printDayGroup.gelen_tonaj).toFixed(2)
-                                : (sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0) * 0.025).toFixed(2))
-                        } Ton
-                      </strong> — Kömür torbalarının takribi 25 kg ağırlıkta olması sebebiyle resmi tonaj sahaya gelen fiili kantar tonajı olarak esas alınmıştır; verilen kişi sayısına göre tonaj hesaplanmamıştır.
-                    </span>
-                  )}
+                  {!printDayGroup.isBulk && (() => {
+                    const printTotalBags = sortedPrintItems.reduce((acc: number, curr: any) => acc + (curr.torba_sayisi || 0), 0);
+                    const printGelenTon = (dayTonajInput[printDayGroup.gun_tarihi] !== undefined && dayTonajInput[printDayGroup.gun_tarihi] !== '')
+                      ? Number(dayTonajInput[printDayGroup.gun_tarihi])
+                      : (Number(printDayGroup.gelen_tonaj) > 0 ? Number(printDayGroup.gelen_tonaj) : 0);
+                    const printDisplayTon = printGelenTon > 0 ? printGelenTon.toFixed(2) : (printTotalBags * 0.025).toFixed(2);
+                    const printBeklenenTorba = printGelenTon > 0 ? Math.round((printGelenTon * 1000) / 25) : 0;
+                    const printOrtKg = printGelenTon > 0 && printTotalBags > 0 ? ((printGelenTon * 1000) / printTotalBags).toFixed(2) : null;
+                    const printArtanTorba = printGelenTon > 0 && printTotalBags > printBeklenenTorba ? printTotalBags - printBeklenenTorba : 0;
+                    const printAcikTorba = printGelenTon > 0 && printTotalBags > 0 && printTotalBags < printBeklenenTorba ? printBeklenenTorba - printTotalBags : 0;
+                    return (
+                      <span className="block mt-1.5 p-2 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 font-medium">
+                        ⚖️ <strong>O Gün Gelen Kömür Tonajı:</strong>{' '}
+                        <strong className="font-mono font-bold text-amber-900">{printDisplayTon} Ton</strong> — Kömür torbalarının takribi 25 kg ağırlıkta olması sebebiyle resmi tonaj sahaya gelen fiili kantar tonajı olarak esas alınmıştır; verilen kişi sayısına göre tonaj hesaplanmamıştır.
+                        {printOrtKg && (
+                          <span className="block mt-1 text-[10px] text-amber-900">
+                            📊 <strong>Torba Ağırlık Özeti:</strong> 25 kg Standart Beklenen: <strong>{printBeklenenTorba} Torba</strong> • Fiilen Dağıtılan: <strong>{printTotalBags} Torba</strong> (Resmi 34T=850kg Kabul: <strong>{(printTotalBags * 0.025).toFixed(2)} Ton</strong>) • Ort. Torba Ağırlığı: <strong>{printOrtKg} kg/torba</strong>
+                            {printArtanTorba > 0 && <span> • <strong>Artan Torba: +{printArtanTorba} Torba (+{(printArtanTorba / 34).toFixed(2)} Hane)</strong></span>}
+                            {printAcikTorba > 0 && <span> • <strong>Açık Torba: -{printAcikTorba} Torba (-{(printAcikTorba / 34).toFixed(2)} Hane)</strong></span>}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </p>
               </div>
 

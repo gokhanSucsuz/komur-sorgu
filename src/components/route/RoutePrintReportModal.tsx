@@ -275,13 +275,26 @@ export default function RoutePrintReportModal({
           </div>
 
           {/* Resmi Tonaj ve Torba Toleransı Bilgilendirme Notu */}
-          <div className="p-2.5 rounded-xl bg-sky-50/60 border border-sky-200 text-[11px] text-sky-950 space-y-0.5">
+          <div className="p-2.5 rounded-xl bg-sky-50/60 border border-sky-200 text-[11px] text-sky-950 space-y-1">
             <span className="font-bold text-sky-900 block">
               ⚖️ Resmi Kantar Tonajı Esası:
             </span>
             <p>
               Kömür torbalarının takribi 25 kg ağırlıkta olması sebebiyle bu tutanakta yer alan tonaj miktarı <strong>o gün sahaya intikal eden fiili kantar/tır tonajı ({displayGelenTonaj} Ton)</strong> olarak esas alınmıştır; verilen kişi sayısına göre tonaj hesaplanmamıştır.
             </p>
+            {routeGelenTonajNum > 0 && toplamTorba > 0 && (() => {
+              const beklenenTorba = Math.round((routeGelenTonajNum * 1000) / 25);
+              const ortKg = ((routeGelenTonajNum * 1000) / toplamTorba).toFixed(2);
+              const artanTorba = toplamTorba > beklenenTorba ? toplamTorba - beklenenTorba : 0;
+              const acikTorba = toplamTorba < beklenenTorba ? beklenenTorba - toplamTorba : 0;
+              return (
+                <p className="text-[10px] text-sky-900 pt-1 border-t border-sky-200/80">
+                  📊 <strong>Torba Ağırlık Özeti:</strong> 25 kg Standart Beklenen: <strong>{beklenenTorba} Torba</strong> • Fiilen Dağıtılan: <strong>{toplamTorba} Torba</strong> (Resmi 34T=850kg Kabul: <strong>{(toplamTorba * 0.025).toFixed(2)} Ton</strong>) • Ort. Torba Ağırlığı: <strong>{ortKg} kg/torba</strong>
+                  {artanTorba > 0 && <span> • <strong>Artan Torba: +{artanTorba} Torba (+{(artanTorba / 34).toFixed(2)} Hane)</strong></span>}
+                  {acikTorba > 0 && <span> • <strong>Açık Torba: -{acikTorba} Torba (-{(acikTorba / 34).toFixed(2)} Hane)</strong></span>}
+                </p>
+              );
+            })()}
           </div>
 
           {printRoute.kapanis_notu && (

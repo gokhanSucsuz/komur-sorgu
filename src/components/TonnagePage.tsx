@@ -46,6 +46,7 @@ export default function TonnagePage({
   const [errorMsg, setErrorMsg] = useState('');
   const [mainViewMode, setMainViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
   const [reportFormat, setReportFormat] = useState<'TESELLUM' | 'TKI'>('TESELLUM');
+  const [showDailyBagTable, setShowDailyBagTable] = useState<boolean>(true);
 
   // Tonnage Report Templates State (Format 1 & Format 2 customization)
   const [tonnageTemplates, setTonnageTemplates] = useState<TonnageReportTemplates>(() =>
@@ -951,6 +952,137 @@ export default function TonnagePage({
           )}
         </div>
       </div>
+
+      {/* GÜN GÜN GELEN TONAJ, DAĞITILAN TORBA, ARTAN (<25 KG) / AÇIK (>25 KG) TORBA ANALİZ CETVELİ */}
+      {Array.isArray(stats?.dailyBagTonnageRows) && stats.dailyBagTonnageRows.length > 0 && (
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                <Scale className="w-4 h-4 text-purple-600" />
+                <span>Gün Gün Gelen Tonaj, Dağıtılan Torba, Artan / Açık Torba ve Ortalama Ağırlık Analizi ({stats.dailyBagTonnageRows.length} Gün)</span>
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz (Gelen Tonaj = Fiili Dağıtılan Tonaj). Torbaların 25 kg altında (&lt;25 kg) gelmesiyle oluşan <strong>Artan Torba</strong> ve 25 kg üzerinde (&gt;25 kg) gelmesiyle oluşan <strong>Açık Torba</strong> gün gün aşağıda listelenir.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDailyBagTable((prev) => !prev)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-300 transition-colors"
+            >
+              {showDailyBagTable ? 'Tabloyu Daralt' : 'Günlük Tabloyu Göster'}
+            </button>
+          </div>
+
+          {showDailyBagTable && (
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[11px] uppercase">
+                    <th className="py-2 px-3 font-bold">Tarih</th>
+                    <th className="py-2 px-3 font-bold text-center">Gelen Net Tonaj</th>
+                    <th className="py-2 px-3 font-bold text-center">Fiili Dağıtılan Tonaj</th>
+                    <th className="py-2 px-3 font-bold text-center">25 kg Standart Beklenen</th>
+                    <th className="py-2 px-3 font-bold text-center">Fiilen Dağıtılan</th>
+                    <th className="py-2 px-3 font-bold text-center">Ort. Torba &amp; Hane Ağırlığı</th>
+                    <th className="py-2 px-3 font-bold text-center">Artan Torba (&lt;25 kg)</th>
+                    <th className="py-2 px-3 font-bold text-center">Açık Torba (&gt;25 kg)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stats.dailyBagTonnageRows.map((d: any) => (
+                    <tr key={d.gun} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {formatDottedTrDate(d.gun)}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.gelenNetTonaj > 0 ? (
+                          <div>
+                            <span className="font-bold text-amber-900">{d.gelenNetTonaj} Ton</span>
+                            <span className="text-[10px] text-slate-500 block">
+                              ({(d.gelenNetKg || Math.round(d.gelenNetTonaj * 1000)).toLocaleString('tr-TR')} kg • {d.tirSayisi || 1} Tır)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Stoktan / Tır Yok</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.fiiliDagitilanTonaj > 0 ? (
+                          <div>
+                            <span className="font-black text-emerald-800">{d.fiiliDagitilanTonaj} Ton</span>
+                            <span className="text-[10px] text-emerald-700 block">Gelen Tonaj Dağıtıldı</span>
+                          </div>
+                        ) : d.fiiliDagitilanTorba > 0 ? (
+                          <div>
+                            <span className="font-bold text-slate-700">{d.resmiKabulTonaj} Ton</span>
+                            <span className="text-[10px] text-slate-500 block">Stoktan / Resmi Kabul</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">0 Ton</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.beklenenStandartTorba > 0 ? (
+                          <div>
+                            <span className="font-bold text-slate-800">{d.beklenenStandartTorba} Torba</span>
+                            <span className="text-[10px] text-slate-500 block">~{d.beklenenStandartHane} Hane</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.fiiliDagitilanTorba > 0 ? (
+                          <div>
+                            <span className="font-black text-emerald-700">{d.fiiliDagitilanTorba} Torba</span>
+                            <span className="text-[10px] text-slate-600 font-semibold block">
+                              {d.teslimEdilenHane} Hane (Kabul: {d.resmiKabulTonaj} T)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">0 Torba</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.ortalamaTorbaKg > 0 ? (
+                          <div>
+                            <span className="font-bold text-sky-900">{d.ortalamaTorbaKg} kg / Torba</span>
+                            <span className="text-[10px] text-sky-700 block">
+                              34T = ~{d.ortalamaHaneKg} kg (Kabul: 850 kg)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Standart (~25 kg)</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.artanTorba > 0 ? (
+                          <span className="inline-block px-2 py-0.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 font-black">
+                            +{d.artanTorba} Torba (+{d.artanHaneKesirli} Hane)
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {d.acikTorba > 0 ? (
+                          <span className="inline-block px-2 py-0.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 font-black">
+                            -{d.acikTorba} Torba (-{d.acikHaneKesirli} Hane)
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* ARA / BUL / FİLTRELE PANELİ (%100 TÜRKÇE KARAKTER UYUMLU) */}

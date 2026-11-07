@@ -210,10 +210,27 @@ export async function GET(request: NextRequest) {
       return tA - tB;
     });
 
-    // 4. Günlük gruplama (Yalnızca o güne ait ilk teslimatları teslimatSayisi ve toplamTorba'ya dahil et; gelen tonajı bağla)
+    // 4. Günlük gruplama (Yalnızca o güne ait ilk teslimatları teslimatSayisi ve toplamTorba'ya dahil et; gelen tonajı ve torba ağırlık farklarını bağla)
     const groupedDaysMap = new Map<
       string,
-      { gun_tarihi: string; items: any[]; toplamTorba: number; teslimatSayisi: number; iptalSayisi: number; gelen_tonaj: number }
+      {
+        gun_tarihi: string;
+        items: any[];
+        toplamTorba: number;
+        teslimatSayisi: number;
+        iptalSayisi: number;
+        gelen_tonaj: number;
+        fiili_dagitilan_tonaj?: number;
+        resmi_kabul_tonaj?: number;
+        beklenen_standart_torba?: number;
+        beklenen_standart_hane?: number;
+        ortalama_torba_kg?: number;
+        ortalama_hane_kg?: number;
+        artan_torba?: number;
+        artan_hane_kesirli?: number;
+        acik_torba?: number;
+        acik_hane_kesirli?: number;
+      }
     >();
 
     for (const item of records) {
@@ -243,7 +260,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const groupedDays = Array.from(groupedDaysMap.values());
+    const groupedDays = Array.from(groupedDaysMap.values()).map((dg) => {
+      const gelenTon = Number(dg.gelen_tonaj || 0);
+      const resmiTon = parseFloat((dg.toplamTorba * 0.025).toFixed(2));
+      const fiiliTon = gelenTon > 0 ? gelenTon : resmiTon;
+      const beklenenTorba = gelenTon > 0 ? Math.round((gelenTon * 1000) / 25) : 0;
+      const beklenenHane = beklenenTorba > 0 ? parseFloat((beklenenTorba / 34).toFixed(2)) : 0;
+      const ortTorbaKg =
+        gelenTon > 0 && dg.toplamTorba > 0
+          ? parseFloat(((gelenTon * 1000) / dg.toplamTorba).toFixed(2))
+          : 0;
+      const ortHaneKg = ortTorbaKg > 0 ? Math.round(ortTorbaKg * 34) : 850;
+      const artanTorba =
+        gelenTon > 0 && dg.toplamTorba > beklenenTorba ? dg.toplamTorba - beklenenTorba : 0;
+      const acikTorba =
+        gelenTon > 0 && dg.toplamTorba > 0 && dg.toplamTorba < beklenenTorba
+          ? beklenenTorba - dg.toplamTorba
+          : 0;
+
+      return {
+        ...dg,
+        fiili_dagitilan_tonaj: fiiliTon,
+        resmi_kabul_tonaj: resmiTon,
+        beklenen_standart_torba: beklenenTorba,
+        beklenen_standart_hane: beklenenHane,
+        ortalama_torba_kg: ortTorbaKg,
+        ortalama_hane_kg: ortHaneKg,
+        artan_torba: artanTorba,
+        artan_hane_kesirli: artanTorba > 0 ? parseFloat((artanTorba / 34).toFixed(2)) : 0,
+        acik_torba: acikTorba,
+        acik_hane_kesirli: acikTorba > 0 ? parseFloat((acikTorba / 34).toFixed(2)) : 0,
+      };
+    });
 
     // 5. Genel Özet İstatistikleri (Tüm Geçmiş Üzerinden - İptaller ve İmzası Geri Alınanlar Düşülmüş, İlk Teslimat Bazlı)
     const { nowEnCa: localToday } = getIstanbulDate();
@@ -275,6 +323,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const toplamResmiKabulTonaj = parseFloat((toplamTorbaSayisi * 0.025).toFixed(2));
+    const toplamGelenTonajAllDays = Array.from(trucksByDate.values()).reduce((a, b) => a + b, 0);
+    const toplamFiiliTonaj =
+      toplamGelenTonajAllDays > 0
+        ? parseFloat(Math.min(toplamGelenTonajAllDays, toplamResmiKabulTonaj).toFixed(2))
+        : toplamResmiKabulTonaj;
+    const toplamArtanTorba = groupedDays.reduce((acc, g) => acc + (g.artan_torba || 0), 0);
+    const toplamAcikTorba = groupedDays.reduce((acc, g) => acc + (g.acik_torba || 0), 0);
+
     return NextResponse.json({
       success: true,
       records,
@@ -282,6 +339,10 @@ export async function GET(request: NextRequest) {
       stats: {
         toplamTeslimatSayisi,
         toplamTorbaSayisi,
+        toplamFiiliTonaj,
+        toplamResmiKabulTonaj,
+        toplamArtanTorba,
+        toplamAcikTorba,
         toplamIptalSayisi,
         bugunTeslimatSayisi,
         bugunTorbaSayisi,
