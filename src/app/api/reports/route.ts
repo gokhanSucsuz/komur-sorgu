@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs } from '@/lib/mongodb';
-import { getRecordStreetInfo, normalizeToTon, normalizeStaffName, calculateCoalStockMetrics, isBeneficiaryCancelled } from '@/lib/normalizer';
+import {
+  getRecordStreetInfo,
+  normalizeToTon,
+  normalizeStaffName,
+  calculateCoalStockMetrics,
+  calculateDailyAndOverallBagTonnageStats,
+  isBeneficiaryCancelled,
+} from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { decryptField, isEncrypted } from '@/lib/crypto';
 
@@ -80,13 +87,13 @@ export async function GET(request: NextRequest) {
     const ekKomurVerilenTonaj = parseFloat((ekKomurVerilenTorba * 0.025).toFixed(3));
 
     const eksikTorba = Math.max(0, hedefTorba - dagitilanTorba);
-    const dagitilanTonaj = parseFloat((dagitilanTorba * 0.025).toFixed(3));
+    const resmiKabulTonaj = parseFloat((dagitilanTorba * 0.025).toFixed(3));
     const hedefTonaj = parseFloat((hedefTorba * 0.025).toFixed(3));
     const eksikTonaj = parseFloat((eksikTorba * 0.025).toFixed(3));
     const tamamlamaYuzdesi =
       hedefTorba > 0 ? parseFloat(((dagitilanTorba / hedefTorba) * 100).toFixed(1)) : 0;
 
-    // 3. Deliveries within Date Range
+    // 3. Deliveries & Trucks within Date Range
     const histFilter: any = {};
     if (startDate) histFilter.gun_tarihi = { ...(histFilter.gun_tarihi || {}), $gte: startDate };
     if (endDate) histFilter.gun_tarihi = { ...(histFilter.gun_tarihi || {}), $lte: endDate };
@@ -99,37 +106,59 @@ export async function GET(request: NextRequest) {
 
     const deliveries = mapDocs(rawDeliveries);
 
+    const rawAllTrucks = await trucksCol
+      .find({})
+      .sort({ tarih: -1, tir_sirasi: -1 })
+      .toArray();
+    const allTrucks = mapDocs(rawAllTrucks);
+    const trucks = allTrucks.filter((t: any) => {
+      if (startDate && t.tarih < startDate) return false;
+      if (endDate && t.tarih > endDate) return false;
+      return true;
+    });
+
+    // Gün gün ve genel toplam tonaj / torba / artan-açık torba analizi
+    const overallBagTonnageStats = calculateDailyAndOverallBagTonnageStats({
+      trucks: allTrucks,
+      beneficiaries: allBeneficiaries,
+      deliveries,
+      quotaBagsPerHousehold: varsayilanHedefTorba,
+      bagWeightTon: 0.025,
+    });
+
+    const periodBagTonnageStats = calculateDailyAndOverallBagTonnageStats({
+      trucks: allTrucks,
+      beneficiaries: filteredBeneficiaries,
+      deliveries,
+      quotaBagsPerHousehold: varsayilanHedefTorba,
+      bagWeightTon: 0.025,
+      startDate,
+      endDate,
+    });
+
+    // KURAL: Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz; tonaj değişmez!
+    const isMahalleFiltered = Boolean(mahalle && mahalle !== 'HEPSI');
+    const dagitilanTonaj =
+      !isMahalleFiltered && overallBagTonnageStats.totals.toplamGelenNetTonaj > 0
+        ? overallBagTonnageStats.totals.toplamFiiliDagitilanTonaj
+        : resmiKabulTonaj;
+
     // Date range stats
-    // Esas teslimat (hane) sayısına yalnızca ilk teslimatlar dahil edilir; sonradan yapılan eksik tamamlamalar mükerrer hane sayılmaz.
-    const donemTeslimatSayisi = deliveries.filter(
-      (d) => d.islem_tipi === 'TESLIMAT' && !d.is_eksik_tamamlama
-    ).length;
-    const donemTorbaSayisi = deliveries
-      .filter((d) => d.islem_tipi === 'TESLIMAT' || d.islem_tipi === 'EKSIK_TAMAMLAMA')
-      .reduce((acc, curr) => acc + (curr.torba_sayisi || 0), 0);
-    const donemTonaj = parseFloat((donemTorbaSayisi * 0.025).toFixed(3));
+    const donemTeslimatSayisi =
+      periodBagTonnageStats.totals.toplamTeslimEdilenHane ||
+      deliveries.filter((d) => d.islem_tipi === 'TESLIMAT' && !d.is_eksik_tamamlama).length;
+    const donemTorbaSayisi =
+      periodBagTonnageStats.totals.toplamFiiliDagitilanTorba ||
+      deliveries
+        .filter((d) => d.islem_tipi === 'TESLIMAT' || d.islem_tipi === 'EKSIK_TAMAMLAMA')
+        .reduce((acc, curr) => acc + (curr.torba_sayisi || 0), 0);
+    const donemTonaj =
+      !isMahalleFiltered && periodBagTonnageStats.totals.toplamGelenNetTonaj > 0
+        ? periodBagTonnageStats.totals.toplamFiiliDagitilanTonaj
+        : parseFloat((donemTorbaSayisi * 0.025).toFixed(3));
     const donemIptalSayisi = deliveries.filter((d) => d.islem_tipi === 'IPTAL').length;
 
-    // Daily breakdown for date range
-    const dailyMap = new Map<string, { gun: string; torba: number; teslimat: number; iptal: number }>();
-    for (const d of deliveries) {
-      const g = d.gun_tarihi || 'Tarihsiz';
-      if (!dailyMap.has(g)) {
-        dailyMap.set(g, { gun: g, torba: 0, teslimat: 0, iptal: 0 });
-      }
-      const entry = dailyMap.get(g)!;
-      if (d.islem_tipi === 'TESLIMAT') {
-        entry.torba += d.torba_sayisi || 0;
-        if (!d.is_eksik_tamamlama) {
-          entry.teslimat += 1;
-        }
-      } else if (d.islem_tipi === 'EKSIK_TAMAMLAMA') {
-        entry.torba += d.torba_sayisi || 0;
-      } else if (d.islem_tipi === 'IPTAL') {
-        entry.iptal += 1;
-      }
-    }
-    const dailyBreakdown = Array.from(dailyMap.values()).sort((a, b) => b.gun.localeCompare(a.gun));
+    const dailyBreakdown = periodBagTonnageStats.dailyRows;
 
     // 4. Incomplete Households Detailed List (bellekte çözülmüş listeden, ek DB sorgusu yok)
     const eksikHaneler = filteredBeneficiaries
@@ -522,25 +551,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 8. Truck Arrivals in Date Range
-    const truckFilter: any = {};
-    if (startDate) truckFilter.tarih = { ...(truckFilter.tarih || {}), $gte: startDate };
-    if (endDate) truckFilter.tarih = { ...(truckFilter.tarih || {}), $lte: endDate };
-
-    const rawTrucks = await trucksCol
-      .find(truckFilter)
-      .sort({ tarih: -1, tir_sirasi: -1 })
-      .toArray();
-
-    const trucks = mapDocs(rawTrucks);
-
+    // 8. Truck Arrivals in Date Range & Overall Stock Metrics
     const toplamTirSayisi = trucks.length;
     const gelenNetTonaj = parseFloat(trucks.reduce((acc, t) => acc + normalizeToTon(t.net_tonaj), 0).toFixed(3));
     const gelenBrutTonaj = parseFloat(trucks.reduce((acc, t) => acc + normalizeToTon(t.brut_tonaj), 0).toFixed(3));
 
-    // Overall Remaining Stock (All trucks vs All deliveries)
-    const allAllTrucks = await trucksCol.find({}).toArray();
-    const sahadakiToplamGelenTon = allAllTrucks.reduce((acc: number, t: any) => acc + normalizeToTon(t.net_tonaj), 0);
+    const sahadakiToplamGelenTon = overallBagTonnageStats.totals.toplamGelenNetTonaj;
     const sahadakiToplamDagitilanBags = allBeneficiaries.reduce((acc: number, b: any) => acc + Number(b.torba_sayisi || 0), 0);
     const stockMetrics = calculateCoalStockMetrics(
       sahadakiToplamGelenTon,
@@ -548,11 +564,11 @@ export async function GET(request: NextRequest) {
       0.025,
       varsayilanHedefTorba
     );
-    const kalanStokTonaj = stockMetrics.kalanStokTonaj;
-    const fazlaDagitilanTonaj = stockMetrics.fazlaDagitilanTonaj;
-    const fazlaDagitilanKg = stockMetrics.fazlaDagitilanKg;
-    const fazlaDagitilanTorba = stockMetrics.fazlaDagitilanTorba;
-    const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
+    const kalanStokTonaj = overallBagTonnageStats.totals.toplamKalanStokTonaj;
+    const fazlaDagitilanTonaj = 0; // Tonaj değişmez; gelen tonajdan fazla tonaj dağıtılmaz!
+    const fazlaDagitilanKg = 0;
+    const fazlaDagitilanTorba = overallBagTonnageStats.totals.toplamArtanTorba || stockMetrics.artanTorba;
+    const fazlaDagitilanHane = overallBagTonnageStats.totals.toplamArtanHane || stockMetrics.artanHane;
 
     const tahsisDoc = await settingsCol.findOne({ key: 'toplam_tahsis_tonaj' });
     const toplamTahsisTonaj = tahsisDoc && tahsisDoc.value ? parseFloat(tahsisDoc.value) : 0;
@@ -668,6 +684,7 @@ export async function GET(request: NextRequest) {
           hedefTorba,
           eksikTorba,
           dagitilanTonaj,
+          resmiKabulTonaj,
           hedefTonaj,
           eksikTonaj,
           tamamlamaYuzdesi,
@@ -675,11 +692,27 @@ export async function GET(request: NextRequest) {
           ekKomurVerilenTorba,
           ekKomurVerilenTonaj,
           kalanStokTonaj,
+          beklenenStandartTorba: overallBagTonnageStats.totals.toplamBeklenenStandartTorba,
+          beklenenStandartHane: overallBagTonnageStats.totals.toplamBeklenenStandartHane,
+          beklenenTamHane: overallBagTonnageStats.totals.toplamBeklenenTamHane,
+          artanTorba: overallBagTonnageStats.totals.toplamArtanTorba,
+          artanHane: overallBagTonnageStats.totals.toplamArtanHane,
+          artanKalanTorba: overallBagTonnageStats.totals.toplamArtanKalanTorba,
+          artanHaneKesirli: overallBagTonnageStats.totals.toplamArtanHaneKesirli,
+          acikTorba: overallBagTonnageStats.totals.toplamAcikTorba,
+          acikHane: overallBagTonnageStats.totals.toplamAcikHane,
+          acikKalanTorba: overallBagTonnageStats.totals.toplamAcikKalanTorba,
+          acikHaneKesirli: overallBagTonnageStats.totals.toplamAcikHaneKesirli,
+          netTorbaFarki: overallBagTonnageStats.totals.netTorbaFarki,
+          netHaneFarkiKesirli: overallBagTonnageStats.totals.netHaneFarkiKesirli,
+          ortalamaTorbaKg: overallBagTonnageStats.totals.genelOrtalamaTorbaKg,
+          ortalamaHaneKg: overallBagTonnageStats.totals.genelOrtalamaHaneKg,
           fazlaDagitilanTonaj,
           fazlaDagitilanKg,
           fazlaDagitilanTorba,
           fazlaDagitilanHane,
-          hasFazlaDagitim: stockMetrics.hasFazlaDagitim,
+          hasFazlaDagitim: overallBagTonnageStats.totals.toplamArtanTorba > 0,
+          hasAcikDagitim: overallBagTonnageStats.totals.toplamAcikTorba > 0,
           toplamTahsisTonaj,
           kalanTahsisTonaj,
           tahsisTamamlanmaYuzdesi,
@@ -688,10 +721,26 @@ export async function GET(request: NextRequest) {
           donemTeslimatSayisi,
           donemTorbaSayisi,
           donemTonaj,
+          resmiKabulTonaj: periodBagTonnageStats.totals.toplamResmiKabulTonaj,
           donemIptalSayisi,
           toplamTirSayisi,
           gelenNetTonaj,
           gelenBrutTonaj,
+          beklenenStandartTorba: periodBagTonnageStats.totals.toplamBeklenenStandartTorba,
+          beklenenStandartHane: periodBagTonnageStats.totals.toplamBeklenenStandartHane,
+          beklenenTamHane: periodBagTonnageStats.totals.toplamBeklenenTamHane,
+          artanTorba: periodBagTonnageStats.totals.toplamArtanTorba,
+          artanHane: periodBagTonnageStats.totals.toplamArtanHane,
+          artanKalanTorba: periodBagTonnageStats.totals.toplamArtanKalanTorba,
+          artanHaneKesirli: periodBagTonnageStats.totals.toplamArtanHaneKesirli,
+          acikTorba: periodBagTonnageStats.totals.toplamAcikTorba,
+          acikHane: periodBagTonnageStats.totals.toplamAcikHane,
+          acikKalanTorba: periodBagTonnageStats.totals.toplamAcikKalanTorba,
+          acikHaneKesirli: periodBagTonnageStats.totals.toplamAcikHaneKesirli,
+          netTorbaFarki: periodBagTonnageStats.totals.netTorbaFarki,
+          netHaneFarkiKesirli: periodBagTonnageStats.totals.netHaneFarkiKesirli,
+          ortalamaTorbaKg: periodBagTonnageStats.totals.genelOrtalamaTorbaKg,
+          ortalamaHaneKg: periodBagTonnageStats.totals.genelOrtalamaHaneKg,
         },
         dailyBreakdown,
         eksikHaneler,

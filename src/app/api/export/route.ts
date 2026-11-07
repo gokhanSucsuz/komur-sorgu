@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { getDbCollections, mapDocs, recordActivityLog } from '@/lib/mongodb';
-import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress, isBeneficiaryCancelled } from '@/lib/normalizer';
+import { extractPhoneNumbers, compareBySiraNo, normalizeMahalleName, normalizeToTon, normalizeStaffName, formatTwoWayTonnage, formatTwoWayDiff, getBeneficiaryEffectiveListMahalle, formatSignatureListAddress, isBeneficiaryCancelled, calculateDailyAndOverallBagTonnageStats } from '@/lib/normalizer';
 import { formatTrDateWithDay, formatTrDate, formatTrTime, parseDateSafely, formatDottedTrDate } from '@/lib/dateUtils';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, getClientIp, checkRateLimit, rateLimitExceededResponse } from '@/lib/security';
@@ -2811,6 +2811,89 @@ export async function GET(request: NextRequest) {
           { wch: 16 },
         ]
       );
+
+      // A2) Gün Gün Gelen Tonaj, Dağıtılan Torba, Artan / Açık Torba ve Ortalama Ağırlık Analizi
+      const rawTrucksForAnalytics = await trucksCol.find({}).toArray();
+      const bagTonnageStats = calculateDailyAndOverallBagTonnageStats({
+        trucks: rawTrucksForAnalytics,
+        beneficiaries: records,
+        quotaBagsPerHousehold: 34,
+        bagWeightTon: 0.025,
+      });
+      if (bagTonnageStats.dailyRows.length > 0) {
+        const dailyAnalysisRows = bagTonnageStats.dailyRows.map((d, idx) => ({
+          'Sıra': idx + 1,
+          'Tarih': formatDottedTrDate(d.gun),
+          'Gelen Tır Sayısı': d.tirSayisi,
+          'Gelen Net Tonaj (Ton)': d.gelenNetTonaj,
+          'Gelen Net Ağırlık (Kg)': d.gelenNetKg,
+          'Fiili Dağıtılan Tonaj (Ton)': d.fiiliDagitilanTonaj,
+          '25 kg Standart Beklenen (Torba)': d.beklenenStandartTorba,
+          '25 kg Standart Beklenen (Hane)': d.beklenenStandartHane,
+          'Fiilen Dağıtılan (Torba)': d.fiiliDagitilanTorba,
+          'Teslimat Yapılan (Hane)': d.teslimEdilenHane,
+          'Resmi Kabul Karşılığı (34T=850kg Ton)': d.resmiKabulTonaj,
+          'Ortalama Torba Ağırlığı (Kg)': d.ortalamaTorbaKg > 0 ? `${d.ortalamaTorbaKg} kg` : 'Standart (~25 kg)',
+          '34 Torba Fiili Hane Ağırlığı (Kg)': d.ortalamaHaneKg > 0 ? `${d.ortalamaHaneKg} kg (Kabul: 850 kg)` : '850 kg',
+          'Artan Torba (<25 kg)': d.artanTorba > 0 ? `+${d.artanTorba} Torba (+${d.artanHaneKesirli} Hane)` : '-',
+          'Açık Torba (>25 kg)': d.acikTorba > 0 ? `-${d.acikTorba} Torba (-${d.acikHaneKesirli} Hane)` : '-',
+          'Durum Özeti': d.artanTorba > 0
+            ? `Artan Torba (+${d.artanTorba} T. / +${d.artanHaneKesirli} Hane)`
+            : d.acikTorba > 0
+            ? `Açık Torba (-${d.acikTorba} T. / -${d.acikHaneKesirli} Hane)`
+            : d.gelenNetTonaj > 0 && d.fiiliDagitilanTorba > 0
+            ? 'Tam Dengeli (25 kg/torba)'
+            : d.gelenNetTonaj > 0
+            ? 'Depo Girişi'
+            : 'Stoktan Dağıtım',
+        }));
+
+        const ov = bagTonnageStats.totals;
+        dailyAnalysisRows.push({
+          'Sıra': '' as any,
+          'Tarih': 'GENEL TOPLAM:',
+          'Gelen Tır Sayısı': ov.toplamTirSayisi,
+          'Gelen Net Tonaj (Ton)': ov.toplamGelenNetTonaj,
+          'Gelen Net Ağırlık (Kg)': ov.toplamGelenNetKg,
+          'Fiili Dağıtılan Tonaj (Ton)': ov.toplamFiiliDagitilanTonaj,
+          '25 kg Standart Beklenen (Torba)': ov.toplamBeklenenStandartTorba,
+          '25 kg Standart Beklenen (Hane)': ov.toplamBeklenenStandartHane,
+          'Fiilen Dağıtılan (Torba)': ov.toplamFiiliDagitilanTorba,
+          'Teslimat Yapılan (Hane)': ov.toplamTeslimEdilenHane,
+          'Resmi Kabul Karşılığı (34T=850kg Ton)': ov.toplamResmiKabulTonaj,
+          'Ortalama Torba Ağırlığı (Kg)': ov.genelOrtalamaTorbaKg > 0 ? `${ov.genelOrtalamaTorbaKg} kg` : '25 kg',
+          '34 Torba Fiili Hane Ağırlığı (Kg)': ov.genelOrtalamaHaneKg > 0 ? `${ov.genelOrtalamaHaneKg} kg (Kabul: 850 kg)` : '850 kg',
+          'Artan Torba (<25 kg)': ov.toplamArtanTorba > 0 ? `+${ov.toplamArtanTorba} Torba (+${ov.toplamArtanHaneKesirli} Hane)` : '0',
+          'Açık Torba (>25 kg)': ov.toplamAcikTorba > 0 ? `-${ov.toplamAcikTorba} Torba (-${ov.toplamAcikHaneKesirli} Hane)` : '0',
+          'Durum Özeti': `Net Torba Farkı: ${ov.netTorbaFarki >= 0 ? `+${ov.netTorbaFarki}` : ov.netTorbaFarki} Torba`,
+        });
+
+        addStyledWorksheet(
+          workbook,
+          'GÜN GÜN GELEN TONAJ, DAĞITILAN TORBA, ARTAN / AÇIK TORBA VE ORTALAMA AĞIRLIK CETVELİ',
+          `Gelen Net: ${ov.toplamGelenNetTonaj} Ton | Fiili Dağıtılan: ${ov.toplamFiiliDagitilanTonaj} Ton (Resmi Kabul: ${ov.toplamResmiKabulTonaj} Ton) | Artan: +${ov.toplamArtanTorba} Torba | Açık: -${ov.toplamAcikTorba} Torba | Ort. Torba: ${ov.genelOrtalamaTorbaKg || 25} kg`,
+          sanitizeSheetName('Günlük Tonaj ve Torba Analizi', seenSheetNames),
+          dailyAnalysisRows,
+          [
+            { wch: 6 },
+            { wch: 14 },
+            { wch: 16 },
+            { wch: 20 },
+            { wch: 20 },
+            { wch: 22 },
+            { wch: 24 },
+            { wch: 24 },
+            { wch: 22 },
+            { wch: 20 },
+            { wch: 26 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 26 },
+            { wch: 26 },
+            { wch: 30 },
+          ]
+        );
+      }
 
       if (eksikList.length > 0) {
         const eksikRows = eksikList.map((h: any, idx: number) => {

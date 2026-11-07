@@ -2,7 +2,7 @@
  * Address & Data Normalization Utilities for Turkish Coal Distribution System
  */
 
-import { replaceYmdWithDdmmyyyy } from './dateUtils';
+import { replaceYmdWithDdmmyyyy, extractDateYmd } from './dateUtils';
 
 export function cleanTurkishText(text: string | null | undefined): string {
   if (!text) return '';
@@ -2050,67 +2050,711 @@ export function extractUniquePersonnelList(
 }
 
 /**
- * Kömür Saha Stoku ve Tolerans Metrikleri Arayüzü
+ * Kömür Saha Stoku ve Torba Ağırlık Farkı (Artan / Açık Torba) Metrikleri Arayüzü
  */
 export interface CoalStockMetrics {
-  toplamNetTonaj: number;      // Sahaya gelen net kantar tonajı (Ton)
-  dagitilanNetTonaj: number;   // Standart kabul ile vatandaşa dağıtılan kömür tonajı (Ton)
-  kalanStokTonaj: number;      // Sahada kalan güncel stok tonajı (asla eksiye düşmez, min: 0)
-  fazlaDagitilanTonaj: number; // Standart dışı torba ağırlığı nedeniyle fazladan dağıtılan tonaj (Ton)
-  fazlaDagitilanKg: number;    // Fazladan dağıtılan miktar (kg)
-  fazlaDagitilanTorba: number; // Fazladan dağıtılan eşdeğer torba sayısı (adet)
-  fazlaDagitilanHane: number;  // Yaklaşık fazladan kömür verilen hak sahibi / hane sayısı
-  hasFazlaDagitim: boolean;    // Fazla dağıtım var mı (stok tükendi ve dağıtım devam etti)
+  toplamNetTonaj: number;          // Sahaya gelen net kantar tonajı (Ton)
+  dagitilanNetTonaj: number;       // Fiilen dağıtılan gerçek kömür tonajı (Ton - Gelen tonajı ASLA aşmaz; tonaj değişmez!)
+  resmiKabulTonaj: number;         // 34 torba = 850 kg (1 torba = 25 kg) resmi hak sahipliği kabulü tonaj karşılığı (Ton)
+  kalanStokTonaj: number;          // Sahada kalan güncel stok tonajı (asla eksiye düşmez, min: 0)
+  beklenenStandartTorba: number;   // Gelen tonajdan 25 kg/torba hesabıyla çıkması beklenen standart torba sayısı
+  beklenenStandartHane: number;    // Gelen tonajdan 850 kg (34 torba) hesabıyla beklenen hane kapasitesi (ondalıklı)
+  beklenenTamHane: number;         // Gelen tonajdan beklenen tam hane kapasitesi
+  fiiliDagitilanTorba: number;     // Vatandaşa fiilen teslim edilen toplam torba sayısı
+  torbaFarki: number;              // Fiili Torba - Beklenen Torba (+ ise artan torba, - ise açık torba)
+  artanTorba: number;              // Torbaların < 25 kg gelmesi nedeniyle artan (fazla çıkan) torba sayısı
+  artanHane: number;               // Artan torbanın tam hane karşılığı (34 torba = 1 hane)
+  artanKalanTorba: number;         // Artan tam haneden arta kalan torba sayısı (artanTorba % 34)
+  artanHaneKesirli: number;        // Artan torbanın ondalıklı hane karşılığı (örn: 2.76 hane)
+  acikTorba: number;               // Torbaların > 25 kg gelmesi nedeniyle açık (eksik çıkan) torba sayısı
+  acikHane: number;                // Açık torbanın tam hane karşılığı
+  acikKalanTorba: number;          // Açık tam haneden arta kalan torba sayısı (acikTorba % 34)
+  acikHaneKesirli: number;         // Açık torbanın ondalıklı hane karşılığı (örn: 1.82 hane)
+  ortalamaTorbaKg: number;         // Dağıtılan kömürde 1 torbanın ortalama gerçek ağırlığı (kg)
+  ortalamaHaneKg: number;          // 34 torba alan 1 haneye giden ortalama gerçek kömür ağırlığı (kg - Resmi kabul: 850 kg)
+  fazlaDagitilanTonaj: number;     // Geriye dönük uyumluluk: Tonaj değişmediği için 0 (gelen tonajdan fazla tonaj dağıtılmaz)
+  fazlaDagitilanKg: number;        // Geriye dönük uyumluluk: 0
+  fazlaDagitilanTorba: number;     // Artan (fazla çıkan) torba sayısı (= artanTorba)
+  fazlaDagitilanHane: number;      // Artan (fazla çıkan) tam hane sayısı (= artanHane)
+  hasFazlaDagitim: boolean;        // Artan torba var mı (artanTorba > 0)
+  hasAcikDagitim: boolean;         // Torba açığı var mı (acikTorba > 0)
 }
 
 /**
- * Kömür Saha Stoku ve Torba Toleransı Hesaplayıcısı.
- * 
- * Bazı kömür torbaları standart ağırlıkta (örneğin 25 kg) olmayıp tolerans farkıyla daha hafif gelebilir.
- * Bu nedenle örneğin 100 kişilik kömür geldiğinde bu fiilen 102 kişiye verilebilir.
- * Sistemde standart torba ağırlığı (0.025 ton) kabul edildiğinde, sahada kantar tonajı tükendiğinde
- * stok eksiye düşürülmez (0 olarak sabitlenir); eksiye düşecek miktar ton, kg, torba sayısı ve 
- * hane eşdeğeri olarak "Fazladan Kömür Verilmiş" şeklinde kayıtlara işlenir.
+ * Kömür Saha Stoku ve Torba Ağırlık Farkı (Artan / Açık Torba) Hesaplayıcısı.
+ *
+ * KURAL:
+ * 1) Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz; tonaj değişmez, gelen tonaj ne ise o dağıtılır.
+ * 2) Her bir vatandaşa 34 torba teslim edildiğinde resmiyette 850 kg (1 torba = 25 kg) teslim edilmiş kabul edilir.
+ * 3) Kömür torbalarının 25 kg'dan hafif gelmesi durumunda aynı tonajdan daha fazla torba ("Artan Torba") çıkar
+ *    ve daha fazla haneye teslimat yapılır.
+ * 4) Kömür torbalarının 25 kg'dan ağır gelmesi durumunda ise beklenen torba sayısına göre "Torba Açığı" oluşur.
  */
 export function calculateCoalStockMetrics(
   incomingNetTonaj: number | string | null | undefined,
   distributedBags: number | string | null | undefined,
   bagWeightTon: number = 0.025,
-  quotaBagsPerHousehold: number = 34
+  quotaBagsPerHousehold: number = 34,
+  isAllCoalDistributed: boolean = false
 ): CoalStockMetrics {
   const normIncoming = parseFloat(normalizeToTon(incomingNetTonaj).toFixed(3));
+  const incomingKg = Math.round(normIncoming * 1000);
+  const bagWeightKg = Math.round((bagWeightTon > 0 ? bagWeightTon : 0.025) * 1000) || 25;
+  const householdQuota = quotaBagsPerHousehold > 0 ? quotaBagsPerHousehold : 34;
+
+  const beklenenStandartTorba = normIncoming > 0 ? Math.round(incomingKg / bagWeightKg) : 0;
+  const beklenenStandartHane =
+    beklenenStandartTorba > 0 ? parseFloat((beklenenStandartTorba / householdQuota).toFixed(2)) : 0;
+  const beklenenTamHane =
+    beklenenStandartTorba > 0 ? Math.floor(beklenenStandartTorba / householdQuota) : 0;
+
   const bags = Math.max(0, parseInt(String(distributedBags || 0), 10) || 0);
-  const dagitilanNetTonaj = parseFloat((bags * bagWeightTon).toFixed(3));
-  const rawDiff = parseFloat((normIncoming - dagitilanNetTonaj).toFixed(3));
+  const resmiKabulTonaj = parseFloat((bags * bagWeightTon).toFixed(3));
 
-  if (rawDiff < 0) {
-    const fazlaTon = parseFloat(Math.abs(rawDiff).toFixed(3));
-    const fazlaKg = Math.round(fazlaTon * 1000);
-    const fazlaTorba = bagWeightTon > 0 ? Math.round(fazlaTon / bagWeightTon) : 0;
-    const householdQuota = quotaBagsPerHousehold > 0 ? quotaBagsPerHousehold : 34;
-    const fazlaHane = Math.floor(fazlaTorba / householdQuota);
-
+  // DURUM 1: Tır girişi henüz yapılmamış (0 ton) ancak torba dağıtımı var
+  if (normIncoming <= 0) {
+    const artanTorba = bags;
+    const artanHane = Math.floor(artanTorba / householdQuota);
+    const artanKalanTorba = artanTorba % householdQuota;
+    const artanHaneKesirli = parseFloat((artanTorba / householdQuota).toFixed(2));
     return {
-      toplamNetTonaj: normIncoming,
-      dagitilanNetTonaj,
+      toplamNetTonaj: 0,
+      dagitilanNetTonaj: resmiKabulTonaj,
+      resmiKabulTonaj,
       kalanStokTonaj: 0,
-      fazlaDagitilanTonaj: fazlaTon,
-      fazlaDagitilanKg: fazlaKg,
-      fazlaDagitilanTorba: fazlaTorba,
-      fazlaDagitilanHane: fazlaHane,
-      hasFazlaDagitim: true,
+      beklenenStandartTorba: 0,
+      beklenenStandartHane: 0,
+      beklenenTamHane: 0,
+      fiiliDagitilanTorba: bags,
+      torbaFarki: artanTorba,
+      artanTorba,
+      artanHane,
+      artanKalanTorba,
+      artanHaneKesirli,
+      acikTorba: 0,
+      acikHane: 0,
+      acikKalanTorba: 0,
+      acikHaneKesirli: 0,
+      ortalamaTorbaKg: bagWeightKg,
+      ortalamaHaneKg: householdQuota * bagWeightKg,
+      fazlaDagitilanTonaj: 0,
+      fazlaDagitilanKg: 0,
+      fazlaDagitilanTorba: artanTorba,
+      fazlaDagitilanHane: artanHane,
+      hasFazlaDagitim: artanTorba > 0,
+      hasAcikDagitim: false,
     };
   }
 
+  // DURUM 2: Torbalar < 25 kg geldiği için beklenen standart torbadan DAHA FAZLA torba çıktı (Artan Torba)
+  if (bags > beklenenStandartTorba) {
+    const artanTorba = bags - beklenenStandartTorba;
+    const artanHane = Math.floor(artanTorba / householdQuota);
+    const artanKalanTorba = artanTorba % householdQuota;
+    const artanHaneKesirli = parseFloat((artanTorba / householdQuota).toFixed(2));
+    const ortalamaTorbaKg = parseFloat((incomingKg / bags).toFixed(2));
+    const ortalamaHaneKg = Math.round((incomingKg / bags) * householdQuota);
+
+    return {
+      toplamNetTonaj: normIncoming,
+      // KURAL: Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz; tonaj değişmez!
+      dagitilanNetTonaj: normIncoming,
+      resmiKabulTonaj,
+      kalanStokTonaj: 0,
+      beklenenStandartTorba,
+      beklenenStandartHane,
+      beklenenTamHane,
+      fiiliDagitilanTorba: bags,
+      torbaFarki: artanTorba,
+      artanTorba,
+      artanHane,
+      artanKalanTorba,
+      artanHaneKesirli,
+      acikTorba: 0,
+      acikHane: 0,
+      acikKalanTorba: 0,
+      acikHaneKesirli: 0,
+      ortalamaTorbaKg,
+      ortalamaHaneKg,
+      fazlaDagitilanTonaj: 0,
+      fazlaDagitilanKg: 0,
+      fazlaDagitilanTorba: artanTorba,
+      fazlaDagitilanHane: artanHane,
+      hasFazlaDagitim: true,
+      hasAcikDagitim: false,
+    };
+  }
+
+  // DURUM 3: Kömürün tamamı dağıtıldı ve torbalar > 25 kg geldiği için beklenen torbadan AZ çıktı (Torba Açığı)
+  if (isAllCoalDistributed && bags > 0 && bags < beklenenStandartTorba) {
+    const acikTorba = beklenenStandartTorba - bags;
+    const acikHane = Math.floor(acikTorba / householdQuota);
+    const acikKalanTorba = acikTorba % householdQuota;
+    const acikHaneKesirli = parseFloat((acikTorba / householdQuota).toFixed(2));
+    const ortalamaTorbaKg = parseFloat((incomingKg / bags).toFixed(2));
+    const ortalamaHaneKg = Math.round((incomingKg / bags) * householdQuota);
+
+    return {
+      toplamNetTonaj: normIncoming,
+      // KURAL: Gelen tonajın tamamı dağıtılmıştır; tonaj değişmez!
+      dagitilanNetTonaj: normIncoming,
+      resmiKabulTonaj,
+      kalanStokTonaj: 0,
+      beklenenStandartTorba,
+      beklenenStandartHane,
+      beklenenTamHane,
+      fiiliDagitilanTorba: bags,
+      torbaFarki: -acikTorba,
+      artanTorba: 0,
+      artanHane: 0,
+      artanKalanTorba: 0,
+      artanHaneKesirli: 0,
+      acikTorba,
+      acikHane,
+      acikKalanTorba,
+      acikHaneKesirli,
+      ortalamaTorbaKg,
+      ortalamaHaneKg,
+      fazlaDagitilanTonaj: 0,
+      fazlaDagitilanKg: 0,
+      fazlaDagitilanTorba: 0,
+      fazlaDagitilanHane: 0,
+      hasFazlaDagitim: false,
+      hasAcikDagitim: true,
+    };
+  }
+
+  // DURUM 4: Tam eşitlik (bags === beklenenStandartTorba) veya sahada/depoda henüz dağıtılmamış stok mevcut
+  const kalanStokTonaj = parseFloat(Math.max(0, normIncoming - resmiKabulTonaj).toFixed(3));
   return {
     toplamNetTonaj: normIncoming,
-    dagitilanNetTonaj,
-    kalanStokTonaj: rawDiff,
+    dagitilanNetTonaj: bags === beklenenStandartTorba ? normIncoming : resmiKabulTonaj,
+    resmiKabulTonaj,
+    kalanStokTonaj,
+    beklenenStandartTorba,
+    beklenenStandartHane,
+    beklenenTamHane,
+    fiiliDagitilanTorba: bags,
+    torbaFarki: 0,
+    artanTorba: 0,
+    artanHane: 0,
+    artanKalanTorba: 0,
+    artanHaneKesirli: 0,
+    acikTorba: 0,
+    acikHane: 0,
+    acikKalanTorba: 0,
+    acikHaneKesirli: 0,
+    ortalamaTorbaKg: bagWeightKg,
+    ortalamaHaneKg: householdQuota * bagWeightKg,
     fazlaDagitilanTonaj: 0,
     fazlaDagitilanKg: 0,
     fazlaDagitilanTorba: 0,
     fazlaDagitilanHane: 0,
     hasFazlaDagitim: false,
+    hasAcikDagitim: false,
+  };
+}
+
+/**
+ * Gün Gün Gelen Tonaj, Dağıtılan Torba, Artan / Açık Torba ve Ortalama Ağırlık Satırı
+ */
+export interface DailyBagTonnageRow {
+  gun: string;                      // YYYY-MM-DD (örn: '2026-11-06')
+  tirSayisi: number;                // O gün gelen tır sayısı
+  gelenNetTonaj: number;            // O gün gelen kantar net tonajı (Ton)
+  gelenNetKg: number;               // O gün gelen kantar net ağırlığı (kg)
+  gelenBrutTonaj: number;           // O gün gelen brüt tonaj (Ton)
+  fiiliDagitilanTonaj: number;      // O gün dağıtılan gerçek kömür tonajı (Ton - Gelen tonaj değişmez!)
+  resmiKabulTonaj: number;          // 34 torba = 850 kg (25 kg/torba) resmi hak sahipliği kabul tonajı (Ton)
+  kalanStokTonaj: number;           // O gün hiç dağıtım yapılmadıysa bekleyen stok tonajı (Ton)
+  beklenenStandartTorba: number;    // Gelen tonajdan 25 kg/torba hesabıyla çıkması beklenen torba sayısı
+  beklenenStandartHane: number;     // Gelen tonajdan 850 kg (34 torba) hesabıyla beklenen hane sayısı (ondalıklı)
+  beklenenTamHane: number;          // Beklenen tam hane kapasitesi
+  beklenenKalanTorba: number;       // Beklenen tam haneden arta kalan torba
+  fiiliDagitilanTorba: number;      // O gün fiilen teslim edilen torba sayısı
+  teslimEdilenHane: number;         // O gün ilk teslimatı yapılan hane sayısı
+  tamTeslimHane: number;            // O gün tam teslim edilen hane sayısı
+  eksikTeslimHane: number;          // O gün eksik kalan hane sayısı
+  sonradanTamamlananTorba: number;  // Önceki günden devredip o gün tamamlanan torba sayısı
+  iptalIslemSayisi: number;         // O gün yapılan iptal işlem sayısı
+  ortalamaTorbaKg: number;          // 1 torbanın ortalama gerçek ağırlığı (kg, örn: 23.03 kg veya 26.50 kg)
+  ortalamaHaneKg: number;           // 34 torba alan 1 haneye giden ortalama fiili kömür (kg - Resmi kabul: 850 kg)
+  torbaAgirlikFarkiKg: number;      // Ortalama torba ağırlığının 25 kg'dan farkı (kg)
+  torbaFarki: number;               // Fiili Dağıtılan Torba - Beklenen Standart Torba (+ ise Artan, - ise Açık)
+  artanTorba: number;               // Torbaların < 25 kg olması nedeniyle artan (fazla çıkan) torba sayısı
+  artanHane: number;                // Artan torbanın tam hane karşılığı
+  artanKalanTorba: number;          // Artan tam haneden kalan torba
+  artanHaneKesirli: number;         // Artan torbanın ondalıklı hane karşılığı
+  acikTorba: number;                // Torbaların > 25 kg olması nedeniyle açık (eksik çıkan) torba sayısı
+  acikHane: number;                 // Açık torbanın tam hane karşılığı
+  acikKalanTorba: number;           // Açık tam haneden kalan torba
+  acikHaneKesirli: number;          // Açık torbanın ondalıklı hane karşılığı
+  haneFarki: number;                // Teslim Edilen Hane - Beklenen Tam Hane
+  durumTipi: 'ARTAN_TORBA' | 'ACIK_TORBA' | 'DENGELI' | 'STOKTA_BEKLIYOR' | 'TIR_KAYDI_YOK';
+  durumAciklamasi: string;
+  // Geriye dönük dailyBreakdown alanları:
+  torba: number;
+  teslimat: number;
+  iptal: number;
+}
+
+export interface DailyAndOverallBagTonnageResult {
+  dailyRows: DailyBagTonnageRow[];
+  totals: {
+    toplamGunSayisi: number;
+    dagitimYapilanGunSayisi: number;
+    toplamTirSayisi: number;
+    toplamGelenNetTonaj: number;
+    toplamGelenNetKg: number;
+    toplamGelenBrutTonaj: number;
+    toplamFiiliDagitilanTonaj: number;
+    toplamResmiKabulTonaj: number;
+    toplamKalanStokTonaj: number;
+    toplamBeklenenStandartTorba: number;
+    toplamBeklenenStandartHane: number;
+    toplamBeklenenTamHane: number;
+    toplamFiiliDagitilanTorba: number;
+    toplamTeslimEdilenHane: number;
+    toplamArtanTorba: number;
+    toplamArtanHane: number;
+    toplamArtanKalanTorba: number;
+    toplamArtanHaneKesirli: number;
+    toplamAcikTorba: number;
+    toplamAcikHane: number;
+    toplamAcikKalanTorba: number;
+    toplamAcikHaneKesirli: number;
+    netTorbaFarki: number;
+    netHaneFarkiKesirli: number;
+    genelOrtalamaTorbaKg: number;
+    genelOrtalamaHaneKg: number;
+  };
+}
+
+/**
+ * Gün Gün (Daily) ve Genel Toplam (Cumulative) Kömür Tonaj, Torba, Artan Torba (< 25 kg)
+ * ve Torba Açığı (> 25 kg) İstatistik Hesaplayıcısı.
+ *
+ * KURAL:
+ * - Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz; tonaj değişmez, gelen tonaj ne ise o dağıtılır.
+ * - Her 34 torba alan haneye resmiyette 850 kg (1 torba = 25 kg) kömür teslim edilmiş kabul edilir.
+ * - Torbaların 25 kg'dan hafif olduğu günlerde artan (fazla çıkan) torba sayısı ve ilave teslim edilen hane sayısı hesaplanır.
+ * - Torbaların 25 kg'dan ağır olduğu günlerde ise oluşan torba açığı ve hane açığı hesaplanır.
+ */
+export function calculateDailyAndOverallBagTonnageStats(params: {
+  trucks: any[];
+  beneficiaries?: any[];
+  deliveries?: any[];
+  quotaBagsPerHousehold?: number;
+  bagWeightTon?: number;
+  startDate?: string;
+  endDate?: string;
+}): DailyAndOverallBagTonnageResult {
+  const {
+    trucks = [],
+    beneficiaries,
+    deliveries = [],
+    quotaBagsPerHousehold = 34,
+    bagWeightTon = 0.025,
+    startDate = '',
+    endDate = '',
+  } = params;
+
+  const quota = quotaBagsPerHousehold > 0 ? quotaBagsPerHousehold : 34;
+  const bagWeightKg = Math.round((bagWeightTon > 0 ? bagWeightTon : 0.025) * 1000) || 25;
+
+  interface DayBucket {
+    gun: string;
+    tirSayisi: number;
+    gelenNetTonaj: number;
+    gelenBrutTonaj: number;
+    fiiliTorba: number;
+    teslimEdilenHane: number;
+    tamTeslimHane: number;
+    eksikTeslimHane: number;
+    sonradanTamamlananTorba: number;
+    iptalIslemSayisi: number;
+  }
+
+  const dayMap = new Map<string, DayBucket>();
+  const getOrCreateDay = (gun: string): DayBucket => {
+    const key = gun || 'Tarihsiz';
+    if (!dayMap.has(key)) {
+      dayMap.set(key, {
+        gun: key,
+        tirSayisi: 0,
+        gelenNetTonaj: 0,
+        gelenBrutTonaj: 0,
+        fiiliTorba: 0,
+        teslimEdilenHane: 0,
+        tamTeslimHane: 0,
+        eksikTeslimHane: 0,
+        sonradanTamamlananTorba: 0,
+        iptalIslemSayisi: 0,
+      });
+    }
+    return dayMap.get(key)!;
+  };
+
+  const isDateInRange = (g: string): boolean => {
+    if (!g || g === 'Tarihsiz') return !startDate && !endDate;
+    if (startDate && g < startDate) return false;
+    if (endDate && g > endDate) return false;
+    return true;
+  };
+
+  // 1. Tırları günlerine göre grupla
+  for (const t of trucks) {
+    const g = extractDateYmd(t.tarih) || 'Tarihsiz';
+    if (!isDateInRange(g)) continue;
+    const b = getOrCreateDay(g);
+    b.tirSayisi += 1;
+    b.gelenNetTonaj = parseFloat((b.gelenNetTonaj + normalizeToTon(t.net_tonaj)).toFixed(3));
+    b.gelenBrutTonaj = parseFloat((b.gelenBrutTonaj + normalizeToTon(t.brut_tonaj)).toFixed(3));
+  }
+
+  // Fallback history date lookup & iptal count
+  const fallbackHistDateByBenId = new Map<string, string>();
+  const fallbackHistDateByTc = new Map<string, string>();
+  for (const d of deliveries) {
+    const g = extractDateYmd(d.gun_tarihi || d.tarih) || 'Tarihsiz';
+    if (d.islem_tipi === 'IPTAL') {
+      if (isDateInRange(g)) {
+        getOrCreateDay(g).iptalIslemSayisi += 1;
+      }
+      continue;
+    }
+    if (d.iptal_edildi || d.islem_tipi === 'EKSIK_TAMAMLAMA' || d.is_eksik_tamamlama) continue;
+    if (g !== 'Tarihsiz') {
+      if (d.beneficiary_id && !fallbackHistDateByBenId.has(String(d.beneficiary_id))) {
+        fallbackHistDateByBenId.set(String(d.beneficiary_id), g);
+      }
+      if (d.tc_no && !fallbackHistDateByTc.has(String(d.tc_no).trim())) {
+        fallbackHistDateByTc.set(String(d.tc_no).trim(), g);
+      }
+    }
+  }
+
+  // 2. Hak sahiplerini (veya yalnızca deliveries verildiyse geçmiş kayıtlarını) günlerine göre grupla
+  if (Array.isArray(beneficiaries) && beneficiaries.length > 0) {
+    for (const ben of beneficiaries) {
+      if (isBeneficiaryCancelled(ben)) continue;
+      const st = ben.teslimat_durumu;
+      const isDelivered = st === 'TAMAMLANDI' || st === 'TESLIM_EDILDI' || st === 'EKSIK';
+      if (!isDelivered) continue;
+
+      const totalBags = Number(ben.torba_sayisi || 0);
+      if (totalBags <= 0) continue;
+
+      const bId = String(ben.id || ben._id || '');
+      const tc = String(ben.tc_no || '').trim();
+      const ilkGun =
+        extractDateYmd(ben.ilk_teslimat_tarihi || ben.teslimat_tarihi) ||
+        fallbackHistDateByBenId.get(bId) ||
+        fallbackHistDateByTc.get(tc) ||
+        'Tarihsiz';
+
+      const tamamlanmaGun =
+        ben.eksik_sonradan_tamamlandi || ben.eksik_tamamlanma_tarihi
+          ? extractDateYmd(ben.eksik_tamamlanma_tarihi)
+          : null;
+      const initialBags = Number(ben.ilk_teslim_edilen_torba) || 0;
+
+      if (
+        tamamlanmaGun &&
+        ilkGun &&
+        tamamlanmaGun !== ilkGun &&
+        initialBags > 0 &&
+        totalBags > initialBags
+      ) {
+        const completedBags =
+          Number(ben.sonradan_tamamlanan_torba) || Math.max(0, totalBags - initialBags);
+        if (isDateInRange(ilkGun)) {
+          const d1 = getOrCreateDay(ilkGun);
+          d1.teslimEdilenHane += 1;
+          d1.tamTeslimHane += 1;
+          d1.fiiliTorba += initialBags;
+        }
+        if (isDateInRange(tamamlanmaGun)) {
+          const d2 = getOrCreateDay(tamamlanmaGun);
+          d2.sonradanTamamlananTorba += completedBags;
+          d2.fiiliTorba += completedBags;
+        }
+      } else {
+        if (isDateInRange(ilkGun)) {
+          const d1 = getOrCreateDay(ilkGun);
+          d1.teslimEdilenHane += 1;
+          if (st === 'EKSIK') {
+            d1.eksikTeslimHane += 1;
+          } else {
+            d1.tamTeslimHane += 1;
+          }
+          d1.fiiliTorba += totalBags;
+        }
+      }
+    }
+  } else {
+    // Yalnızca deliveries dizisi verildiyse
+    for (const d of deliveries) {
+      if (d.iptal_edildi || d.islem_tipi === 'IPTAL') continue;
+      const g = extractDateYmd(d.gun_tarihi || d.tarih) || 'Tarihsiz';
+      if (!isDateInRange(g)) continue;
+      const bucket = getOrCreateDay(g);
+      const bags = Number(d.torba_sayisi || 0);
+      bucket.fiiliTorba += bags;
+      if (d.islem_tipi === 'EKSIK_TAMAMLAMA' || d.is_eksik_tamamlama) {
+        bucket.sonradanTamamlananTorba += bags;
+      } else {
+        bucket.teslimEdilenHane += 1;
+        if (d.islem_tipi === 'EKSIK_TESLIMAT') {
+          bucket.eksikTeslimHane += 1;
+        } else {
+          bucket.tamTeslimHane += 1;
+        }
+      }
+    }
+  }
+
+  // 3. Her gün için detaylı torba, tonaj, artan/açık torba ve ortalama kg metriklerini hesapla
+  const sortedBuckets = Array.from(dayMap.values()).sort((a, b) => b.gun.localeCompare(a.gun));
+
+  let toplamTirSayisi = 0;
+  let toplamGelenNetTonaj = 0;
+  let toplamGelenBrutTonaj = 0;
+  let dagitilanGunlerinGelenTonaji = 0;
+  let dagitilanGunlerinFiiliTorbasi = 0;
+  let bekleyenGunlerinGelenTonaji = 0;
+  let tirsizGunlerinResmiTonaji = 0;
+  let toplamBeklenenStandartTorba = 0;
+  let toplamFiiliDagitilanTorba = 0;
+  let toplamTeslimEdilenHane = 0;
+  let toplamArtanTorba = 0;
+  let toplamAcikTorba = 0;
+  let dagitimYapilanGunSayisi = 0;
+
+  const dailyRows: DailyBagTonnageRow[] = sortedBuckets.map((b) => {
+    const gelenNetTonaj = parseFloat(b.gelenNetTonaj.toFixed(3));
+    const gelenNetKg = Math.round(gelenNetTonaj * 1000);
+    const gelenBrutTonaj = parseFloat(b.gelenBrutTonaj.toFixed(3));
+    const fiiliDagitilanTorba = b.fiiliTorba;
+    const resmiKabulTonaj = parseFloat(((fiiliDagitilanTorba * bagWeightKg) / 1000).toFixed(3));
+
+    const beklenenStandartTorba = gelenNetTonaj > 0 ? Math.round(gelenNetKg / bagWeightKg) : 0;
+    const beklenenStandartHane =
+      beklenenStandartTorba > 0 ? parseFloat((beklenenStandartTorba / quota).toFixed(2)) : 0;
+    const beklenenTamHane =
+      beklenenStandartTorba > 0 ? Math.floor(beklenenStandartTorba / quota) : 0;
+    const beklenenKalanTorba = beklenenStandartTorba > 0 ? beklenenStandartTorba % quota : 0;
+
+    let fiiliDagitilanTonaj = 0;
+    let kalanStokTonaj = 0;
+    let ortalamaTorbaKg = 0;
+    let ortalamaHaneKg = 0;
+    let torbaAgirlikFarkiKg = 0;
+    let torbaFarki = 0;
+    let artanTorba = 0;
+    let artanHane = 0;
+    let artanKalanTorba = 0;
+    let artanHaneKesirli = 0;
+    let acikTorba = 0;
+    let acikHane = 0;
+    let acikKalanTorba = 0;
+    let acikHaneKesirli = 0;
+    let haneFarki = 0;
+    let durumTipi: DailyBagTonnageRow['durumTipi'] = 'DENGELI';
+    let durumAciklamasi = '';
+
+    if (gelenNetTonaj > 0 && fiiliDagitilanTorba > 0) {
+      // KURAL: Gelen tonaj ne ise o dağıtılır; tonaj değişmez!
+      fiiliDagitilanTonaj = gelenNetTonaj;
+      kalanStokTonaj = 0;
+      ortalamaTorbaKg = parseFloat((gelenNetKg / fiiliDagitilanTorba).toFixed(2));
+      ortalamaHaneKg = Math.round((gelenNetKg / fiiliDagitilanTorba) * quota);
+      torbaAgirlikFarkiKg = parseFloat((ortalamaTorbaKg - bagWeightKg).toFixed(2));
+      torbaFarki = fiiliDagitilanTorba - beklenenStandartTorba;
+      haneFarki = b.teslimEdilenHane - beklenenTamHane;
+
+      dagitilanGunlerinGelenTonaji += gelenNetTonaj;
+      dagitilanGunlerinFiiliTorbasi += fiiliDagitilanTorba;
+      dagitimYapilanGunSayisi += 1;
+
+      if (torbaFarki > 0) {
+        artanTorba = torbaFarki;
+        artanHane = Math.floor(artanTorba / quota);
+        artanKalanTorba = artanTorba % quota;
+        artanHaneKesirli = parseFloat((artanTorba / quota).toFixed(2));
+        durumTipi = 'ARTAN_TORBA';
+        durumAciklamasi = `1 torba ort. ${ortalamaTorbaKg} kg (< ${bagWeightKg} kg) geldiği için +${artanTorba} torba (+${artanHaneKesirli} hane) artan kömür dağıtıldı.`;
+      } else if (torbaFarki < 0) {
+        acikTorba = Math.abs(torbaFarki);
+        acikHane = Math.floor(acikTorba / quota);
+        acikKalanTorba = acikTorba % quota;
+        acikHaneKesirli = parseFloat((acikTorba / quota).toFixed(2));
+        durumTipi = 'ACIK_TORBA';
+        durumAciklamasi = `1 torba ort. ${ortalamaTorbaKg} kg (> ${bagWeightKg} kg) geldiği için -${acikTorba} torba (-${acikHaneKesirli} hane) açık oluştu.`;
+      } else {
+        durumTipi = 'DENGELI';
+        durumAciklamasi = `Standart ağırlıkta (${bagWeightKg} kg/torba, ${quota * bagWeightKg} kg/hane) tam dengeli dağıtım.`;
+      }
+    } else if (gelenNetTonaj > 0 && fiiliDagitilanTorba === 0) {
+      fiiliDagitilanTonaj = 0;
+      kalanStokTonaj = gelenNetTonaj;
+      bekleyenGunlerinGelenTonaji += gelenNetTonaj;
+      durumTipi = 'STOKTA_BEKLIYOR';
+      durumAciklamasi = 'Tır sahaya indi, henüz dağıtım yapılmadı (Depoda / Sahada stokta).';
+    } else {
+      // gelenNetTonaj === 0 && fiiliDagitilanTorba > 0
+      fiiliDagitilanTonaj = resmiKabulTonaj;
+      kalanStokTonaj = 0;
+      ortalamaTorbaKg = bagWeightKg;
+      ortalamaHaneKg = quota * bagWeightKg;
+      haneFarki = b.teslimEdilenHane;
+      tirsizGunlerinResmiTonaji += resmiKabulTonaj;
+      if (fiiliDagitilanTorba > 0) {
+        dagitimYapilanGunSayisi += 1;
+      }
+      durumTipi = 'TIR_KAYDI_YOK';
+      durumAciklamasi = 'O güne ait kantar/tır girişi bulunmuyor veya önceki stoktan dağıtıldı.';
+    }
+
+    toplamTirSayisi += b.tirSayisi;
+    toplamGelenNetTonaj = parseFloat((toplamGelenNetTonaj + gelenNetTonaj).toFixed(3));
+    toplamGelenBrutTonaj = parseFloat((toplamGelenBrutTonaj + gelenBrutTonaj).toFixed(3));
+    toplamBeklenenStandartTorba += beklenenStandartTorba;
+    toplamFiiliDagitilanTorba += fiiliDagitilanTorba;
+    toplamTeslimEdilenHane += b.teslimEdilenHane;
+    toplamArtanTorba += artanTorba;
+    toplamAcikTorba += acikTorba;
+
+    return {
+      gun: b.gun,
+      tirSayisi: b.tirSayisi,
+      gelenNetTonaj,
+      gelenNetKg,
+      gelenBrutTonaj,
+      fiiliDagitilanTonaj,
+      resmiKabulTonaj,
+      kalanStokTonaj,
+      beklenenStandartTorba,
+      beklenenStandartHane,
+      beklenenTamHane,
+      beklenenKalanTorba,
+      fiiliDagitilanTorba,
+      teslimEdilenHane: b.teslimEdilenHane,
+      tamTeslimHane: b.tamTeslimHane,
+      eksikTeslimHane: b.eksikTeslimHane,
+      sonradanTamamlananTorba: b.sonradanTamamlananTorba,
+      iptalIslemSayisi: b.iptalIslemSayisi,
+      ortalamaTorbaKg,
+      ortalamaHaneKg,
+      torbaAgirlikFarkiKg,
+      torbaFarki,
+      artanTorba,
+      artanHane,
+      artanKalanTorba,
+      artanHaneKesirli,
+      acikTorba,
+      acikHane,
+      acikKalanTorba,
+      acikHaneKesirli,
+      haneFarki,
+      durumTipi,
+      durumAciklamasi,
+      torba: fiiliDagitilanTorba,
+      teslimat: b.teslimEdilenHane,
+      iptal: b.iptalIslemSayisi,
+    };
+  });
+
+  // 4. Genel Toplam (Cumulative) Hesaplamaları
+  const toplamGelenNetKg = Math.round(toplamGelenNetTonaj * 1000);
+  const toplamResmiKabulTonaj = parseFloat(
+    ((toplamFiiliDagitilanTorba * bagWeightKg) / 1000).toFixed(3)
+  );
+
+  let toplamFiiliDagitilanTonaj = 0;
+  let toplamKalanStokTonaj = 0;
+
+  if (toplamGelenNetTonaj > 0) {
+    if (bekleyenGunlerinGelenTonaji <= 0 && toplamFiiliDagitilanTorba > 0) {
+      // Tüm tır gelen günlerde dağıtım yapılmış: Dağıtılan tonaj = Gelen tonaj (Tonaj değişmez!)
+      toplamFiiliDagitilanTonaj = toplamGelenNetTonaj;
+      toplamKalanStokTonaj = 0;
+    } else if (bekleyenGunlerinGelenTonaji > 0 && tirsizGunlerinResmiTonaji > 0) {
+      // Tırsız günlerdeki dağıtım, bekleyen stok günlerinden kullanılmıştır
+      const stoktanKullanilan = Math.min(bekleyenGunlerinGelenTonaji, tirsizGunlerinResmiTonaji);
+      toplamFiiliDagitilanTonaj = parseFloat(
+        Math.min(toplamGelenNetTonaj, dagitilanGunlerinGelenTonaji + stoktanKullanilan).toFixed(3)
+      );
+      toplamKalanStokTonaj = parseFloat(
+        Math.max(0, toplamGelenNetTonaj - toplamFiiliDagitilanTonaj).toFixed(3)
+      );
+      // Eğer tüm tırlar başka tarihte, tüm dağıtımlar başka tarihte girildiyse ve stok tükendiyse:
+      if (
+        dagitilanGunlerinGelenTonaji === 0 &&
+        toplamFiiliDagitilanTorba >= toplamBeklenenStandartTorba
+      ) {
+        toplamFiiliDagitilanTonaj = toplamGelenNetTonaj;
+        toplamKalanStokTonaj = 0;
+        toplamArtanTorba = toplamFiiliDagitilanTorba - toplamBeklenenStandartTorba;
+        toplamAcikTorba = 0;
+      }
+    } else {
+      toplamFiiliDagitilanTonaj = parseFloat(dagitilanGunlerinGelenTonaji.toFixed(3));
+      toplamKalanStokTonaj = parseFloat(bekleyenGunlerinGelenTonaji.toFixed(3));
+    }
+  } else {
+    toplamFiiliDagitilanTonaj = toplamResmiKabulTonaj;
+    toplamKalanStokTonaj = 0;
+  }
+
+  const genelOrtalamaTorbaKg =
+    dagitilanGunlerinGelenTonaji > 0 && dagitilanGunlerinFiiliTorbasi > 0
+      ? parseFloat(
+          ((dagitilanGunlerinGelenTonaji * 1000) / dagitilanGunlerinFiiliTorbasi).toFixed(2)
+        )
+      : toplamFiiliDagitilanTonaj > 0 && toplamFiiliDagitilanTorba > 0
+      ? parseFloat(((toplamFiiliDagitilanTonaj * 1000) / toplamFiiliDagitilanTorba).toFixed(2))
+      : bagWeightKg;
+
+  const genelOrtalamaHaneKg = Math.round(genelOrtalamaTorbaKg * quota);
+
+  const netTorbaFarki = toplamArtanTorba - toplamAcikTorba;
+  const netHaneFarkiKesirli = parseFloat((netTorbaFarki / quota).toFixed(2));
+
+  return {
+    dailyRows,
+    totals: {
+      toplamGunSayisi: dailyRows.length,
+      dagitimYapilanGunSayisi,
+      toplamTirSayisi,
+      toplamGelenNetTonaj,
+      toplamGelenNetKg,
+      toplamGelenBrutTonaj,
+      toplamFiiliDagitilanTonaj,
+      toplamResmiKabulTonaj,
+      toplamKalanStokTonaj,
+      toplamBeklenenStandartTorba,
+      toplamBeklenenStandartHane:
+        toplamBeklenenStandartTorba > 0
+          ? parseFloat((toplamBeklenenStandartTorba / quota).toFixed(2))
+          : 0,
+      toplamBeklenenTamHane:
+        toplamBeklenenStandartTorba > 0 ? Math.floor(toplamBeklenenStandartTorba / quota) : 0,
+      toplamFiiliDagitilanTorba,
+      toplamTeslimEdilenHane,
+      toplamArtanTorba,
+      toplamArtanHane: Math.floor(toplamArtanTorba / quota),
+      toplamArtanKalanTorba: toplamArtanTorba % quota,
+      toplamArtanHaneKesirli: parseFloat((toplamArtanTorba / quota).toFixed(2)),
+      toplamAcikTorba,
+      toplamAcikHane: Math.floor(toplamAcikTorba / quota),
+      toplamAcikKalanTorba: toplamAcikTorba % quota,
+      toplamAcikHaneKesirli: parseFloat((toplamAcikTorba / quota).toFixed(2)),
+      netTorbaFarki,
+      netHaneFarkiKesirli,
+      genelOrtalamaTorbaKg,
+      genelOrtalamaHaneKg,
+    },
   };
 }
 

@@ -715,7 +715,7 @@ export default function TonnagePage({
         {/* 5 Stats Cards & Institutional Progress - Light Mode */}
         <div className="pt-2 border-t border-slate-100 space-y-2.5">
           {(() => {
-            const hasFazla = Number(stats?.fazlaDagitilanTonaj || 0) > 0;
+            const hasFazla = Number(stats?.artanTorba || stats?.fazlaDagitilanTorba || 0) > 0 || Number(stats?.acikTorba || 0) > 0;
             const quotaTorba = Number(stats?.varsayilanHedefTorba) || 34;
             const quotaTon = (quotaTorba * 25) / 1000;
             const haneKapasitesiGelen = Math.floor(normalizeToTon(stats?.toplamNetTonaj) / quotaTon);
@@ -837,7 +837,7 @@ export default function TonnagePage({
                   {/* Card 4: Dağıtılan Kömür */}
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col justify-between">
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür</span>
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Dağıtılan Kömür (Fiili)</span>
                       <div className="text-lg font-black text-emerald-800 mt-0.5">
                         {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
                       </div>
@@ -846,7 +846,7 @@ export default function TonnagePage({
                       </div>
                     </div>
                     <div className="mt-1.5 pt-1 border-t border-emerald-100 text-[10px] text-emerald-700 font-semibold">
-                      {stats?.toplamDagitilanTorba || 0} Torba Teslim Edildi
+                      {stats?.toplamDagitilanTorba || 0} Torba {stats?.resmiKabulTonaj && stats.resmiKabulTonaj !== stats.dagitilanNetTonaj ? `(Kabul: ${stats.resmiKabulTonaj} T)` : 'Teslim Edildi'}
                     </div>
                   </div>
 
@@ -854,7 +854,7 @@ export default function TonnagePage({
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">Kalan Saha Stoku</span>
-                      <div className={`text-lg font-black mt-0.5 ${hasFazla ? 'text-slate-500' : (Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-slate-900')}`}>
+                      <div className={`text-lg font-black mt-0.5 ${Number(stats?.kalanStokTonaj || 0) === 0 ? 'text-slate-500' : (Number(stats?.kalanStokTonaj || 0) < 5 ? 'text-rose-600' : 'text-slate-900')}`}>
                         {formatTonnage(stats?.kalanStokTonaj || 0).tonStr}
                       </div>
                       <div className="text-[10px] text-slate-600 font-bold">
@@ -862,31 +862,36 @@ export default function TonnagePage({
                       </div>
                     </div>
                     <div className="mt-1.5 pt-1 border-t border-slate-200 text-[10px] font-medium">
-                      {hasFazla ? (
-                        <span className="text-purple-700 font-bold">Depo Tükendi (Fazla Dağıtım)</span>
+                      {Number(stats?.kalanStokTonaj || 0) === 0 && Number(stats?.toplamNetTonaj || 0) > 0 ? (
+                        <span className="text-purple-700 font-bold">Gelen Tonaj Tamamen Dağıtıldı</span>
                       ) : (
                         <span className="text-slate-500">Dağıtıma Hazır Depo Stoku</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Card 6: Fazladan Dağıtılan Kömür (Standart Dışı Torba Toleransı) */}
+                  {/* Card 6: Artan / Açık Torba Farkı (Standart 25 kg Torba Toleransı) */}
                   {hasFazla && (
                     <div className="p-3 rounded-xl bg-purple-50/90 border border-purple-200 flex flex-col justify-between">
                       <div>
                         <span className="text-[10px] uppercase font-bold text-purple-900 tracking-wider flex items-center gap-1">
                           <Scale className="w-3 h-3 text-purple-700" />
-                          <span>Fazladan Dağıtılan</span>
+                          <span>Torba Ağırlık Farkı</span>
                         </span>
                         <div className="text-lg font-black text-purple-950 mt-0.5">
-                          +{formatTonnage(stats?.fazlaDagitilanTonaj).tonStr}
+                          {Number(stats?.artanTorba || 0) > 0 && Number(stats?.acikTorba || 0) > 0
+                            ? `+${stats?.artanTorba} / -${stats?.acikTorba} T.`
+                            : Number(stats?.artanTorba || 0) > 0
+                            ? `+${stats?.artanTorba} Artan Torba`
+                            : `-${stats?.acikTorba} Açık Torba`}
                         </div>
                         <div className="text-[10px] text-purple-800 font-bold">
-                          (+{formatTonnage(stats?.fazlaDagitilanTonaj).kgStr} • +{stats?.fazlaDagitilanTorba || 0} Torba)
+                          Ort. {stats?.ortalamaTorbaKg || 25} kg/torba (~{stats?.ortalamaHaneKg || 850} kg/hane)
                         </div>
                       </div>
                       <div className="mt-1.5 pt-1 border-t border-purple-100 text-[10px] text-purple-700 font-semibold truncate">
-                        Torba Toleransı (~+{stats?.fazlaDagitilanHane || 0} Hane)
+                        {Number(stats?.artanTorba || 0) > 0 && `+${stats?.artanHaneKesirli || stats?.fazlaDagitilanHane || 0} Hane Artan `}
+                        {Number(stats?.acikTorba || 0) > 0 && `-${stats?.acikHaneKesirli || 0} Hane Açık`}
                       </div>
                     </div>
                   )}
@@ -897,8 +902,20 @@ export default function TonnagePage({
                   <div className="p-3 rounded-xl bg-purple-50/90 border border-purple-200 flex items-start gap-2.5 text-xs text-purple-900 shadow-2xs">
                     <Scale className="w-4 h-4 text-purple-700 shrink-0 mt-0.5" />
                     <div className="leading-relaxed">
-                      <strong className="font-extrabold text-purple-950">Torba Ağırlık Toleransı Kaydı: </strong>
-                      Bazı kömür torbaları standart ağırlığın (25 kg) altında geldiği için saha kantar tonajı tükenmesine rağmen fiilen toplam <strong className="font-black text-purple-950">+{formatTonnage(stats?.fazlaDagitilanTonaj).combined}</strong> (+{stats?.fazlaDagitilanTorba || 0} Torba) fazladan kömür dağıtılmış ve yaklaşık <strong className="font-black text-purple-950">+{stats?.fazlaDagitilanHane || 0} hak sahibine</strong> ilave teslimat yapılmıştır. Sistem kuralı gereğince saha stoku eksiye düşürülmeyip <strong>0 Ton</strong> olarak korunmuş, aradaki fark resmi kayıtlara &ldquo;Fazladan Dağıtılan Kömür&rdquo; olarak işlenmiştir.
+                      <strong className="font-extrabold text-purple-950">Torba Ağırlık Toleransı &amp; Artan / Açık Torba Kaydı: </strong>
+                      Sahaya gelen tonaj miktarından fazla kömür tonajı dağıtılmaz (<strong className="font-black text-purple-950">Gelen Tonaj = Fiili Dağıtılan Tonaj: {formatTonnage(stats?.dagitilanNetTonaj).combined}</strong>; her 34 torba resmiyette 850 kg kabul edildiğinden resmi kabul karşılığı: <strong>{stats?.resmiKabulTonaj || 0} Ton</strong>). Kömür torbalarının takribi 25 kg olması (Ort. <strong>{stats?.ortalamaTorbaKg || 25} kg/torba</strong>, 34 torba = <strong>~{stats?.ortalamaHaneKg || 850} kg fiili</strong>) sebebiyle 25 kg standart beklentiye ({stats?.beklenenStandartTorba || 0} Torba) göre{' '}
+                      {Number(stats?.artanTorba || 0) > 0 && (
+                        <span>
+                          &lt;25 kg gelen günlerde <strong className="font-black text-purple-950">+{stats?.artanTorba} Artan Torba (+{stats?.artanHaneKesirli || 0} Hane)</strong>
+                        </span>
+                      )}
+                      {Number(stats?.artanTorba || 0) > 0 && Number(stats?.acikTorba || 0) > 0 && ' ve '}
+                      {Number(stats?.acikTorba || 0) > 0 && (
+                        <span>
+                          &gt;25 kg gelen günlerde <strong className="font-black text-rose-800">-{stats?.acikTorba} Açık Torba (-{stats?.acikHaneKesirli || 0} Hane)</strong>
+                        </span>
+                      )}{' '}
+                      oluşmuştur.
                     </div>
                   </div>
                 )}
@@ -2257,7 +2274,7 @@ export default function TonnagePage({
                   )}
                 </div>
 
-                <div className={`grid grid-cols-2 ${Number(stats?.fazlaDagitilanTonaj || 0) > 0 ? 'sm:grid-cols-3 lg:grid-cols-7' : 'sm:grid-cols-3 lg:grid-cols-6'} gap-2 text-center`}>
+                <div className={`grid grid-cols-2 ${(Number(stats?.artanTorba || stats?.fazlaDagitilanTorba || 0) > 0 || Number(stats?.acikTorba || 0) > 0) ? 'sm:grid-cols-3 lg:grid-cols-7' : 'sm:grid-cols-3 lg:grid-cols-6'} gap-2 text-center`}>
                   <div className="p-2.5 rounded-lg bg-white border border-indigo-200">
                     <span className="text-[9px] font-bold text-indigo-900 uppercase block">Kuruma Tahsis Edilen</span>
                     <div className="text-base font-black text-indigo-950 mt-0.5">
@@ -2299,12 +2316,12 @@ export default function TonnagePage({
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-white border border-emerald-200">
-                    <span className="text-[9px] font-bold text-emerald-800 uppercase block">Vatandaşa Dağıtılan</span>
+                    <span className="text-[9px] font-bold text-emerald-800 uppercase block">Vatandaşa Dağıtılan (Fiili)</span>
                     <div className="text-base font-black text-emerald-800 mt-0.5">
                       {formatTonnage(stats?.dagitilanNetTonaj).tonStr}
                     </div>
                     <div className="text-[9px] font-bold text-emerald-600">
-                      ({formatTonnage(stats?.dagitilanNetTonaj).kgStr})
+                      ({stats?.toplamDagitilanTorba || 0} Torba • Kabul: {stats?.resmiKabulTonaj || 0} T)
                     </div>
                   </div>
 
@@ -2318,22 +2335,29 @@ export default function TonnagePage({
                     </div>
                   </div>
 
-                  {Number(stats?.fazlaDagitilanTonaj || 0) > 0 && (
+                  {(Number(stats?.artanTorba || stats?.fazlaDagitilanTorba || 0) > 0 || Number(stats?.acikTorba || 0) > 0) && (
                     <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 col-span-2 sm:col-span-1">
-                      <span className="text-[9px] font-bold text-purple-900 uppercase block">Fazladan Dağıtılan</span>
+                      <span className="text-[9px] font-bold text-purple-900 uppercase block">Torba Ağırlık Farkı</span>
                       <div className="text-base font-black text-purple-950 mt-0.5">
-                        +{formatTonnage(stats?.fazlaDagitilanTonaj).tonStr}
+                        {Number(stats?.artanTorba || 0) > 0 && Number(stats?.acikTorba || 0) > 0
+                          ? `+${stats?.artanTorba} / -${stats?.acikTorba} T.`
+                          : Number(stats?.artanTorba || 0) > 0
+                          ? `+${stats?.artanTorba} Artan T.`
+                          : `-${stats?.acikTorba} Açık T.`}
                       </div>
                       <div className="text-[9px] font-bold text-purple-800">
-                        (+{formatTonnage(stats?.fazlaDagitilanTonaj).kgStr} • +{stats?.fazlaDagitilanTorba || 0} Torba)
+                        (Ort. {stats?.ortalamaTorbaKg || 25} kg/torba • ~{stats?.ortalamaHaneKg || 850} kg/hane)
                       </div>
                     </div>
                   )}
                 </div>
 
-                {Number(stats?.fazlaDagitilanTonaj || 0) > 0 && (
+                {(Number(stats?.artanTorba || stats?.fazlaDagitilanTorba || 0) > 0 || Number(stats?.acikTorba || 0) > 0) && (
                   <div className="p-2.5 rounded-lg bg-purple-50/80 border border-purple-200 text-[10px] text-purple-900 leading-snug">
-                    <strong>Resmi Torba Toleransı Kaydı:</strong> Bazı kömür torbalarının standart 25 kg ağırlığından düşük gelmesi nedeniyle kantar net tonajına oranla <strong>+{formatTonnage(stats?.fazlaDagitilanTonaj).combined}</strong> (+{stats?.fazlaDagitilanTorba || 0} Torba, yaklaşık +{stats?.fazlaDagitilanHane || 0} hane) fazladan kömür vatandaşa dağıtılmıştır. Depo stoku eksiye düşürülmeyip 0 Ton olarak kayda bağlanmıştır.
+                    <strong>Resmi Torba Toleransı &amp; Artan / Açık Torba Kaydı:</strong> Sahaya gelen tonajdan fazla kömür tonajı dağıtılmaz (Gelen Tonaj = Fiili Dağıtılan Tonaj: <strong>{formatTonnage(stats?.dagitilanNetTonaj).combined}</strong>; resmi 34 torba = 850 kg kabul karşılığı: <strong>{stats?.resmiKabulTonaj || 0} Ton</strong>). Torbaların takribi 25 kg olması (Ort. <strong>{stats?.ortalamaTorbaKg || 25} kg/torba</strong>) sebebiyle standart beklentiye ({stats?.beklenenStandartTorba || 0} Torba) göre{' '}
+                    {Number(stats?.artanTorba || 0) > 0 && <strong>+{stats?.artanTorba} Artan Torba (+{stats?.artanHaneKesirli || 0} Hane) </strong>}
+                    {Number(stats?.acikTorba || 0) > 0 && <strong>-{stats?.acikTorba} Açık Torba (-{stats?.acikHaneKesirli || 0} Hane) </strong>}
+                    kayda bağlanmıştır.
                   </div>
                 )}
               </div>

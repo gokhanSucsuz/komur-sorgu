@@ -582,19 +582,70 @@ export default function AnalyticsPage({
               Genel Dağıtım ve Tonaj İcmali
             </h3>
 
-            {/* Torba Toleransı Kaynaklı Fazladan Dağıtım Bilgilendirmesi */}
-            {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
-              <div className="p-3.5 rounded-xl bg-purple-50/90 border border-purple-200 text-xs text-purple-900 flex items-start sm:items-center justify-between flex-wrap gap-2.5 shadow-2xs">
-                <div className="flex items-start sm:items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-md bg-purple-200 text-purple-950 font-black text-[10px] uppercase shrink-0">
-                    Torba Toleransı Kaydı
-                  </span>
-                  <span className="leading-relaxed">
-                    Kömür torbalarının standart 25 kg ağırlığından düşük gelmesi nedeniyle kantar net tonajından <strong>+{formatTonnage(summary?.fazlaDagitilanTonaj).combined}</strong> (+{summary?.fazlaDagitilanTorba || 0} Torba) fazladan dağıtılmış, yaklaşık <strong>+{summary?.fazlaDagitilanHane || 0} hak sahibine</strong> ilave kömür ulaştırılmıştır. Saha stoku eksiye düşürülmemiştir.
-                  </span>
+            {/* Torba Ağırlık Toleransı: Artan Torba (<25kg) ve Açık Torba (>25kg) Analiz Özeti */}
+            {(Number(summary?.artanTorba || 0) > 0 || Number(summary?.acikTorba || 0) > 0 || Number(summary?.gelenNetTonaj || 0) > 0) && (
+              <div className="p-3.5 rounded-xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 space-y-2.5 shadow-2xs">
+                <div className="flex items-start sm:items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-start sm:items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-purple-200 text-purple-950 font-black text-[10px] uppercase shrink-0">
+                      Torba Ağırlık & Tonaj Hesap Esası
+                    </span>
+                    <span className="leading-relaxed text-purple-900">
+                      Sahaya gelen tonaj miktarından fazla kömür tonajı dağıtılmaz (<strong>Gelen Tonaj = Dağıtılan Tonaj: {summary?.dagitilanTonaj || 0} Ton</strong>). Kömür torbalarının takribi 25 kg olması nedeniyle her 34 torba teslimat resmiyette <strong>850 kg ({summary?.resmiKabulTonaj || 0} Ton Resmi Kabul)</strong> sayılır; torba ağırlık farkından doğan <strong>artan</strong> veya <strong>açık</strong> torba miktarları gün gün aşağıda takip edilir.
+                    </span>
+                  </div>
                 </div>
-                <div className="font-black text-purple-950 text-xs sm:text-sm whitespace-nowrap bg-purple-100/80 px-2.5 py-1 rounded-lg border border-purple-200">
-                  +{formatTonnage(summary?.fazlaDagitilanTonaj).tonStr} (+{summary?.fazlaDagitilanTorba || 0} Torba)
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                  <div className="p-2 rounded-lg bg-white/90 border border-purple-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">25 kg Standart Beklenen</span>
+                    <div className="text-sm font-black text-slate-900 mt-0.5">
+                      {summary?.beklenenStandartTorba || 0} Torba
+                    </div>
+                    <span className="text-[10px] text-slate-600 font-semibold block">
+                      ~{summary?.beklenenStandartHane || 0} Hane ({summary?.gelenNetTonaj || 0} Ton)
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-white/90 border border-emerald-200">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase block">Fiilen Dağıtılan Torba</span>
+                    <div className="text-sm font-black text-emerald-700 mt-0.5">
+                      {summary?.dagitilanTorba || 0} Torba
+                    </div>
+                    <span className="text-[10px] text-emerald-800 font-semibold block">
+                      Fiili: {summary?.dagitilanTonaj || 0} T • Kabul: {summary?.resmiKabulTonaj || 0} T
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-white/90 border border-purple-300">
+                    <span className="text-[10px] font-bold text-purple-800 uppercase block">Artan Torba (&lt;25 kg)</span>
+                    <div className="text-sm font-black text-purple-800 mt-0.5">
+                      +{summary?.artanTorba || 0} Torba
+                    </div>
+                    <span className="text-[10px] text-purple-700 font-semibold block">
+                      +{summary?.artanHane || 0} Tam Hane{Number(summary?.artanKalanTorba || 0) > 0 ? ` + ${summary?.artanKalanTorba} T.` : ''} (+{summary?.artanHaneKesirli || 0} Hane)
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-white/90 border border-rose-200">
+                    <span className="text-[10px] font-bold text-rose-800 uppercase block">Açık Torba (&gt;25 kg)</span>
+                    <div className="text-sm font-black text-rose-700 mt-0.5">
+                      -{summary?.acikTorba || 0} Torba
+                    </div>
+                    <span className="text-[10px] text-rose-700 font-semibold block">
+                      -{summary?.acikHane || 0} Tam Hane{Number(summary?.acikKalanTorba || 0) > 0 ? ` + ${summary?.acikKalanTorba} T.` : ''} (-{summary?.acikHaneKesirli || 0} Hane)
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-white/90 border border-sky-200 col-span-2 sm:col-span-1">
+                    <span className="text-[10px] font-bold text-sky-800 uppercase block">Ort. Torba &amp; Hane Ağırlığı</span>
+                    <div className="text-sm font-black text-sky-900 mt-0.5">
+                      {summary?.ortalamaTorbaKg ? `${summary.ortalamaTorbaKg} kg / Torba` : '~25 kg / Torba'}
+                    </div>
+                    <span className="text-[10px] text-sky-700 font-semibold block">
+                      34T Fiili: ~{summary?.ortalamaHaneKg || 850} kg (Kabul: 850 kg)
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -621,9 +672,14 @@ export default function AnalyticsPage({
               </div>
 
               <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-                <span className="text-[11px] text-emerald-800 font-bold uppercase block">Dağıtılan Kömür</span>
+                <span className="text-[11px] text-emerald-800 font-bold uppercase block">Dağıtılan Kömür (Fiili Tonaj)</span>
                 <div className="text-xl font-black text-emerald-700 mt-1">{summary?.dagitilanTonaj || 0} Ton</div>
-                <span className="text-[10px] text-emerald-800 font-bold">{summary?.dagitilanTorba || 0} Torba Teslim</span>
+                <span className="text-[10px] text-emerald-800 font-bold block">{summary?.dagitilanTorba || 0} Torba Teslim Edildi</span>
+                {summary?.resmiKabulTonaj && summary.resmiKabulTonaj !== summary.dagitilanTonaj && (
+                  <span className="text-[10px] text-emerald-700 font-medium block mt-0.5">
+                    Resmi Kabul (34T=850kg): <strong>{summary.resmiKabulTonaj} Ton</strong>
+                  </span>
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
@@ -923,63 +979,247 @@ export default function AnalyticsPage({
             )}
           </div>
 
-          {/* GÜNLÜK HAREKETLER & TIRLAR */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-emerald-600" />
-                Tarih Aralığında Günlük Dağıtım
-              </h4>
-              {dailyBreakdown.length === 0 ? (
-                <p className="text-xs text-slate-500">Seçilen aralıkta dağıtım bulunamadı.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {dailyBreakdown.map((d: any) => (
-                    <div key={d.gun} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-800">{formatDottedTrDate(d.gun)}</span>
-                      <div className="text-right">
-                        <span className="font-bold text-emerald-700">{d.torba} Torba</span>
-                        <span className="text-[11px] text-slate-500 block">({d.teslimat} Teslimat)</span>
-                      </div>
-                    </div>
-                  ))}
+          {/* GÜNLÜK HAREKETLER, GELEN TONAJ VE TORBA AĞIRLIK ANALİZ TABLOSU */}
+          <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-emerald-600" />
+                  <span>Gün Gün Gelen Tonaj, Dağıtılan Torba, Artan / Açık Torba ve Ortalama Ağırlık Tablosu</span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz (Gelen Tonaj = Dağıtılan Tonaj). Torbaların 25 kg altında (&lt;25 kg) gelmesi halinde <strong>Artan Torba</strong>, 25 kg üzerinde (&gt;25 kg) gelmesi halinde <strong>Açık Torba</strong> oluşur; her 34 torbalık hane teslimatı resmiyette <strong>850 kg</strong> kabul edilir.
+                </p>
+              </div>
+              {donemStats && (
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-bold">
+                    Gelen: {donemStats.gelenNetTonaj || 0} Ton ({donemStats.toplamTirSayisi || 0} Tır)
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold">
+                    Dağıtılan: {donemStats.dagitilanTonaj || 0} Ton ({donemStats.dagitilanTorba || 0} Torba)
+                  </span>
+                  {Number(donemStats.artanTorba || 0) > 0 && (
+                    <span className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 font-bold">
+                      Artan: +{donemStats.artanTorba} Torba (+{donemStats.artanHaneKesirli || 0} Hane)
+                    </span>
+                  )}
+                  {Number(donemStats.acikTorba || 0) > 0 && (
+                    <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 font-bold">
+                      Açık: -{donemStats.acikTorba} Torba (-{donemStats.acikHaneKesirli || 0} Hane)
+                    </span>
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <Truck className="w-4 h-4 text-sky-600" />
-                Tarih Aralığında Gelen Tırlar
-              </h4>
-              {donemStats?.toplamTirSayisi === 0 ? (
-                <p className="text-xs text-slate-500">Seçilen aralıkta tır girişi bulunamadı.</p>
-              ) : (
-                <div className="space-y-2">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
-                    <span>Gelen Tır Sayısı: <strong className="text-slate-900">{donemStats?.toplamTirSayisi} Adet</strong></span>
-                    <span>Toplam Net Kömür: <strong className="text-amber-800 font-bold">{formatTonnage(donemStats?.gelenNetTonaj).combined}</strong></span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-teal-50 border border-teal-200 text-xs flex items-center justify-between text-teal-900">
-                    <span className="font-bold flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-teal-700" />
-                      <span>34 Torbalık Hane Kapasitesi:</span>
-                    </span>
-                    <span className="font-black text-teal-950 font-mono">
-                      ~{Math.floor(normalizeToTon(donemStats?.gelenNetTonaj || 0) / 0.85).toLocaleString('tr-TR')} Hane Kapasitesi
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 font-medium italic">
-                    Depo / Saha Kalan Güncel Stok: <strong className="text-sky-700">{formatTonnage(summary?.kalanStokTonaj || 0).combined}</strong>
-                    {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
-                      <span className="text-purple-700 font-bold ml-2">
-                        (Torba Toleransı Kaynaklı +{formatTonnage(summary?.fazlaDagitilanTonaj).combined} / +{summary?.fazlaDagitilanTorba || 0} Torba Fazladan Dağıtıldı)
-                      </span>
-                    )}
-                  </p>
-                </div>
-              )}
-            </div>
+            {dailyBreakdown.length === 0 ? (
+              <p className="text-xs text-slate-500 py-2">Seçilen tarih aralığında günlük dağıtım veya tır girişi bulunamadı.</p>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[11px] uppercase">
+                      <th className="py-2.5 px-3 font-bold">Tarih</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Gelen Net Tonaj</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Fiili Dağıtılan Tonaj</th>
+                      <th className="py-2.5 px-3 font-bold text-center">25 kg Standart Beklenen</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Fiilen Dağıtılan (Torba / Hane)</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Ort. Torba &amp; Hane Ağırlığı</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Artan Torba (&lt;25 kg)</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Açık Torba (&gt;25 kg)</th>
+                      <th className="py-2.5 px-3 font-bold text-center">Durum Özeti</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dailyBreakdown.map((d: any) => {
+                      const gelenTon = Number(d.gelenNetTonaj || 0);
+                      const fiiliTon = Number(d.fiiliDagitilanTonaj || 0);
+                      const resmiTon = Number(d.resmiKabulTonaj || parseFloat(((d.torba || 0) * 0.025).toFixed(2)));
+                      const beklenenTorba = Number(d.beklenenStandartTorba || 0);
+                      const fiiliTorba = Number(d.fiiliDagitilanTorba ?? d.torba ?? 0);
+                      const haneSayisi = Number(d.teslimEdilenHane ?? d.teslimat ?? 0);
+                      const artanTorba = Number(d.artanTorba || 0);
+                      const acikTorba = Number(d.acikTorba || 0);
+                      const ortTorbaKg = Number(d.ortalamaTorbaKg || 0);
+                      const ortHaneKg = Number(d.ortalamaHaneKg || 0);
+
+                      return (
+                        <tr key={d.gun} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {formatDottedTrDate(d.gun)}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {gelenTon > 0 ? (
+                              <div>
+                                <span className="font-bold text-amber-900">{gelenTon} Ton</span>
+                                <span className="text-[10px] text-slate-500 block">
+                                  ({(d.gelenNetKg || Math.round(gelenTon * 1000)).toLocaleString('tr-TR')} kg • {d.tirSayisi || 1} Tır)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Stoktan / Tır Yok</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {fiiliTon > 0 ? (
+                              <div>
+                                <span className="font-black text-emerald-800">{fiiliTon} Ton</span>
+                                <span className="text-[10px] text-emerald-700 block">Gelen Tonaj Dağıtıldı</span>
+                              </div>
+                            ) : fiiliTorba > 0 ? (
+                              <div>
+                                <span className="font-bold text-slate-700">{resmiTon} Ton</span>
+                                <span className="text-[10px] text-slate-500 block">Stoktan / Resmi Kabul</span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">0 Ton</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {beklenenTorba > 0 ? (
+                              <div>
+                                <span className="font-bold text-slate-800">{beklenenTorba} Torba</span>
+                                <span className="text-[10px] text-slate-500 block">
+                                  (~{d.beklenenStandartHane} Hane • {d.beklenenTamHane} Tam)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {fiiliTorba > 0 ? (
+                              <div>
+                                <span className="font-black text-emerald-700">{fiiliTorba} Torba</span>
+                                <span className="text-[10px] text-slate-600 font-semibold block">
+                                  {haneSayisi} Hane (Kabul: {resmiTon} Ton)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">0 Torba</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {ortTorbaKg > 0 ? (
+                              <div>
+                                <span className="font-bold text-sky-900">{ortTorbaKg} kg / Torba</span>
+                                <span className="text-[10px] text-sky-700 block">
+                                  34T = ~{ortHaneKg} kg (Kabul: 850 kg)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Standart (~25 kg)</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {artanTorba > 0 ? (
+                              <div className="inline-flex flex-col items-center px-2 py-0.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900">
+                                <span className="font-black">+{artanTorba} Torba</span>
+                                <span className="text-[10px] font-semibold">
+                                  +{d.artanHane} Hane{d.artanKalanTorba > 0 ? ` + ${d.artanKalanTorba} T.` : ''} (+{d.artanHaneKesirli} Hane)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {acikTorba > 0 ? (
+                              <div className="inline-flex flex-col items-center px-2 py-0.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900">
+                                <span className="font-black">-{acikTorba} Torba</span>
+                                <span className="text-[10px] font-semibold">
+                                  -{d.acikHane} Hane{d.acikKalanTorba > 0 ? ` + ${d.acikKalanTorba} T.` : ''} (-{d.acikHaneKesirli} Hane)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {artanTorba > 0 ? (
+                              <span className="px-2 py-1 rounded-md bg-purple-100 text-purple-900 font-bold text-[10px] inline-block">
+                                Torba &lt;25kg (+{d.haneFarki > 0 ? `${d.haneFarki} Hane` : `${artanTorba} Torba`})
+                              </span>
+                            ) : acikTorba > 0 ? (
+                              <span className="px-2 py-1 rounded-md bg-rose-100 text-rose-900 font-bold text-[10px] inline-block">
+                                Torba &gt;25kg ({d.haneFarki < 0 ? `${d.haneFarki} Hane` : `-${acikTorba} Torba`})
+                              </span>
+                            ) : gelenTon > 0 && fiiliTorba > 0 ? (
+                              <span className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-900 font-bold text-[10px] inline-block">
+                                Tam Dengeli (25 kg)
+                              </span>
+                            ) : gelenTon > 0 ? (
+                              <span className="px-2 py-1 rounded-md bg-amber-100 text-amber-900 font-bold text-[10px] inline-block">
+                                Depo Girişi
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 font-bold text-[10px] inline-block">
+                                Stoktan Dağıtım
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {donemStats && (
+                    <tfoot>
+                      <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+                        <td className="py-2.5 px-3 uppercase">DÖNEM TOPLAMI:</td>
+                        <td className="py-2.5 px-3 text-center text-amber-900">
+                          {donemStats.gelenNetTonaj || 0} Ton
+                          <span className="text-[10px] text-slate-600 font-semibold block">
+                            ({donemStats.toplamTirSayisi || 0} Tır)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-emerald-800">
+                          {donemStats.dagitilanTonaj || 0} Ton
+                          <span className="text-[10px] text-emerald-700 font-semibold block">
+                            Değişmez Fiili Tonaj
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-slate-800">
+                          {donemStats.beklenenStandartTorba || 0} Torba
+                          <span className="text-[10px] text-slate-600 font-semibold block">
+                            (~{donemStats.beklenenStandartHane || 0} Hane)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-emerald-800">
+                          {donemStats.dagitilanTorba || 0} Torba
+                          <span className="text-[10px] text-slate-600 font-semibold block">
+                            {donemStats.teslimatYapilanHane || 0} Hane (Kabul: {donemStats.resmiKabulTonaj || 0} T)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-sky-900">
+                          {donemStats.ortalamaTorbaKg ? `${donemStats.ortalamaTorbaKg} kg / Torba` : '~25 kg'}
+                          <span className="text-[10px] text-sky-700 font-semibold block">
+                            34T: ~{donemStats.ortalamaHaneKg || 850} kg
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-purple-900">
+                          +{donemStats.artanTorba || 0} Torba
+                          <span className="text-[10px] text-purple-700 font-semibold block">
+                            (+{donemStats.artanHaneKesirli || 0} Hane)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-rose-800">
+                          -{donemStats.acikTorba || 0} Torba
+                          <span className="text-[10px] text-rose-700 font-semibold block">
+                            (-{donemStats.acikHaneKesirli || 0} Hane)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="text-[11px] font-black text-slate-800">
+                            Net Fark: {(donemStats.netTorbaFarki || 0) >= 0 ? `+${donemStats.netTorbaFarki || 0}` : donemStats.netTorbaFarki} Torba
+                          </span>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
           </div>
 
           {/* PRINT OFFICIAL SIGNATURES BLOCK */}
@@ -1812,14 +2052,14 @@ export default function AnalyticsPage({
                 </div>
               </div>
 
-              {/* Depo / Stok Durumu (Varsa) */}
+              {/* Depo / Stok Durumu ve Torba Ağırlık Analizi (Varsa) */}
               {donemStats && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 space-y-2 text-xs">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-500 block">Depo / Kömür Stok Takibi:</span>
                       <span className="font-bold text-slate-800">
-                        Gelen Toplam: <strong className="text-amber-800">{donemStats.gelenNetTonaj || 0} Ton</strong> ({donemStats.toplamSevkiyat || 0} Sevkiyat)
+                        Gelen Toplam: <strong className="text-amber-800">{donemStats.gelenNetTonaj || 0} Ton</strong> ({donemStats.toplamSevkiyat || 0} Sevkiyat) • Fiili Dağıtılan: <strong className="text-emerald-800">{donemStats.dagitilanTonaj || 0} Ton</strong> (Resmi Kabul: <strong>{donemStats.resmiKabulTonaj || 0} Ton</strong>)
                       </span>
                     </div>
                     <div className="text-right">
@@ -1827,18 +2067,87 @@ export default function AnalyticsPage({
                       <span className="font-black text-sky-700 text-sm">{formatTonnage(summary?.kalanStokTonaj || 0).tonStr}</span>
                     </div>
                   </div>
-                  <div className="pt-1.5 border-t border-slate-200 text-[11px] text-teal-900 flex items-center justify-between">
-                    <span className="font-bold">34 Torbalık Hane Kapasitesi:</span>
+                  <div className="pt-1.5 border-t border-slate-200 text-[11px] text-teal-900 flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold">25 kg Standart Beklenen Kapasite:</span>
                     <strong className="text-teal-950 font-mono">
-                      ~{Math.floor(normalizeToTon(donemStats.gelenNetTonaj || 0) / 0.85).toLocaleString('tr-TR')} Hane (Kalan Stok: ~{Math.floor(normalizeToTon(summary?.kalanStokTonaj || 0) / 0.85).toLocaleString('tr-TR')} Hane)
+                      {donemStats.beklenenStandartTorba || 0} Torba (~{donemStats.beklenenStandartHane || 0} Hane) • Ort. Torba Ağırlığı: {donemStats.ortalamaTorbaKg ? `${donemStats.ortalamaTorbaKg} kg/torba (~${donemStats.ortalamaHaneKg || 850} kg/hane fiili, 850 kg resmi kabul)` : '~25 kg/torba'}
                     </strong>
                   </div>
-                  {Number(summary?.fazlaDagitilanTonaj || 0) > 0 && (
-                    <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between text-[11px] text-purple-900 bg-purple-50/70 p-2 rounded-xl">
-                      <span><strong>Fazladan Dağıtılan Kömür (Torba Toleransı):</strong> Kömür torbalarının standart ağırlıktan (25 kg) hafif gelmesi nedeniyle kantar net tonajından fazla dağıtılmıştır:</span>
-                      <span className="font-black text-purple-950">+{formatTonnage(summary?.fazlaDagitilanTonaj).combined} (+{summary?.fazlaDagitilanTorba || 0} Torba / ~+{summary?.fazlaDagitilanHane || 0} Hane)</span>
+                  {(Number(donemStats.artanTorba || 0) > 0 || Number(donemStats.acikTorba || 0) > 0) && (
+                    <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[11px] text-purple-950 bg-purple-50/70 p-2 rounded-xl">
+                      <span>
+                        <strong>Torba Ağırlık Toleransı &amp; Fark İstatistiği:</strong> Gelen tonajdan fazla tonaj dağıtılmaz; torbaların takribi 25 kg olması nedeniyle oluşan farklar:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-3 font-black">
+                        {Number(donemStats.artanTorba || 0) > 0 && (
+                          <span className="text-purple-900">
+                            Artan (&lt;25kg): +{donemStats.artanTorba} Torba (+{donemStats.artanHaneKesirli || 0} Hane)
+                          </span>
+                        )}
+                        {Number(donemStats.acikTorba || 0) > 0 && (
+                          <span className="text-rose-800">
+                            Açık (&gt;25kg): -{donemStats.acikTorba} Torba (-{donemStats.acikHaneKesirli || 0} Hane)
+                          </span>
+                        )}
+                        <span className="text-slate-900">
+                          Net Torba Farkı: {(donemStats.netTorbaFarki || 0) >= 0 ? `+${donemStats.netTorbaFarki || 0}` : donemStats.netTorbaFarki} Torba
+                        </span>
+                      </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Gün Gün Gelen Tonaj ve Torba Farkı Cetveli (Yazdırılabilir Rapor) */}
+              {dailyBreakdown.length > 0 && (
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                    Gün Gün Gelen Tonaj, Dağıtılan Torba, Artan / Açık Torba ve Ortalama Ağırlık Cetveli ({dailyBreakdown.length} Gün)
+                  </h4>
+                  <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-[11px] border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-800 border-b border-slate-300 font-bold">
+                          <th className="p-1.5">Tarih</th>
+                          <th className="p-1.5 text-center">Gelen Net Tonaj</th>
+                          <th className="p-1.5 text-center">Fiili Dağıtılan Tonaj</th>
+                          <th className="p-1.5 text-center">25kg Beklenen</th>
+                          <th className="p-1.5 text-center">Fiilen Dağıtılan</th>
+                          <th className="p-1.5 text-center">Ort. Ağırlık</th>
+                          <th className="p-1.5 text-center">Artan Torba (&lt;25kg)</th>
+                          <th className="p-1.5 text-center">Açık Torba (&gt;25kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {dailyBreakdown.map((d: any) => (
+                          <tr key={d.gun} className="hover:bg-slate-50">
+                            <td className="p-1.5 font-mono font-bold text-slate-900">{formatDottedTrDate(d.gun)}</td>
+                            <td className="p-1.5 text-center font-bold text-amber-900">
+                              {d.gelenNetTonaj > 0 ? `${d.gelenNetTonaj} Ton (${d.tirSayisi || 1} Tır)` : '-'}
+                            </td>
+                            <td className="p-1.5 text-center font-bold text-emerald-800">
+                              {d.fiiliDagitilanTonaj > 0 ? `${d.fiiliDagitilanTonaj} Ton` : `${d.resmiKabulTonaj || 0} Ton (Stok)`}
+                            </td>
+                            <td className="p-1.5 text-center text-slate-700">
+                              {d.beklenenStandartTorba > 0 ? `${d.beklenenStandartTorba} T. (~${d.beklenenStandartHane} H.)` : '-'}
+                            </td>
+                            <td className="p-1.5 text-center font-bold text-emerald-700">
+                              {d.fiiliDagitilanTorba ?? d.torba} T. ({d.teslimEdilenHane ?? d.teslimat} H. • Kabul: {d.resmiKabulTonaj} T)
+                            </td>
+                            <td className="p-1.5 text-center text-sky-900">
+                              {d.ortalamaTorbaKg > 0 ? `${d.ortalamaTorbaKg} kg (~${d.ortalamaHaneKg} kg/H.)` : '~25 kg'}
+                            </td>
+                            <td className="p-1.5 text-center font-bold text-purple-800">
+                              {d.artanTorba > 0 ? `+${d.artanTorba} T. (+${d.artanHaneKesirli} H.)` : '-'}
+                            </td>
+                            <td className="p-1.5 text-center font-bold text-rose-700">
+                              {d.acikTorba > 0 ? `-${d.acikTorba} T. (-${d.acikHaneKesirli} H.)` : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 

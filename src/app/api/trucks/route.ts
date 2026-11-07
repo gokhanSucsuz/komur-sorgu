@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbCollections, mapDocs, mapDoc, buildIdFilter, recordActivityLog, touchSyncPulse } from '@/lib/mongodb';
 import { encryptTruck, normalizeIrsaliyeNo, hashIrsaliye } from '@/lib/crypto';
 import { getIstanbulDate, formatDottedTrDate } from '@/lib/dateUtils';
-import { turkishIncludes, normalizeToTon, formatTonnage, calculateCoalStockMetrics } from '@/lib/normalizer';
+import {
+  turkishIncludes,
+  normalizeToTon,
+  formatTonnage,
+  calculateCoalStockMetrics,
+  calculateDailyAndOverallBagTonnageStats,
+} from '@/lib/normalizer';
 import { verifySession } from '@/lib/auth';
 import { serverError, asString, isSafeId } from '@/lib/security';
 import { parseTonnageTemplates } from '@/lib/tonnageTemplates';
@@ -56,7 +62,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate distributed coal tonnage (1 bag = 25 kg = 0.025 tons)
-    const allBeneficiaries = await benCol.find({}).toArray();
+    const rawAllBeneficiaries = await benCol.find({}).toArray();
+    const allBeneficiaries = mapDocs(rawAllBeneficiaries);
     let toplamDagitilanTorba = 0;
     for (const b of allBeneficiaries) {
       toplamDagitilanTorba += Number(b.torba_sayisi || 0);
@@ -77,20 +84,29 @@ export async function GET(request: NextRequest) {
     const quotaDoc = sandboxQuotaDoc || (await settingsCol.findOne({ key: 'varsayilan_hedef_torba' }));
     const varsayilanHedefTorba = quotaDoc ? parseInt(quotaDoc.value, 10) : 34;
 
-    // Kömür torbaları standart ağırlıkta (25 kg) olmadığında stok eksiye düşürülmez;
-    // eksiye düşecek fark "fazladan kömür verilmiş" olarak kayıtlara işlenir.
+    const mappedAllTrucks = mapDocs(allTrucks);
+    const bagTonnageStats = calculateDailyAndOverallBagTonnageStats({
+      trucks: mappedAllTrucks,
+      beneficiaries: allBeneficiaries,
+      quotaBagsPerHousehold: varsayilanHedefTorba,
+      bagWeightTon: 0.025,
+    });
+
     const stockMetrics = calculateCoalStockMetrics(
       toplamNetTonaj,
       toplamDagitilanTorba,
       0.025,
       varsayilanHedefTorba
     );
-    const dagitilanNetTonaj = stockMetrics.dagitilanNetTonaj;
-    const kalanStokTonaj = stockMetrics.kalanStokTonaj;
-    const fazlaDagitilanTonaj = stockMetrics.fazlaDagitilanTonaj;
-    const fazlaDagitilanKg = stockMetrics.fazlaDagitilanKg;
-    const fazlaDagitilanTorba = stockMetrics.fazlaDagitilanTorba;
-    const fazlaDagitilanHane = stockMetrics.fazlaDagitilanHane;
+    const dagitilanNetTonaj =
+      bagTonnageStats.totals.toplamGelenNetTonaj > 0
+        ? bagTonnageStats.totals.toplamFiiliDagitilanTonaj
+        : stockMetrics.dagitilanNetTonaj;
+    const kalanStokTonaj = bagTonnageStats.totals.toplamKalanStokTonaj;
+    const fazlaDagitilanTonaj = 0; // Tonaj değişmez; gelen tonajdan fazla tonaj dağıtılmaz!
+    const fazlaDagitilanKg = 0;
+    const fazlaDagitilanTorba = bagTonnageStats.totals.toplamArtanTorba || stockMetrics.artanTorba;
+    const fazlaDagitilanHane = bagTonnageStats.totals.toplamArtanHane || stockMetrics.artanHane;
     const sonrakiTirSirasi = maxSira + 1;
 
     const templateKey = isSandboxMode ? 'sandbox_tonnage_report_templates' : 'tonnage_report_templates';
@@ -108,12 +124,30 @@ export async function GET(request: NextRequest) {
         toplamTaraTonaj: parseFloat(toplamTaraTonaj.toFixed(3)),
         toplamDagitilanTorba,
         dagitilanNetTonaj,
+        resmiKabulTonaj: bagTonnageStats.totals.toplamResmiKabulTonaj,
         kalanStokTonaj,
+        beklenenStandartTorba: bagTonnageStats.totals.toplamBeklenenStandartTorba,
+        beklenenStandartHane: bagTonnageStats.totals.toplamBeklenenStandartHane,
+        beklenenTamHane: bagTonnageStats.totals.toplamBeklenenTamHane,
+        artanTorba: bagTonnageStats.totals.toplamArtanTorba,
+        artanHane: bagTonnageStats.totals.toplamArtanHane,
+        artanKalanTorba: bagTonnageStats.totals.toplamArtanKalanTorba,
+        artanHaneKesirli: bagTonnageStats.totals.toplamArtanHaneKesirli,
+        acikTorba: bagTonnageStats.totals.toplamAcikTorba,
+        acikHane: bagTonnageStats.totals.toplamAcikHane,
+        acikKalanTorba: bagTonnageStats.totals.toplamAcikKalanTorba,
+        acikHaneKesirli: bagTonnageStats.totals.toplamAcikHaneKesirli,
+        netTorbaFarki: bagTonnageStats.totals.netTorbaFarki,
+        netHaneFarkiKesirli: bagTonnageStats.totals.netHaneFarkiKesirli,
+        ortalamaTorbaKg: bagTonnageStats.totals.genelOrtalamaTorbaKg,
+        ortalamaHaneKg: bagTonnageStats.totals.genelOrtalamaHaneKg,
+        dailyBagTonnageRows: bagTonnageStats.dailyRows,
         fazlaDagitilanTonaj,
         fazlaDagitilanKg,
         fazlaDagitilanTorba,
         fazlaDagitilanHane,
-        hasFazlaDagitim: stockMetrics.hasFazlaDagitim,
+        hasFazlaDagitim: bagTonnageStats.totals.toplamArtanTorba > 0,
+        hasAcikDagitim: bagTonnageStats.totals.toplamAcikTorba > 0,
         sonrakiTirSirasi,
         toplamTahsisTonaj,
         kalanTahsisTonaj,

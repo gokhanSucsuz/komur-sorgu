@@ -721,64 +721,85 @@ describe('8. Müdür Yetkilisi (MUDUR) Rolü, Parola Uyumu, 2FA ve Cihaz Kısıt
   });
 });
 
-describe('9. Standart Dışı Kömür Torbası Ağırlık Toleransı & Stok Eksiye Düşmeme Testleri', () => {
-  it('100 kişilik kömür (85 ton) geldiğinde 102 kişiye (3468 torba / 86.7 ton) verildiğinde stok eksiye düşmez (0 kalır) ve fazlalık kaydedilir', () => {
-    // 100 kişi * 34 torba * 0.025 ton = 85.0 Ton kantar net girişi
-    // Fiilen 102 kişi kömür aldı = 102 * 34 = 3468 torba verildi (Standart formülle 86.7 Ton)
+describe('9. Standart Dışı Kömür Torbası Ağırlık Toleransı & Artan / Açık Torba Hesaplama Testleri', () => {
+  it('100 kişilik kömür (85 ton) geldiğinde 102 kişiye (3468 torba) verildiğinde dağıtılan tonaj 85 ton kalır (değişmez), resmi kabul 86.7 ton ve artan torba +68 (+2 hane) kaydedilir', () => {
+    // 100 kişi * 34 torba * 0.025 ton = 85.0 Ton kantar net girişi (beklenen standart = 3400 torba)
+    // Fiilen 102 kişi kömür aldı = 102 * 34 = 3468 torba verildi (1 torba < 25 kg = ~24.51 kg)
     const metrics = calculateCoalStockMetrics(85.0, 3468, 0.025, 34);
 
     assert.equal(metrics.toplamNetTonaj, 85.0);
-    assert.equal(metrics.dagitilanNetTonaj, 86.7);
+    assert.equal(metrics.dagitilanNetTonaj, 85.0, 'Gelen tonaj miktarından fazla kömür tonajı dağıtılmaz; tonaj 85.0 Ton olarak sabit kalır');
+    assert.equal(metrics.resmiKabulTonaj, 86.7, 'Her 34 torba 850 kg kabul edildiğinden resmi kabul karşılığı 86.7 Ton olur');
     assert.equal(metrics.kalanStokTonaj, 0, 'Saha stoku asla eksiye düşmemelidir, 0 olmalıdır');
-    assert.equal(metrics.fazlaDagitilanTonaj, 1.7, 'Eksiye düşecek tonaj fazladan dağıtılan kömür olarak kaydedilmelidir');
-    assert.equal(metrics.fazlaDagitilanKg, 1700, 'Fazlalık kg cinsinden tam olarak 1700 kg olmalıdır');
-    assert.equal(metrics.fazlaDagitilanTorba, 68, 'Fazladan verilen torba sayısı tam olarak 68 torba olmalıdır');
-    assert.equal(metrics.fazlaDagitilanHane, 2, 'Fazladan faydalanan hane sayısı tam olarak 2 hane olmalıdır');
+    assert.equal(metrics.fazlaDagitilanTonaj, 0, 'Fiziki tonaj gelen tonajı aşamayacağı için fazlaDagitilanTonaj 0 olmalıdır');
+    assert.equal(metrics.artanTorba, 68, 'Artan torba sayısı tam olarak 68 torba olmalıdır');
+    assert.equal(metrics.fazlaDagitilanTorba, 68, 'fazlaDagitilanTorba (artanTorba) 68 torba olmalıdır');
+    assert.equal(metrics.artanHane, 2, 'Artan torbadan faydalanan tam hane sayısı 2 hane olmalıdır');
+    assert.equal(metrics.fazlaDagitilanHane, 2, 'fazlaDagitilanHane 2 olmalıdır');
+    assert.equal(metrics.ortalamaTorbaKg, 24.51, 'Ortalama 1 torba ağırlığı 24.51 kg olmalıdır');
+    assert.equal(metrics.ortalamaHaneKg, 833, '34 torba alan haneye fiilen ortalama 833 kg gitmiş (resmiyette 850 kg kabul edilmiş) olmalıdır');
     assert.equal(metrics.hasFazlaDagitim, true, 'hasFazlaDagitim bayrağı true olmalıdır');
   });
 
-  it('Sahada stok varken (gelen > dağıtılan) kalan stok pozitif hesaplanır ve fazla dağıtım 0 olur', () => {
-    // 100 Ton kömür geldi, 2000 torba (50 Ton) dağıtıldı
-    const metrics = calculateCoalStockMetrics(100.0, 2000, 0.025, 34);
+  it('Sahada stok varken (gelen > dağıtılan) kalan stok pozitif hesaplanır ve artan/açık torba 0 olur', () => {
+    // 100 Ton kömür geldi, 2000 torba (50 Ton) dağıtıldı, dağıtım devam ediyor (isAllCoalDistributed = false)
+    const metrics = calculateCoalStockMetrics(100.0, 2000, 0.025, 34, false);
 
     assert.equal(metrics.toplamNetTonaj, 100.0);
     assert.equal(metrics.dagitilanNetTonaj, 50.0);
     assert.equal(metrics.kalanStokTonaj, 50.0);
     assert.equal(metrics.fazlaDagitilanTonaj, 0);
-    assert.equal(metrics.fazlaDagitilanKg, 0);
-    assert.equal(metrics.fazlaDagitilanTorba, 0);
-    assert.equal(metrics.fazlaDagitilanHane, 0);
+    assert.equal(metrics.artanTorba, 0);
+    assert.equal(metrics.acikTorba, 0);
     assert.equal(metrics.hasFazlaDagitim, false);
   });
 
-  it('Kantar tonajı ile dağıtılan torba tonajı tam eşitken kalan stok 0 olur ve fazla dağıtım 0 kalır', () => {
+  it('1 torba ağırlığı 25 kg üzerinde geldiğinde (isAllCoalDistributed = true) tonaj sabit kalır ve Açık Torba eksiksiz hesaplanır', () => {
+    // 25.5 Ton kömür geldi (Standart 25 kg ile 1020 torba / 30 hane beklenir)
+    // Ancak torbalar ~26.79 kg geldiği için kömür bittiğinde sadece 952 torba (28 hane) çıktı
+    const metrics = calculateCoalStockMetrics(25.5, 952, 0.025, 34, true);
+
+    assert.equal(metrics.toplamNetTonaj, 25.5);
+    assert.equal(metrics.dagitilanNetTonaj, 25.5, 'Gelen 25.5 tonun tamamı dağıtılmıştır');
+    assert.equal(metrics.resmiKabulTonaj, 23.8, '28 hane * 850 kg = 23.8 Ton resmi kabul');
+    assert.equal(metrics.kalanStokTonaj, 0);
+    assert.equal(metrics.acikTorba, 68, '1020 - 952 = 68 torba açık çıkmalıdır');
+    assert.equal(metrics.acikHane, 2, '68 torba açık = 2 tam hane açık');
+    assert.equal(metrics.ortalamaTorbaKg, 26.79, 'Ortalama 1 torba ağırlığı 26.79 kg olmalıdır');
+    assert.equal(metrics.ortalamaHaneKg, 911, '34 torba alan haneye fiilen ~911 kg gitmiştir');
+    assert.equal(metrics.hasAcikDagitim, true);
+  });
+
+  it('Kantar tonajı ile dağıtılan torba tonajı tam eşitken kalan stok 0 olur ve artan/açık torba 0 kalır', () => {
     // 25 Ton kömür geldi, 1000 torba (25 Ton) dağıtıldı
     const metrics = calculateCoalStockMetrics(25.0, 1000, 0.025, 34);
 
     assert.equal(metrics.kalanStokTonaj, 0);
-    assert.equal(metrics.fazlaDagitilanTonaj, 0);
+    assert.equal(metrics.artanTorba, 0);
+    assert.equal(metrics.acikTorba, 0);
     assert.equal(metrics.hasFazlaDagitim, false);
   });
 
-  it('Tır kaydı olmadan (0 ton) dağıtım yapıldığında stok 0 kalır, dağıtılan miktar eksiksiz fazla kömür olarak kaydedilir', () => {
+  it('Tır kaydı olmadan (0 ton) dağıtım yapıldığında stok 0 kalır, dağıtılan torbalar artan torba olarak kaydedilir', () => {
     // 0 Ton kantar girişi varken sahada önceden kalan torbalardan 100 torba dağıtıldı
     const metrics = calculateCoalStockMetrics(0, 100, 0.025, 34);
 
     assert.equal(metrics.kalanStokTonaj, 0);
-    assert.equal(metrics.fazlaDagitilanTonaj, 2.5);
-    assert.equal(metrics.fazlaDagitilanKg, 2500);
-    assert.equal(metrics.fazlaDagitilanTorba, 100);
-    assert.equal(metrics.fazlaDagitilanHane, 2);
+    assert.equal(metrics.fazlaDagitilanTonaj, 0);
+    assert.equal(metrics.resmiKabulTonaj, 2.5);
+    assert.equal(metrics.artanTorba, 100);
+    assert.equal(metrics.artanHane, 2);
     assert.equal(metrics.hasFazlaDagitim, true);
   });
 
-  it('Kilogram formatında (örn. 85000 kg) gelen tonaj normalize edilir ve tolerans hesaplaması hatasız çalışır', () => {
+  it('Kilogram formatında (örn. 85000 kg) gelen tonaj normalize edilir ve artan torba hesaplaması hatasız çalışır', () => {
     const metrics = calculateCoalStockMetrics(85000, 3468, 0.025, 34);
 
     assert.equal(metrics.toplamNetTonaj, 85.0);
+    assert.equal(metrics.dagitilanNetTonaj, 85.0);
+    assert.equal(metrics.resmiKabulTonaj, 86.7);
     assert.equal(metrics.kalanStokTonaj, 0);
-    assert.equal(metrics.fazlaDagitilanTonaj, 1.7);
-    assert.equal(metrics.fazlaDagitilanKg, 1700);
+    assert.equal(metrics.artanTorba, 68);
     assert.equal(metrics.hasFazlaDagitim, true);
   });
 });
