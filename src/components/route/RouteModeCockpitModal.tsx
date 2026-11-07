@@ -169,6 +169,12 @@ export default function RouteModeCockpitModal({
   });
 
   const completedCount = completedStops.length;
+  const normalStops = stops.filter((s) => !s.onceki_gunden_devir);
+  const normalTotalStops = normalStops.length;
+  const normalCompletedCount = normalStops.filter((s) => isDeliveredStop(s)).length;
+  const displayTotalHouseholds = normalTotalStops > 0 ? normalTotalStops : totalStops;
+  const displayCompletedHouseholds = normalTotalStops > 0 ? normalCompletedCount : completedCount;
+
   const deferredStops = stops
     .map((s, idx) => ({ stop: s, index: idx }))
     .filter(({ stop }) => (stop.durum === 'TESLIM_EDILEMEDI' || (stop.durum === 'EKSIK' && (!stop.teslim_edilen_torba || Number(stop.teslim_edilen_torba) === 0))));
@@ -181,7 +187,9 @@ export default function RouteModeCockpitModal({
     0
   );
   const progressPercent =
-    totalStops > 0 ? Math.min(100, Math.round((completedCount / totalStops) * 100)) : 0;
+    displayTotalHouseholds > 0
+      ? Math.min(100, Math.round((displayCompletedHouseholds / displayTotalHouseholds) * 100))
+      : 0;
 
   const isLastStopInRoute = safeIndex >= totalStops - 1;
   const hasRemainingStopsAfterCurrent = incompleteStops.some((s) => s.originalIndex > safeIndex);
@@ -304,7 +312,7 @@ export default function RouteModeCockpitModal({
                   <span>
                     Biten:{' '}
                     <strong className="text-white">
-                      {completedCount}/{totalStops}
+                      {displayCompletedHouseholds}/{displayTotalHouseholds}
                     </strong>
                   </span>
                   <span>•</span>

@@ -122,6 +122,11 @@ export default function AnalyticsPage({
   const summary = reportData?.summary;
   const donemStats = reportData?.donemStats;
   const eksikHaneler = reportData?.eksikHaneler || [];
+  const eksikTamamlananHaneler = reportData?.eksikTamamlananHaneler || [];
+  const tumEksikTakipKayitlari = useMemo(
+    () => [...eksikHaneler, ...eksikTamamlananHaneler],
+    [eksikHaneler, eksikTamamlananHaneler]
+  );
   const ekKomurListesi = reportData?.ekKomurListesi || [];
   const iptalHaneler = reportData?.iptalHaneler || [];
   const mahalleStats: any[] = useMemo(() => reportData?.mahalleStats || [], [reportData]);
@@ -665,30 +670,37 @@ export default function AnalyticsPage({
             </div>
           </div>
 
-          {/* EKSİK KÖMÜR ALAN HANELER LİSTESİ */}
+          {/* EKSİK KÖMÜR ALAN VE SONRADAN TAMAMLANAN HANELER AYRINTILI LİSTESİ */}
           <div className="p-5 rounded-2xl bg-white border border-amber-300 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200">
                   <AlertTriangle className="w-4 h-4 text-amber-700" />
                 </div>
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900">
-                    Eksik / Yarım Kömür Alan Haneler ({eksikHaneler.length} Hane)
+                    Eksik / Kısmi Kömür Kayıtları ve Tamamlanma Tarihleri ({eksikHaneler.length} Bekleyen • {eksikTamamlananHaneler.length} Tamamlanan)
                   </h3>
                   <p className="text-[11px] text-slate-500 font-medium">
-                    Hedef kotası tamamlanmamış, öncelikli dağıtılacak haneler
+                    Esas teslimat tarihi ilk teslim günü olarak korunur; sonradan yapılan tamamlamalar tarihleriyle birlikte aşağıda izlenir
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-rose-800 bg-rose-100 px-2.5 py-1 rounded-xl border border-rose-200">
-                Toplam {eksikHaneler.reduce((acc: number, curr: any) => acc + (curr.eksik_torba || 0), 0)} Torba Eksik
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold text-rose-800 bg-rose-100 px-2.5 py-1 rounded-xl border border-rose-200">
+                  Bekleyen: {eksikHaneler.reduce((acc: number, curr: any) => acc + (curr.eksik_torba || 0), 0)} Torba Eksik
+                </span>
+                {eksikTamamlananHaneler.length > 0 && (
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-xl border border-emerald-200">
+                    Sonradan Tamamlanan: {eksikTamamlananHaneler.length} Hane
+                  </span>
+                )}
+              </div>
             </div>
 
-            {eksikHaneler.length === 0 ? (
+            {tumEksikTakipKayitlari.length === 0 ? (
               <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-500 text-xs font-medium">
-                Tebrikler! Şu anda yarım kalmış veya eksik kömür alan bir hane bulunmuyor.
+                Tebrikler! Şu anda yarım kalmış veya sonradan tamamlanmış kısmi teslimat kaydı bulunmuyor.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -698,30 +710,68 @@ export default function AnalyticsPage({
                       <th className="py-2.5 px-3">TC Kimlik</th>
                       <th className="py-2.5 px-3">Ad Soyad</th>
                       <th className="py-2.5 px-3">Mahalle & Adres</th>
-                      <th className="py-2.5 px-3 text-center">Verilen</th>
-                      <th className="py-2.5 px-3 text-center">Hedef</th>
-                      <th className="py-2.5 px-3 text-center text-rose-700 font-bold">Kalan Eksik</th>
+                      <th className="py-2.5 px-3 text-center">Esas (İlk) Teslim Tarihi</th>
+                      <th className="py-2.5 px-3 text-center">İlk Verilen / Hedef</th>
+                      <th className="py-2.5 px-3 text-center">Durum & Kalan / Eklenen</th>
+                      <th className="py-2.5 px-3 text-center">Eksik Tamamlanma Tarihi</th>
                       <th className="py-2.5 px-3">Teslimat Notu</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-800">
-                    {eksikHaneler.map((h: any) => (
-                      <tr key={h.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-3 font-mono font-bold text-amber-800">{h.tc_no}</td>
-                        <td className="py-2.5 px-3 font-bold text-slate-900">{h.ad_soyad}</td>
-                        <td className="py-2.5 px-3 max-w-[200px] truncate">
-                          <strong className="text-slate-900">{h.mahalle}</strong> - {h.acik_adres}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-bold">{h.torba_sayisi} Torba</td>
-                        <td className="py-2.5 px-3 text-center text-slate-500">{h.hedef_torba} Torba</td>
-                        <td className="py-2.5 px-3 text-center font-black text-rose-700 bg-rose-50">
-                          {h.eksik_torba} Torba
-                        </td>
-                        <td className="py-2.5 px-3 text-[11px] text-slate-500 italic">
-                          {h.teslimat_notu || '-'}
-                        </td>
-                      </tr>
-                    ))}
+                    {tumEksikTakipKayitlari.map((h: any) => {
+                      const isCompletedLater =
+                        h.durum_etiketi === 'SONRADAN TAMAMLANDI' ||
+                        h.eksik_sonradan_tamamlandi === true ||
+                        Boolean(h.eksik_tamamlanma_tarihi);
+                      const initialBags =
+                        Number(h.ilk_teslim_edilen_torba) || Number(h.torba_sayisi) || 0;
+                      const targetBags = Number(h.hedef_torba) || 34;
+                      const firstDateStr = formatTrDate(h.ilk_teslimat_tarihi || h.teslimat_tarihi);
+                      const completedDateStr = h.eksik_tamamlanma_tarihi
+                        ? formatTrDate(h.eksik_tamamlanma_tarihi)
+                        : 'Bekliyor';
+
+                      return (
+                        <tr key={h.id || h._id || h.tc_no} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-3 font-mono font-bold text-amber-800">{h.tc_no}</td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{h.ad_soyad}</td>
+                          <td className="py-2.5 px-3 max-w-[200px] truncate">
+                            <strong className="text-slate-900">{h.mahalle}</strong> - {h.acik_adres || h.adres}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-sky-900 bg-sky-50/60">
+                            {firstDateStr}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-bold">
+                            {initialBags} / {targetBags} Torba
+                          </td>
+                          <td
+                            className={`py-2.5 px-3 text-center font-black ${
+                              isCompletedLater
+                                ? 'text-emerald-800 bg-emerald-50'
+                                : 'text-rose-700 bg-rose-50'
+                            }`}
+                          >
+                            {isCompletedLater
+                              ? `✓ TAMAMLANDI (+${h.sonradan_tamamlanan_torba || Math.max(0, targetBags - initialBags)} Torba)`
+                              : `⏳ EKSİK (${h.eksik_torba} Torba)`}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold">
+                            {isCompletedLater ? (
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                {completedDateStr}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                Bekliyor
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-[11px] text-slate-500 italic">
+                            {h.teslimat_notu || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1931,11 +1981,11 @@ export default function AnalyticsPage({
                 </div>
               </div>
 
-              {/* Eksik Kömür Alan Haneler (Özet Tablosu) */}
-              {eksikHaneler.length > 0 && (
+              {/* Eksik Kömür Alan ve Sonradan Tamamlanan Haneler (Özet Tablosu) */}
+              {tumEksikTakipKayitlari.length > 0 && (
                 <div className="space-y-1.5 pt-2">
                   <h4 className="text-xs font-black uppercase tracking-wider text-amber-800">
-                    Eksik / Kısmi Kömür Alan Haneler Listesi ({eksikHaneler.length} Hane)
+                    Eksik Kalan Kayıtlar ve Tamamlanma Tarihleri ({eksikHaneler.length} Bekleyen, {eksikTamamlananHaneler.length} Tamamlanan)
                   </h4>
                   <div className="border border-amber-300 rounded-xl overflow-hidden shadow-2xs">
                     <table className="w-full text-left text-xs border-collapse">
@@ -1945,23 +1995,48 @@ export default function AnalyticsPage({
                           <th className="p-2">Hak Sahibi</th>
                           <th className="p-2">TC Kimlik No</th>
                           <th className="p-2">Mahalle</th>
-                          <th className="p-2 text-center">Alınan Torba</th>
-                          <th className="p-2 text-center">Kalan Eksik</th>
+                          <th className="p-2 text-center">Esas Teslim Tarihi</th>
+                          <th className="p-2 text-center">İlk Verilen</th>
+                          <th className="p-2 text-center">Durum / Eksik</th>
+                          <th className="p-2 text-center">Tamamlanma Tarihi</th>
                           <th className="p-2">Açıklama</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-amber-100">
-                        {eksikHaneler.slice(0, 50).map((h: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-amber-50/50">
-                            <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
-                            <td className="p-2 font-bold text-slate-900">{h.ad_soyad}</td>
-                            <td className="p-2 font-mono text-slate-700">{h.tc_no}</td>
-                            <td className="p-2 text-slate-700">{h.mahalle}</td>
-                            <td className="p-2 text-center font-bold text-emerald-700">{h.torba_sayisi ?? h.verilen_torba ?? 0} Torba</td>
-                            <td className="p-2 text-center font-bold text-amber-800">{h.eksik_torba} Torba</td>
-                            <td className="p-2 text-[11px] text-slate-500">{h.teslimat_notu || h.aciklama || '-'}</td>
-                          </tr>
-                        ))}
+                        {tumEksikTakipKayitlari.slice(0, 50).map((h: any, idx: number) => {
+                          const isCompletedLater =
+                            h.durum_etiketi === 'SONRADAN TAMAMLANDI' ||
+                            h.eksik_sonradan_tamamlandi === true ||
+                            Boolean(h.eksik_tamamlanma_tarihi);
+                          const initialBags =
+                            Number(h.ilk_teslim_edilen_torba) || Number(h.torba_sayisi) || 0;
+                          const targetBags = Number(h.hedef_torba) || 34;
+                          return (
+                            <tr key={idx} className="hover:bg-amber-50/50">
+                              <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                              <td className="p-2 font-bold text-slate-900">{h.ad_soyad}</td>
+                              <td className="p-2 font-mono text-slate-700">{h.tc_no}</td>
+                              <td className="p-2 text-slate-700">{h.mahalle}</td>
+                              <td className="p-2 text-center font-mono font-bold text-sky-900">
+                                {formatTrDate(h.ilk_teslimat_tarihi || h.teslimat_tarihi)}
+                              </td>
+                              <td className="p-2 text-center font-bold text-emerald-700">
+                                {initialBags} / {targetBags} Torba
+                              </td>
+                              <td className="p-2 text-center font-bold text-amber-800">
+                                {isCompletedLater
+                                  ? `✓ Tamamlandı (+${h.sonradan_tamamlanan_torba || Math.max(0, targetBags - initialBags)} Torba)`
+                                  : `Eksik (${h.eksik_torba} Torba)`}
+                              </td>
+                              <td className="p-2 text-center font-mono font-bold text-emerald-800">
+                                {h.eksik_tamamlanma_tarihi
+                                  ? formatTrDate(h.eksik_tamamlanma_tarihi)
+                                  : 'Bekliyor'}
+                              </td>
+                              <td className="p-2 text-[11px] text-slate-500">{h.teslimat_notu || h.aciklama || '-'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

@@ -40,6 +40,13 @@ export interface BeneficiaryRecord {
   teslim_eden_personel?: string;
   teslim_alan?: string;
   teslimat_tarihi?: string;
+  ilk_teslimat_tarihi?: string;
+  ilk_teslim_edilen_torba?: number;
+  eksik_kalan_torba?: number;
+  eksik_tamamlanma_tarihi?: string | null;
+  eksik_tamamlayan_personel?: string | null;
+  eksik_sonradan_tamamlandi?: boolean;
+  sonradan_tamamlanan_torba?: number;
   imza_durumu?: 'BEKLIYOR' | 'IMZALANDI' | string;
   manuel_ek_liste_imzasi?: boolean;
   ek_komur_verildi?: boolean;

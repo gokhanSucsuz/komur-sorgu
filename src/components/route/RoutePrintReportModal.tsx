@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
-import { Route as RouteIcon, X, Download, Printer, AlertTriangle, RefreshCw, Truck } from 'lucide-react';
+import { Route as RouteIcon, X, Download, Printer, Truck } from 'lucide-react';
 import { getBeneficiaryListTypeInfo, resolveStaffDisplayName } from '@/lib/normalizer';
 import { formatTrDate, formatDottedTrDate, replaceYmdWithDdmmyyyy, buildReportPdfTitle, printReportWithTitle } from '@/lib/dateUtils';
 
@@ -45,26 +45,22 @@ export default function RoutePrintReportModal({
 
   const stops = Array.isArray(printRoute.duraklar) ? printRoute.duraklar : [];
 
-  // Devir vs Yeni Duraklar ayrımı
+  // Günlük teslim tutanaklarında yalnızca o güne ait ilk teslimat yapılan kayıtlar dahil edilir (devir tamamlamalar tutanağa dahil edilmez)
   const normalStops = stops.filter((s: any) => !s.onceki_gunden_devir);
-  const devirStops = stops.filter((s: any) => Boolean(s.onceki_gunden_devir));
 
-  // Yeni hanelerden tamamlanan ve eksik olanlar
+  // Yeni hanelerden tamamlanan ve eksik olanlar (tutanakta her ikisi de tam teslimat olarak gösterilir)
   const tamHane = normalStops.filter((s: any) => s.durum === 'TAMAMLANDI').length;
   const eksikHane = normalStops.filter((s: any) => s.durum === 'EKSIK').length;
-  const verilemeyenHane = normalStops.filter((s: any) => s.durum === 'TESLIM_EDILEMEDI').length;
-  
-  // Resmi Kural: Dağıtım Yapılan Hane = Tam Dağıtım Yapılan Hane + Eksik Dağıtım Yapılan Hane
+
+  // Resmi Kural: İlk teslimat gününde kısmi teslimat yapılan haneler de tutanakta tam teslimat kabul edilir
   const toplamDagitimYapilanHane = tamHane + eksikHane;
 
-  // Devir duraklardan tamamlananlar
-  const devirTamamlanan = devirStops.filter(
-    (s: any) => s.durum === 'TAMAMLANDI' || Number(s.teslim_edilen_torba) > 0
-  ).length;
-
-  // Toplam dağıtılan torba (fiziki olarak araçtan indirilen tüm kömürler)
-  const toplamTorba = stops.reduce(
-    (acc: number, d: any) => acc + (Number(d.teslim_edilen_torba) || 0),
+  // Tutanak toplam torba (ilk teslimatı yapılan hanelerin tam hakediş torbası)
+  const toplamTorba = normalStops.reduce(
+    (acc: number, d: any) =>
+      d.durum === 'TAMAMLANDI' || d.durum === 'EKSIK'
+        ? acc + (Number(d.hedef_torba) || 34)
+        : acc,
     0
   );
 
@@ -130,11 +126,6 @@ export default function RoutePrintReportModal({
                   <strong className="text-emerald-700">
                     {toplamDagitimYapilanHane} Hane
                   </strong>
-                  {eksikHane > 0 && (
-                    <span className="text-amber-800 font-bold ml-1">
-                      ({tamHane} Tam + {eksikHane} Eksik)
-                    </span>
-                  )}
                 </span>
                 <span>•</span>
                 <span>
@@ -247,7 +238,7 @@ export default function RoutePrintReportModal({
           </div>
 
           {/* Route Metrics Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center text-xs">
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
               <span className="text-[10px] font-bold text-slate-500 uppercase block">
                 Dağıtım Yapılan Hane
@@ -256,7 +247,7 @@ export default function RoutePrintReportModal({
                 {toplamDagitimYapilanHane} Hane
               </span>
               <span className="text-[9px] text-slate-500 font-semibold block mt-0.5">
-                ({tamHane} Tam + {eksikHane} Eksik)
+                (O Gün İlk Teslimatı Yapılanlar)
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
@@ -264,21 +255,10 @@ export default function RoutePrintReportModal({
                 Tam Teslim Edilen
               </span>
               <span className="text-base font-black text-emerald-700 block">
-                {tamHane} Hane
+                {toplamDagitimYapilanHane} Hane
               </span>
               <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">
-                (34 Torba Eksiksiz)
-              </span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-              <span className="text-[10px] font-bold text-amber-800 uppercase block">
-                Eksik Teslimat
-              </span>
-              <span className="text-base font-black text-amber-800 block">
-                {eksikHane} Hane
-              </span>
-              <span className="text-[9px] text-amber-700 font-semibold block mt-0.5">
-                (Kalan Sonraki Güne Devir)
+                ({toplamTorba} Torba Tam Teslimat)
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200">
@@ -304,16 +284,6 @@ export default function RoutePrintReportModal({
             </p>
           </div>
 
-          {/* Devir Uyarısı / Bilgilendirme Bandı */}
-          {devirStops.length > 0 && (
-            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-semibold flex items-center gap-2">
-              <RefreshCw className="w-4 h-4 text-amber-700 shrink-0" />
-              <span>
-                <strong>Önceki Günden Devir Teslimatlar:</strong> Bu rotada önceki günlerden eksik devreden <strong>{devirStops.length} hane</strong> bulunmaktadır ({devirTamamlanan} tanesi teslim edilmiştir). Resmi sayım kuralı gereği hane ilk eksik teslimat yapıldığı günün hanesine sayıldığından, bu rotadaki hane sayımına mükerrerliği önlemek için dahil edilmemiştir (+0).
-              </span>
-            </div>
-          )}
-
           {printRoute.kapanis_notu && (
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
               <strong className="text-slate-900 font-bold block mb-0.5">
@@ -323,7 +293,7 @@ export default function RoutePrintReportModal({
             </div>
           )}
 
-          {/* Stops Table */}
+          {/* Stops Table (Yalnızca o güne ait ilk teslimat yapılan kayıtlar tutanağa dahil edilir) */}
           <div className="border border-slate-300 rounded-xl overflow-hidden shadow-2xs">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
@@ -338,14 +308,14 @@ export default function RoutePrintReportModal({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {stops.map((stop: any, index: number) => {
-                  const isDevir = Boolean(stop.onceki_gunden_devir);
+                {normalStops.map((stop: any, index: number) => {
                   const isTamam = stop.durum === 'TAMAMLANDI';
                   const isEksik = stop.durum === 'EKSIK';
+                  const isDelivered = isTamam || isEksik;
                   const isUndelivered = stop.durum === 'TESLIM_EDILEMEDI';
                   const stopListInfo = getBeneficiaryListTypeInfo(stop);
 
-                  const cleanAdSoyad = cleanDecryptedText(stop.ad_soyad, `Hak Sahibi #${stop.sira || index + 1}`);
+                  const cleanAdSoyad = cleanDecryptedText(stop.ad_soyad, `Hak Sahibi #${index + 1}`);
                   const cleanTeslimAlan = cleanDecryptedText(stop.teslim_alan, cleanAdSoyad);
                   const rawAcikAdres = cleanDecryptedText(stop.acik_adres, '');
                   const rawSokak = cleanDecryptedText(stop.sokak, '');
@@ -362,13 +332,11 @@ export default function RoutePrintReportModal({
                   }
 
                   const targetQuota = Number(stop.hedef_torba) || 34;
-                  const deliveredBags = Number(stop.teslim_edilen_torba) || 0;
-                  const remainingBags = Math.max(0, targetQuota - deliveredBags);
 
                   return (
-                    <tr key={index} className={`hover:bg-slate-50 transition-colors ${isDevir ? 'bg-amber-50/40' : ''}`}>
+                    <tr key={index} className="hover:bg-slate-50 transition-colors">
                       <td className="p-2.5 text-center font-bold text-slate-500">
-                        <div>{stop.sira || index + 1}</div>
+                        <div>{index + 1}</div>
                         {stop.sira_no && (
                           <div className="text-[9px] text-slate-400 font-normal">
                             #{stop.sira_no}
@@ -394,38 +362,15 @@ export default function RoutePrintReportModal({
                         <span className="block text-[11px] text-slate-700 font-medium mt-0.5">
                           {displayAddress}
                         </span>
-                        {isDevir && (
-                          <span className="block text-[10px] text-amber-900 font-bold italic mt-1 bg-amber-100/70 p-1 rounded border border-amber-200">
-                            *(Önceki gün eksik teslimat tamamlaması - Hane sayımına dahil edilmemiştir)*
-                          </span>
-                        )}
                       </td>
                       <td className="p-2.5 text-center font-black text-slate-900">
-                        <div>{deliveredBags ? `${deliveredBags} Torba` : '-'}</div>
-                        {isEksik && (
-                          <div className="text-[10px] text-amber-800 font-extrabold mt-0.5">
-                            Kalan: {remainingBags} Torba
-                          </div>
-                        )}
+                        <div>{isDelivered ? `${targetQuota} Torba` : '-'}</div>
                       </td>
                       <td className="p-2.5 text-center">
-                        {isDevir ? (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-400 inline-block">
-                            🔄 DEVİR {isTamam ? 'TAMAMLANDI' : 'TAMAMLAMA'}
-                          </span>
-                        ) : isTamam ? (
+                        {isDelivered ? (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 inline-block">
                             ✓ TAM
                           </span>
-                        ) : isEksik ? (
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 inline-block">
-                              ⚠️ EKSİK
-                            </span>
-                            <span className="block text-[9px] text-amber-800 font-bold">
-                              Sonraki güne devir
-                            </span>
-                          </div>
                         ) : isUndelivered ? (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 inline-block">
                             VERİLEMEDİ
@@ -435,7 +380,7 @@ export default function RoutePrintReportModal({
                             BEKLİYOR
                           </span>
                         )}
-                        {(isTamam || isEksik) && stop.teslim_tarihi && (
+                        {isDelivered && stop.teslim_tarihi && (
                           <div className="text-[9px] font-mono font-bold text-amber-900 bg-amber-50 rounded px-1 py-0.5 mt-1 border border-amber-200 whitespace-nowrap">
                             🕒 {stop.teslim_tarihi}
                           </div>

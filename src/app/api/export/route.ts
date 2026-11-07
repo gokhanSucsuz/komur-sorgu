@@ -1127,8 +1127,9 @@ export async function GET(request: NextRequest) {
         if (b.tc_no) benMap.set(String(b.tc_no).trim(), b);
       });
 
+      const seenBeneficiaries = new Set<string>();
       const validRecords = records.filter((r: any) => {
-        if (r.iptal_edildi) return false;
+        if (r.iptal_edildi || r.islem_tipi === 'EKSIK_TAMAMLAMA' || r.is_eksik_tamamlama) return false;
         const bId = String(r.beneficiary_id || '');
         const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
         if (!ben) return false;
@@ -1140,6 +1141,11 @@ export async function GET(request: NextRequest) {
         ) return false;
         if (ben.imza_durumu !== 'IMZALANDI') return false;
         if (ben.komur_verilmeyecek === true || ben.komur_verilmeyecek === 'true') return false;
+
+        // Yalnızca o güne ait İLK TESLİMAT yapılan kayıtlar tutanağa dahil edilir
+        const uniqueKey = String(ben.id || ben._id || r.beneficiary_id || r.tc_no || '');
+        if (uniqueKey && seenBeneficiaries.has(uniqueKey)) return false;
+        if (uniqueKey) seenBeneficiaries.add(uniqueKey);
         return true;
       });
 
@@ -1171,7 +1177,10 @@ export async function GET(request: NextRequest) {
 
       let totalBags = 0;
       const exportData = validRecords.map((r: any, idx: number) => {
-        const bag = r.torba_sayisi || 0;
+        const bId = String(r.beneficiary_id || '');
+        const ben = benMap.get(bId) || (r.tc_no ? benMap.get(String(r.tc_no).trim()) : undefined);
+        // Tutanaklarda eksik kömür teslim edilmiş olsa bile ilk teslim gününde tam teslimat (hedef kota) olarak görünür
+        const bag = Number(ben?.hedef_torba) || Number(r.hedef_torba) || Number(r.torba_sayisi) || 34;
         totalBags += bag;
         const rawDate = r.gun_tarihi || (r.tarih ? String(r.tarih).split(' ')[0].split('T')[0] : '');
         const dateOnlyStr = formatTrDate(rawDate) || rawDate || '-';
@@ -2663,7 +2672,11 @@ export async function GET(request: NextRequest) {
 
         if (isBeneficiaryCancelled(r)) {
           iptalList.push(r);
-        } else if (r.teslimat_durumu === 'EKSIK') {
+        } else if (
+          r.teslimat_durumu === 'EKSIK' ||
+          ((r.teslimat_durumu === 'TAMAMLANDI' || r.teslimat_durumu === 'TESLIM_EDILDI') &&
+            (r.eksik_sonradan_tamamlandi === true || Boolean(r.eksik_tamamlanma_tarihi)))
+        ) {
           eksikList.push(r);
         }
       }
@@ -2803,15 +2816,30 @@ export async function GET(request: NextRequest) {
         const eksikRows = eksikList.map((h: any, idx: number) => {
           const target = Number(h.hedef_torba || 34);
           const given = Number(h.torba_sayisi || 0);
+          const isCompletedLater =
+            (h.teslimat_durumu === 'TAMAMLANDI' || h.teslimat_durumu === 'TESLIM_EDILDI') &&
+            (h.eksik_sonradan_tamamlandi === true || Boolean(h.eksik_tamamlanma_tarihi));
+          const initialBags = Number(h.ilk_teslim_edilen_torba) || (isCompletedLater ? 0 : given);
+          const completedBags = isCompletedLater
+            ? Number(h.sonradan_tamamlanan_torba) || Math.max(0, given - initialBags)
+            : 0;
+          const remainingBags = isCompletedLater ? 0 : Math.max(0, target - given);
+
           return {
             'Sıra': idx + 1,
             'TC Kimlik No': h.tc_no || '-',
             'Adı Soyadı': h.ad_soyad || '-',
             'Telefon': h.telefon || '-',
             'Mahalle / Köy': h.mahalle || '-',
+            'Esas (İlk) Teslimat Tarihi': formatTrDate(h.ilk_teslimat_tarihi || h.teslimat_tarihi),
             'Hedef (Torba)': target,
-            'Alınan (Torba)': given,
-            'Kalan Eksik (Torba)': Math.max(0, target - given),
+            'İlk Teslim Edilen (Torba)': initialBags,
+            'Sonradan Tamamlanan (Torba)': completedBags,
+            'Kalan Eksik (Torba)': remainingBags,
+            'Durum': isCompletedLater ? 'SONRADAN TAMAMLANDI' : 'EKSİK BEKLİYOR',
+            'Eksik Tamamlanma Tarihi': h.eksik_tamamlanma_tarihi
+              ? formatTrDate(h.eksik_tamamlanma_tarihi)
+              : 'Bekliyor',
             'Teslim Eden Personel': normalizeStaffName(h.teslim_eden_personel) || h.teslim_eden_personel || '-',
             'Teslim Alan': h.teslim_alan || '-',
             'Açıklama / Not': h.teslimat_notu || h.aciklama || '-',
@@ -2820,8 +2848,8 @@ export async function GET(request: NextRequest) {
 
         addStyledWorksheet(
           workbook,
-          'EKSİK / KISMİ KÖMÜR TESLİMATI YAPILAN HANELER LİSTESİ',
-          `Toplam Eksik Kömür Alan Hane: ${eksikList.length} Hane`,
+          'EKSİK / KISMİ KÖMÜR KAYITLARI VE TAMAMLANMA TARİHLERİ LİSTESİ',
+          `Toplam Kayıt: ${eksikList.length} Hane`,
           sanitizeSheetName('Eksik Alan Haneler', seenSheetNames),
           eksikRows,
           [
@@ -2830,9 +2858,13 @@ export async function GET(request: NextRequest) {
             { wch: 24 },
             { wch: 16 },
             { wch: 20 },
+            { wch: 22 },
             { wch: 14 },
-            { wch: 14 },
+            { wch: 20 },
+            { wch: 22 },
             { wch: 18 },
+            { wch: 22 },
+            { wch: 22 },
             { wch: 22 },
             { wch: 20 },
             { wch: 35 },

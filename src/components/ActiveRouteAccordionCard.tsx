@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { formatPhoneDisplay, getYandexNaviUrl } from '@/lib/normalizer';
 import { safeVibrate } from '@/lib/batteryManager';
-import { formatDottedTrDate, replaceYmdWithDdmmyyyy } from '@/lib/dateUtils';
+import { formatTrDate, formatDottedTrDate, replaceYmdWithDdmmyyyy } from '@/lib/dateUtils';
 
 interface ActiveRouteAccordionCardProps {
   route: any;
@@ -48,23 +48,24 @@ export default function ActiveRouteAccordionCard({
   const [stopFilter, setStopFilter] = useState<'ALL' | 'PENDING' | 'EKSIK' | 'TAMAMLANDI' | 'TESLIM_EDILEMEDI'>('ALL');
 
   const routeStops = (route.duraklar as any[]) || [];
-  const total = route.toplam_hane || routeStops.length || 0;
+  const normalStops = routeStops.filter((s: any) => !s.onceki_gunden_devir);
+  const total = routeStops.length > 0 ? normalStops.length : (route.toplam_hane || 0);
   const completed = routeStops.length > 0
-    ? routeStops.filter((s: any) => (s.durum === 'TAMAMLANDI' || s.durum === 'TESLIM_EDILDI') && !s.onceki_gunden_devir).length
+    ? normalStops.filter((s: any) => s.durum === 'TAMAMLANDI' || s.durum === 'TESLIM_EDILDI').length
     : (route.tamamlanan_hane || 0);
   const eksik = routeStops.length > 0
-    ? routeStops.filter((s: any) => s.durum === 'EKSIK' && !s.onceki_gunden_devir).length
+    ? normalStops.filter((s: any) => s.durum === 'EKSIK').length
     : (route.eksik_hane || 0);
   const undelivered = routeStops.length > 0
-    ? routeStops.filter((s: any) => s.durum === 'TESLIM_EDILEMEDI' && !s.onceki_gunden_devir).length
+    ? normalStops.filter((s: any) => s.durum === 'TESLIM_EDILEMEDI').length
     : (route.teslim_edilemeyen_hane || 0);
   const handled = total > 0 ? Math.min(total, completed + eksik + undelivered) : (completed + eksik + undelivered);
   const percent = total > 0 ? Math.min(100, Math.round((handled / total) * 100)) : 0;
 
-  // Eksik kömür teslim edilen haneler
+  // Eksik kömür teslim edilen haneler (bugün eksik kalanlar + önceki günden devredip henüz tamamlanmayanlar)
   const thisRouteEksikStops = routeStops
     .map((s: any, idx: number) => ({ ...s, originalIndex: idx }))
-    .filter((s: any) => s.durum === 'EKSIK');
+    .filter((s: any) => s.durum === 'EKSIK' || (Boolean(s.onceki_gunden_devir) && s.durum !== 'TAMAMLANDI'));
 
   const thisRouteEksikTorba = thisRouteEksikStops.reduce((sum: number, s: any) => {
     const hedef = Number(s.hedef_torba) || 34;
@@ -72,8 +73,8 @@ export default function ActiveRouteAccordionCard({
     return sum + Math.max(0, hedef - teslim);
   }, 0);
 
-  // Hiç kömür verilmeyen haneler (rota tamamlama kontrolü için)
-  const noCoalStops = routeStops.filter((s: any) => {
+  // Hiç kömür verilmeyen haneler (rota tamamlama kontrolü için; devir duraklar hariç)
+  const noCoalStops = normalStops.filter((s: any) => {
     const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
     const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
     return !hasCoal;
@@ -121,7 +122,7 @@ export default function ActiveRouteAccordionCard({
     .filter((stop: any) => {
       if (stopFilter === 'ALL') return true;
       if (stopFilter === 'PENDING') return !stop.durum || stop.durum === 'BEKLIYOR';
-      if (stopFilter === 'EKSIK') return stop.durum === 'EKSIK';
+      if (stopFilter === 'EKSIK') return stop.durum === 'EKSIK' || (Boolean(stop.onceki_gunden_devir) && stop.durum !== 'TAMAMLANDI');
       if (stopFilter === 'TAMAMLANDI') return stop.durum === 'TAMAMLANDI';
       if (stopFilter === 'TESLIM_EDILEMEDI') return stop.durum === 'TESLIM_EDILEMEDI';
       return true;
@@ -574,9 +575,12 @@ export default function ActiveRouteAccordionCard({
                   {/* Hızlı Eksik Tamamlama Kartları */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 border-t border-amber-200">
                     {thisRouteEksikStops.map((stop: any) => {
+                      const isDevir = Boolean(stop.onceki_gunden_devir);
                       const hedef = Number(stop.hedef_torba) || 34;
                       const teslim = Number(stop.teslim_edilen_torba) || 0;
                       const kalan = Math.max(0, hedef - teslim);
+                      const anaHedef = isDevir ? (Number(stop.ana_hedef_torba) || (Number(stop.onceki_teslim_edilen_torba || 0) + hedef) || 34) : hedef;
+                      const toplamVerilen = isDevir ? (Number(stop.onceki_teslim_edilen_torba || 0) + teslim) : teslim;
 
                       return (
                         <div
@@ -584,29 +588,39 @@ export default function ActiveRouteAccordionCard({
                           className="p-2.5 rounded-xl bg-white border border-amber-300 flex items-center justify-between gap-2 shadow-2xs hover:border-amber-400 transition-all"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="w-5 h-5 rounded-md bg-amber-500 text-white text-[10px] font-black flex items-center justify-center shrink-0">
                                 #{stop.sira}
                               </span>
                               <span className="text-xs font-black text-slate-900 truncate">
                                 {(stop.ad_soyad || '').includes('ŞİFRELİ') ? `Hak Sahibi #${stop.sira}` : stop.ad_soyad}
                               </span>
+                              {isDevir && (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                  🔄 Önceki Gün Devri
+                                </span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] mt-1 text-slate-600">
-                              <span>Verilen: <strong className="text-slate-900">{teslim}</strong>/{hedef}</span>
+                            <div className="flex items-center gap-2 text-[11px] mt-1 text-slate-600 flex-wrap">
+                              <span>Verilen: <strong className="text-slate-900">{toplamVerilen}</strong>/{anaHedef}</span>
                               <span>•</span>
                               <span className="text-rose-700 font-bold bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 font-mono">
                                 Kalan: {kalan} Torba
                               </span>
+                              {stop.ilk_teslimat_tarihi && (
+                                <span className="text-[10px] text-amber-900 font-semibold">
+                                  • Esas T.: {formatTrDate(stop.ilk_teslimat_tarihi)}
+                                </span>
+                              )}
                             </div>
                           </div>
 
                           <button
                             type="button"
-                            onClick={() => onOpenStopModal(stop.originalIndex, stop, 'EKSIK')}
+                            onClick={() => onOpenStopModal(stop.originalIndex, stop, isDevir ? 'TAMAMLANDI' : 'EKSIK')}
                             className="px-2.5 py-1.5 rounded-lg bg-linear-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold text-xs shrink-0 shadow-2xs transition-all active:scale-95"
                           >
-                            Kalanı Ver / Düzenle
+                            Kalanı Ver / Tamamla
                           </button>
                         </div>
                       );
@@ -620,7 +634,9 @@ export default function ActiveRouteAccordionCard({
                 <div className="flex items-center justify-between px-1 flex-wrap gap-2">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Navigation className="w-3.5 h-3.5 text-sky-600" />
-                    <span>Sıralı Durak Listesi ({routeStops.length} Hane)</span>
+                    <span>
+                      Sıralı Durak Listesi ({total} Hane{routeStops.length > total ? ` + ${routeStops.length - total} Devir Eksik` : ''})
+                    </span>
                   </h4>
                   {Boolean(availableSignedCount && availableSignedCount > 0 && onOpenAddToRoute) && (
                     <button

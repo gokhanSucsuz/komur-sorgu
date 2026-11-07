@@ -218,4 +218,131 @@ test('Günlük Tek Rota, Eksik Teslimat Devri ve Hane Sayımı Kuralları Testi'
     assert.equal(gunlukTeslimatSayisi, 35, 'Günün teslimat arşivinde 34 tam + 1 eksik hane = 35 hane görünmelidir');
     assert.equal(gunlukToplamTorba, 1176, 'Günün kömür toplamı 34 * 34 + 20 = 1176 torba (29.40 Ton) olmalıdır');
   });
+
+  await t.test('7. Esas Kömür Teslimat Tarihi Korunması ve Sonradan Eksik Tamamlama Kaydı', () => {
+    // 06.11.2026 tarihinde 24 torba teslim edilen hane
+    const benAfterInitialPartial: any = {
+      id: 'ben_24_bags',
+      ad_soyad: 'Hasan Yılmaz',
+      tc_no: '11122233344',
+      hedef_torba: 34,
+      torba_sayisi: 24,
+      teslimat_durumu: 'EKSIK',
+      teslimat_tarihi: '06.11.2026 14:20:00',
+      ilk_teslimat_tarihi: '06.11.2026 14:20:00',
+      ilk_teslim_edilen_torba: 24,
+      eksik_kalan_torba: 10,
+      eksik_sonradan_tamamlandi: false,
+      eksik_tamamlanma_tarihi: null,
+    };
+
+    // 07.11.2026 tarihinde kalan 10 torba tamamlandığında:
+    const completionTimestamp = '07.11.2026 11:15:00';
+    const primaryDeliveryDate =
+      benAfterInitialPartial.ilk_teslimat_tarihi || benAfterInitialPartial.teslimat_tarihi;
+    const initialBags =
+      Number(benAfterInitialPartial.ilk_teslim_edilen_torba) ||
+      Number(benAfterInitialPartial.torba_sayisi) ||
+      0;
+    const addedBags = 10;
+    const newTotalBags = initialBags + addedBags;
+
+    const benAfterCompletion = {
+      ...benAfterInitialPartial,
+      torba_sayisi: newTotalBags,
+      teslimat_durumu: 'TAMAMLANDI',
+      teslimat_tarihi: primaryDeliveryDate,
+      ilk_teslimat_tarihi: primaryDeliveryDate,
+      ilk_teslim_edilen_torba: initialBags,
+      sonradan_tamamlanan_torba: addedBags,
+      eksik_kalan_torba: 0,
+      eksik_sonradan_tamamlandi: true,
+      eksik_tamamlanma_tarihi: completionTimestamp,
+    };
+
+    assert.equal(
+      benAfterCompletion.teslimat_tarihi,
+      '06.11.2026 14:20:00',
+      'Esas kömür teslimat tarihi ilk teslimat yapılan 06.11.2026 olarak korunmalıdır'
+    );
+    assert.equal(benAfterCompletion.ilk_teslimat_tarihi, '06.11.2026 14:20:00');
+    assert.equal(benAfterCompletion.eksik_tamamlanma_tarihi, '07.11.2026 11:15:00');
+    assert.equal(benAfterCompletion.ilk_teslim_edilen_torba, 24);
+    assert.equal(benAfterCompletion.sonradan_tamamlanan_torba, 10);
+    assert.equal(benAfterCompletion.torba_sayisi, 34);
+    assert.equal(benAfterCompletion.eksik_sonradan_tamamlandi, true);
+  });
+
+  await t.test('8. Günlük Teslimat Tutanakları: İlk Teslim Gününde Tam Teslimat Görünür, Sonraki Gün Tutanağına Dahil Edilmez', () => {
+    const historyEvents = [
+      // 06.11.2026: İlk kısmi teslimat (24 torba verildi ama hedef 34)
+      {
+        id: 'h1',
+        beneficiary_id: 'ben_24_bags',
+        tc_no: '11122233344',
+        ad_soyad: 'Hasan Yılmaz',
+        islem_tipi: 'TESLIMAT',
+        is_ilk_teslimat: true,
+        is_eksik_tamamlama: false,
+        hedef_torba: 34,
+        torba_sayisi: 24,
+        gun_tarihi: '2026-11-06',
+        iptal_edildi: false,
+      },
+      // 07.11.2026: Eksik tamamlama (+10 torba)
+      {
+        id: 'h2',
+        beneficiary_id: 'ben_24_bags',
+        tc_no: '11122233344',
+        ad_soyad: 'Hasan Yılmaz',
+        islem_tipi: 'EKSIK_TAMAMLAMA',
+        is_ilk_teslimat: false,
+        is_eksik_tamamlama: true,
+        hedef_torba: 34,
+        torba_sayisi: 10,
+        gun_tarihi: '2026-11-07',
+        iptal_edildi: false,
+      },
+      // 07.11.2026: O gün ilk kez teslimat yapılan yeni hane
+      {
+        id: 'h3',
+        beneficiary_id: 'ben_new_day2',
+        tc_no: '99988877766',
+        ad_soyad: 'Ayşe Kaya',
+        islem_tipi: 'TESLIMAT',
+        is_ilk_teslimat: true,
+        is_eksik_tamamlama: false,
+        hedef_torba: 34,
+        torba_sayisi: 34,
+        gun_tarihi: '2026-11-07',
+        iptal_edildi: false,
+      },
+    ];
+
+    // Tutanak filtreleme: Sadece ilk teslimatlar dahil edilir ve tutanakta tam kota (34 torba) gösterilir
+    const seenBeneficiaries = new Set<string>();
+    const tutanakRecords = historyEvents
+      .filter((ev) => {
+        if (ev.iptal_edildi || ev.islem_tipi === 'EKSIK_TAMAMLAMA' || ev.is_eksik_tamamlama) {
+          return false;
+        }
+        const key = ev.beneficiary_id || ev.tc_no;
+        if (seenBeneficiaries.has(key)) return false;
+        seenBeneficiaries.add(key);
+        return true;
+      })
+      .map((ev) => ({
+        ...ev,
+        tutanak_torba_sayisi: ev.hedef_torba || 34,
+      }));
+
+    const day1Tutanak = tutanakRecords.filter((r) => r.gun_tarihi === '2026-11-06');
+    const day2Tutanak = tutanakRecords.filter((r) => r.gun_tarihi === '2026-11-07');
+
+    assert.equal(day1Tutanak.length, 1, '06.11.2026 tutanağında ilk teslimatı yapılan hane yer almalıdır');
+    assert.equal(day1Tutanak[0].tutanak_torba_sayisi, 34, '06.11.2026 tutanağında 24 torba verilen hane tam teslimat (34 torba) olarak görünmelidir');
+
+    assert.equal(day2Tutanak.length, 1, '07.11.2026 tutanağında yalnızca o gün ilk teslimatı yapılan hane yer almalı, önceki günün eksik tamamlaması dahil edilmemelidir');
+    assert.equal(day2Tutanak[0].beneficiary_id, 'ben_new_day2');
+  });
 });

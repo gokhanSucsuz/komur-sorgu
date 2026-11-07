@@ -84,6 +84,7 @@ export default function RoutePage({
   userUsername,
   userTeam,
   userPartners,
+  eksikHaneler = [],
   onCompleteHousehold,
   onRefreshAll,
   onNavigateToSearch
@@ -262,6 +263,7 @@ export default function RoutePage({
 
   const [archivedRoutes, setArchivedRoutes] = useState<any[]>([]);
   const [signedBeneficiaries, setSignedBeneficiaries] = useState<any[]>([]);
+  const [eksikKalanKayitlar, setEksikKalanKayitlar] = useState<any[]>([]);
   const [, setAllPendingBeneficiaries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -339,6 +341,9 @@ export default function RoutePage({
         });
         setArchivedRoutes(data.archivedRoutes || []);
         setSignedBeneficiaries(data.signedBeneficiaries || []);
+        if (Array.isArray(data.eksikKalanKayitlar)) {
+          setEksikKalanKayitlar(data.eksikKalanKayitlar);
+        }
         if (data.signedTrackingRecords) {
           setSignedTrackingRecords(data.signedTrackingRecords);
         }
@@ -445,6 +450,29 @@ export default function RoutePage({
     wasLockedRef.current = isRouteLockedByOther;
   }, [isRouteLockedByOther, activeRoute]);
 
+  // Sistem genelinde eksik kömürü bulunan ve tamamlanma bekleyen haneler (Sürekli Uyarı)
+  const persistentEksikRecords = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const item of [...(eksikKalanKayitlar || []), ...(eksikHaneler || [])]) {
+      if (!item) continue;
+      const key = String(item.id || item._id || item.beneficiary_id || item.tc_no || '').trim();
+      if (!key) continue;
+      const hedef = Number(item.hedef_torba) || 34;
+      const teslim = Number(item.torba_sayisi) || 0;
+      const kalan = Math.max(0, hedef - teslim);
+      if (kalan > 0) {
+        map.set(key, {
+          ...item,
+          hedef_torba: hedef,
+          torba_sayisi: teslim,
+          eksik_torba: kalan,
+          ilk_teslimat_tarihi: item.ilk_teslimat_tarihi || item.teslimat_tarihi || null
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [eksikKalanKayitlar, eksikHaneler]);
+
   // KURAL: Yalnızca imzası alınmış, kömürü teslim edilmemiş ve başka aktif rotada olmayan hanelerle yeni rota başlatılabilir
   const availableSignedBeneficiaries = useMemo(() => {
     return (signedBeneficiaries || []).filter(
@@ -452,6 +480,7 @@ export default function RoutePage({
         b.imza_durumu === 'IMZALANDI' &&
         b.teslimat_durumu !== 'TAMAMLANDI' &&
         b.teslimat_durumu !== 'TESLIM_EDILDI' &&
+        b.teslimat_durumu !== 'EKSIK' &&
         !activeAssignedSet.has(String(b.id))
     );
   }, [signedBeneficiaries, activeAssignedSet]);
@@ -1789,16 +1818,19 @@ export default function RoutePage({
       let eksikCount = 0;
       let undeliveredCount = 0;
       let totalDeliveredBags = 0;
+      let normalStopsCount = 0;
 
       updatedStops.forEach((s: any) => {
+        const isDevir = Boolean(s.onceki_gunden_devir);
+        if (!isDevir) normalStopsCount++;
         if (s.durum === 'TAMAMLANDI') {
-          completedCount++;
+          if (!isDevir) completedCount++;
           totalDeliveredBags += s.teslim_edilen_torba || s.hedef_torba || 34;
         } else if (s.durum === 'EKSIK') {
-          eksikCount++;
+          if (!isDevir) eksikCount++;
           totalDeliveredBags += s.teslim_edilen_torba || 0;
         } else if (s.durum === 'TESLIM_EDILEMEDI') {
-          undeliveredCount++;
+          if (!isDevir) undeliveredCount++;
         }
       });
 
@@ -1810,6 +1842,7 @@ export default function RoutePage({
             ...r,
             durum: 'AKTIF',
             duraklar: updatedStops,
+            toplam_hane: normalStopsCount,
             tamamlanan_hane: completedCount,
             eksik_hane: eksikCount,
             teslim_edilemeyen_hane: undeliveredCount,
@@ -2216,8 +2249,10 @@ export default function RoutePage({
 
     // Kural Kontrolü: Rotayı tamamlayabilmek için rotadaki tüm hanelere kömür teslim edilmiş olmalıdır.
     // Eksik teslimat kabul edilir, ancak hiç kömür verilmeyen hane var ise tamamlanamaz!
+    // Önceki günden devreden eksik tamamlama durakları o günün hane sayımına ve tamamlama engeline dahil edilmez.
     const stops = activeRoute.duraklar || [];
     const noCoalStops = stops.filter((s: any) => {
+      if (s.onceki_gunden_devir) return false;
       const delivered = Number(s.teslim_edilen_torba) || (s.durum === 'TAMAMLANDI' ? (Number(s.hedef_torba) || 34) : 0);
       const hasCoal = (s.durum === 'TAMAMLANDI' || s.durum === 'EKSIK') && delivered > 0;
       return !hasCoal;
@@ -2661,6 +2696,104 @@ export default function RoutePage({
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* SÜREKLİ EKSİK KÖMÜR TAMAMLAMA UYARISI BANNER'I           */}
+      {/* ======================================================== */}
+      {persistentEksikRecords.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-2.5 no-print">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-start gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 font-black text-base shadow-2xs">
+                ⚠️
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs sm:text-sm font-black text-amber-950">
+                    Eksik Kömür Tamamlama Uyarısı ({persistentEksikRecords.length} Hane Bekliyor)
+                  </h4>
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 px-2 py-0.5 rounded-full border border-amber-400">
+                    Sonraki Gün Rotasına Otomatik Devreder • Rota Sayısına Dahil Edilmez
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-amber-900 font-medium mt-0.5 leading-relaxed">
+                  Aşağıdaki hanelere ilk teslimat gününde kısmi kömür verilmiştir. Esas teslimat tarihi ilk verildiği gün olarak korunur ve tutanaklarda tam teslimat görünür; ancak kalan eksik torbalar tamamlanana kadar bu uyarı aktif kalır.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+            {persistentEksikRecords.map((rec: any) => {
+              const targetBag = Number(rec.hedef_torba) || 34;
+              const givenBag = Number(rec.ilk_teslim_edilen_torba) || Number(rec.torba_sayisi) || 0;
+              const remBag = Number(rec.eksik_torba) || Math.max(0, targetBag - givenBag);
+              const firstDateRaw = rec.ilk_teslimat_tarihi || rec.teslimat_tarihi;
+              const firstDateStr = firstDateRaw ? formatTrDate(firstDateRaw) : '-';
+              const stInfo = getRecordStreetInfo(rec);
+
+              return (
+                <div
+                  key={String(rec.id || rec._id || rec.tc_no)}
+                  className="p-2.5 rounded-xl bg-white border border-amber-300 shadow-2xs flex items-center justify-between gap-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-black text-slate-900 truncate">
+                        {rec.ad_soyad}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                        {rec.tc_no}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-semibold truncate mt-0.5">
+                      {rec.mahalle ? `${rec.mahalle} Mah.` : ''}{' '}
+                      {stInfo.sokak ? `${stInfo.sokak} No:${stInfo.kapiNo || ''}` : rec.adres || ''}
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[10px] font-bold">
+                      <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-900 border border-sky-200">
+                        Esas Teslim: {firstDateStr}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-900 border border-emerald-200">
+                        Verilen: {givenBag}/{targetBag} Torba
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300 font-black">
+                        Kalan Eksik: {remBag} Torba
+                      </span>
+                    </div>
+                  </div>
+
+                  {userRole !== 'MUDUR' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onCompleteHousehold) {
+                          onCompleteHousehold(rec);
+                          return;
+                        }
+                        // Fallback: find in activeRoute and open stop modal
+                        if (activeRoute && Array.isArray(activeRoute.duraklar)) {
+                          const sIdx = activeRoute.duraklar.findIndex(
+                            (s: any) =>
+                              String(s.beneficiary_id) === String(rec.id || rec._id) ||
+                              (rec.tc_no && s.tc_no === rec.tc_no)
+                          );
+                          if (sIdx !== -1) {
+                            handleOpenStopModal(sIdx, activeRoute.duraklar[sIdx], 'TAMAMLANDI');
+                          }
+                        }
+                      }}
+                      className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-black shrink-0 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                    >
+                      +{remBag} Torba Tamamla
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

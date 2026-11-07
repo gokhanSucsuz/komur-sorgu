@@ -100,9 +100,12 @@ export async function GET(request: NextRequest) {
     const deliveries = mapDocs(rawDeliveries);
 
     // Date range stats
-    const donemTeslimatSayisi = deliveries.filter((d) => d.islem_tipi === 'TESLIMAT').length;
+    // Esas teslimat (hane) sayısına yalnızca ilk teslimatlar dahil edilir; sonradan yapılan eksik tamamlamalar mükerrer hane sayılmaz.
+    const donemTeslimatSayisi = deliveries.filter(
+      (d) => d.islem_tipi === 'TESLIMAT' && !d.is_eksik_tamamlama
+    ).length;
     const donemTorbaSayisi = deliveries
-      .filter((d) => d.islem_tipi === 'TESLIMAT')
+      .filter((d) => d.islem_tipi === 'TESLIMAT' || d.islem_tipi === 'EKSIK_TAMAMLAMA')
       .reduce((acc, curr) => acc + (curr.torba_sayisi || 0), 0);
     const donemTonaj = parseFloat((donemTorbaSayisi * 0.025).toFixed(3));
     const donemIptalSayisi = deliveries.filter((d) => d.islem_tipi === 'IPTAL').length;
@@ -117,7 +120,11 @@ export async function GET(request: NextRequest) {
       const entry = dailyMap.get(g)!;
       if (d.islem_tipi === 'TESLIMAT') {
         entry.torba += d.torba_sayisi || 0;
-        entry.teslimat += 1;
+        if (!d.is_eksik_tamamlama) {
+          entry.teslimat += 1;
+        }
+      } else if (d.islem_tipi === 'EKSIK_TAMAMLAMA') {
+        entry.torba += d.torba_sayisi || 0;
       } else if (d.islem_tipi === 'IPTAL') {
         entry.iptal += 1;
       }
@@ -134,8 +141,44 @@ export async function GET(request: NextRequest) {
       })
       .map((m: any) => ({
         ...m,
-        eksik_torba: Math.max(0, (m.hedef_torba || 34) - (m.torba_sayisi || 0)),
+        ilk_teslimat_tarihi: m.ilk_teslimat_tarihi || m.teslimat_tarihi || null,
+        ilk_teslim_edilen_torba: Number(m.ilk_teslim_edilen_torba) || Number(m.torba_sayisi) || 0,
+        eksik_torba: Math.max(0, (m.hedef_torba || varsayilanHedefTorba) - (m.torba_sayisi || 0)),
+        eksik_tamamlanma_tarihi: null,
+        durum_etiketi: 'EKSİK BEKLİYOR',
       }));
+
+    // 4b. Eksik Kömürü Sonradan Tamamlanan Haneler (İlk teslimat tarihi ve tamamlanma tarihi ayrıntılı)
+    const eksikTamamlananHaneler = filteredBeneficiaries
+      .filter(
+        (m: any) =>
+          !isBeneficiaryCancelled(m) &&
+          (m.teslimat_durumu === 'TAMAMLANDI' || m.teslimat_durumu === 'TESLIM_EDILDI') &&
+          (m.eksik_sonradan_tamamlandi === true || Boolean(m.eksik_tamamlanma_tarihi))
+      )
+      .sort((a: any, b: any) => {
+        const dA = String(a.eksik_tamamlanma_tarihi || a.teslimat_tarihi || '');
+        const dB = String(b.eksik_tamamlanma_tarihi || b.teslimat_tarihi || '');
+        if (dA !== dB) return dB.localeCompare(dA);
+        return String(a.ad_soyad || '').localeCompare(String(b.ad_soyad || ''), 'tr');
+      })
+      .map((m: any) => {
+        const fullQuota = Number(m.hedef_torba || varsayilanHedefTorba);
+        const totalBags = Number(m.torba_sayisi || fullQuota);
+        const initialBags = Number(m.ilk_teslim_edilen_torba) || 0;
+        const completedBags =
+          Number(m.sonradan_tamamlanan_torba) || Math.max(0, totalBags - initialBags);
+        return {
+          ...m,
+          ilk_teslimat_tarihi: m.ilk_teslimat_tarihi || m.teslimat_tarihi || null,
+          ilk_teslim_edilen_torba: initialBags,
+          sonradan_tamamlanan_torba: completedBags,
+          eksik_torba: 0,
+          eksik_tamamlanma_tarihi: m.eksik_tamamlanma_tarihi || null,
+          eksik_tamamlayan_personel: m.eksik_tamamlayan_personel || m.teslim_eden_personel || null,
+          durum_etiketi: 'SONRADAN TAMAMLANDI',
+        };
+      });
 
     // 5. Neighborhood Completion Comparison
     const mahMap = new Map<string, any>();
@@ -652,6 +695,7 @@ export async function GET(request: NextRequest) {
         },
         dailyBreakdown,
         eksikHaneler,
+        eksikTamamlananHaneler,
         ekKomurListesi,
         iptalHaneler,
         mahalleStats,

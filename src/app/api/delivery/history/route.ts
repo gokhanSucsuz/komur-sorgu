@@ -76,15 +76,18 @@ export async function GET(request: NextRequest) {
       if (!r.kapi_no && ben?.kapi_no) r.kapi_no = ben.kapi_no;
       if (!r.daire_no && ben?.daire_no) r.daire_no = ben.daire_no;
 
-      if (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') {
+      if (
+        r.islem_tipi === 'TESLIMAT' ||
+        r.islem_tipi === 'EKSIK_TESLIMAT' ||
+        r.islem_tipi === 'EKSIK_TAMAMLAMA'
+      ) {
         const benHistory = historyByBen.get(bId) || [];
         const thisIdx = benHistory.indexOf(r);
         const subsequentEvents = thisIdx !== -1 ? benHistory.slice(thisIdx + 1) : [];
 
+        // Bu kayıttan sonra bir İPTAL işlemi yapılmış mı?
         const hasSubsequentCancel = subsequentEvents.some((e: any) => e.islem_tipi === 'IPTAL');
-        const hasSubsequentDelivery = subsequentEvents.some(
-          (e: any) => e.islem_tipi === 'TESLIMAT' || e.islem_tipi === 'EKSIK_TESLIMAT'
-        );
+
         const isCurrentlyDeliveredInDb =
           ben &&
           (ben.teslimat_durumu === 'TAMAMLANDI' ||
@@ -94,14 +97,7 @@ export async function GET(request: NextRequest) {
         const isSignatureRevoked = !ben || (ben.imza_durumu !== 'IMZALANDI' && Number(ben.torba_sayisi || 0) === 0);
         const isCoalCancelled = ben && (ben.komur_verilmeyecek === true || ben.komur_verilmeyecek === 'true');
 
-        if (hasSubsequentCancel && !hasSubsequentDelivery) {
-          // Kesinlikle iptal edilmiş (örn: Nurettin Dur)
-          r.iptal_edildi = true;
-        } else if (hasSubsequentDelivery) {
-          // Daha sonra yeni bir teslimat yapıldığı için önceki teslimat geçersiz kalmış
-          r.iptal_edildi = true;
-        } else if (!isCurrentlyDeliveredInDb || isSignatureRevoked || isCoalCancelled) {
-          // Hak sahibi veritabanında teslim edilmemiş veya imzası geri alınmış
+        if (hasSubsequentCancel || !isCurrentlyDeliveredInDb || isSignatureRevoked || isCoalCancelled) {
           r.iptal_edildi = true;
         } else {
           r.iptal_edildi = false;
@@ -111,6 +107,47 @@ export async function GET(request: NextRequest) {
           autoHealIds.push(r.id || r._id);
         } else if (!r.iptal_edildi && r._raw_iptal_edildi) {
           autoHealUncancelIds.push(r.id || r._id);
+        }
+      }
+    }
+
+    // Her hak sahibi için son İPTAL işleminden sonraki İLK geçerli teslimatı "Esas (İlk) Teslimat" olarak işaretle;
+    // sonraki günlerde yapılan tamamlama kayıtlarını ise "EKSIK_TAMAMLAMA" olarak ayır (günlük tutanaklara mükerrer girmesin)
+    for (const [, benEvents] of historyByBen.entries()) {
+      const validDeliveries = benEvents.filter(
+        (e: any) =>
+          (e.islem_tipi === 'TESLIMAT' ||
+            e.islem_tipi === 'EKSIK_TESLIMAT' ||
+            e.islem_tipi === 'EKSIK_TAMAMLAMA') &&
+          !e.iptal_edildi
+      );
+      if (validDeliveries.length > 0) {
+        const primaryRecord = validDeliveries[0];
+        const ben =
+          benMap.get(String(primaryRecord.beneficiary_id || '')) ||
+          (primaryRecord.tc_no ? benMap.get(String(primaryRecord.tc_no).trim()) : undefined);
+        const fullQuota = Number(ben?.hedef_torba) || Number(primaryRecord.hedef_torba) || 34;
+        const fiiliIlkTorba = Number(primaryRecord.fiili_ilk_torba ?? primaryRecord.torba_sayisi) || 0;
+        const completionRecord = validDeliveries.length > 1 ? validDeliveries[validDeliveries.length - 1] : null;
+
+        primaryRecord.is_ilk_teslimat = true;
+        primaryRecord.is_eksik_tamamlama = false;
+        primaryRecord.hedef_torba = fullQuota;
+        primaryRecord.fiili_ilk_torba = fiiliIlkTorba;
+        // Tutanaklarda eksik kömür verilmiş olsa dahi ilk teslim gününde tam teslimat (hedef kota) olarak görünür
+        primaryRecord.torba_sayisi = fullQuota;
+        primaryRecord.ilk_teslimat_tarihi =
+          ben?.ilk_teslimat_tarihi || primaryRecord.tarih || primaryRecord.gun_tarihi;
+        primaryRecord.eksik_tamamlanma_tarihi =
+          ben?.eksik_tamamlanma_tarihi ||
+          primaryRecord.eksik_tamamlanma_tarihi ||
+          (completionRecord ? completionRecord.tarih : null);
+
+        for (let i = 1; i < validDeliveries.length; i++) {
+          validDeliveries[i].is_ilk_teslimat = false;
+          validDeliveries[i].is_eksik_tamamlama = true;
+          validDeliveries[i].islem_tipi = 'EKSIK_TAMAMLAMA';
+          validDeliveries[i].ilk_teslimat_tarihi = primaryRecord.ilk_teslimat_tarihi;
         }
       }
     }
@@ -140,17 +177,21 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. İstenen filtreye göre kayıtları sınırla
-    let records = allHistoryMapped;
+    // Günlük teslim tutanaklarında yalnızca o güne ait İLK TESLİMAT yapılan kayıtlar dahil edilir
+    let records = allHistoryMapped.filter((r: any) => !r.is_eksik_tamamlama);
 
     if (islemTipi && islemTipi !== 'HEPSI') {
       if (islemTipi === 'TESLIMAT') {
         records = records.filter(
-          (r: any) => (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') && !r.iptal_edildi
+          (r: any) =>
+            (r.islem_tipi === 'TESLIMAT' || r.islem_tipi === 'EKSIK_TESLIMAT') &&
+            !r.iptal_edildi &&
+            !r.is_eksik_tamamlama
         );
       } else if (islemTipi === 'IPTAL') {
         records = records.filter((r: any) => r.islem_tipi === 'IPTAL' || r.iptal_edildi);
       } else {
-        records = records.filter((r: any) => r.islem_tipi === islemTipi);
+        records = allHistoryMapped.filter((r: any) => r.islem_tipi === islemTipi);
       }
     }
 
@@ -165,11 +206,11 @@ export async function GET(request: NextRequest) {
     // Tarihe göre azalan sırala (en yeniden en eskiye)
     records.sort((a: any, b: any) => {
       const tA = new Date(b.tarih || b.created_at || 0).getTime();
-      const tB = new Date(a.tarih || a.created_at || 0).getTime();
+      const tB = new Date(a.created_at || a.created_at || 0).getTime();
       return tA - tB;
     });
 
-    // 4. Günlük gruplama (Yalnızca geçerli teslimatları teslimatSayisi ve toplamTorba'ya dahil et; gelen tonajı bağla)
+    // 4. Günlük gruplama (Yalnızca o güne ait ilk teslimatları teslimatSayisi ve toplamTorba'ya dahil et; gelen tonajı bağla)
     const groupedDaysMap = new Map<
       string,
       { gun_tarihi: string; items: any[]; toplamTorba: number; teslimatSayisi: number; iptalSayisi: number; gelen_tonaj: number }
@@ -190,8 +231,12 @@ export async function GET(request: NextRequest) {
       const dayGroup = groupedDaysMap.get(g)!;
       dayGroup.items.push(item);
 
-      if ((item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') && !item.iptal_edildi) {
-        dayGroup.toplamTorba += item.torba_sayisi || 0;
+      if (
+        (item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') &&
+        !item.iptal_edildi &&
+        !item.is_eksik_tamamlama
+      ) {
+        dayGroup.toplamTorba += Number(item.hedef_torba) || Number(item.torba_sayisi) || 34;
         dayGroup.teslimatSayisi += 1;
       } else if (item.islem_tipi === 'IPTAL') {
         dayGroup.iptalSayisi += 1;
@@ -200,7 +245,7 @@ export async function GET(request: NextRequest) {
 
     const groupedDays = Array.from(groupedDaysMap.values());
 
-    // 5. Genel Özet İstatistikleri (Tüm Geçmiş Üzerinden - İptaller ve İmzası Geri Alınanlar Düşülmüş)
+    // 5. Genel Özet İstatistikleri (Tüm Geçmiş Üzerinden - İptaller ve İmzası Geri Alınanlar Düşülmüş, İlk Teslimat Bazlı)
     const { nowEnCa: localToday } = getIstanbulDate();
 
     let toplamTeslimatSayisi = 0;
@@ -210,15 +255,18 @@ export async function GET(request: NextRequest) {
     let bugunTorbaSayisi = 0;
 
     for (const item of allHistoryMapped) {
-      const isValidDelivery =
-        (item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') && !item.iptal_edildi;
+      const isValidPrimaryDelivery =
+        (item.islem_tipi === 'TESLIMAT' || item.islem_tipi === 'EKSIK_TESLIMAT') &&
+        !item.iptal_edildi &&
+        !item.is_eksik_tamamlama;
 
-      if (isValidDelivery) {
+      if (isValidPrimaryDelivery) {
+        const quotaBags = Number(item.hedef_torba) || Number(item.torba_sayisi) || 34;
         toplamTeslimatSayisi += 1;
-        toplamTorbaSayisi += item.torba_sayisi || 0;
+        toplamTorbaSayisi += quotaBags;
         if (item.gun_tarihi === localToday) {
           bugunTeslimatSayisi += 1;
-          bugunTorbaSayisi += item.torba_sayisi || 0;
+          bugunTorbaSayisi += quotaBags;
         }
       } else if (item.islem_tipi === 'IPTAL' || item.iptal_edildi) {
         if (item.islem_tipi === 'IPTAL') {
